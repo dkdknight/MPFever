@@ -92,9 +92,20 @@ function C.dump(v)
 	return tostring(v)
 end
 
+-- h * 31 + byte over the string, modulo 2^32 (four bytes per step: the products stay exact in doubles below 2^53)
 function C.hashStr(h, s)
-	for i = 1, #s do
-		h = (h * 31 + s:byte(i)) % 4294967296
+	local n = #s
+	local i = 1
+	local byte = string.byte
+	while i + 3 <= n do
+		local a, b, c, d = byte(s, i, i + 3)
+		h = ((h * 31 + a) * 31 + b) % 4294967296
+		h = ((h * 31 + c) * 31 + d) % 4294967296
+		i = i + 4
+	end
+	while i <= n do
+		h = (h * 31 + byte(s, i)) % 4294967296
+		i = i + 1
 	end
 	return h
 end
@@ -587,6 +598,7 @@ function C.rebuildProposal(m, opts)
 		local player = ce.playerEntity
 		if type(player) ~= "number" then player = api.engine.util.getPlayer() end
 		c.playerEntity = player
+		if ce.hq == true then pcall(function() c.setAsHeadquarterHack = true end) end
 		local name = ce.name
 		if type(name) ~= "string" or name == "" then name = baseName(ce.fileName) end
 		pcall(function() c.name = name end)
@@ -678,9 +690,15 @@ function C.rebuildProposal(m, opts)
 				for _, r in ipairs(entityList(st.nodesToRemove or st.removedNodes)) do if r == n then removed = true end end
 				if not removed then keep[#keep + 1] = n end
 			end
-			-- the configurations the native tool removed, when known (the computed set otherwise)
-			local captured = entityList(st.nodeConfigsToRemove)
-			if #captured > 0 then keep = captured end
+			-- the configurations the native proposal removed, when known (even none: a node the originator's engine kept must be
+			-- kept here too), else the computed set; only those this game has (removing one that does not exist is an assertion)
+			if type(st.nodeConfigsToRemove) == "table" then
+				keep = {}
+				for _, n in ipairs(entityList(st.nodeConfigsToRemove)) do
+					local okc, nc = pcall(function() return api.engine.getComponent(n, api.type.ComponentType.BASE_NODE_CONFIG) end)
+					if okc and nc then keep[#keep + 1] = n end
+				end
+			end
 			if #keep > 0 then ssp.nodeConfigsToRemove = keep end
 		end)
 		-- and the configurations it added (lane connections, crosswalks, traffic lights), with the native ids
@@ -833,12 +851,56 @@ end
 -- construction: `conv` is that converted proposal), the street part as the tool made it (the junction node where the
 -- entrance is stretched to the street, the split street), and the removed segments as the engine's own removal
 -- proposal `rm` makes them. Returns the native Proposal.
-function C.rebuildNativeWithConstruction(m, conv, rm)
+-- The nodes a construction is "frozen" to (0-based indices in the proposal's added nodes): the free end of its own entrance
+-- segment, which the tool stretched to the street. Captured with the build (toAdd[i].frozenNodes); for older captures, guessed:
+-- the new ends of the construction's own segments that no other segment of the build uses.
+local function isConSegment(sg)
+	local tpl = tostring(sg and sg.comp and sg.comp.roadTemplate or "")
+	return tpl:find("/constructions/", 1, true) ~= nil or tpl:find("simple.street_template", 1, true) ~= nil
+end
+
+function C.frozenNodesOf(m, i)
+	local ce = m.toAdd and m.toAdd[i or 1]
+	if type(ce) == "table" and type(ce.frozenNodes) == "table" and #ce.frozenNodes > 0 then return ce.frozenNodes, "captured" end
+	local st = m.proposal or {}
+	local index = {}
+	for k, n in ipairs(st.addedNodes or {}) do if type(n) == "table" and type(n.entity) == "number" then index[n.entity] = k - 1 end end
+	local usedByStreet = {}
+	for _, sg in ipairs(st.addedSegments or {}) do
+		if not isConSegment(sg) and type(sg.comp) == "table" then usedByStreet[sg.comp.node0] = true usedByStreet[sg.comp.node1] = true end
+	end
+	local out, seen = {}, {}
+	for _, sg in ipairs(st.addedSegments or {}) do
+		if isConSegment(sg) and type(sg.comp) == "table" then
+			for _, n in ipairs({ sg.comp.node0, sg.comp.node1 }) do
+				if type(n) == "number" and index[n] and not usedByStreet[n] and not seen[n] then seen[n] = true out[#out + 1] = index[n] end
+			end
+		end
+	end
+	if #out > 0 then return out, "guessed" end
+	return nil
+end
+
+function C.rebuildNativeWithConstruction(m, conv, rm, opts)
+	opts = opts or {}
 	local st = m.proposal
 	if type(st) ~= "table" then error("no street part") end
 	local P = api.type.Proposal.new()
 	local conList = {}
-	conList[1] = conv.toAdd[1]
+	local ce = conv.toAdd[1]
+	-- the engine's conversion numbers the construction's nodes in its own proposal: they are this build's (see C.frozenNodesOf)
+	local fz, how = C.frozenNodesOf(m, 1)
+	if fz and not opts.keepFrozen then
+		local okf, ef = pcall(function()
+			local l = {}
+			for k, v in ipairs(fz) do l[k] = v end
+			ce.frozenNodes = l
+			local sb = m.toAdd[1] and m.toAdd[1].segmentsBefore
+			ce.segmentsBefore = type(sb) == "number" and sb or 0
+		end)
+		C.frozenHow = okf and how or ("not written: " .. tostring(ef):sub(1, 80))
+	end
+	conList[1] = ce
 	P.toAdd = conList
 	local sp = P.proposal
 	local nodes, edges = {}, {}
@@ -853,9 +915,11 @@ function C.rebuildNativeWithConstruction(m, conv, rm)
 		end
 		edges[i] = segmentFrom(sg, "addedSegments[" .. i .. "]")
 	end
-	sp.addedNodes = nodes
-	sp.addedSegments = edges
-	if rm then
+	local stage = opts.stage or 99
+	if stage >= 2 then sp.addedNodes = nodes end
+	if stage >= 3 then sp.addedSegments = edges end
+	if stage < 3 then P.proposal = sp return P end
+	if rm and stage >= 3 then
 		local rsp = rm.proposal
 		local ok1, e1 = pcall(function() sp.removedSegments = rsp.removedSegments end)
 		if not ok1 then C.errors[#C.errors + 1] = "removedSegments: " .. tostring(e1):sub(1, 100) end
@@ -864,8 +928,9 @@ function C.rebuildNativeWithConstruction(m, conv, rm)
 	end
 	-- the node configurations (lane connections...) the tool removed: only those this game has (removing one that does not
 	-- exist is an engine assertion), and those it added, with the native ids
+	if stage < 4 then P.proposal = sp return P end
 	local cfgRemove = {}
-	for _, n in ipairs(entityList(st.nodeConfigsToRemove)) do
+	for _, n in ipairs(opts.noConfigs and {} or entityList(st.nodeConfigsToRemove)) do
 		local okn, nc = pcall(function() return api.engine.getComponent(n, api.type.ComponentType.BASE_NODE_CONFIG) end)
 		if okn and nc then cfgRemove[#cfgRemove + 1] = n end
 	end
@@ -873,7 +938,7 @@ function C.rebuildNativeWithConstruction(m, conv, rm)
 		local okc, ec = pcall(function() sp.nodeConfigsToRemove = cfgRemove end)
 		if not okc then C.errors[#C.errors + 1] = "nodeConfigsToRemove: " .. tostring(ec):sub(1, 100) end
 	end
-	if #(st.nodeConfigsToAdd or {}) > 0 then
+	if #(st.nodeConfigsToAdd or {}) > 0 and not opts.noConfigs then
 		local okc, errc = pcall(function()
 			local cfgs = {}
 			for i, mcfg in ipairs(st.nodeConfigsToAdd) do
@@ -902,14 +967,16 @@ function C.rebuildNativeWithConstruction(m, conv, rm)
 		end)
 		if not okc then C.errors[#C.errors + 1] = "nodeConfigsToAdd: " .. tostring(errc):sub(1, 120) end
 	end
-	if type(st.frozenNodes) == "table" and #st.frozenNodes > 0 then
-		local fz = {}
-		for i, v in ipairs(st.frozenNodes) do fz[i] = v end
-		local okf, ef = pcall(function() sp.frozenNodes = fz end)
+	-- the street part's own list of frozen nodes (the tool's: the construction's nodes)
+	local pfz = (type(st.frozenNodes) == "table" and #st.frozenNodes > 0) and st.frozenNodes or fz
+	if pfz and not opts.noMaps then
+		local l = {}
+		for i, v in ipairs(pfz) do l[i] = v end
+		local okf, ef = pcall(function() sp.frozenNodes = l end)
 		if not okf then C.errors[#C.errors + 1] = "frozenNodes: " .. tostring(ef):sub(1, 100) end
 	end
 	for _, k in ipairs({ "new2oldSegments", "old2newSegments", "new2oldNodes", "old2newNodes" }) do
-		local mm = idMap(st[k])
+		local mm = (not opts.noMaps) and idMap(st[k]) or nil
 		if mm then
 			local okm, errm = pcall(function() sp[k] = mm end)
 			if not okm then C.errors[#C.errors + 1] = k .. ": " .. tostring(errm):sub(1, 100) end
@@ -973,6 +1040,10 @@ function C.compactProposal(p)
 			transf = C.marshal(get(ce, "transf")),
 			playerEntity = get(ce, "playerEntity"),
 			name = get(ce, "name"),
+			hq = get(ce, "setAsHeadquarterHack") == true or nil,
+			-- (the nodes of the street part the construction is attached to, see C.frozenNodesOf)
+			frozenNodes = C.marshal(get(ce, "frozenNodes")),
+			segmentsBefore = get(ce, "segmentsBefore"),
 		}
 	end
 	local st = get(p, "proposal") or get(p, "streetProposal")
@@ -986,6 +1057,7 @@ function C.compactProposal(p)
 			edgeObjectsToRemove = C.marshal(get(st, "edgeObjectsToRemove")) or {},
 			nodeConfigsToAdd = C.marshal(get(st, "nodeConfigsToAdd")) or {},
 			nodeConfigsToRemove = C.marshal(get(st, "nodeConfigsToRemove")) or {},
+			frozenNodes = C.marshal(get(st, "frozenNodes")),
 		}
 	end
 	return out

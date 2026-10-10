@@ -46,6 +46,7 @@ __declspec(dllimport) HANDLE WINAPI GetCurrentProcess();
 __declspec(dllimport) BOOL WINAPI QueryPerformanceCounter(i64*);
 __declspec(dllimport) BOOL WINAPI QueryPerformanceFrequency(i64*);
 __declspec(dllimport) DWORD WINAPI GetCurrentThreadId();
+__declspec(dllimport) void WINAPI RaiseException(DWORD code, DWORD flags, DWORD nargs, const u64* args);
 __declspec(dllimport) HANDLE WINAPI CreateThread(void*, u64, LPTHREAD_START_ROUTINE, void*, DWORD, DWORD*);
 __declspec(dllimport) BOOL WINAPI CloseHandle(HANDLE);
 __declspec(dllimport) DWORD WINAPI GetEnvironmentVariableA(const char*, char*, DWORD);

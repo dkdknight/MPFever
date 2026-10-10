@@ -392,6 +392,23 @@ static void* g_slot = 0;
 static long g_iter = 0;
 static long g_iterlogDone = 0;
 static volatile long g_setPlayer = 0;
+static volatile long g_localPlayer = 0;
+static long g_localTok = 0;          // token of the control line applied last (the file keeps old lines: only a new token counts)
+static void ApplyLocalPlayer(const char* why);
+// The other companies' player entities. The engine empties the positions (the money shown above the buildings) of the LOCAL player's
+// account only, at the start of every simulation iteration (the pre-iteration function ends in the call below); those of the other
+// accounts would pile up for ever on this machine, so the same call is made for them ("setothers <token> <entity>..." in the control file).
+static volatile long g_others[8];
+static volatile long g_nOthers = 0;
+static long g_othersTok = 0;
+// The savegame's own company ("setcanon <token> <entity>"): the interface's tools build for it whatever company this machine plays
+// (see OwnerFix), so its entity is looked for in the builds they issue.
+static volatile long g_canon = 0;
+static volatile long g_mainTid = 0;        // the game's main thread (its interface), see PatchPlayerReads
+static long g_canonTok = 0;
+typedef void (*ClearPosF)(void* world, u32 player);
+static ClearPosF g_clearPos = 0;
+static bool g_preIterOn = false;
 static u32* g_hits[600];
 static int g_nhits = 0;
 static volatile long g_probeIdx = 0, g_probeApplied = 0;
@@ -408,6 +425,9 @@ static void ReadControl()
     ReadFile(f, buf, size, &got, 0);
     CloseHandle(f);
     buf[got] = 0;
+    long wantLocal = 0, wantTok = 0; bool haveLocal = false;
+    long wantOthers[8]; int nWantOthers = 0; long othersTok = 0; bool haveOthers = false;
+    long wantCanon = 0, canonTok = 0; bool haveCanon = false;
     for (DWORD i = 0; i < got; ) {
         DWORD j = i;
         while (j < got && buf[j] != '\n') j++;
@@ -418,6 +438,35 @@ static void ReadControl()
         else if (len >= 11 && memcmp(l, "defernext ", 10) == 0) {
             for (int k = 10; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
             if (v > g_deferNextTarget) g_deferNextTarget = v;
+        }
+        else if (len >= 10 && memcmp(l, "setlocal ", 9) == 0) {
+            // "setlocal <entity> <token>": the last such line of the file wins
+            int k = 9;
+            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
+            long tok = 0;
+            for (k++; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
+            wantLocal = v; wantTok = tok; haveLocal = true;
+        }
+        else if (len >= 11 && memcmp(l, "setothers ", 10) == 0) {
+            // "setothers <token> <entity>...": the last such line of the file wins
+            int k = 10;
+            long tok = 0;
+            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
+            nWantOthers = 0;
+            while (k < len && nWantOthers < 8) {
+                while (k < len && (l[k] < '0' || l[k] > '9')) k++;
+                long e = 0; bool any = false;
+                for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) { e = e * 10 + (l[k] - '0'); any = true; }
+                if (any) wantOthers[nWantOthers++] = e;
+            }
+            othersTok = tok; haveOthers = true;
+        }
+        else if (len >= 10 && memcmp(l, "setcanon ", 9) == 0) {
+            int k = 9;
+            long tok = 0, e = 0;
+            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
+            for (k++; k < len && l[k] >= '0' && l[k] <= '9'; k++) e = e * 10 + (l[k] - '0');
+            wantCanon = e; canonTok = tok; haveCanon = true;
         }
         else if (len >= 11 && memcmp(l, "setplayer ", 10) == 0) {
             for (int k = 10; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
@@ -442,6 +491,20 @@ static void ReadControl()
         i = j + 1;
     }
     { long want = g_tinWant; if (want && _InterlockedExchange(&g_tinLoaded, want) != want) TerrainLoadIn(want); }
+    if (haveLocal && wantTok != g_localTok) { g_localTok = wantTok; g_localPlayer = wantLocal; ApplyLocalPlayer("control"); }
+    if (haveCanon && canonTok != g_canonTok) {
+        g_canonTok = canonTok; g_canon = wantCanon;
+        static long shownC = 0;
+        if (shownC++ < 10) { Buf b; b.str("savegame company ").dec(wantCanon); LogLine(b); }
+    }
+    if (haveOthers && othersTok != g_othersTok) {
+        g_othersTok = othersTok;
+        g_nOthers = 0;
+        for (int i = 0; i < nWantOthers; i++) g_others[i] = wantOthers[i];
+        g_nOthers = nWantOthers;
+        static long shownO = 0;
+        if (shownO++ < 10) { Buf b; b.str("other companies: "); for (int i = 0; i < nWantOthers; i++) b.dec(wantOthers[i]).str(" "); LogLine(b); }
+    }
     if (g_probeIdx != g_probeApplied) {
         // restore the previous candidate, then patch the new one (1-based; 0 = nothing patched)
         if (g_probeApplied > 0 && g_probeApplied <= g_nhits) *g_hits[g_probeApplied - 1] = g_probeSaved;
@@ -502,6 +565,12 @@ static void TimingLine(const char* tag, u64 a, u64 b)
 
 typedef u64 (*ApplyF)(void*, void*);
 static ApplyF g_applyOrig = 0;
+// GameState::Replicate(this = source, destination, flag): copies the world and the local-player word from one state to the other
+// (logged, to learn which state the interface's tools read the player from)
+typedef u64 (*ReplF)(void*, void*, u64);
+static ReplF g_replOrig = 0;
+static const u8 P_REPL[] = { 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x50 };
+static u32 RVA_REPL = 0, RVA_REPL_LOOP = 0;
 static const u8 P_APPLY[] = { 0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x55, 0x57, 0x41, 0x54 };
 static u32 RVA_LOOP_RET = 0x11eb9b;   // return address of RunGameSimLoop's call of Apply
 static u32 RVA_APPLY = 0x9e1c10;     // "Simulation Thread: Apply Command" (the commands a simulation iteration applies)
@@ -541,9 +610,168 @@ static i64 g_deferAfterUs = 50000000;
 struct Deferred { void* cmd; long due; long queued; bool exact; };
 static Deferred g_def[256];
 static unsigned g_defHead = 0, g_defTail = 0;
+// Start of every simulation iteration: the positions of the other companies are emptied like the local one's. A game state seen
+// for the first time is a game that has just been loaded: the entity ids given for the previous one mean nothing there (the mod
+// gives them again once it knows its companies).
+static void* g_preSeen[16]; static int g_nPreSeen = 0;
+static void ClearOthersIn(u8* gs, bool learn)
+{
+    if (!gs) return;
+    bool known = false;
+    for (int i = 0; i < g_nPreSeen; i++) if (g_preSeen[i] == gs) known = true;
+    if (!known) {
+        if (!learn) return;
+        if (g_nPreSeen < 16) g_preSeen[g_nPreSeen++] = gs; else g_preSeen[0] = gs;
+        if (g_nOthers) { Buf b; b.str("other companies dropped: a new game state ").hex((u64)gs); LogLine(b); g_nOthers = 0; }
+        return;
+    }
+    long n = g_nOthers;
+    if (n <= 0 || !g_clearPos) return;
+    void* world = *(void**)(gs + 0x18);
+    u32 local = *(u32*)(gs + 0x20c);
+    if (!world) return;
+    for (long i = 0; i < n && i < 8; i++) {
+        u32 e = (u32)g_others[i];
+        if (e && e != local) {
+            g_clearPos(world, e);
+            static long shown = 0;
+            if (shown++ < 3) { Buf b; b.str("positions of company ").dec(e).str(" emptied (this machine plays ").dec(local).str(", learn ").dec(learn ? 1 : 0).str(")"); LogLine(b); }
+        }
+    }
+}
+
+// ---- diagnostic (MPFEVER_WATCH20C=1): which code of the simulation thread reads the local-player word (+0x20c of the game
+// states)? Hardware data breakpoints (debug registers of the simulation thread, armed through an exception of our own) on the
+// word of every game state seen; each new reading instruction is logged once with its call chain.
+static long g_watch = -1;
+static u64 g_watchAddr[4];
+static int g_watchN = 0;
+static u64 g_watchSeen[256];
+static int g_watchSeenN = 0;
+static long g_watchArmedFor = -1;
+static long WINAPI WatchException(void* info)
+{
+    u8* rec = *(u8**)info;
+    u8* ctx = *((u8**)info + 1);
+    u32 code = *(u32*)rec;
+    if (code == 0xE0575443u) {                  // our own arming exception
+        u64 dr7 = 0;
+        for (int i = 0; i < g_watchN && i < 4; i++) {
+            *(u64*)(ctx + 0x48 + 8 * i) = g_watchAddr[i];
+            dr7 |= (1ull << (2 * i)) | (3ull << (16 + 4 * i)) | (3ull << (18 + 4 * i));
+        }
+        *(u64*)(ctx + 0x70) = dr7;
+        *(u64*)(ctx + 0x68) = 0;
+        *(u32*)(ctx + 0x30) |= 0x00100010u;      // CONTEXT_DEBUG_REGISTERS: the new registers are applied when it continues
+        return -1;
+    }
+    if (code != 0x80000004u) return 0;          // single step / hardware breakpoint
+    u64 dr6 = *(u64*)(ctx + 0x68);
+    if (!(dr6 & 0xF)) return 0;
+    *(u64*)(ctx + 0x68) = 0;
+    u64 rip = *(u64*)(ctx + 0xF8);
+    if (rip >= g_textStart && rip < g_textEnd) {
+        bool seen = false;
+        for (int i = 0; i < g_watchSeenN; i++) if (g_watchSeen[i] == rip) seen = true;
+        if (!seen && g_watchSeenN < 256) {
+            g_watchSeen[g_watchSeenN++] = rip;
+            Buf b; b.str("watch20c: access before ").hex(rip - g_base).str(" thread ").dec(GetCurrentThreadId());
+            LogLine(b);
+            LogStack("watch20c", g_watchSeenN, *(uptr**)(ctx + 0x98));
+        }
+    }
+    return -1;
+}
+
+// every thread of the game (not only the simulation thread): debug registers set from outside, thread suspended
+typedef HANDLE (WINAPI* SnapF)(DWORD, DWORD);
+typedef BOOL (WINAPI* T32F)(HANDLE, void*);
+typedef HANDLE (WINAPI* OpenThreadF)(DWORD, BOOL, DWORD);
+typedef DWORD (WINAPI* SuspF)(HANDLE);
+typedef BOOL (WINAPI* CtxF)(HANDLE, void*);
+typedef DWORD (WINAPI* PidF)();
+static DWORD WINAPI WatchAllThreads(void*)
+{
+    Sleep(1500);
+    HMODULE k = GetModuleHandleW(L"kernel32.dll");
+    auto snap = (SnapF)GetProcAddress(k, "CreateToolhelp32Snapshot");
+    auto first = (T32F)GetProcAddress(k, "Thread32First");
+    auto next = (T32F)GetProcAddress(k, "Thread32Next");
+    auto openT = (OpenThreadF)GetProcAddress(k, "OpenThread");
+    auto susp = (SuspF)GetProcAddress(k, "SuspendThread");
+    auto res = (SuspF)GetProcAddress(k, "ResumeThread");
+    auto getc = (CtxF)GetProcAddress(k, "GetThreadContext");
+    auto setc = (CtxF)GetProcAddress(k, "SetThreadContext");
+    auto pid = (PidF)GetProcAddress(k, "GetCurrentProcessId");
+    if (!snap || !first || !next || !openT || !susp || !res || !getc || !setc || !pid) return 0;
+    HANDLE h = snap(4, 0);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    u32 te[7] = { 28 };
+    static u8 ctxbuf[0x4D0 + 32];
+    u8* ctx = (u8*)(((uptr)ctxbuf + 15) & ~(uptr)15);
+    DWORD me = GetCurrentThreadId(), mypid = pid();
+    int n = 0;
+    if (first(h, te)) do {
+        if (te[3] != mypid || te[2] == me) continue;
+        HANDLE t = openT(0x0002 | 0x0008 | 0x0010, 0, te[2]);
+        if (!t) continue;
+        if (susp(t) != (DWORD)-1) {
+            for (int i = 0; i < 0x4D0; i++) ctx[i] = 0;
+            *(u32*)(ctx + 0x30) = 0x00100010u;
+            if (getc(t, ctx)) {
+                u64 dr7 = 0;
+                for (int i = 0; i < g_watchN && i < 4; i++) {
+                    *(u64*)(ctx + 0x48 + 8 * i) = g_watchAddr[i];
+                    dr7 |= (1ull << (2 * i)) | (3ull << (16 + 4 * i)) | (3ull << (18 + 4 * i));
+                }
+                *(u64*)(ctx + 0x70) = dr7;
+                *(u32*)(ctx + 0x30) = 0x00100010u;
+                if (setc(t, ctx)) n++;
+            }
+            res(t);
+        }
+        CloseHandle(t);
+    } while (next(h, te));
+    CloseHandle(h);
+    Buf b; b.str("watch20c: armed on ").dec(n).str(" thread(s), ").dec(g_watchN).str(" word(s)"); LogLine(b);
+    return 0;
+}
+
+static void WatchAdd(u8* gs)
+{
+    if (g_watch != 1 || !gs) return;
+    u64 addr = (u64)(gs + 0x20c);
+    for (int i = 0; i < g_watchN; i++) if (g_watchAddr[i] == addr) return;
+    if (g_watchN >= 2) return;
+    g_watchAddr[g_watchN++] = addr;
+    if (g_watchN == 2) { HANDLE t = CreateThread(0, 0, WatchAllThreads, 0, 0, 0); if (t) CloseHandle(t); }
+}
+
+static void WatchArm(u8* gs)
+{
+    if (g_watch < 0) {
+        char v[4];
+        g_watch = GetEnvironmentVariableA("MPFEVER_WATCH20C", v, 3) > 0 ? 1 : 0;
+        if (g_watch) AddVectoredExceptionHandler(1, WatchException);
+    }
+    if (!g_watch || !gs) return;
+    u64 addr = (u64)(gs + 0x20c);
+    bool known = false;
+    for (int i = 0; i < g_watchN; i++) if (g_watchAddr[i] == addr) known = true;
+    if (!known && g_watchN < 2) { g_watchAddr[g_watchN++] = addr; g_watchArmedFor = -1; }
+    if (g_watchArmedFor != g_watchN) {
+        g_watchArmedFor = g_watchN;
+        RaiseException(0xE0575443u, 0, 0, 0);
+        Buf b; b.str("watch20c: armed on ").dec(g_watchN).str(" game state(s), thread ").dec(GetCurrentThreadId()); LogLine(b);
+    }
+}
+
 extern "C" u64 PreIterDetour(void* a)
 {
     g_iter++;
+    if (g_iter == 1) { Buf t; t.str("simulation thread ").dec(GetCurrentThreadId()).str(", interface thread ").dec(g_mainTid); LogLine(t); }
+    ClearOthersIn(a ? *(u8**)((u8*)a + 8) : 0, true);
+    WatchArm(a ? *(u8**)((u8*)a + 8) : 0);
     // commands moved aside (exact-iteration builds, or the MPFEVER_DEFER_ITERS test) whose iteration has come, in queue order
     for (unsigned i = g_defHead; i != g_defTail; i++) {
         Deferred& d = g_def[i % 256];
@@ -720,7 +948,9 @@ static int FindGrids(const u8* pay, GridHit* out, int max)
         u64 b = *(const u64*)(pay + off + 0x10), e = *(const u64*)(pay + off + 0x18), c = *(const u64*)(pay + off + 0x20);
         if (!b || e <= b || c < e || ((b | e) & 3)) continue;
         u64 bytes = e - b, cells = (u64)w * (u64)h;
-        u32 elem = bytes == cells * 8 ? 8 : (bytes == cells ? 1 : 0);
+        u32 elem = 0;
+        static const u32 sizes[] = { 8, 1, 2, 4, 12, 16 };
+        for (u32 sz : sizes) if (bytes == cells * sz) { elem = sz; break; }
         if (!elem || !Readable((void*)b, bytes)) continue;
         out[n].off = off; out[n].x0 = hd[0]; out[n].y0 = hd[1]; out[n].w = w; out[n].h = h;
         out[n].elem = elem; out[n].cells = (u8*)b; out[n].bytes = bytes;
@@ -766,7 +996,17 @@ static void TerrainCapture(u8* pay)
     GridHit* hg = 0;
     int extra = 0;
     for (int i = 0; i < n; i++) { if (hits[i].elem == 8 && !hg) hg = &hits[i]; else extra++; }
-    if (!hg) return;
+    if (!hg) {
+        // diagnostic (ground paint, tree brush...): a command with grids but no height cells
+        static long shown = 0;
+        if (n > 0 && shown < 40) {
+            shown++;
+            Buf b; b.str("terrain: command without height cells, ").dec(n).str(" grid(s):");
+            for (int i = 0; i < n && i < 4; i++) b.str(" [+").hex(hits[i].off).str(" ").dec(hits[i].x0).str(",").dec(hits[i].y0).str(" ").dec(hits[i].w).str("x").dec(hits[i].h).str(" elem ").dec(hits[i].elem).str("]");
+            LogLine(b);
+        }
+        return;
+    }
     if (hg->bytes > (24ull << 20)) {      // 3 million cells: copying it would stall the game; the mod falls back to a reload
         Buf b; b.str("terrain: edit of ").dec(hg->w).str("x").dec(hg->h).str(" cells is too large to copy"); LogLine(b);
         return;
@@ -927,9 +1167,61 @@ static void DumpPayload(const u8* pay, const char* tag)
     HeapFree(GetProcessHeap(), 0, txt);
 }
 
+// Writes the machine's company (player entity) into the game state's local-player word. The word is read by the interface and the
+// native tools (they act as that player), and re-written whenever a loaded game replaced the state object.
+static void ApplyLocalPlayer(const char* why)
+{
+    // The engine has more than one game-state object calling Apply (two were seen next to each other at the start of a game): the
+    // word is written into every one, at the moment it applies a command (so it is alive). A state never seen before while a
+    // value is set is a game that has just been loaded (resynchronisation): the entity ids of the previous one mean nothing
+    // there until the mod asks again (it does, every few seconds).
+    static void* seen[16]; static int nseen = 0;
+    bool known = false;
+    for (int i = 0; i < nseen; i++) if (seen[i] == g_slot) known = true;
+    if (!known) {
+        if (nseen < 16) seen[nseen++] = g_slot; else seen[0] = g_slot;
+        if (g_localPlayer && why[0] == 'a') {
+            Buf b; b.str("local player ").dec(g_localPlayer).str(" dropped: a new game state ").hex((u64)g_slot); LogLine(b);
+            g_localPlayer = 0;
+            return;
+        }
+    }
+    long want = g_localPlayer;
+    if (!want || !g_slot) return;
+    volatile u32* w = (volatile u32*)((u8*)g_slot + 0x20c);
+    u32 cur = *w;
+    if (cur == (u32)want) return;
+    *w = (u32)want;
+    static long shown = 0;
+    if (shown++ >= 40) return;
+    Buf b; b.str("local player ").dec(cur).str(" -> ").dec(want).str(" (").str(why).str(", state ").hex((u64)g_slot).str(")"); LogLine(b);
+}
+
+extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
+{
+    u32 before = dst ? *(u32*)((u8*)dst + 0x20c) : 0;
+    // end of a simulation iteration: the positions the other companies earned during it are emptied before the state is copied for
+    // the interface, so that it never shows the money popups of the companies this machine does not play
+    static long replClear = -1;
+    if (replClear < 0) { char v[4]; replClear = GetEnvironmentVariableA("MPFEVER_NOREPLCLEAR", v, 3) > 0 ? 0 : 1; }
+    if (replClear && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) ClearOthersIn((u8*)src, false);
+    WatchAdd((u8*)src); WatchAdd((u8*)dst);
+    u64 r = g_replOrig(src, dst, flag);
+    static long n = 0;
+    if (n < 80) {
+        n++;
+        Buf b; b.str("replicate ").hex((u64)src).str(" (word ").dec(src ? *(u32*)((u8*)src + 0x20c) : 0).str(") -> ").hex((u64)dst)
+            .str(" (word ").dec(before).str(" -> ").dec(dst ? *(u32*)((u8*)dst + 0x20c) : 0).str(") from ").hex((u32)((uptr)_ReturnAddress() - g_base))
+            .str(", Apply states ").hex((u64)g_slot);
+        LogLine(b);
+    }
+    return r;
+}
+
 extern "C" u64 ApplyDetour(void* a, void* b)
 {
     g_slot = a;
+    ApplyLocalPlayer("apply");
     u8* pay = *(u8**)b;
     bool inLoop = (u32)((uptr)_ReturnAddress() - g_base) == RVA_LOOP_RET;    // the loop of RunGameSimLoop (the other callers apply one command at once)
     u32 kind = pay ? *(u8*)(pay + 0x9b8) : 255;
@@ -976,8 +1268,42 @@ static void ReleaseOne()
     Buf b; b.str("released build ").dec(h->id).str(" (tool site ").hex(h->site).str(")"); LogLine(b);
 }
 
+static bool Writable(const void* p, u64 n)
+{
+    u64 a = (u64)p, end = a + n;
+    while (a < end) {
+        MEMORY_BASIC_INFORMATION mi;
+        if (!VirtualQuery((void*)a, &mi, sizeof(mi))) return false;
+        if (mi.State != 0x1000 || (mi.Protect & 0x101) || !(mi.Protect & 0xCC)) return false;     // not guarded / no access; writable
+        a = (u64)mi.BaseAddress + mi.RegionSize;
+    }
+    return true;
+}
+
+// The interface's construction tools issue their builds for the savegame's company (its entity is written everywhere in the command:
+// the context's player at +0x36c, the owner of each new construction, street segment, stop...), whatever company this machine
+// plays. A machine playing another company has the savegame company's entity replaced by its own in the command held at the tool's
+// Add: it then builds, pays and owns for its own company. Only the command's own vectors (begin/end/capacity triples stored in the
+// first 0x9c0 bytes) are visited, and only words equal to the savegame company's entity change. Returns the number of words changed.
+static int OwnerFix(u8* pay, u32 from, u32 to, int* inVectors)
+{
+    int n = 0, nv = 0;
+    u32* cp = (u32*)(pay + 0x36c);
+    if (*cp == from) { *cp = to; n++; }
+    for (int o = 0; o + 24 <= 0x9c0; o += 8) {
+        u64 b = *(u64*)(pay + o), e = *(u64*)(pay + o + 8), c = *(u64*)(pay + o + 16);
+        if (b < 0x10000 || b > 0x00007fffffffffffull || e <= b || c < e) continue;
+        if (((e - b) & 3) || (e - b) > (32u << 20) || (c - b) > (64u << 20)) continue;
+        if (!Writable((void*)b, e - b)) continue;
+        for (u32* q = (u32*)b; q < (u32*)e; q++) if (*q == from) { *q = to; n++; nv++; }
+    }
+    if (inVectors) *inVectors = nv;
+    return n;
+}
+
 extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* progress)
 {
+    { static long once = 0; if (_InterlockedIncrement(&once) == 1) { Buf t; t.str("commands added from thread ").dec(GetCurrentThreadId()); LogLine(t); } }
     u32 caller = (u32)((uptr)_ReturnAddress() - g_base);
     if (g_timing) TimingLine("add", caller, g_released);
     if (!g_inRelease) ReadControl();
@@ -1003,6 +1329,22 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
         }
     }
     if (g_dumpOn) { u8* pay = cmd ? *(u8**)cmd : 0; if (pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) { char t[16]; Buf tb; tb.str("c").hex(caller); for (int i = 0; i < tb.n && i < 15; i++) t[i] = tb.s[i]; t[tb.n < 15 ? tb.n : 15] = 0; DumpPayload(pay, t); } }
+    if (IsUiSite(caller)) {
+        u8* pay = cmd ? *(u8**)cmd : 0;
+        if (pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) {
+            u32 ctxBefore = *(u32*)(pay + 0x36c);
+            int nv = 0, n = 0;
+            bool fix = g_canon && g_localPlayer && g_canon != g_localPlayer;
+            if (fix) n = OwnerFix(pay, (u32)g_canon, (u32)g_localPlayer, &nv);
+            static long shown = 0;
+            if (shown++ < 60) {
+                Buf b; b.str("tool build from ").hex(caller).str(": context player ").dec(ctxBefore).str(", this machine plays ").dec(g_localPlayer)
+                    .str(", savegame company ").dec(g_canon);
+                if (fix) b.str(": ").dec(n).str(" owner word(s) changed, ").dec(nv).str(" of them in vectors");
+                LogLine(b);
+            }
+        }
+    }
     bool testDefer = false;
     // (test mode removed: the Lua sendCommand path reads the command back through Add's out handle, which a deferral
     // leaves empty; only the UI tool sites, which merely destroy that handle, can be held)
@@ -1266,6 +1608,19 @@ static DWORD WINAPI SteamThread(void*)
     auto reg = (RegisterCallbackF)GetProcAddress(sa, "SteamAPI_RegisterCallback");
     if (reg) reg(&g_joinCb, 337);
     { Buf b; b.str("steam: invitations ready").str(reg ? "" : " (no join callback)"); LogLine(b); }
+    // the player's Steam account (steam_id.txt): the mod knows a player by it, whatever name the player types
+    {
+        typedef u64 (*GetSteamIdF)(void* self);
+        auto getUser = (SteamIfaceF)GetProcAddress(sa, "SteamAPI_SteamUser_v023");
+        auto getId = (GetSteamIdF)GetProcAddress(sa, "SteamAPI_ISteamUser_GetSteamID");
+        void* user = getUser ? getUser() : 0;
+        u64 sid = (user && getId) ? getId(user) : 0;
+        if (sid) {
+            Buf b; b.dec(sid).str("\n");
+            WriteSessionFile("steam_id.txt", b.s, b.n);
+        }
+        Buf l; l.str("steam: account ").str(sid ? "known" : "unknown"); LogLine(l);
+    }
     char last[64] = {};
     static char buf[1024];
     for (;;) {
@@ -1362,6 +1717,8 @@ static bool SelectBuild(u32 stamp)
         if (b.stamp != stamp) continue;
         RVA_ADD = b.add; RVA_CMD_MOVE = b.move; RVA_CMD_DTOR = b.dtor; RVA_HANDLE_DTOR = b.handleDtor; RVA_APPLY = b.apply;
         RVA_SWAP = b.swap; RVA_SYNC = b.sync; RVA_PREITER = b.preIter; RVA_LOOP_RET = b.loopRet;
+        RVA_REPL = (stamp == 0x6ac50427) ? 0x255e60 : 0;      // build 40420 only
+        RVA_REPL_LOOP = (stamp == 0x6ac50427) ? 0x11ea9f : 0;      // return address of the simulation loop's call
         UI_ADD_SITES = b.sites; UI_ADD_N = b.nSites;
         g_knownLua = b.lua; g_knownPool = b.pool;
         return true;
@@ -1390,6 +1747,91 @@ static u8* FindUnique(uptr base, const u8* pat, int len, u32 hintRva = 0)
         return count == 1 ? found : 0;
     }
     return 0;
+}
+
+// ---------------------------------------------------------------- the local player, for the interface only
+// In the companies mode the word at game state +0x20c is this machine's company (the interface and its tools act as it). The game's
+// scripts also run in the simulation, on other threads, and ask the engine for "the player" there too: api.engine.util.getPlayer
+// (binding 0x24f0970) and another binding that passes it on (0x24da690). There, every game must get the SAME company (the
+// savegame's, g_canon), else each game's simulation follows another company and the games drift apart (a passenger, a payment...).
+// Both readings are redirected to a stub: on any thread but the main (interface) thread, and once the canon is known, the canon.
+
+static u8* EmitImm64(u8* p, u64 v) { *(u64*)p = v; return p + 8; }
+
+static bool PatchPlayerRead(u32 siteRva, const u8* expect, int expectLen, int siteLen, u8* stub, int stubLen)
+{
+    u8* site = (u8*)(g_base + siteRva);
+    if (memcmp(site, expect, expectLen) != 0) { Buf b; b.str("player read at ").hex(siteRva).str(": unexpected code, left alone"); LogLine(b); return false; }
+    DWORD old;
+    if (!VirtualProtect(site, siteLen, PAGE_EXECUTE_READWRITE, &old)) return false;
+    u8 patch[32];
+    patch[0] = 0xFF; patch[1] = 0x25; *(u32*)(patch + 2) = 0; *(u64*)(patch + 6) = (u64)stub;
+    for (int k = 14; k < siteLen; k++) patch[k] = 0x90;
+    memcpy(site, patch, siteLen);
+    VirtualProtect(site, siteLen, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, siteLen);
+    (void)stubLen;
+    return true;
+}
+
+static void PatchPlayerReads()
+{
+    if (RVA_REPL != 0x255e60) return;       // build 40420 only (the sites were found there)
+    u8* page = (u8*)VirtualAlloc(0, 4096, 0x3000 /* MEM_COMMIT|MEM_RESERVE */, 0x40 /* PAGE_EXECUTE_READWRITE */);
+    if (!page) return;
+    int done = 0;
+    // A: api.engine.util.getPlayer: movsxd rdx,[rax+20Ch] / mov rcx,rbx / call lua_pushinteger, then back at +15
+    {
+        const u32 rva = 0x24f0a18;
+        static const u8 expect[] = { 0x48, 0x63, 0x90, 0x0C, 0x02, 0x00, 0x00, 0x48, 0x8B, 0xCB, 0xE8 };
+        u8* site = (u8*)(g_base + rva);
+        u64 push = (u64)(site + 15 + *(i32*)(site + 11));
+        u8* p = page;
+        *p++ = 0x50;                                                                   // push rax
+        *p++ = 0x8B; *p++ = 0x90; *p++ = 0x0C; *p++ = 0x02; *p++ = 0x00; *p++ = 0x00;  // mov edx,[rax+20Ch]
+        *p++ = 0x65; *p++ = 0x8B; *p++ = 0x0C; *p++ = 0x25; *p++ = 0x48; *p++ = 0; *p++ = 0; *p++ = 0;   // mov ecx,gs:[48h]
+        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)&g_mainTid);                  // mov r11,&mainTid
+        *p++ = 0x41; *p++ = 0x3B; *p++ = 0x0B;                                         // cmp ecx,[r11]
+        *p++ = 0x74; *p++ = 0x13;                                                      // je L1
+        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)&g_canon);                    // mov r11,&canon
+        *p++ = 0x41; *p++ = 0x8B; *p++ = 0x0B;                                         // mov ecx,[r11]
+        *p++ = 0x85; *p++ = 0xC9;                                                      // test ecx,ecx
+        *p++ = 0x74; *p++ = 0x02;                                                      // je L1
+        *p++ = 0x8B; *p++ = 0xD1;                                                      // mov edx,ecx
+        *p++ = 0x48; *p++ = 0x63; *p++ = 0xD2;                                         // L1: movsxd rdx,edx
+        *p++ = 0x58;                                                                   // pop rax
+        *p++ = 0x48; *p++ = 0x8B; *p++ = 0xCB;                                         // mov rcx,rbx
+        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, push);                             // mov r11,lua_pushinteger
+        *p++ = 0x41; *p++ = 0xFF; *p++ = 0xD3;                                         // call r11
+        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)(site + 15));                 // mov r11,back
+        *p++ = 0x41; *p++ = 0xFF; *p++ = 0xE3;                                         // jmp r11
+        if (PatchPlayerRead(rva, expect, (int)sizeof(expect), 15, page, (int)(p - page))) done++;
+    }
+    // B: the other binding: mov eax,[rax+20Ch] / mov [rsp+20h],eax / mov r9,[rdx+180h], then back at +17
+    {
+        const u32 rva = 0x24da741;
+        static const u8 expect[] = { 0x8B, 0x80, 0x0C, 0x02, 0x00, 0x00, 0x89, 0x44, 0x24, 0x20, 0x4C, 0x8B, 0x8A, 0x80, 0x01, 0x00, 0x00 };
+        u8* site = (u8*)(g_base + rva);
+        u8* stub = page + 256;
+        u8* p = stub;
+        *p++ = 0x8B; *p++ = 0x80; *p++ = 0x0C; *p++ = 0x02; *p++ = 0x00; *p++ = 0x00;  // mov eax,[rax+20Ch]
+        *p++ = 0x65; *p++ = 0x44; *p++ = 0x8B; *p++ = 0x1C; *p++ = 0x25; *p++ = 0x48; *p++ = 0; *p++ = 0; *p++ = 0;   // mov r11d,gs:[48h]
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_mainTid);                  // mov r10,&mainTid
+        *p++ = 0x45; *p++ = 0x3B; *p++ = 0x1A;                                         // cmp r11d,[r10]
+        *p++ = 0x74; *p++ = 0x15;                                                      // je L1
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_canon);                    // mov r10,&canon
+        *p++ = 0x45; *p++ = 0x8B; *p++ = 0x1A;                                         // mov r11d,[r10]
+        *p++ = 0x45; *p++ = 0x85; *p++ = 0xDB;                                         // test r11d,r11d
+        *p++ = 0x74; *p++ = 0x03;                                                      // je L1
+        *p++ = 0x41; *p++ = 0x8B; *p++ = 0xC3;                                         // mov eax,r11d
+        *p++ = 0x89; *p++ = 0x44; *p++ = 0x24; *p++ = 0x20;                            // L1: mov [rsp+20h],eax
+        *p++ = 0x4C; *p++ = 0x8B; *p++ = 0x8A; *p++ = 0x80; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00;   // mov r9,[rdx+180h]
+        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)(site + 17));                 // mov r11,back
+        *p++ = 0x41; *p++ = 0xFF; *p++ = 0xE3;                                         // jmp r11
+        if (PatchPlayerRead(rva, expect, (int)sizeof(expect), 17, stub, (int)(p - stub))) done++;
+    }
+    FlushInstructionCache(GetCurrentProcess(), page, 4096);
+    Buf b; b.str("local player: ").dec(done).str(" engine reading(s) give the savegame's company outside the interface thread ").dec(g_mainTid); LogLine(b);
 }
 
 static DWORD WINAPI Init(void*)
@@ -1432,12 +1874,22 @@ static DWORD WINAPI Init(void*)
     }
     InstallDetour(RVA_ADD, P_ADD, sizeof(P_ADD), (void*)&AddDetour, (void**)&g_addOrig);
     InstallDetour(RVA_APPLY, P_APPLY, sizeof(P_APPLY), (void*)&ApplyDetour, (void**)&g_applyOrig);
+    {
+        // the pre-iteration function ends in a jump to the engine's ClearPositions(world, player): found from that jump
+        u8* tp = (u8*)(g_base + RVA_PREITER);
+        if (memcmp(tp, P_PREITER, sizeof(P_PREITER)) == 0 && tp[sizeof(P_PREITER)] == 0xE9) {
+            g_clearPos = (ClearPosF)(tp + sizeof(P_PREITER) + 5 + *(int*)(tp + sizeof(P_PREITER) + 1));
+            Buf t; t.str("ClearPositions found at ").hex((u64)g_clearPos - g_base); LogLine(t);
+        }
+        if (InstallDetour(RVA_PREITER, P_PREITER, sizeof(P_PREITER), (void*)&PreIterDetour, (void**)&g_preIterOrig)) g_preIterOn = true;
+        if (RVA_REPL) InstallDetour(RVA_REPL, P_REPL, sizeof(P_REPL), (void*)&ReplDetour, (void**)&g_replOrig);
+    }
+    PatchPlayerReads();
     { char v[4]; if (GetEnvironmentVariableA("MPFEVER_TIMING", v, 3) > 0) {
         QueryPerformanceFrequency(&g_qpf);
         if (g_qpf > 0) {
             NowUs();
             _InterlockedExchange(&g_timing, 1);
-            InstallDetour(RVA_PREITER, P_PREITER, sizeof(P_PREITER), (void*)&PreIterDetour, (void**)&g_preIterOrig);
             InstallDetour(RVA_SYNC, P_SYNC, sizeof(P_SYNC), (void*)&SyncDetour, (void**)&g_syncOrig);
             InstallDetour(RVA_SWAP, P_SWAP, sizeof(P_SWAP), (void*)&SwapDetour, (void**)&g_swapOrig);
             { char gv[16]; DWORD gn = GetEnvironmentVariableA("MPFEVER_GATE_MS", gv, 15); long g = 0; for (DWORD i = 0; i < gn && gv[i] >= '0' && gv[i] <= '9'; i++) g = g * 10 + (gv[i] - '0'); g_gateMs = g; }
@@ -1626,6 +2078,7 @@ extern "C" BOOL WINAPI DllMain(HMODULE inst, DWORD reason, void*)
 {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(inst);
+        g_mainTid = (long)GetCurrentThreadId();      // the game loads this module on its main thread, the interface's
         char d[8];
         if (GetEnvironmentVariableA("MPFEVER_DIR", d, 1) > 0) {
             g_base = (uptr)GetModuleHandleW(0);

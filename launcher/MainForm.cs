@@ -40,7 +40,7 @@ namespace MPFever
 
     sealed class MainForm : Form
     {
-        public const string Version = "0.2.10-experimental";
+        public const string Version = "0.3.3-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -118,6 +118,8 @@ namespace MPFever
         readonly HashSet<string> ignoredParts = new HashSet<string>();
         // parts every game corrects by itself from the host's values (not a reason to reload)
         static readonly HashSet<string> CorrectedParts = new HashSet<string> { "money" };
+        // game state that is never a local measure, even when it differs right after a reload (a company a game missed must be seen)
+        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "constructions", "lines" };
         // slow drift of the engine's own simulation (passengers boarding, vehicle positions, the town statistics that
         // follow): not caused by a missed action; reloaded only when it lasts, so that players are not interrupted
         // every two minutes
@@ -348,7 +350,7 @@ namespace MPFever
                     {
                         bool first = lastMenuReq == null && File.GetLastWriteTimeUtc(Path.Combine(menuGame.Dir, "menu_req.txt")) < DateTime.UtcNow.AddSeconds(-30);
                         lastMenuReq = req[0];
-                        if (!first) OnMenuRequest(req[1], req[2], req[3]);
+                        if (!first) OnMenuRequest(req[1], req[2], req[3], req.Length > 4 ? req[4] : "");
                     }
                     if (joinPending && started && !resyncing)
                     {
@@ -361,7 +363,7 @@ namespace MPFever
             }
         }
 
-        void OnMenuRequest(string cmd, string arg, string name)
+        void OnMenuRequest(string cmd, string arg, string name, string option = "")
         {
             name = new string((name ?? "").Trim().Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
             if (name == "") name = new string(Environment.UserName.Where(char.IsLetterOrDigit).ToArray());
@@ -371,6 +373,9 @@ namespace MPFever
             if (cmd == "host")
             {
                 if (hostGame != null || clients.Count > 0) return;
+                // the host's choice: everybody plays one company ("shared") or each player has its own ("separate")
+                if (Environment.GetEnvironmentVariable("MPFEVER_COMPANIES") == null) companyMode = option == "separate" ? "separate" : "shared";
+                Log.W(T($"Mode des entreprises : {companyMode}", $"Company mode: {companyMode}"));
                 menuGame.SetIdentity(name, "host");
                 int port = (int)portBox.Value;
                 try { StartHost(name, false, menuGame); }
@@ -490,6 +495,12 @@ namespace MPFever
                 foreach (var scenario in scenarios)
                 foreach (var role in new[] { "host", "client" })
                 {
+                    if (scenario == "resync")
+                    {
+                        // every game reloads the host's savegame (as when a player joins): the companies must come back as they were
+                        if (role == "host") { resyncing = true; AutoLine("resynchronisation requested"); Resync("autotest"); Thread.Sleep(8000); }
+                        continue;
+                    }
                     lock (autoDone) autoDone.Remove(role);
                     AutoLine("scenario " + scenario + " by " + role);
                     HostSend(Msg.Make(scenario, hostName, "{[\"role\"]=\"" + role + "\",[\"offset\"]=" + (role == "host" ? 0 : 7) + (role == "host" ? ",[\"ab\"]=true" : "") + "}"));
@@ -726,11 +737,25 @@ namespace MPFever
             return RoundUpToStep(MaxClock() + Step * (4 + 2 * sp));
         }
 
+        /// <summary>"shared" (everybody plays the same company) or "separate" (one company per player), chosen by the host
+        /// when it hosts (MPFEVER_COMPANIES=separate for the developer tests).</summary>
+        string companyMode = Environment.GetEnvironmentVariable("MPFEVER_COMPANIES") == "separate" ? "separate" : "shared";
+
+        /// <summary>Starting capital of a new company: MPFEVER_COMPANY_START, else companystart=N in mpfever_settings.txt, else 2,000,000.</summary>
+        static string StartMoney()
+        {
+            var v = Environment.GetEnvironmentVariable("MPFEVER_COMPANY_START");
+            if (string.IsNullOrEmpty(v)) LoadSettings().TryGetValue("companystart", out v);
+            return long.TryParse(v ?? "", out long n) && n >= 0 ? n.ToString() : "2000000";
+        }
+
         string SessionPayload()
         {
             lock (sessionGate)
                 return "{[\"started\"]=" + (started ? "true" : "false") + ",[\"speed\"]=" + speed +
-                       (pauseAt.HasValue ? ",[\"pauseAt\"]=" + pauseAt.Value : "") + "}";
+                       (pauseAt.HasValue ? ",[\"pauseAt\"]=" + pauseAt.Value : "") +
+                       ",[\"cmode\"]=\"" + companyMode + "\"" +
+                       (companyMode == "separate" ? ",[\"cstart\"]=" + StartMoney() : "") + "}";
         }
 
         void BroadcastSession() => HostSend(Msg.Make("session", hostName ?? "hote", SessionPayload()));
@@ -976,8 +1001,9 @@ namespace MPFever
             var diffKeys = diffs.Select(d => DiffKey(d)).ToList();
             if (n == postResyncHashN && diffKeys.Count > 0)
             {
-                foreach (var k in diffKeys) ignoredParts.Add(k);
-                Log.W(T("Mesures propres à chaque jeu (ignorées désormais) : ", "Local measures (ignored from now on): ") + string.Join(", ", diffKeys));
+                var local = diffKeys.Where(k => !NeverLocalParts.Contains(k)).ToList();
+                foreach (var k in local) ignoredParts.Add(k);
+                if (local.Count > 0) Log.W(T("Mesures propres à chaque jeu (ignorées désormais) : ", "Local measures (ignored from now on): ") + string.Join(", ", local));
             }
             diffs = diffs.Where(d => !ignoredParts.Contains(DiffKey(d))).ToList();
             CheckResync(diffs.Select(d => DiffKey(d)).Where(k => !CorrectedParts.Contains(k)).ToList(), n);
@@ -992,8 +1018,12 @@ namespace MPFever
                 // simulation drift (or money, corrected at once): no alarm, a line per minute
                 bool changed = !syncText.StartsWith("SYNC ~");
                 syncText = T("SYNC ~ (légère dérive : ", "SYNC ~ (slight drift: ") + string.Join(",", diffs.Select(d => DiffKey(d))) + ")";
-                if (changed || n % 6 == 1) Log.W(T($"Synchronisation n°{n} (temps {time}) : légère dérive de la simulation ({string.Join(", ", diffs.Select(d => DiffKey(d)))}), corrigée si elle dure",
-                    $"Sync check #{n} (time {time}): slight simulation drift ({string.Join(", ", diffs.Select(d => DiffKey(d)))}), corrected if it lasts"));
+                if (changed || n % 6 == 1)
+                {
+                    Log.W(T($"Synchronisation n°{n} (temps {time}) : légère dérive de la simulation ({string.Join(", ", diffs.Select(d => DiffKey(d)))}), corrigée si elle dure",
+                        $"Sync check #{n} (time {time}): slight simulation drift ({string.Join(", ", diffs.Select(d => DiffKey(d)))}), corrected if it lasts"));
+                    foreach (var d in diffs) Log.W("    ~ " + d);
+                }
             }
             else
             {

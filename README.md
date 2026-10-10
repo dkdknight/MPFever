@@ -1,6 +1,6 @@
 # MPFever – Multiplayer for Transport Fever 3
 
-Experimental cooperative multiplayer for Transport Fever 3: several players run the same company, each in their own game, connected over the internet or a local network.
+Experimental cooperative multiplayer for Transport Fever 3: several players play the same world, in one shared company or each with their own company, each in their own game, connected over the internet or a local network.
 
 The game starts from `MPFever.exe`; a multiplayer button in the main menu lets you host one of your savegames or join a host by IP address (the host's game is received automatically). Steam invitations are supported. Roads, tracks, signals, stations, depots, buildings and the other construction tools are replicated exactly in every game.
 

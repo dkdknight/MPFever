@@ -32,4 +32,5 @@ GetModuleFileNameW
 QueryPerformanceCounter
 QueryPerformanceFrequency
 GetCurrentThreadId
+RaiseException
 DeleteFileA

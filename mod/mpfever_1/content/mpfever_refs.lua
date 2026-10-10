@@ -61,9 +61,26 @@ end
 
 local describe
 
+-- a tree, a plant or a rock (placed with the brush): an entity of models without a construction, known by its first model and place
+local function assetPlace(e)
+	local mil = comp(e, "MODEL_INSTANCE_LIST")
+	if not mil then return nil end
+	local p, m = nil, nil
+	pcall(function()
+		local inst = mil.fatInstances[1] or mil.thinInstances[1]
+		m = inst.modelId
+		p = matPos(inst.transf)
+	end)
+	return p, m
+end
+
 local function describeCon(e)
 	local c = comp(e, "CONSTRUCTION")
-	if not c then return nil end
+	if not c then
+		local p, m = assetPlace(e)
+		if p then return { k = "asset", id = e, p = p, m = m } end
+		return nil
+	end
 	return { k = "con", id = e, f = c.fileName, p = matPos(c.transf) }
 end
 
@@ -187,13 +204,34 @@ end
 
 local resolve
 
+-- trees, plants and rocks: placed with the brush (a construction without a file) on one game, rebuilt with the mod's own construction
+-- on the others (see replayAssets in the bridge): the same thing for a reference
+local function isAssetFile(f)
+	f = tostring(f or "")
+	return f == "" or f:find("mpfever_asset", 1, true) ~= nil
+end
+R.isAssetFile = isAssetFile
+
+function R.withoutAssets(list)
+	local r = {}
+	for _, e in ipairs(list) do
+		local c = comp(e, "CONSTRUCTION")
+		if not (c and isAssetFile(c.fileName)) then r[#r + 1] = e end
+	end
+	return r
+end
+
+local function sameFile(a, b)
+	return a == b or (isAssetFile(a) and isAssetFile(b))
+end
+
 local function resolveCon(r)
 	if not r then return nil end
 	local c = comp(r.id, "CONSTRUCTION")
-	if c and c.fileName == r.f and dist(matPos(c.transf), r.p) < 1 then return r.id end
+	if c and sameFile(c.fileName, r.f) and dist(matPos(c.transf), r.p) < 1 then return r.id end
 	local e, d = nearestWith("CONSTRUCTION", function(x)
 		local cx = comp(x, "CONSTRUCTION")
-		if cx and cx.fileName == r.f then return dist(matPos(cx.transf), r.p) end
+		if cx and sameFile(cx.fileName, r.f) then return dist(matPos(cx.transf), r.p) end
 		return nil
 	end)
 	if e and d < 3 then return e end
@@ -226,6 +264,18 @@ resolve = function(r, bind)
 	if r.key and bind and bind[r.key] then return bind[r.key] end
 	local k = r.k
 	if k == "con" then return resolveCon(r) end
+	if k == "asset" then
+		local p0, m0 = assetPlace(r.id)
+		if p0 and m0 == r.m and dist(p0, r.p) < 0.5 and not comp(r.id, "CONSTRUCTION") then return r.id end
+		local e, d = nearestWith("MODEL_INSTANCE_LIST", function(x)
+			if comp(x, "CONSTRUCTION") then return nil end
+			local p, m = assetPlace(x)
+			if p and m == r.m then return dist(p, r.p) end
+			return nil
+		end)
+		if e and d < 0.5 then return e end
+		return nil
+	end
 	if k == "node" then return resolveNode(r) end
 	if k == "edge" then return resolveEdge(r) end
 	if k == "depot" then
@@ -273,6 +323,11 @@ resolve = function(r, bind)
 		return comp(r.id, "STATION_GROUP") and r.id or nil
 	end
 	if k == "player" then
+		-- companies mode: the company's player entity in THIS game; otherwise this game's player
+		if r.co and R.coEntity then
+			local e = R.coEntity(r.co)
+			if e then return e end
+		end
 		return api.engine.util.getPlayer()
 	end
 	-- plain id (things from the save keep their id everywhere)
@@ -281,6 +336,66 @@ resolve = function(r, bind)
 	return nil
 end
 R.resolve = resolve
+
+-- A station group known by what it is, the same in every game (its entity id may differ): the construction of its first station
+-- (file, position, index) or, for a stop by the road, the ends of its segment and its side.
+function R.sgKey(sg)
+	local d = describe("sg", sg)
+	local s = d and d.st
+	local function r(v) return string.format("%.0f", v or 0) end
+	if s and s.con and s.con.p then
+		return "c:" .. tostring(s.con.f) .. "@" .. r(s.con.p.x) .. "," .. r(s.con.p.y) .. "#" .. tostring(s.i)
+	end
+	if s and s.edge and s.edge.p0 and s.edge.p1 then
+		local a, b = r(s.edge.p0.x) .. "," .. r(s.edge.p0.y), r(s.edge.p1.x) .. "," .. r(s.edge.p1.y)
+		local side = s.side
+		-- (the side is relative to the segment's direction, which may differ between games)
+		if a > b then a, b = b, a; if type(side) == "number" then side = 1 - side end end
+		return "e:" .. a .. "-" .. b .. ":" .. tostring(side)
+	end
+	return "id:" .. tostring(sg)
+end
+
+-- The player entity owning an entity: its own owner, else the owner of its station group's first station, else of its construction
+function R.ownerOf(e)
+	if type(e) ~= "number" or e < 0 then return nil end
+	local function po(x)
+		local c = comp(x, "PLAYER_OWNED")
+		return (c and type(c.player) == "number" and c.player >= 0) and c.player or nil
+	end
+	local p = po(e)
+	if p then return p end
+	local sg = comp(e, "STATION_GROUP")
+	if sg then
+		local first = nil
+		pcall(function() first = sg.stations[1] end)
+		if type(first) == "number" then
+			p = po(first)
+			if p then return p end
+			e = first
+		end
+	end
+	local con = nil
+	pcall(function() con = api.engine.system.streetConnectorSystem.getConstructionEntityForSubconstruction(e) end)
+	if type(con) ~= "number" or con < 0 then pcall(function() con = api.engine.system.streetConnectorSystem.getConstructionEntityForStation(e) end) end
+	if type(con) == "number" and con >= 0 then return po(con) end
+	return nil
+end
+
+-- the station group of an entity the player clicked (a station group, one of its stations, or the station's construction)
+function R.stationGroupOf(e)
+	if type(e) ~= "number" or e < 0 then return nil end
+	if comp(e, "STATION_GROUP") then return e end
+	local st = comp(e, "STATION") and e or nil
+	if not st then
+		local c = comp(e, "CONSTRUCTION")
+		pcall(function() st = c and c.stations[1] or nil end)
+	end
+	if not st then return nil end
+	local sg = nil
+	pcall(function() sg = api.engine.system.stationGroupSystem.getStationGroup(st) end)
+	return (type(sg) == "number" and sg >= 0) and sg or nil
+end
 
 -- ------------------------------------------------------------------ which arguments are entities
 
@@ -309,6 +424,9 @@ function R.translateOut(fn, margs, rev)
 	rev = rev or {}
 	local function ref(kind, e)
 		if type(e) ~= "number" or e < 0 then return e end
+		-- a company's player entity travels as the company number (entity ids of players can differ between games)
+		local co = R.coIdOf and R.coIdOf(e) or nil
+		if co then return { __ref = true, k = "player", id = e, co = co } end
 		if rev[e] then return { __ref = true, key = rev[e], id = e, k = kind } end
 		local d = (kind == "player") and { k = "player", id = e } or describe(kind, e)
 		d = d or { k = kind, id = e }
@@ -330,6 +448,11 @@ function R.translateOut(fn, margs, rev)
 		for _, ce in ipairs(p.toAdd or {}) do
 			if type(ce.playerEntity) == "number" then ce.playerEntity = ref("player", ce.playerEntity) end
 		end
+		for _, eo in ipairs((p.proposal and p.proposal.edgeObjectsToAdd) or {}) do
+			if type(eo) == "table" and type(eo.playerEntity) == "number" and eo.playerEntity >= 0 and R.coIdOf and R.coIdOf(eo.playerEntity) then
+				eo.playerEntity = ref("player", eo.playerEntity)
+			end
+		end
 		local st = p.proposal
 		if type(st) == "table" then
 			for _, n in ipairs(st.addedNodes or {}) do
@@ -337,6 +460,9 @@ function R.translateOut(fn, margs, rev)
 			end
 			for _, s in ipairs(st.addedSegments or {}) do
 				if type(s) == "table" then
+					if type(s.playerOwned) == "table" and type(s.playerOwned.player) == "number" and R.coIdOf and R.coIdOf(s.playerOwned.player) then
+						s.playerOwned.player = ref("player", s.playerOwned.player)
+					end
 					if type(s.entity) == "number" and s.entity >= 0 then s.entity = ref("edge", s.entity) end
 					if type(s.comp) == "table" then
 						if type(s.comp.node0) == "number" and s.comp.node0 >= 0 then s.comp.node0 = ref("node", s.comp.node0) end
@@ -426,21 +552,48 @@ function R.translateIn(margs, bind)
 	return missing
 end
 
+-- order-independent hash of a plain Lua value (much faster than hashing its printed form)
+local function quickHash(hashStr, v, d)
+	local t = type(v)
+	if t == "table" then
+		if d > 10 then return 13 end
+		local acc = 17 + d
+		for k, x in pairs(v) do
+			acc = (acc + (quickHash(hashStr, k, d + 1) * 1000003 + quickHash(hashStr, x, d + 1)) % 4294967296) % 4294967296
+		end
+		return acc
+	elseif t == "number" then
+		if v == math.floor(v) and v > -2147483648 and v < 2147483648 then return (v * 2654435761) % 4294967296 end
+		return hashStr(5, string.format("%.6g", v))
+	elseif t == "string" then
+		return hashStr(3, v)
+	elseif t == "boolean" then
+		return v and 1 or 2
+	end
+	return 0
+end
+
 -- id-independent world fingerprint parts
 function R.contentHash(hashStr, dumpFn)
 	local parts = {}
 	local off = os.getenv("MPFEVER_HASHOFF") or ""
+	R.partCost = {}
 	local function part(name, fn)
 		if off:find(name, 1, true) then return end
+		-- (R.hashSkip: the parts left out of this checkpoint, see the rotation in simHash)
+		if R.hashSkip and R.hashSkip[name] then return end
+		local t0 = os.clock()
 		local ok, v = pcall(fn)
+		R.partCost[name] = os.clock() - t0
 		parts[name] = ok and v or ("ERR " .. tostring(v):sub(1, 100))
 	end
 	local function count(cname, contentFn)
 		local n, acc = 0, 0
 		for _, e in ipairs(R.entitiesWith(cname)) do
-			n = n + 1
-			if contentFn then
-				local s = contentFn(e)
+			-- (contentFn answers false for what is not counted at all)
+			local s = contentFn and contentFn(e) or nil
+			if s ~= false then
+				n = n + 1
 				if s then acc = (acc + hashStr(0, s)) % 4294967296 end
 			end
 		end
@@ -448,8 +601,10 @@ function R.contentHash(hashStr, dumpFn)
 		return n .. "/" .. acc
 	end
 	local function r1(v) return v and string.format("%.0f", v) or "?" end
+	-- (trees, plants and rocks of the brush are left out: see isAssetFile)
 	part("constructions", function() return count("CONSTRUCTION", function(e)
 		local c = comp(e, "CONSTRUCTION")
+		if c and isAssetFile(c.fileName) then return false end
 		local p = c and matPos(c.transf)
 		return c and (tostring(c.fileName) .. "@" .. r1(p and p.x) .. "," .. r1(p and p.y)) or nil
 	end) end)
@@ -464,28 +619,36 @@ function R.contentHash(hashStr, dumpFn)
 		if s1 > s2 then s1, s2 = s2, s1; swapped = true end
 		-- what the road carries beyond its template: decorations (side and model) and which vehicles each lane takes (tram)
 		local deco, lanesig = "", ""
+		-- (a component's members are copies: each list is read once)
+		local decos, nd = nil, 0
+		pcall(function() decos = c.edgeDecorations; nd = #decos end)
+		if nd > 0 then
+			pcall(function()
+				local t = {}
+				for k = 1, nd do
+					local dk = decos[k]
+					-- (the side is relative to the segment's direction, which may differ between games: the canonical one is used)
+					local left = dk[2] and true or false
+					if swapped then left = not left end
+					t[#t + 1] = tostring(dk[1]) .. (left and "l" or "r")
+				end
+				table.sort(t)
+				deco = table.concat(t, ",")
+			end)
+		end
 		pcall(function()
 			local t = {}
-			for k = 1, #c.edgeDecorations do
-				-- (the side is relative to the segment's direction, which may differ between games: the canonical one is used)
-				local left = c.edgeDecorations[k][2] and true or false
-				if swapped then left = not left end
-				t[#t + 1] = tostring(c.edgeDecorations[k][1]) .. (left and "l" or "r")
-			end
-			table.sort(t)
-			deco = table.concat(t, ",")
-		end)
-		pcall(function()
-			local t = {}
-			for k = 1, #c.laneConfigs do
+			local lanes = c.laneConfigs
+			for k = 1, #lanes do
+				local tm = lanes[k].transportModes
 				local m = 0
-				for j = 0, 15 do if c.laneConfigs[k].transportModes[j] then m = m + 2 ^ j end end
+				for j = 0, 15 do if tm[j] then m = m + 2 ^ j end end
 				t[#t + 1] = m
 			end
 			table.sort(t)
 			lanesig = table.concat(t, ",")
 		end)
-		local okd, nd = pcall(function() return #c.edgeDecorations end)
+		local okd = true
 		return s1 .. "-" .. s2 .. tostring(c.roadTemplate) .. "/" .. tostring(okd and nd or 0) .. "/" .. tostring(c.roadStyle)
 			.. "/" .. tostring(c.roadType) .. "/" .. tostring(c.type) .. "/" .. tostring(c.typeIndex) .. "/" .. deco .. "/" .. lanesig .. "/d" .. tostring(c.distance)
 	end) end)
@@ -553,11 +716,16 @@ function R.contentHash(hashStr, dumpFn)
 	-- (the height of the ground is not sampled: api.engine.terrain.getHeightAt called from the game script stalls the game)
 	-- the parameters of every construction that is not a town building (the modules of a modular station...)
 	part("conParams", function() return count("CONSTRUCTION", function(e)
+		if comp(e, "TOWN_BUILDING") then return nil end
 		local c = comp(e, "CONSTRUCTION")
-		if not c or comp(e, "TOWN_BUILDING") then return nil end
+		if not c then return nil end
+		if isAssetFile(c.fileName) then return false end
 		local p = matPos(c.transf)
 		local d = ""
-		pcall(function() d = dumpFn(c.params) end)
+		pcall(function()
+			local params = c.params
+			if type(params) == "table" then d = tostring(quickHash(hashStr, params, 0)) else d = dumpFn(params) end
+		end)
 		return tostring(c.fileName) .. "@" .. r1(p and p.x) .. "," .. r1(p and p.y) .. "#" .. tostring(d)
 	end) end)
 	part("edgeObjects", function()

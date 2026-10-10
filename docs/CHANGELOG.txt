@@ -1,6 +1,101 @@
 MPFever - Changelog
 ===================
 
+0.3.3-experimental - companies kept, contracts and shared stations, fewer desyncs
+  - FIX (companies): after a resynchronisation (a player joining, a difference), the request of a player
+    to find their company again could arrive while the host's game was still loading and was lost: the
+    host's game then had no company for that player, everything the player built was built for the
+    host's company and saved so (the player came back with a new, empty company). The messages that
+    arrive during the load are now read. The state check no longer takes a difference of companies,
+    money, owners, loans, roads, constructions or lines for a "local measure" after a reload.
+  - NEW: a company belongs to the player's Steam account (and name): a player finds their company
+    again even after changing their name. Two players announcing themselves at the same moment get
+    their companies in the same order on every game.
+  - FIX (desync): a depot or station joined to an existing street junction (without cutting the street)
+    was rebuilt on the other games with its own separate entrance node (not connected to the street):
+    the construction is now attached to the right node (the engine's numbering of the construction's
+    nodes was the cause). Reproduced and checked on the savegame of the report.
+  - FIX (desync): the builds of another player could land one simulation step late on a game running
+    fast (x4): every game now stops a little before such a build and steps exactly to its time.
+  - FASTER: the state check every 10 seconds took up to 0.9 s of simulation (a hiccup every 10 s);
+    it now takes about 0.05 s.
+  - NEW: the window of a station, depot, vehicle, line or building shows its owner company.
+  - NEW: contracts per company. The offers stay common; an accepted contract belongs to the company
+    that accepted it: only its lines count for it, its money and its better income go to that company;
+    each game shows only its own company's contracts (and the offers it did not decline).
+  - NEW: shared stations with a fee. The owner of a station sets in the station window a fee per stop
+    (- / +, 0 = not shared). The other companies' lines can only stop at shared stations; every stop
+    of their vehicles there pays the fee to the owner (both games book it at the same moment).
+  - NEW: trees and plants of the brush are rebuilt on the other games (same models at the same places,
+    with a construction of the mod; they are left out of the state check). First version, not yet tried
+    with the real brush: native.log/mod.log say what happened ("assets placed", "ASSET REPLAY").
+  - Ground paint: still not copied (diagnostics in native.log: "terrain: command without height cells").
+  - Autotest scenarios: contract, share, fees, wait, assettest, apiprobe, treeprobe.
+
+0.3.2-experimental - companies mode: loans, depot desync
+  - FIX (desync): a depot or station built against a street without cutting it (the new street end joins an existing
+    junction) could not be rebuilt on the other games ("Unknown exception" at the command): the games drifted apart
+    and the host reloaded its game. It is now rebuilt in two steps (street part and construction together, then
+    separately) when the direct way fails. Reproduced and checked on a real savegame.
+  - NEW: every company has its own loans. Before, the game's loan window only worked for the host's company (the
+    others' requests were ignored). Each other company now has its own offers, loans taken and monthly payments, kept
+    in the companies list of the savegame, with the game's own loan rules. The loan window of a player shows
+    their company's loans. The state check also compares the loans of every company.
+  - Contracts (subsidies): the game keeps ONE list of contracts for the host's company; proposals, acceptance and
+    completion of other companies' contracts are not available yet (the clicks of a company other than the
+    host's are ignored instead of accepting the host's contract for everybody). Own contracts per company need
+    the notifications of the game to be split per company too: planned.
+  - Autotest scenario "loan".
+
+0.3.1-experimental - companies mode: tools, unique buildings, money popups
+  - FIX (one company per player): what a player builds with the construction tools (buildings, depots, stations,
+    roads, tracks...) is now built, paid and owned by THEIR company. Before, the tools of a player other than the
+    host built for the host's company (the cost was taken from the host's money and the building stayed the host's,
+    the player's own money stayed untouched). How: the interface's tools always issue their builds for the
+    savegame's company; the native module now replaces that company by the player's own in the build it holds
+    before it is applied (native.log: "tool build from ...").
+  - FIX: the permits of the game's unique buildings (headquarters, landmarks...) are counted per company: a player
+    can build their own headquarters even if another player already has theirs ("Already built" only means that
+    YOUR company has built it). Done in the game's company modules, in every Lua state that reads them.
+  - FIX: the money shown above the buildings (earned / lost) no longer piles up on the games that do not play that
+    company: the engine only empties the figures of the local company, the native module now empties the other
+    companies' too, before the interface can show them.
+  - FIX: headquarters flag of a construction is copied to the other games.
+  - A depot or station that could not be rebuilt on the other games ("Unknown exception" at the command) is tried
+    again without the node configurations and id maps of the tool's proposal (the engine recomputes them).
+  - mod.log / native.log now tell: the permits counted for the company ("permits count"), who a captured build is
+    for ("capture: owner references"), what the native module changed in a tool's build.
+
+0.3.0-experimental - one company per player
+  - NEW: the host can choose, when hosting (MPFever window of the main menu), between "One company for
+    everybody" (as before) and "One company per player". In the second mode every player plays their own company
+    on the same map: own money, own roads, stations, depots, vehicles and lines. The host keeps the company of
+    the savegame, a new player gets a new company with a starting capital (2,000,000; companystart=N in
+    mpfever_settings.txt changes it). The company belongs to the player's name: after a reconnection or in a later session on the same
+    savegame the same name finds the same company (the list of companies is kept in the savegame).
+  - Colours: each company has its own colour (given to its player entity); the lines it creates take it
+    (a little darker for each line it already has), so lines can be told apart on the map and in the lists.
+  - How: the game's own scripts (loans, company level, ticket prices...) always work for ONE company, so every
+    game's simulation sees the savegame's company as "the player", while the interface and the construction tools
+    of each game act as that game's own company (the native module writes it into the game state). Every action
+    travels with its company: what the other games rebuild is built and paid for by that company, as the same
+    entities in the same places (checked by the state check, which now also compares who owns what and the money
+    of every company).
+  - Tested on two games: roads, upgrades, road types, stops, vehicle purchases, lines, commands, terrain edits,
+    each by the host and by the client, and a resynchronisation in the middle (the company is found again):
+    same owners and same money of every company on both games, no desync.
+  - Limits of the first version (also in README): loans and the Company window's actions only work for the host's
+    company (the others' are ignored), the level of the savegame's company is shared, no money transfer between
+    companies.
+  - A stroke of the ground painter (it contains nothing a script can see) is no longer shipped to the other games
+    as an empty build, which could be refused there and make the host reload its game. The paint itself is still
+    not copied. The tree/asset brush is not copied either; the mod now logs what these brush constructions contain
+    (mod.log: "asset construction") to prepare it.
+  - native.log also lists, once per kind, the grids found in commands without height cells (ground paint...).
+  - FIX: bulldozing a street that carries stops (bus or tram stops) was not copied to the other games ("stop not
+    replicable": the street stayed there and the games drifted apart until a resynchronisation). It is now
+    replayed with the engine's own removal proposal, which removes the stops with the street.
+
 0.2.10-experimental - terrain edits are copied, no more reload
   - Raising / lowering / levelling the ground is now copied to the other players like any other
     construction, by both the host and the clients. Before, a terrain edit made the host reload

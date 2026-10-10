@@ -9,6 +9,9 @@
         "mpfever_ui.script.lua",
         "mpfever_refs.lua",
         "mpfever_auto.lua",
-        "mpfever_menu.lua"
+        "mpfever_menu.lua",
+        "mpfever_co.lua",
+        "mpfever_asset.con.lua",
+        "mpfever_asset.script.lua"
     ]
 }

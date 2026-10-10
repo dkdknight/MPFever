@@ -49,10 +49,10 @@ local function readState()
 end
 
 local reqSeq = 0
-local function request(cmd, arg, name)
+local function request(cmd, arg, name, option)
 	reqSeq = reqSeq + 1
 	local seq = tostring(os.time()) .. "." .. reqSeq
-	writeFile("menu_req.txt", seq .. TAB .. cmd .. TAB .. (arg or "") .. TAB .. (name or "") .. NL)
+	writeFile("menu_req.txt", seq .. TAB .. cmd .. TAB .. (arg or "") .. TAB .. (name or "") .. TAB .. (option or "") .. NL)
 	log("request " .. cmd .. " " .. tostring(arg))
 end
 
@@ -143,6 +143,7 @@ local function setup()
 		local saves = react.useStateLazy(listSaves)
 		local selected = react.useState(nil)
 		local name = react.useState(st0.name or "")
+		local companies = react.useState("shared")     -- hosting: everybody plays one company, or each player has its own
 		local addr = react.useState(st0.addr or "")
 		local state = react.useState(st0)
 		-- (the host's savegame, once received, is loaded by the application script mpfever_auto.lua)
@@ -197,10 +198,16 @@ local function setup()
 			if #list == 0 then list[1] = text(T("Aucune sauvegarde trouvée.", "No savegame found.")) end
 			rows[#rows + 1] = box(V, list)
 			rows[#rows + 1] = gap()
+			rows[#rows + 1] = text(T("Entreprises :", "Companies:"))
+			rows[#rows + 1] = box(H, {
+				button((companies:old() == "shared" and "> " or "") .. T("Une entreprise pour tous", "One company for everybody"), function() companies:set("shared") end, not busy, "font-scale-title-4", WIDTH / 2 - 10),
+				button((companies:old() == "separate" and "> " or "") .. T("Une entreprise par joueur", "One company per player"), function() companies:set("separate") end, not busy, "font-scale-title-4", WIDTH / 2 - 10),
+			})
+			rows[#rows + 1] = gap()
 			rows[#rows + 1] = button(T("Héberger cette partie", "Host this game"), function()
 				local sel = selected:old()
 				if not sel then return end
-				request("host", sel, name:old())   -- MPFever.exe opens the session, then has the savegame loaded
+				request("host", sel, name:old(), companies:old())   -- MPFever.exe opens the session, then has the savegame loaded
 			end, selected:old() ~= nil and not busy, "font-scale-title-3", WIDTH)
 		else
 			rows[#rows + 1] = box(H, {

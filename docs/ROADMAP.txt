@@ -28,14 +28,19 @@ it is stable enough.
   [ ] Settings for the host (who may build, bulldoze, spend money)
 
 0.4 - Separate companies
-  [ ] Each player (or team) runs their own company on the same map
-  [ ] Own money, vehicles, lines and stations per company
+  [x] Each player runs their own company on the same map, chosen by the host (0.3.0)
+  [x] Own money, vehicles, lines and stations per company, a colour per company, the company
+      is found again after a reconnection (0.3.0)
+  [x] Loans for every company (0.3.2)
+  [x] Contracts for every company, owner shown in the windows, company tied to the Steam account (0.3.3)
+  [ ] Company-window actions for every company, money transfers, shared level per company
   [ ] Competition on cargo and passengers, company rankings
 
 0.5 - Mixed modes
   [ ] Shared companies and separate companies in the same game
   [ ] Joining, leaving and merging companies
-  [ ] Rules for shared infrastructure (track access, fees)
+  [x] Shared stations with a fee per stop (0.3.3)
+  [ ] Rules for shared tracks and depots
 
 Later - Persistent worlds
   [ ] Dedicated server running the world without the host's PC

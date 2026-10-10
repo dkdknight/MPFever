@@ -1,9 +1,10 @@
 MPFever - Multiplayer for Transport Fever 3
-Version 0.2.10-experimental
+Version 0.3.3-experimental
 ===========================================
 
-MPFever lets several players run the same Transport Fever 3 company together, each one
-in their own copy of the game, over the internet or a local network.
+MPFever lets several players play the same Transport Fever 3 world together, each one
+in their own copy of the game, over the internet or a local network: either all in the SAME
+company, or each player with their OWN company.
 
 THIS IS AN EXPERIMENTAL VERSION. Expect bugs, pauses and the occasional crash. Keep
 backups of the savegames you play with, and please send feedback (see "Reporting a
@@ -12,7 +13,30 @@ problem" below).
 
 WHAT WORKS
 ----------
-- Cooperative play: all players manage the SAME company (shared money, vehicles, lines).
+- Two ways to play, chosen by the host in the multiplayer window when hosting:
+  - "One company for everybody": all players manage the SAME company (shared money,
+    vehicles, lines).
+  - "One company per player": every player has their own company on the same map: own
+    money, own roads, stations, depots, vehicles and lines, each company with its own
+    colour (the lines a company creates take its colour, a little darker for each new
+    one). The host plays the company of the savegame, every other player gets a new company
+    with a starting capital (2,000,000 by default; write  companystart=1000000  in
+    mpfever_settings.txt, next to MPFever.exe, to change it) the first time it is seen. The
+    company belongs to the player's STEAM ACCOUNT (and name): after a reconnection, a
+    resynchronisation, or in a later session on the same savegame, the player finds their
+    company again, with everything they built, even if they changed their name. While a
+    player is away, nobody else owns their company. The company name is the one of the
+    player's company in the game (editable in the company window).
+  - Every window of a station, depot, vehicle, line or building says on its first line which
+    company owns it ("Owner: ..."; "(you)" for your own).
+  - Contracts (subsidies): the offers are the same for everybody; a contract belongs to the
+    company that accepts it (only its own vehicles count for it, the reward goes to it) and
+    each player only sees their own contracts and the offers they did not decline.
+  - Loans: every company has its own loans (offers, loans taken, monthly payments).
+  - Shared stations: a company can share one of its stations or stops with the others for a
+    fee per stop. In the station's window, its owner sets the fee with the - and + buttons
+    (0 = not shared). The other companies' lines may only stop at stations that are shared;
+    each time one of their vehicles stops there, they pay the fee to the owner.
 - Start from the game itself: MPFever.exe starts Transport Fever 3, and a
   "MULTIJOUEUR / MPFever" button in the main menu opens the multiplayer window.
   - Host: pick one of your savegames (any of them, even one made without MPFever: the mod
@@ -24,9 +48,9 @@ WHAT WORKS
 - Everything a player builds or changes appears in the other games at the same moment:
   roads (all road types, with trees and other decorations), tracks, tram tracks laid on
   roads, rail signals, noise barriers, bus and tram stops, stations, depots (also those
-  built against a street), buildings, the bulldozer, vehicle purchases, lines and
-  vehicle assignments, game speed and pause. The dust cloud of a construction going up
-  is shown on every game.
+  built against a street), buildings, terrain edits, trees and plants of the brush (new,
+  see the limits), the bulldozer, vehicle purchases, lines and vehicle assignments, game
+  speed and pause. The dust cloud of a construction going up is shown on every game.
 - The host is the authority: every 10 seconds the games compare their state (money,
   loans, company, contracts, towns, industries, cargo in buildings and vehicles,
   vehicles, roads, road decorations...).
@@ -42,7 +66,10 @@ WHAT WORKS
 
 KNOWN LIMITATIONS
 -----------------
-- Only cooperative mode (one shared company). Separate companies come later.
+- Separate companies: the level (rank, permits) of the savegame's company is shared by all the
+  companies; the company actions of the Company window (market campaigns, greening, industry
+  prospecting) only work for the host's company for now (the other players' requests are
+  ignored); there is no money transfer between companies yet. Depots cannot be shared.
 - Each build waits about 1 to 2 seconds before it appears: the games apply every
   construction at the same game time, which needs a safety margin.
 - When a road upgrade moves several town buildings, the town may place one extra
@@ -50,9 +77,11 @@ KNOWN LIMITATIONS
   after a few seconds.
 - Terrain editing (raising / lowering the ground) is copied to the other games: the game
   where you edit sends the new ground, the others apply it at the same game time (or a
-  step later when they were already past it). Ground PAINT (textures) and the trees brush
-  are not copied. If the copy fails the host's game is reloaded for everybody (automatic
-  resynchronisation).
+  step later when they were already past it). If the copy fails the host's game is
+  reloaded for everybody (automatic resynchronisation).
+- Trees and plants of the brush: copied since 0.3.3, first version not yet tried with the real
+  brush (the logs tell whether it worked: please send them). Ground PAINT (textures) is still
+  not copied (it is not reachable by the game's scripts; work in progress).
 - Tested with 2 players. More players should work but are untested.
 - No player list or chat in the game yet.
 - Windows only. Made for the current Steam version of Transport Fever 3 (builds 40408 and 40420).

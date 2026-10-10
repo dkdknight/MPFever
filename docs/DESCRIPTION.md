@@ -1,12 +1,12 @@
 # MPFever – Multiplayer for Transport Fever 3 (experimental)
 
-**Build your transport empire together.** MPFever adds cooperative multiplayer to Transport Fever 3: you and your friends run the same company, each in your own game, over the internet or a local network.
+**Build your transport empire together.** MPFever adds cooperative multiplayer to Transport Fever 3: you and your friends play the same world, in one shared company or each with your own company, each in your own game, over the internet or a local network.
 
 > ⚠️ **Experimental version (0.1.1).** It works, but expect bugs, short pauses and the occasional crash. Back up your savegames, and please send feedback: it decides what comes next.
 
 ## Features
 
-- **Co-op in one shared company.** Shared money, vehicles, lines and infrastructure.
+- **Co-op in one shared company, or one company per player.** The host chooses when hosting: either shared money, vehicles, lines and infrastructure, or every player has their own company (own money, roads, stations, vehicles, lines and colour) on the same map. A player finds their company again after a reconnection (it belongs to their Steam account); every company has its own loans and contracts, the windows show who owns what, and a company can share its stations with the others for a fee per stop.
 - **Real-time sync of what you build.** Roads and tracks (including joins in the middle of a road and upgrades), bus and tram stops, stations, depots, buildings, the bulldozer and terrain editing (raising / lowering the ground). Vehicle purchases, lines, vehicle assignments, game speed and pause too.
 - **Host authority.** Every 10 seconds the games compare their state:
   - money, loans, company progress, contracts, towns and industries;
@@ -20,7 +20,7 @@
 
 ## Known limitations (0.1)
 
-- Co-op only, with one shared company. Separate companies are planned.
+- Separate companies: the Company window's actions only work for the host's company for now; the level of the savegame's company is shared. Ground paint is not copied yet.
 - All players must load the same savegame file. The host shares it for now; automatic transfer is planned.
 - No joining a session that is already running, and no Steam invites yet.
 - Vehicles may drift slightly after road building; the automatic resync fixes it.
