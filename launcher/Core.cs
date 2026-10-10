@@ -12,18 +12,239 @@ using Microsoft.Win32;
 
 namespace MPFever
 {
-    /// <summary>Launcher language: French when Windows is in French, English otherwise.</summary>
+    /// <summary>Launcher language. The French and English texts are written in the code as T("français", "English");
+    /// the other languages come from lang.json (embedded in MPFever.exe), keyed by the English text.
+    /// The language is the one chosen in the launcher, else the game's language, else Windows', else English.</summary>
     static class L
     {
-        public static readonly bool Fr = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fr";
-        public static string T(string fr, string en) => Fr ? fr : en;
+        public sealed class Language
+        {
+            public readonly string Code, Name;
+            public Language(string code, string name) { Code = code; Name = name; }
+        }
+
+        /// <summary>The languages of Transport Fever 3, each named in its own language.</summary>
+        public static readonly Language[] All =
+        {
+            new Language("de", "Deutsch"), new Language("en", "English"), new Language("es", "Español"),
+            new Language("fr", "Français"), new Language("it", "Italiano"), new Language("nl", "Nederlands"),
+            new Language("pl", "Polski"), new Language("pt-BR", "Português (Brasil)"), new Language("ru", "Русский"),
+            new Language("ja", "日本語"), new Language("ko", "한국어"), new Language("zh-CN", "简体中文"),
+            new Language("zh-TW", "繁體中文"),
+        };
+
+        public static string Code { get; private set; } = "en";
+        public static bool Fr => Code == "fr";
+        public static string Name => All.First(l => l.Code == Code).Name;
+        public static string NameOf(string code) => All.FirstOrDefault(l => l.Code == code)?.Name ?? code;
+        static volatile Dictionary<string, string> table = new Dictionary<string, string>();
+
+        /// <summary>Raised after the language changed (on the thread that changed it).</summary>
+        public static event Action Changed;
+
+        public static string T(string fr, string en)
+        {
+            var c = Code;
+            if (c == "fr") return fr;
+            if (c == "en") return en;
+            return table.TryGetValue(en, out var v) ? v : en;
+        }
+
+        /// <summary>T with {0} {1}... placeholders.</summary>
+        public static string F(string fr, string en, params object[] args)
+        {
+            try { return string.Format(T(fr, en), args); }
+            catch (FormatException) { return string.Format(Fr ? fr : en, args); }   // a broken translation
+        }
+
+        public static void Set(string code)
+        {
+            if (!All.Any(l => l.Code == code)) code = "en";
+            table = Load(code);
+            Code = code;
+            Changed?.Invoke();
+        }
+
+        static Dictionary<string, object> texts;
+
+        /// <summary>The translations of one language from lang.json: { "texts": { "English": { "de": "...", ... } } }.</summary>
+        static Dictionary<string, string> Load(string code)
+        {
+            var d = new Dictionary<string, string>();
+            if (code == "en" || code == "fr") return d;
+            try
+            {
+                if (texts == null)
+                {
+                    using (var st = typeof(L).Assembly.GetManifestResourceStream("lang.json"))
+                    using (var r = new StreamReader(st, Encoding.UTF8))
+                    {
+                        var root = Json.Parse(r.ReadToEnd()) as Dictionary<string, object>;
+                        texts = root != null && root.TryGetValue("texts", out var t) ? t as Dictionary<string, object> : null;
+                    }
+                }
+                if (texts == null) return d;
+                foreach (var kv in texts)
+                    if (kv.Value is Dictionary<string, object> tr && tr.TryGetValue(code, out var v) && v is string s && s.Length > 0)
+                        d[kv.Key] = s;
+            }
+            catch (Exception e) { Log.W("lang.json: " + e.Message); }
+            return d;
+        }
+
+        /// <summary>The table for the mod (lang.txt in each game's session folder): "@lang TAB code", then
+        /// "English TAB translation" lines (the mod's Lua code looks its texts up by their English version).</summary>
+        public static string ModTable()
+        {
+            var sb = new StringBuilder("@lang\t" + Code + "\n");
+            foreach (var kv in table)
+                if (kv.Key.IndexOfAny(new[] { '\t', '\n', '\r' }) < 0 && kv.Value.IndexOfAny(new[] { '\t', '\n', '\r' }) < 0)
+                    sb.Append(kv.Key).Append('\t').Append(kv.Value).Append('\n');
+            return sb.ToString();
+        }
+
+        /// <summary>A language code from a Steam language name ("german"), a game setting ("de", "de_DE") or a Windows
+        /// culture ("de-DE"); null when it is none of the game's languages.</summary>
+        public static string Normalize(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            s = s.Trim().ToLowerInvariant().Replace('_', '-');
+            switch (s)
+            {
+                case "german": case "deutsch": return "de";
+                case "english": return "en";
+                case "french": case "francais": case "français": return "fr";
+                case "italian": return "it";
+                case "spanish": case "latam": return "es";
+                case "dutch": return "nl";
+                case "polish": return "pl";
+                case "russian": return "ru";
+                case "japanese": case "jp": return "ja";
+                case "korean": case "koreana": case "kr": return "ko";
+                case "brazilian": case "portuguese": case "pt": return "pt-BR";
+                case "schinese": case "chinese": case "cn": case "zh": return "zh-CN";
+                case "tchinese": case "tw": return "zh-TW";
+            }
+            if (s.StartsWith("zh")) return s.Contains("tw") || s.Contains("hk") || s.Contains("mo") || s.Contains("hant") ? "zh-TW" : "zh-CN";
+            if (s.StartsWith("pt")) return "pt-BR";
+            var two = s.Length >= 2 ? s.Substring(0, 2) : s;
+            return All.Any(l => l.Code == two) && (s.Length == 2 || s[2] == '-') ? two : null;
+        }
+
+        /// <summary>The language to use and where it comes from: the launcher's setting ("auto" or empty: none),
+        /// else the game's, else Windows', else English.</summary>
+        public static string Detect(string saved, out string source)
+        {
+            var c = Normalize(saved);
+            if (c != null) { source = "setting"; return c; }
+            try
+            {
+                c = Normalize(GameInstall.GameLanguage(out var where));
+                if (c != null) { source = where; return c; }
+            }
+            catch { }
+            c = Normalize(CultureInfo.CurrentUICulture.Name);
+            if (c != null) { source = "windows"; return c; }
+            source = "default";
+            return "en";
+        }
     }
+
+    /// <summary>Minimal JSON reader (objects, arrays, strings, numbers, true/false/null) for lang.json: keys and values
+    /// are kept exactly as written, spaces included.</summary>
+    static class Json
+    {
+        public static object Parse(string s)
+        {
+            int i = 0;
+            var v = Value(s, ref i);
+            Skip(s, ref i);
+            if (i < s.Length) throw new FormatException("JSON: unexpected text at " + i);
+            return v;
+        }
+
+        static void Skip(string s, ref int i) { while (i < s.Length && char.IsWhiteSpace(s[i])) i++; }
+
+        static object Value(string s, ref int i)
+        {
+            Skip(s, ref i);
+            if (i >= s.Length) throw new FormatException("JSON: unexpected end");
+            char c = s[i];
+            if (c == '{')
+            {
+                var d = new Dictionary<string, object>();
+                i++; Skip(s, ref i);
+                if (s[i] == '}') { i++; return d; }
+                while (true)
+                {
+                    Skip(s, ref i);
+                    var k = Str(s, ref i);
+                    Skip(s, ref i);
+                    if (s[i++] != ':') throw new FormatException("JSON: ':' expected at " + (i - 1));
+                    d[k] = Value(s, ref i);
+                    Skip(s, ref i);
+                    if (s[i] == ',') { i++; continue; }
+                    if (s[i++] == '}') return d;
+                    throw new FormatException("JSON: ',' or '}' expected at " + (i - 1));
+                }
+            }
+            if (c == '[')
+            {
+                var l = new List<object>();
+                i++; Skip(s, ref i);
+                if (s[i] == ']') { i++; return l; }
+                while (true)
+                {
+                    l.Add(Value(s, ref i));
+                    Skip(s, ref i);
+                    if (s[i] == ',') { i++; continue; }
+                    if (s[i++] == ']') return l;
+                    throw new FormatException("JSON: ',' or ']' expected at " + (i - 1));
+                }
+            }
+            if (c == '"') return Str(s, ref i);
+            if (string.CompareOrdinal(s, i, "true", 0, 4) == 0) { i += 4; return true; }
+            if (string.CompareOrdinal(s, i, "false", 0, 5) == 0) { i += 5; return false; }
+            if (string.CompareOrdinal(s, i, "null", 0, 4) == 0) { i += 4; return null; }
+            int start = i;
+            while (i < s.Length && "+-0123456789.eE".IndexOf(s[i]) >= 0) i++;
+            if (i == start) throw new FormatException("JSON: unexpected '" + c + "' at " + i);
+            return double.Parse(s.Substring(start, i - start), CultureInfo.InvariantCulture);
+        }
+
+        static string Str(string s, ref int i)
+        {
+            if (s[i] != '"') throw new FormatException("JSON: string expected at " + i);
+            var sb = new StringBuilder();
+            for (i++; s[i] != '"'; i++)
+            {
+                if (s[i] != '\\') { sb.Append(s[i]); continue; }
+                char e = s[++i];
+                switch (e)
+                {
+                    case 'n': sb.Append('\n'); break;
+                    case 't': sb.Append('\t'); break;
+                    case 'r': sb.Append('\r'); break;
+                    case 'b': sb.Append('\b'); break;
+                    case 'f': sb.Append('\f'); break;
+                    case 'u': sb.Append((char)Convert.ToInt32(s.Substring(i + 1, 4), 16)); i += 4; break;
+                    default: sb.Append(e); break;   // \" \\ \/
+                }
+            }
+            i++;
+            return sb.ToString();
+        }
+    }
+
+    enum LogLevel { Auto, Muted, Success, Warning, Error, Section }
 
     static class Log
     {
         static readonly object Gate = new object();
         static string file;
         public static event Action<string> Line;
+        /// <summary>Each line with its kind (colours of the launcher's log).</summary>
+        public static event Action<string, LogLevel> Entry;
 
         public static void Init(string dir)
         {
@@ -31,11 +252,18 @@ namespace MPFever
             file = Path.Combine(dir, "launcher-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
         }
 
-        public static void W(string s)
+        public static void W(string s) => Write(s, LogLevel.Auto);
+        public static void Ok(string s) => Write(s, LogLevel.Success);
+        public static void Warn(string s) => Write(s, LogLevel.Warning);
+        public static void Err(string s) => Write(s, LogLevel.Error);
+        public static void Dim(string s) => Write(s, LogLevel.Muted);
+
+        public static void Write(string s, LogLevel level)
         {
             var l = DateTime.Now.ToString("HH:mm:ss.fff") + " " + s;
             lock (Gate) { try { if (file != null) File.AppendAllText(file, l + Environment.NewLine); } catch { } }
             Line?.Invoke(l);
+            Entry?.Invoke(l, level);
         }
     }
 
@@ -206,6 +434,13 @@ namespace MPFever
         }
 
         /// <summary>State shown by the MPFever window of the game's main menu (menu_state.txt, key=value lines).</summary>
+        /// <summary>The texts of the current language for the mod (lang.txt, read by its Lua code).</summary>
+        public void WriteLang()
+        {
+            try { lock (writeGate) File.WriteAllText(Path.Combine(Dir, "lang.txt"), L.ModTable(), Utf8); }
+            catch (Exception e) { Log.W("lang.txt: " + e.Message); }
+        }
+
         public void WriteMenuState(IDictionary<string, string> st)
         {
             var sb = new StringBuilder();
@@ -261,7 +496,8 @@ namespace MPFever
             psi.EnvironmentVariables["MPFEVER_DIR"] = Dir;
             psi.EnvironmentVariables["MPFEVER_NAME"] = Name;
             psi.EnvironmentVariables["MPFEVER_ROLE"] = Role;
-            psi.EnvironmentVariables["MPFEVER_LANG"] = L.Fr ? "fr" : "en";
+            psi.EnvironmentVariables["MPFEVER_LANG"] = L.Code;
+            WriteLang();
             // application script: starts the host's savegame after a resynchronisation (and loads the autotest save)
             psi.Arguments = "--script mpfever_1::/mpfever_auto.lua";
             if (AutoSave != null) psi.EnvironmentVariables["MPFEVER_SAVE"] = AutoSave;
@@ -271,7 +507,7 @@ namespace MPFever
             // experiment (MPFEVER_AFFINITY=mask): pin the game to some CPU cores
             var aff = Environment.GetEnvironmentVariable("MPFEVER_AFFINITY");
             if (!string.IsNullOrEmpty(aff)) try { proc.ProcessorAffinity = (IntPtr)Convert.ToInt64(aff, 16); } catch (Exception e) { Log.W("affinity: " + e.Message); }
-            Log.W(L.T($"[{Name}] jeu lancé (pid {proc.Id}), session {Dir}", $"[{Name}] game started (pid {proc.Id}), session {Dir}"));
+            Log.W(L.F("[{0}] jeu lancé (pid {1}), session {2}", "[{0}] game started (pid {1}), session {2}", Name, proc.Id, Dir));
         }
 
         void Poll()
@@ -357,7 +593,7 @@ namespace MPFever
             listener = new TcpListener(IPAddress.Any, port);
             listener.Start();
             new Thread(AcceptLoop) { IsBackground = true, Name = "Relay accept" }.Start();
-            Log.W(L.T($"Hôte : écoute TCP sur le port {port}", $"Host: listening on TCP port {port}"));
+            Log.W(L.F("Hôte : écoute TCP sur le port {0}", "Host: listening on TCP port {0}", port));
         }
 
         void AcceptLoop()
@@ -371,7 +607,7 @@ namespace MPFever
                     var p = new Peer { Id = nextId++, Tcp = c, Writer = new StreamWriter(c.GetStream(), new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true } };
                     p.Name = "joueur" + p.Id;
                     lock (peers) peers.Add(p);
-                    Log.W(L.T($"Connexion entrante de {c.Client.RemoteEndPoint} (id {p.Id})", $"Incoming connection from {c.Client.RemoteEndPoint} (id {p.Id})"));
+                    Log.Dim(L.F("Connexion entrante de {0} (id {1})", "Incoming connection from {0} (id {1})", c.Client.RemoteEndPoint, p.Id));
                     new Thread(() => ReadLoop(p)) { IsBackground = true, Name = "Relay peer " + p.Id }.Start();
                 }
                 catch (Exception e) { if (!stop) Log.W("accept: " + e.Message); }
@@ -419,7 +655,7 @@ namespace MPFever
             foreach (var o in all)
                 if (o != p && Base(o.Name) == Base(p.Name))
                 {
-                    Log.W(L.T($"{o.Name} : ancienne connexion fermée (reconnexion)", $"{o.Name}: old connection closed (reconnection)"));
+                    Log.Warn(L.F("{0} : ancienne connexion fermée (reconnexion)", "{0}: old connection closed (reconnection)", o.Name));
                     try { o.Tcp.Close(); } catch { }
                 }
         }
@@ -427,7 +663,7 @@ namespace MPFever
         public void Send(Peer p, Msg m)
         {
             try { lock (p.Gate) p.Writer.WriteLine(m.ToString()); }
-            catch (Exception e) { Log.W(L.T($"envoi vers {p.Name} : {e.Message}", $"sending to {p.Name}: {e.Message}")); }
+            catch (Exception e) { Log.Warn(L.F("envoi vers {0} : {1}", "sending to {0}: {1}", p.Name, e.Message)); }
         }
 
         public void Broadcast(Msg m, Peer except = null)
@@ -462,7 +698,7 @@ namespace MPFever
             writer = new StreamWriter(tcp.GetStream(), new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true };
             Send(Msg.Make("join", name));
             new Thread(ReadLoop) { IsBackground = true, Name = "Client read" }.Start();
-            Log.W(L.T($"Client : connecté à {host}:{port}", $"Client: connected to {host}:{port}"));
+            Log.Ok(L.F("Client : connecté à {0}:{1}", "Client: connected to {0}:{1}", host, port));
         }
 
         void ReadLoop()
@@ -484,7 +720,7 @@ namespace MPFever
         public void Send(Msg m)
         {
             try { lock (gate) writer.WriteLine(m.ToString()); }
-            catch (Exception e) { Log.W(L.T("envoi vers l'hôte : ", "sending to the host: ") + e.Message); }
+            catch (Exception e) { Log.Warn(L.T("envoi vers l'hôte : ", "sending to the host: ") + e.Message); }
         }
 
         public void Dispose() { stop = true; try { tcp?.Close(); } catch { } }
@@ -510,6 +746,55 @@ namespace MPFever
                 if (File.Exists(Path.Combine(p, "TransportFever3.exe"))) return p;
             }
             return null;
+        }
+
+        /// <summary>The game's language as written by the game or Steam (raw value, see L.Normalize), and where it was
+        /// found: "game" (the language chosen in the game's options: profile.lua, language = { code = "de" }) or "steam"
+        /// (the language Steam uses for the game, appmanifest_3493540.acf). Null when neither has one.</summary>
+        public static string GameLanguage(out string where)
+        {
+            where = null;
+            var steam = SteamPath();
+            if (steam == null) return null;
+            // 1. the game's own option: the most recently written profile.lua of the Steam users of this computer
+            try
+            {
+                var userdata = Path.Combine(steam, "userdata");
+                if (Directory.Exists(userdata))
+                {
+                    var files = Directory.GetDirectories(userdata)
+                        .SelectMany(u => new[] { Path.Combine(u, AppId, "local", "profile.lua"), Path.Combine(u, AppId, "local", "settings.lua") })
+                        .Where(File.Exists).OrderByDescending(File.GetLastWriteTimeUtc).ToList();
+                    foreach (var f in files)
+                    {
+                        var code = LanguageInLua(File.ReadAllText(f));
+                        if (code != null) { where = "game"; return code; }
+                    }
+                }
+            }
+            catch { }
+            // 2. Steam's language for the game (Properties > General > Language)
+            foreach (var lib in SteamLibraries())
+            {
+                try
+                {
+                    var acf = Path.Combine(lib, "steamapps", "appmanifest_" + AppId + ".acf");
+                    if (!File.Exists(acf)) continue;
+                    var m = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(acf), @"""language""\s+""([^""]+)""");
+                    if (m.Success) { where = "steam"; return m.Groups[1].Value; }
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        /// <summary>The language code in the game's profile.lua (language = { code = "de", mod = { "" } }), or a plain
+        /// language = "de" line; null when there is none.</summary>
+        public static string LanguageInLua(string text)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(text, @"(?s)\blanguage\s*=\s*\{.{0,300}?\bcode\s*=\s*""([^""]+)""");
+            if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(text, @"(?m)^\s*(?:language|lang|locale)\s*=\s*""([^""]+)""");
+            return m.Success && L.Normalize(m.Groups[1].Value) != null ? m.Groups[1].Value : null;
         }
 
         public static string SteamPath()
@@ -558,7 +843,7 @@ namespace MPFever
         {
             var src = FindModSource();
             var steam = SteamPath();
-            if (src == null || steam == null) { Log.W(L.T("Mod ou Steam introuvable, installation du mod ignorée", "Mod or Steam not found, mod installation skipped")); return 0; }
+            if (src == null || steam == null) { Log.Err(L.T("Mod ou Steam introuvable, installation du mod ignorée", "Mod or Steam not found, mod installation skipped")); return 0; }
             int n = 0;
             var userdata = Path.Combine(steam, "userdata");
             if (!Directory.Exists(userdata)) return 0;
@@ -570,7 +855,7 @@ namespace MPFever
                 if (Directory.Exists(dst)) Directory.Delete(dst, true); // mirror: drop files removed from the mod
                 CopyDir(src, dst);
                 n++;
-                Log.W(L.T("Mod installé dans ", "Mod installed in ") + dst);
+                Log.Ok(L.T("Mod installé dans ", "Mod installed in ") + dst);
             }
             return n;
         }
@@ -598,7 +883,7 @@ namespace MPFever
                 if (!File.Exists(bak)) File.Copy(f, bak);
                 s = s.Substring(0, open + 1) + " \"mpfever_1\"," + s.Substring(open + 1);
                 File.WriteAllText(f, s);
-                Log.W(L.T("Mod activé pour les nouvelles parties (", "Mod enabled for new games (") + f + ")");
+                Log.Ok(L.T("Mod activé pour les nouvelles parties (", "Mod enabled for new games (") + f + ")");
             }
         }
 
@@ -611,23 +896,23 @@ namespace MPFever
             var dst = Path.Combine(gameDir, "winhttp.dll");
             // a game started by Steam from an MPFever invitation starts MPFever.exe from this path
             try { File.WriteAllText(Path.Combine(gameDir, "mpfever_path.txt"), System.Reflection.Assembly.GetExecutingAssembly().Location, Encoding.Unicode); } catch (Exception e) { Log.W("mpfever_path.txt: " + e.Message); }
-            if (!File.Exists(src)) { Log.W(L.T("winhttp.dll absent à côté de MPFever.exe : module natif non installé", "winhttp.dll missing next to MPFever.exe: native module not installed")); return; }
+            if (!File.Exists(src)) { Log.Warn(L.T("winhttp.dll absent à côté de MPFever.exe : module natif non installé", "winhttp.dll missing next to MPFever.exe: native module not installed")); return; }
             if (File.Exists(dst))
             {
                 var cur = File.ReadAllBytes(dst);
                 if (cur.SequenceEqual(File.ReadAllBytes(src))) return;
                 if (Encoding.ASCII.GetString(cur).IndexOf("mpfever_native", StringComparison.Ordinal) < 0)
                 {
-                    Log.W(L.T("Un autre winhttp.dll (autre mod ?) est déjà dans le dossier du jeu : module natif non installé", "Another winhttp.dll (another mod?) is already in the game folder: native module not installed"));
+                    Log.Warn(L.T("Un autre winhttp.dll (autre mod ?) est déjà dans le dossier du jeu : module natif non installé", "Another winhttp.dll (another mod?) is already in the game folder: native module not installed"));
                     return;
                 }
             }
             try
             {
                 File.Copy(src, dst, true);
-                Log.W(L.T("Module natif installé : ", "Native module installed: ") + dst);
+                Log.Ok(L.T("Module natif installé : ", "Native module installed: ") + dst);
             }
-            catch (IOException) { Log.W(L.T("Module natif : fermez Transport Fever 3 puis relancez MPFever pour le mettre à jour", "Native module: close Transport Fever 3, then restart MPFever to update it")); }
+            catch (IOException) { Log.Warn(L.T("Module natif : fermez Transport Fever 3 puis relancez MPFever pour le mettre à jour", "Native module: close Transport Fever 3, then restart MPFever to update it")); }
         }
 
         /// <summary>The savegame folders of every Steam user of this PC (created if missing).</summary>

@@ -6343,13 +6343,12 @@ local function coGui(st)
 		local name = coMyName()
 		G.oseq = G.oseq + 1
 		local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
-		local fr = (os.getenv("MPFEVER_LANG") or "en") == "fr"
 		-- the player's Steam account (written by the native module): the company follows the account, whatever name is typed
 		local sid = coMySid()
 		local a = { fn = "mpfCoJoin", origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
 			at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil,
 			args = { key = name:lower(), name = name, host = (C.ROLE == "host"), mode = "separate", start = G.coStart, sid = sid,
-				cname = fr and ("Entreprise " .. name) or (name .. " Company") } }
+				cname = C.Tf("Entreprise %s", "%s Company", name) } }
 		a.native = true
 		send("act", a)
 		a.recvFrame = G.frames

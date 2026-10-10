@@ -13,8 +13,31 @@ local DIR = os.getenv("MPFEVER_DIR")
 if not (IO and DIR and DIR ~= "") then return {} end
 
 local BS, NL, TAB = string.char(92), string.char(10), string.char(9)
-local FR = (os.getenv("MPFEVER_LANG") or "en") == "fr"
-local function T(fr, en) return FR and fr or en end
+-- Texts: French and English are written in the code as T("français", "English"); the other languages come from
+-- lang.txt in the session folder, written by MPFever.exe: "@lang TAB code", then "English TAB translation" lines.
+-- Read again when MPFever.exe announces another language (lang= in menu_state.txt).
+local LANG, LANGCODE = {}, os.getenv("MPFEVER_LANG") or "en"
+local function loadLang()
+	local t = {}
+	local f = IO.open(DIR .. BS .. "lang.txt", "rb")
+	if f then
+		local s = f:read("*a") or ""
+		f:close()
+		for line in s:gmatch("[^" .. NL .. "]+") do
+			local k, v = line:match("^(.-)" .. TAB .. "(.*)$")
+			if k and k ~= "" then
+				v = v:gsub(string.char(13), "")
+				if k == "@lang" then LANGCODE = v else t[k] = v end
+			end
+		end
+	end
+	LANG = t
+end
+loadLang()
+local function T(fr, en)
+	if LANGCODE == "fr" then return fr end
+	return LANG[en] or en
+end
 
 local function log(msg)
 	pcall(print, "[MPFEVER-MENU] " .. tostring(msg))
@@ -149,6 +172,7 @@ local function setup()
 		-- (the host's savegame, once received, is loaded by the application script mpfever_auto.lua)
 		react.onStepTimer(function()
 			local s = readState()
+			if s.lang and s.lang ~= "" and s.lang ~= LANGCODE then loadLang() end
 			state:set(s)
 			-- the game is about to load (the host's own, or the host's game received by a player who joins) or is loaded: the
 			-- window has done its job and goes away. Left open it stayed over the game as a leftover whose close button no

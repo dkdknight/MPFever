@@ -201,7 +201,7 @@ end
 -- ---------------------------------------------------------------- owner of what the player clicks (companies mode)
 -- Every entity window (station, depot, vehicle, line, building...) shows on its first line which company it belongs to. The game's
 -- window maker is wrapped: its result is put under a line of text (no button, nothing else changes).
-local FR = (os.getenv("MPFEVER_LANG") or "en") == "fr"
+local T = C.T
 
 local function ownerOf(e)
 	if type(e) ~= "number" or e < 0 then return nil end
@@ -232,7 +232,7 @@ local function companyName(ent)
 		if n and type(n.name) == "string" and n.name ~= "" then name = n.name end
 	end)
 	if not name and U.coNames and U.coNames[ent] and U.coNames[ent] ~= "" then name = U.coNames[ent] end
-	if not name then name = (FR and "Entreprise " or "Company ") .. tostring(U.coMap and U.coMap[ent] or "?") end
+	if not name then name = C.Tf("Entreprise %s", "Company %s", U.coMap and U.coMap[ent] or "?") end
 	return name
 end
 
@@ -269,11 +269,11 @@ local function shareInfo(e, owner)
 	local mine = U.myCo ~= nil and U.coMap and U.coMap[owner] == U.myCo
 	local text
 	if mine then
-		text = fee and ((FR and "Partagée avec les autres entreprises : " or "Shared with the other companies: ") .. money(fee) .. (FR and " par arrêt" or " per stop"))
-			or (FR and "Non partagée (les autres entreprises ne peuvent pas s'y arrêter)" or "Not shared (the other companies cannot stop here)")
+		text = fee and (T("Partagée avec les autres entreprises : ", "Shared with the other companies: ") .. money(fee) .. T(" par arrêt", " per stop"))
+			or T("Non partagée (les autres entreprises ne peuvent pas s'y arrêter)", "Not shared (the other companies cannot stop here)")
 	else
-		text = fee and ((FR and "Partagée : " or "Shared: ") .. money(fee) .. (FR and " par arrêt de vos véhicules" or " per stop of your vehicles"))
-			or (FR and "Non partagée : vos lignes ne peuvent pas s'y arrêter" or "Not shared: your lines cannot stop here")
+		text = fee and (T("Partagée : ", "Shared: ") .. money(fee) .. T(" par arrêt de vos véhicules", " per stop of your vehicles"))
+			or T("Non partagée : vos lignes ne peuvent pas s'y arrêter", "Not shared: your lines cannot stop here")
 	end
 	return { key = key, fee = fee or 0, text = text, canEdit = mine }
 end
@@ -347,7 +347,7 @@ local function ownerText(e)
 	local owner = ownerOf(e)
 	if not owner or not U.coMap[owner] then return nil end
 	local mine = U.myCo ~= nil and U.coMap[owner] == U.myCo
-	return (FR and "Propriétaire : " or "Owner: ") .. companyName(owner) .. (mine and (FR and " (vous)" or " (you)") or ""), owner
+	return T("Propriétaire : ", "Owner: ") .. companyName(owner) .. (mine and T(" (vous)", " (you)") or ""), owner
 end
 
 local function installOwnerLine(react, builtin)

@@ -16,7 +16,7 @@
   Money is corrected automatically. Any other lasting difference triggers an **automatic resync**: a short pause, the host's game is sent to everyone, all games reload it, and play resumes (about 20 s).
 - **Built into the game.** No extra buttons in the game interface. A small launcher window handles hosting, joining and speed.
 - **Direct IP connection.** Use port forwarding or a virtual LAN (Radmin VPN, ZeroTier, Tailscale…).
-- **English and French launcher.**
+- **In the 13 languages of the game.** The launcher and the in-game window follow the language of Transport Fever 3 (it can also be chosen in the launcher).
 
 ## Known limitations (0.1)
 

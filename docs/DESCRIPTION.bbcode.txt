@@ -11,7 +11,7 @@
 [*][b]Host authority.[/b] Every 10 seconds the games compare their state: money, loans, company progress, contracts, towns and industries; cargo in buildings and vehicles; vehicles and roads. Money is corrected automatically. Any other lasting difference triggers an [b]automatic resync[/b]: a short pause, the host's game is sent to everyone, all games reload it, and play resumes (about 20 s).
 [*][b]Built into the game.[/b] No extra buttons in the game interface. A small launcher window handles hosting, joining and speed.
 [*][b]Direct IP connection.[/b] Use port forwarding or a virtual LAN (Radmin VPN, ZeroTier, Tailscale…).
-[*][b]English and French launcher.[/b]
+[*][b]In the 13 languages of the game.[/b] The launcher and the in-game window follow the language of Transport Fever 3 (it can also be chosen in the launcher).
 [/list]
 
 [size=4][b]Known limitations (0.1)[/b][/size]
