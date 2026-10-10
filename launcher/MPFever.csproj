@@ -15,4 +15,8 @@
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Drawing" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- texts of the other languages (French and English are in the code), keyed by the English text -->
+    <EmbeddedResource Include="lang.json" LogicalName="lang.json" />
+  </ItemGroup>
 </Project>

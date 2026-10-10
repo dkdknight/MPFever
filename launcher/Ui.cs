@@ -30,19 +30,38 @@ namespace MPFever
         public static float Scale = 1f;
         public static int S(int px) => (int)Math.Round(px * Scale);
 
-        public static Font Ui(float pt, FontStyle st = FontStyle.Regular) => new Font("Segoe UI", pt, st);
-        public static Font Semibold(float pt) => Named(pt, FontStyle.Bold, "Segoe UI Semibold", "Segoe UI");
-        public static Font Mono(float pt) => Named(pt, FontStyle.Regular, "Cascadia Mono", "Consolas");
+        /// <summary>The interface font: Segoe UI, or Windows' own font for the Japanese, Korean and Chinese scripts.</summary>
+        public static string UiFamily = "Segoe UI";
 
-        static Font Named(float pt, FontStyle fallbackStyle, params string[] names)
+        public static void SetLanguage(string code)
         {
-            foreach (var n in names)
+            switch (code)
             {
-                var f = new Font(n, pt, n == names[names.Length - 1] ? fallbackStyle : FontStyle.Regular);
-                if (string.Equals(f.Name, n, StringComparison.OrdinalIgnoreCase)) return f;
-                f.Dispose();
+                case "ja": UiFamily = "Yu Gothic UI"; break;
+                case "ko": UiFamily = "Malgun Gothic"; break;
+                case "zh-CN": UiFamily = "Microsoft YaHei UI"; break;
+                case "zh-TW": UiFamily = "Microsoft JhengHei UI"; break;
+                default: UiFamily = "Segoe UI"; break;
             }
-            return new Font(FontFamily.GenericSansSerif, pt, fallbackStyle);
+        }
+
+        public static Font Ui(float pt, FontStyle st = FontStyle.Regular) => Pick(pt, st, UiFamily, "Segoe UI");
+        public static Font Semibold(float pt) =>
+            (UiFamily == "Segoe UI" ? TryFont("Segoe UI Semibold", pt, FontStyle.Regular) : null) ?? Ui(pt, FontStyle.Bold);
+        public static Font Mono(float pt) => Pick(pt, FontStyle.Regular, "Cascadia Mono", "Consolas");
+
+        static Font TryFont(string name, float pt, FontStyle st)
+        {
+            var f = new Font(name, pt, st);
+            if (string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) return f;
+            f.Dispose();
+            return null;
+        }
+
+        static Font Pick(float pt, FontStyle st, params string[] names)
+        {
+            foreach (var n in names) { var f = TryFont(n, pt, st); if (f != null) return f; }
+            return new Font(FontFamily.GenericSansSerif, pt, st);
         }
 
         public static Color Mix(Color a, Color b, float t) =>
@@ -137,6 +156,9 @@ namespace MPFever
         /// <summary>Segment buttons: the option currently in effect.</summary>
         public bool Active { get => active; set { if (active != value) { active = value; Invalidate(); } } }
 
+        /// <summary>A small globe in front of the text (language button).</summary>
+        public bool Globe;
+
         public ModernButton(ButtonKind kind)
         {
             Kind = kind;
@@ -144,15 +166,20 @@ namespace MPFever
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
             Cursor = Cursors.Hand;
-            Font = kind == ButtonKind.Primary ? Theme.Semibold(9.75f) : Theme.Ui(9.75f);
+            ResetFont();
             Height = Theme.S(kind == ButtonKind.Ghost ? 30 : 38);
             UseVisualStyleBackColor = false;
         }
 
+        /// <summary>The theme's font (after a change of language).</summary>
+        public new void ResetFont() => Font = Kind == ButtonKind.Primary ? Theme.Semibold(9.75f) : Theme.Ui(9.75f);
+
+        int GlobeSpace => Globe ? Theme.S(20) : 0;
+
         /// <summary>Width fitted to the text.</summary>
         public ModernButton Fit(int extra = 28)
         {
-            Width = TextRenderer.MeasureText(Text, Font).Width + Theme.S(extra);
+            Width = TextRenderer.MeasureText(Text, Font).Width + GlobeSpace + Theme.S(extra);
             return this;
         }
 
@@ -199,7 +226,25 @@ namespace MPFever
             }
             if (Focused && ShowFocusCues && en) border = Theme.Accent;
             Theme.Box(e.Graphics, this, Theme.BackOf(this), fill, border, Theme.S(7));
-            TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, fore,
+            var area = ClientRectangle;
+            if (Globe)
+            {
+                // centred together with the text
+                int tw = TextRenderer.MeasureText(Text, Font).Width;
+                int d = Theme.S(13), x = Math.Max(Theme.S(8), (Width - tw - GlobeSpace) / 2), y = (Height - d) / 2;
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var pen = new Pen(fore, Math.Max(1f, Theme.Scale)))
+                {
+                    g.DrawEllipse(pen, x, y, d, d);
+                    g.DrawEllipse(pen, x + d * 0.28f, y, d * 0.44f, d);
+                    g.DrawLine(pen, x, y + d / 2f, x + d, y + d / 2f);
+                }
+                area = new Rectangle(x + GlobeSpace, 0, Width - x - GlobeSpace, Height);
+                TextRenderer.DrawText(e.Graphics, Text, Font, area, fore, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+                return;
+            }
+            TextRenderer.DrawText(e.Graphics, Text, Font, area, fore,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         }
     }
@@ -302,15 +347,24 @@ namespace MPFever
     sealed class HeaderBar : Control
     {
         readonly string subtitle, version;
+        readonly Control tool;
         string role = ""; Color roleColor = Theme.Faint;
         readonly Font titleFont = Theme.Semibold(15f), subFont = Theme.Ui(9f), badgeFont = Theme.Semibold(8f), logoFont = Theme.Semibold(11f);
 
-        public HeaderBar(string subtitle, string version)
+        public HeaderBar(string subtitle, string version, Control tool = null)
         {
-            this.subtitle = subtitle; this.version = version;
+            this.subtitle = subtitle; this.version = version; this.tool = tool;
+            if (tool != null) Controls.Add(tool);
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             BackColor = Theme.Bg;
             Height = Theme.S(76);
+        }
+
+        protected override void OnLayout(LayoutEventArgs e)
+        {
+            base.OnLayout(e);
+            if (tool is ModernButton b) b.Fit(24);
+            if (tool != null) tool.Location = new Point(Width - Theme.S(22) - tool.Width, (Height - tool.Height) / 2);
         }
 
         public void SetRole(string text, Color color)
@@ -336,7 +390,7 @@ namespace MPFever
             TextRenderer.DrawText(g, "MPFever", titleFont, new Point(tx, Height / 2 - Theme.S(23)), Theme.Text, flags);
             TextRenderer.DrawText(g, subtitle, subFont, new Point(tx + Theme.S(1), Height / 2 + Theme.S(4)), Theme.Muted, flags);
 
-            int right = Width - pad;
+            int right = tool != null ? tool.Left - Theme.S(10) : Width - pad;
             right = Badge(g, version, right, Theme.Muted, Theme.Raised, Theme.Border) - Theme.S(8);
             if (role != "") Badge(g, role, right, roleColor, Theme.Mix(Theme.Bg, roleColor, 0.14f), Theme.Mix(Theme.Bg, roleColor, 0.45f));
 
@@ -393,6 +447,58 @@ namespace MPFever
             int h = c.Padding.Vertical;
             foreach (Control x in c.Controls) if (x.Dock == DockStyle.Top) h += x.Height;
             c.Height = h;
+        }
+    }
+
+    /// <summary>Dark look for context menus.</summary>
+    sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public DarkMenuRenderer() : base(new Colors()) { RoundedEdges = false; }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            using (var b = new SolidBrush(Theme.Raised)) e.Graphics.FillRectangle(b, e.AffectedBounds);
+        }
+
+        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+        {
+            using (var b = new SolidBrush(Theme.Raised)) e.Graphics.FillRectangle(b, e.AffectedBounds);
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Enabled ? Theme.Text : Theme.Faint;
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var r = e.ImageRectangle;
+            using (var pen = new Pen(Theme.Accent, 2f * Theme.Scale))
+                g.DrawLines(pen, new[] {
+                    new PointF(r.Left + r.Width * 0.2f, r.Top + r.Height * 0.55f),
+                    new PointF(r.Left + r.Width * 0.42f, r.Top + r.Height * 0.75f),
+                    new PointF(r.Left + r.Width * 0.8f, r.Top + r.Height * 0.3f) });
+        }
+
+        sealed class Colors : ProfessionalColorTable
+        {
+            public override Color ToolStripDropDownBackground => Theme.Raised;
+            public override Color MenuBorder => Theme.Border;
+            public override Color MenuItemBorder => Theme.RaisedHover;
+            public override Color MenuItemSelected => Theme.RaisedHover;
+            public override Color MenuItemSelectedGradientBegin => Theme.RaisedHover;
+            public override Color MenuItemSelectedGradientEnd => Theme.RaisedHover;
+            public override Color ImageMarginGradientBegin => Theme.Raised;
+            public override Color ImageMarginGradientMiddle => Theme.Raised;
+            public override Color ImageMarginGradientEnd => Theme.Raised;
+            public override Color CheckBackground => Theme.Raised;
+            public override Color CheckSelectedBackground => Theme.RaisedHover;
+            public override Color CheckPressedBackground => Theme.RaisedHover;
+            public override Color SeparatorDark => Theme.Border;
+            public override Color SeparatorLight => Theme.Raised;
         }
     }
 }

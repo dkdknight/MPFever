@@ -19,6 +19,36 @@ C.NAME = os.getenv("MPFEVER_NAME") or "player"
 C.ROLE = os.getenv("MPFEVER_ROLE") or "solo"
 C.ACTIVE = C.DIR ~= nil and C.DIR ~= "" and C.IO ~= nil
 
+-- Texts: French and English are written in the code as T("français", "English"); the other languages come from
+-- lang.txt in the session folder, written by MPFever.exe: "@lang TAB code", then "English TAB translation" lines.
+C.LANG, C.LANGCODE = {}, os.getenv("MPFEVER_LANG") or "en"
+function C.loadLang()
+	local t = {}
+	local f = C.ACTIVE and C.IO.open(C.DIR .. BS .. "lang.txt", "rb")
+	if f then
+		local s = f:read("*a") or ""
+		f:close()
+		for line in s:gmatch("[^" .. NL .. "]+") do
+			local k, v = line:match("^(.-)" .. TAB .. "(.*)$")
+			if k and k ~= "" then
+				v = v:gsub(CR, "")
+				if k == "@lang" then C.LANGCODE = v else t[k] = v end
+			end
+		end
+	end
+	C.LANG = t
+end
+C.loadLang()
+function C.T(fr, en)
+	if C.LANGCODE == "fr" then return fr end
+	return C.LANG[en] or en
+end
+-- a text with one %s (put in with gsub: the value may contain % itself)
+function C.Tf(fr, en, value)
+	local s = C.T(fr, en):gsub("%%s", function() return tostring(value) end)
+	return s
+end
+
 -- name and role chosen in the main menu's MPFever window (written by MPFever.exe before the savegame is loaded)
 if C.ACTIVE then
 	local f = C.IO.open(C.DIR .. BS .. "identity.txt", "rb")
