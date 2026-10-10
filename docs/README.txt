@@ -1,5 +1,5 @@
 MPFever - Multiplayer for Transport Fever 3
-Version 0.3.3-experimental
+Version 0.3.4-experimental
 ===========================================
 
 MPFever lets several players play the same Transport Fever 3 world together, each one
@@ -79,9 +79,8 @@ KNOWN LIMITATIONS
   where you edit sends the new ground, the others apply it at the same game time (or a
   step later when they were already past it). If the copy fails the host's game is
   reloaded for everybody (automatic resynchronisation).
-- Trees and plants of the brush: copied since 0.3.3, first version not yet tried with the real
-  brush (the logs tell whether it worked: please send them). Ground PAINT (textures) is still
-  not copied (it is not reachable by the game's scripts; work in progress).
+- Trees and plants of the brush are copied (since 0.3.3). Ground PAINT (textures) is not copied
+  yet: each game keeps its own paint (it does not cause a resynchronisation).
 - Tested with 2 players. More players should work but are untested.
 - No player list or chat in the game yet.
 - Windows only. Made for the current Steam version of Transport Fever 3 (builds 40408 and 40420).

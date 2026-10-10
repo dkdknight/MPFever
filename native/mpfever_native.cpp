@@ -361,6 +361,9 @@ static DWORD g_lastCtl = 0;
 static char g_dir[300];
 static int g_dirLen = 0;
 static long g_inRelease = 0;
+static volatile long g_dropHeld = 0;  // a game was loaded: the builds still held belong to the previous one
+static int g_dropTarget = 0;          // the releases asked for until then
+static int g_dropId = 0;              // the last build held until then
 static int g_deferNextTarget = 0, g_deferNextDone = 0;   // test mode: defer the mod's own next commands
 
 static void PathOf(char* out, const char* name)
@@ -405,6 +408,8 @@ static long g_othersTok = 0;
 // (see OwnerFix), so its entity is looked for in the builds they issue.
 static volatile long g_canon = 0;
 static volatile long g_mainTid = 0;        // the game's main thread (its interface), see PatchPlayerReads
+static volatile i64 g_pickCount[8][3];     // per redirected reading: [0] on the interface's thread, [1] the simulation's, [2] another
+static volatile long g_simTid = 0;         // the simulation thread (seen in its pre-iteration)
 static long g_canonTok = 0;
 typedef void (*ClearPosF)(void* world, u32 player);
 static ClearPosF g_clearPos = 0;
@@ -491,7 +496,9 @@ static void ReadControl()
         i = j + 1;
     }
     { long want = g_tinWant; if (want && _InterlockedExchange(&g_tinLoaded, want) != want) TerrainLoadIn(want); }
-    if (haveLocal && wantTok != g_localTok) { g_localTok = wantTok; g_localPlayer = wantLocal; ApplyLocalPlayer("control"); }
+    // (written into the game state by the simulation thread only, at its next iteration: from here, the state known last may be the
+    // one of a game just unloaded, freed memory - writing there corrupted the heap and crashed the game after a resynchronisation)
+    if (haveLocal && wantTok != g_localTok) { g_localTok = wantTok; g_localPlayer = wantLocal; }
     if (haveCanon && canonTok != g_canonTok) {
         g_canonTok = canonTok; g_canon = wantCanon;
         static long shownC = 0;
@@ -623,20 +630,32 @@ static void ClearOthersIn(u8* gs, bool learn)
         if (!learn) return;
         if (g_nPreSeen < 16) g_preSeen[g_nPreSeen++] = gs; else g_preSeen[0] = gs;
         if (g_nOthers) { Buf b; b.str("other companies dropped: a new game state ").hex((u64)gs); LogLine(b); g_nOthers = 0; }
+        if (g_heldHead != g_heldTail) { g_dropTarget = g_releaseTarget; g_dropId = g_nextId; g_dropHeld = 1; }
         return;
     }
     long n = g_nOthers;
     if (n <= 0 || !g_clearPos) return;
     void* world = *(void**)(gs + 0x18);
-    u32 local = *(u32*)(gs + 0x20c);
+    // (the word holds the savegame's company, which the engine empties itself at the start of the iteration; this machine plays
+    // g_localPlayer, whose positions the interface must show)
+    u32 word = *(u32*)(gs + 0x20c);
+    u32 mine = g_localPlayer ? (u32)g_localPlayer : word;
     if (!world) return;
-    for (long i = 0; i < n && i < 8; i++) {
-        u32 e = (u32)g_others[i];
-        if (e && e != local) {
-            g_clearPos(world, e);
-            static long shown = 0;
-            if (shown++ < 3) { Buf b; b.str("positions of company ").dec(e).str(" emptied (this machine plays ").dec(local).str(", learn ").dec(learn ? 1 : 0).str(")"); LogLine(b); }
-        }
+    u32 list[10]; int k = 0;
+    for (long i = 0; i < n && i < 8; i++) if (g_others[i]) list[k++] = (u32)g_others[i];
+    list[k++] = mine;
+    list[k++] = word;
+    for (int i = 0; i < k; i++) {
+        u32 e = list[i];
+        bool dup = false;
+        for (int j = 0; j < i; j++) if (list[j] == e) dup = true;
+        if (dup || !e) continue;
+        // start of an iteration (learn): every company but the word's (the engine's own call follows); before the copy for the
+        // interface: every company but this machine's
+        if (learn ? e == word : e == mine) continue;
+        g_clearPos(world, e);
+        static long shown = 0;
+        if (shown++ < 4) { Buf b; b.str("positions of company ").dec(e).str(" emptied (this machine plays ").dec(mine).str(", word ").dec(word).str(", learn ").dec(learn ? 1 : 0).str(")"); LogLine(b); }
     }
 }
 
@@ -693,6 +712,12 @@ typedef DWORD (WINAPI* PidF)();
 static DWORD WINAPI WatchAllThreads(void*)
 {
     Sleep(1500);
+    // (MPFEVER_WATCH20C=2: every 5 s, every thread but the interface's, the threads started since included)
+    char wv[4] = {};
+    GetEnvironmentVariableA("MPFEVER_WATCH20C", wv, 3);
+    bool again = wv[0] == '2';
+    bool mainOnly = wv[0] == '3';       // (MPFEVER_WATCH20C=3: the interface's thread only)
+    for (int round = 0; ; round++) {
     HMODULE k = GetModuleHandleW(L"kernel32.dll");
     auto snap = (SnapF)GetProcAddress(k, "CreateToolhelp32Snapshot");
     auto first = (T32F)GetProcAddress(k, "Thread32First");
@@ -713,6 +738,8 @@ static DWORD WINAPI WatchAllThreads(void*)
     int n = 0;
     if (first(h, te)) do {
         if (te[3] != mypid || te[2] == me) continue;
+        if (again && (long)te[2] == g_mainTid) continue;
+        if (mainOnly && (long)te[2] != g_mainTid) continue;
         HANDLE t = openT(0x0002 | 0x0008 | 0x0010, 0, te[2]);
         if (!t) continue;
         if (susp(t) != (DWORD)-1) {
@@ -733,8 +760,10 @@ static DWORD WINAPI WatchAllThreads(void*)
         CloseHandle(t);
     } while (next(h, te));
     CloseHandle(h);
-    Buf b; b.str("watch20c: armed on ").dec(n).str(" thread(s), ").dec(g_watchN).str(" word(s)"); LogLine(b);
-    return 0;
+    if (round == 0) { Buf b; b.str("watch20c: armed on ").dec(n).str(" thread(s), ").dec(g_watchN).str(" word(s)"); LogLine(b); }
+    if (!again) return 0;
+    Sleep(5000);
+    }
 }
 
 static void WatchAdd(u8* gs)
@@ -769,8 +798,10 @@ static void WatchArm(u8* gs)
 extern "C" u64 PreIterDetour(void* a)
 {
     g_iter++;
+    g_simTid = (long)GetCurrentThreadId();
     if (g_iter == 1) { Buf t; t.str("simulation thread ").dec(GetCurrentThreadId()).str(", interface thread ").dec(g_mainTid); LogLine(t); }
     ClearOthersIn(a ? *(u8**)((u8*)a + 8) : 0, true);
+    if (a && *(u8**)((u8*)a + 8)) { g_slot = *(void**)((u8*)a + 8); ApplyLocalPlayer("iteration"); }
     WatchArm(a ? *(u8**)((u8*)a + 8) : 0);
     // commands moved aside (exact-iteration builds, or the MPFEVER_DEFER_ITERS test) whose iteration has come, in queue order
     for (unsigned i = g_defHead; i != g_defTail; i++) {
@@ -802,6 +833,11 @@ static void AuditFlush(bool force)
         if (tot == g_kcSeen[k]) continue;
         g_kcSeen[k] = tot;
         Buf l; l.str("audit kind ").dec(k).str(" loop ").dec(g_kcLoop[k]).str(" direct ").dec(g_kcDir[k]);
+        LogLine(l);
+    }
+    {
+        Buf l; l.str("player readings (interface/simulation/other):");
+        for (int i = 0; i < 5; i++) l.str(" ").dec((long)g_pickCount[i][0]).str("/").dec((long)g_pickCount[i][1]).str("/").dec((long)g_pickCount[i][2]);
         LogLine(l);
     }
 }
@@ -1169,6 +1205,16 @@ static void DumpPayload(const u8* pay, const char* tag)
 
 // Writes the machine's company (player entity) into the game state's local-player word. The word is read by the interface and the
 // native tools (they act as that player), and re-written whenever a loaded game replaced the state object.
+// The simulation must run every game with the same company in that word (else a game playing another company simulates
+// differently: a road vehicle of the savegame company drove faster on the client, the money followed): the word keeps the
+// savegame's company (g_canon) and the interface's readings of it are redirected to this machine's company (PatchPlayerReads).
+static long g_split = -1;
+static bool SplitWord()
+{
+    if (g_split < 0) { char v[4]; g_split = GetEnvironmentVariableA("MPFEVER_NOSPLIT", v, 3) > 0 ? 0 : 1; }
+    return g_split && g_canon && g_localPlayer && g_canon != g_localPlayer;
+}
+
 static void ApplyLocalPlayer(const char* why)
 {
     // The engine has more than one game-state object calling Apply (two were seen next to each other at the start of a game): the
@@ -1180,7 +1226,7 @@ static void ApplyLocalPlayer(const char* why)
     for (int i = 0; i < nseen; i++) if (seen[i] == g_slot) known = true;
     if (!known) {
         if (nseen < 16) seen[nseen++] = g_slot; else seen[0] = g_slot;
-        if (g_localPlayer && why[0] == 'a') {
+        if (g_localPlayer) {
             Buf b; b.str("local player ").dec(g_localPlayer).str(" dropped: a new game state ").hex((u64)g_slot); LogLine(b);
             g_localPlayer = 0;
             return;
@@ -1188,6 +1234,7 @@ static void ApplyLocalPlayer(const char* why)
     }
     long want = g_localPlayer;
     if (!want || !g_slot) return;
+    if (SplitWord()) want = g_canon;
     volatile u32* w = (volatile u32*)((u8*)g_slot + 0x20c);
     u32 cur = *w;
     if (cur == (u32)want) return;
@@ -1371,7 +1418,19 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
     }
     // any other command (the mod's own commands included): the moment to release what the mod asked for
     if (g_heldHead != g_heldTail && !g_inRelease) {
-        if (g_released < g_releaseTarget) {
+        // Builds held for a game that has been unloaded since (resynchronisation) are never released: their command list and the
+        // objects they point at are gone (releasing one crashed the game). They are left alone (not destroyed either) and count as
+        // released, as the mod, restarted with the new game, never asks for them.
+        if (g_dropHeld) {
+            int n = 0;
+            while (g_heldHead != g_heldTail && g_held[g_heldHead % 64]->id <= g_dropId) { g_heldHead++; n++; }
+            g_dropHeld = 0;
+            // (the new game's mod continues the count of the releases asked for: those of the previous game are done)
+            if (g_released < g_dropTarget) g_released = g_dropTarget;
+            Buf b; b.str("held build(s) of the previous game dropped: ").dec(n); LogLine(b);
+        }
+        if (g_heldHead != g_heldTail && g_released < g_releaseTarget) {
+            (void)list;
             g_inRelease = 1;
             while (g_released < g_releaseTarget && g_heldHead != g_heldTail) { ReleaseOne(); g_released++; }
             g_inRelease = 0;
@@ -1774,12 +1833,61 @@ static bool PatchPlayerRead(u32 siteRva, const u8* expect, int expectLen, int si
     return true;
 }
 
+// After the word's value is read into a register: r11d = the main thread ? this machine's company : the canon (when known), into
+// the register (dstMov = the bytes of "mov <reg>,r11d"). Uses r10 and r11 only (free at every site below).
+static int g_pickSite = 0;
+// simByThread: the simulation thread gets the canon, every other thread this machine's company (api.engine.util.getPlayer: the
+// interface's Lua also runs on threads other than the main one); else the main thread gets this machine's company, the others the canon.
+static u8* EmitPick(u8* p, const u8* dstMov, int dstLen, bool simByThread = false)
+{
+    {   // count the readings per thread kind (logged with the audit)
+        volatile i64* c = g_pickCount[g_pickSite & 7];
+        g_pickSite++;
+        *p++ = 0x65; *p++ = 0x44; *p++ = 0x8B; *p++ = 0x1C; *p++ = 0x25; *p++ = 0x48; *p++ = 0; *p++ = 0; *p++ = 0;   // mov r11d,gs:[48h]
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_mainTid);              // mov r10,&mainTid
+        *p++ = 0x45; *p++ = 0x3B; *p++ = 0x1A;                                     // cmp r11d,[r10]
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&c[0]);                    // mov r10,&main
+        *p++ = 0x74; *p++ = 0x23;                                                  // je INC
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_simTid);               // mov r10,&simTid
+        *p++ = 0x45; *p++ = 0x3B; *p++ = 0x1A;                                     // cmp r11d,[r10]
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&c[1]);                    // mov r10,&sim
+        *p++ = 0x74; *p++ = 0x0A;                                                  // je INC
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&c[2]);                    // mov r10,&other
+        *p++ = 0xF0; *p++ = 0x49; *p++ = 0xFF; *p++ = 0x02;                        // INC: lock inc qword [r10]
+    }
+    *p++ = 0x65; *p++ = 0x44; *p++ = 0x8B; *p++ = 0x1C; *p++ = 0x25; *p++ = 0x48; *p++ = 0; *p++ = 0; *p++ = 0;   // mov r11d,gs:[48h]
+    if (simByThread) {
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_simTid);               // mov r10,&simTid
+        *p++ = 0x45; *p++ = 0x3B; *p++ = 0x1A;                                     // cmp r11d,[r10]
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_canon);                // mov r10,&canon
+        *p++ = 0x74; *p++ = 0x0A;                                                  // je L0 (the simulation: the canon)
+    } else {
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_mainTid);              // mov r10,&mainTid
+        *p++ = 0x45; *p++ = 0x3B; *p++ = 0x1A;                                     // cmp r11d,[r10]
+        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_canon);                // mov r10,&canon
+        *p++ = 0x75; *p++ = 0x0A;                                                  // jne L0 (another thread: the canon)
+    }
+    *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_localPlayer);              // mov r10,&localPlayer
+    *p++ = 0x45; *p++ = 0x8B; *p++ = 0x1A;                                         // L0: mov r11d,[r10]
+    *p++ = 0x45; *p++ = 0x85; *p++ = 0xDB;                                         // test r11d,r11d
+    *p++ = 0x74; *p++ = (u8)dstLen;                                                // je L1 (not known: the word as read)
+    for (int i = 0; i < dstLen; i++) *p++ = dstMov[i];                             // mov <reg>,r11d
+    return p;                                                                      // L1:
+}
+static u8* EmitBack(u8* p, u8* back)
+{
+    *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)back);                        // mov r11,back
+    *p++ = 0x41; *p++ = 0xFF; *p++ = 0xE3;                                         // jmp r11
+    return p;
+}
+
 static void PatchPlayerReads()
 {
     if (RVA_REPL != 0x255e60) return;       // build 40420 only (the sites were found there)
     u8* page = (u8*)VirtualAlloc(0, 4096, 0x3000 /* MEM_COMMIT|MEM_RESERVE */, 0x40 /* PAGE_EXECUTE_READWRITE */);
     if (!page) return;
     int done = 0;
+    static const u8 TO_EDX[] = { 0x44, 0x89, 0xDA }, TO_EAX[] = { 0x44, 0x89, 0xD8 }, TO_EBX[] = { 0x44, 0x89, 0xDB }, TO_R8D[] = { 0x45, 0x89, 0xD8 };
     // A: api.engine.util.getPlayer: movsxd rdx,[rax+20Ch] / mov rcx,rbx / call lua_pushinteger, then back at +15
     {
         const u32 rva = 0x24f0a18;
@@ -1787,24 +1895,13 @@ static void PatchPlayerReads()
         u8* site = (u8*)(g_base + rva);
         u64 push = (u64)(site + 15 + *(i32*)(site + 11));
         u8* p = page;
-        *p++ = 0x50;                                                                   // push rax
         *p++ = 0x8B; *p++ = 0x90; *p++ = 0x0C; *p++ = 0x02; *p++ = 0x00; *p++ = 0x00;  // mov edx,[rax+20Ch]
-        *p++ = 0x65; *p++ = 0x8B; *p++ = 0x0C; *p++ = 0x25; *p++ = 0x48; *p++ = 0; *p++ = 0; *p++ = 0;   // mov ecx,gs:[48h]
-        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)&g_mainTid);                  // mov r11,&mainTid
-        *p++ = 0x41; *p++ = 0x3B; *p++ = 0x0B;                                         // cmp ecx,[r11]
-        *p++ = 0x74; *p++ = 0x13;                                                      // je L1
-        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)&g_canon);                    // mov r11,&canon
-        *p++ = 0x41; *p++ = 0x8B; *p++ = 0x0B;                                         // mov ecx,[r11]
-        *p++ = 0x85; *p++ = 0xC9;                                                      // test ecx,ecx
-        *p++ = 0x74; *p++ = 0x02;                                                      // je L1
-        *p++ = 0x8B; *p++ = 0xD1;                                                      // mov edx,ecx
-        *p++ = 0x48; *p++ = 0x63; *p++ = 0xD2;                                         // L1: movsxd rdx,edx
-        *p++ = 0x58;                                                                   // pop rax
+        p = EmitPick(p, TO_EDX, 3, true);
+        *p++ = 0x48; *p++ = 0x63; *p++ = 0xD2;                                         // movsxd rdx,edx
         *p++ = 0x48; *p++ = 0x8B; *p++ = 0xCB;                                         // mov rcx,rbx
         *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, push);                             // mov r11,lua_pushinteger
         *p++ = 0x41; *p++ = 0xFF; *p++ = 0xD3;                                         // call r11
-        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)(site + 15));                 // mov r11,back
-        *p++ = 0x41; *p++ = 0xFF; *p++ = 0xE3;                                         // jmp r11
+        p = EmitBack(p, site + 15);
         if (PatchPlayerRead(rva, expect, (int)sizeof(expect), 15, page, (int)(p - page))) done++;
     }
     // B: the other binding: mov eax,[rax+20Ch] / mov [rsp+20h],eax / mov r9,[rdx+180h], then back at +17
@@ -1815,23 +1912,58 @@ static void PatchPlayerReads()
         u8* stub = page + 256;
         u8* p = stub;
         *p++ = 0x8B; *p++ = 0x80; *p++ = 0x0C; *p++ = 0x02; *p++ = 0x00; *p++ = 0x00;  // mov eax,[rax+20Ch]
-        *p++ = 0x65; *p++ = 0x44; *p++ = 0x8B; *p++ = 0x1C; *p++ = 0x25; *p++ = 0x48; *p++ = 0; *p++ = 0; *p++ = 0;   // mov r11d,gs:[48h]
-        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_mainTid);                  // mov r10,&mainTid
-        *p++ = 0x45; *p++ = 0x3B; *p++ = 0x1A;                                         // cmp r11d,[r10]
-        *p++ = 0x74; *p++ = 0x15;                                                      // je L1
-        *p++ = 0x49; *p++ = 0xBA; p = EmitImm64(p, (u64)&g_canon);                    // mov r10,&canon
-        *p++ = 0x45; *p++ = 0x8B; *p++ = 0x1A;                                         // mov r11d,[r10]
-        *p++ = 0x45; *p++ = 0x85; *p++ = 0xDB;                                         // test r11d,r11d
-        *p++ = 0x74; *p++ = 0x03;                                                      // je L1
-        *p++ = 0x41; *p++ = 0x8B; *p++ = 0xC3;                                         // mov eax,r11d
-        *p++ = 0x89; *p++ = 0x44; *p++ = 0x24; *p++ = 0x20;                            // L1: mov [rsp+20h],eax
+        p = EmitPick(p, TO_EAX, 3);
+        *p++ = 0x89; *p++ = 0x44; *p++ = 0x24; *p++ = 0x20;                            // mov [rsp+20h],eax
         *p++ = 0x4C; *p++ = 0x8B; *p++ = 0x8A; *p++ = 0x80; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00;   // mov r9,[rdx+180h]
-        *p++ = 0x49; *p++ = 0xBB; p = EmitImm64(p, (u64)(site + 17));                 // mov r11,back
-        *p++ = 0x41; *p++ = 0xFF; *p++ = 0xE3;                                         // jmp r11
+        p = EmitBack(p, site + 17);
         if (PatchPlayerRead(rva, expect, (int)sizeof(expect), 17, stub, (int)(p - stub))) done++;
     }
+    // C: a job of the engine's worker threads (function 0x67b790) that takes the local player along with its data:
+    // mov eax,[rax+20Ch] / mov [rbp-48h],r14 / mov [rbp-40h],rbx / mov [rbp-38h],eax, then back at +17
+    {
+        const u32 rva = 0x67b955;
+        static const u8 expect[] = { 0x8B, 0x80, 0x0C, 0x02, 0x00, 0x00, 0x4C, 0x89, 0x75, 0xB8, 0x48, 0x89, 0x5D, 0xC0, 0x89, 0x45, 0xC8 };
+        u8* site = (u8*)(g_base + rva);
+        u8* stub = page + 512;
+        u8* p = stub;
+        *p++ = 0x8B; *p++ = 0x80; *p++ = 0x0C; *p++ = 0x02; *p++ = 0x00; *p++ = 0x00;  // mov eax,[rax+20Ch]
+        p = EmitPick(p, TO_EAX, 3);
+        *p++ = 0x4C; *p++ = 0x89; *p++ = 0x75; *p++ = 0xB8;                            // mov [rbp-48h],r14
+        *p++ = 0x48; *p++ = 0x89; *p++ = 0x5D; *p++ = 0xC0;                            // mov [rbp-40h],rbx
+        *p++ = 0x89; *p++ = 0x45; *p++ = 0xC8;                                         // mov [rbp-38h],eax
+        p = EmitBack(p, site + 17);
+        if (PatchPlayerRead(rva, expect, (int)sizeof(expect), 17, stub, (int)(p - stub))) done++;
+    }
+    // D: the interface (main thread), function 0x8690be: mov ebx,[r13+20Ch] / lea rax,[rip+X], then back at +14
+    {
+        const u32 rva = 0x86917c;
+        static const u8 expect[] = { 0x41, 0x8B, 0x9D, 0x0C, 0x02, 0x00, 0x00, 0x48, 0x8D, 0x05 };
+        u8* site = (u8*)(g_base + rva);
+        u64 target = (u64)(site + 14 + *(i32*)(site + 10));
+        u8* stub = page + 768;
+        u8* p = stub;
+        *p++ = 0x41; *p++ = 0x8B; *p++ = 0x9D; *p++ = 0x0C; *p++ = 0x02; *p++ = 0x00; *p++ = 0x00;   // mov ebx,[r13+20Ch]
+        p = EmitPick(p, TO_EBX, 3);
+        *p++ = 0x48; *p++ = 0xB8; p = EmitImm64(p, target);                           // mov rax,X
+        p = EmitBack(p, site + 14);
+        if (PatchPlayerRead(rva, expect, (int)sizeof(expect), 14, stub, (int)(p - stub))) done++;
+    }
+    // E: the interface (main thread), function 0x24e7cb0: mov r8d,[rax+20Ch] / mov rdx,rax / lea rcx,[rsp+20h], then back at +15
+    {
+        const u32 rva = 0x24e7d66;
+        static const u8 expect[] = { 0x44, 0x8B, 0x80, 0x0C, 0x02, 0x00, 0x00, 0x48, 0x8B, 0xD0, 0x48, 0x8D, 0x4C, 0x24, 0x20 };
+        u8* site = (u8*)(g_base + rva);
+        u8* stub = page + 1024;
+        u8* p = stub;
+        *p++ = 0x44; *p++ = 0x8B; *p++ = 0x80; *p++ = 0x0C; *p++ = 0x02; *p++ = 0x00; *p++ = 0x00;   // mov r8d,[rax+20Ch]
+        p = EmitPick(p, TO_R8D, 3);
+        *p++ = 0x48; *p++ = 0x8B; *p++ = 0xD0;                                         // mov rdx,rax
+        *p++ = 0x48; *p++ = 0x8D; *p++ = 0x4C; *p++ = 0x24; *p++ = 0x20;               // lea rcx,[rsp+20h]
+        p = EmitBack(p, site + 15);
+        if (PatchPlayerRead(rva, expect, (int)sizeof(expect), 15, stub, (int)(p - stub))) done++;
+    }
     FlushInstructionCache(GetCurrentProcess(), page, 4096);
-    Buf b; b.str("local player: ").dec(done).str(" engine reading(s) give the savegame's company outside the interface thread ").dec(g_mainTid); LogLine(b);
+    Buf b; b.str("local player: ").dec(done).str(" engine reading(s) redirected (interface thread ").dec(g_mainTid).str(": this machine's company; other threads: the savegame's)"); LogLine(b);
 }
 
 static DWORD WINAPI Init(void*)
@@ -2080,6 +2212,7 @@ extern "C" BOOL WINAPI DllMain(HMODULE inst, DWORD reason, void*)
         DisableThreadLibraryCalls(inst);
         g_mainTid = (long)GetCurrentThreadId();      // the game loads this module on its main thread, the interface's
         char d[8];
+        if (GetEnvironmentVariableA("MPFEVER_CANONALL", d, 3) > 0) g_mainTid = 1;   // diagnostic: the canon on every thread
         if (GetEnvironmentVariableA("MPFEVER_DIR", d, 1) > 0) {
             g_base = (uptr)GetModuleHandleW(0);
             auto dos = (IMAGE_DOS_HEADER_*)g_base;

@@ -923,7 +923,15 @@ function C.rebuildNativeWithConstruction(m, conv, rm, opts)
 		local rsp = rm.proposal
 		local ok1, e1 = pcall(function() sp.removedSegments = rsp.removedSegments end)
 		if not ok1 then C.errors[#C.errors + 1] = "removedSegments: " .. tostring(e1):sub(1, 100) end
-		local ok2, e2 = pcall(function() sp.removedNodes = rsp.removedNodes end)
+		local ok2, e2 = pcall(function()
+			if opts.toolNodes then
+				local rnodes = {}
+				for i, n in ipairs(st.removedNodes or {}) do rnodes[i] = rebuild("NodeAndEntity", n, "removedNodes[" .. i .. "]") end
+				sp.removedNodes = rnodes
+			else
+				sp.removedNodes = rsp.removedNodes
+			end
+		end)
 		if not ok2 then C.errors[#C.errors + 1] = "removedNodes: " .. tostring(e2):sub(1, 100) end
 	end
 	-- the node configurations (lane connections...) the tool removed: only those this game has (removing one that does not

@@ -73,6 +73,9 @@ local function install()
 		end
 		-- notification events (popup sound, dismiss) are sent automatically by each game's own interface: local only
 		if tag.name == "makeScriptingSendEventCmd" and tag.args[2] == "Notifications" then
+			U.notifLogged = (U.notifLogged or 0) + 1
+			if U.notifLogged <= 40 then log("local notification event " .. tostring(tag.args[1]) .. "/" .. tostring(tag.args[3]) .. " " .. C.ser(C.marshal(tag.args[4])):sub(1, 200)) end
+			if os.getenv("MPFEVER_NONOTIF") then return end
 			return O.sendCommand(cmd, cb, progress)
 		end
 		if tag.name == "makeGameSetSpeedCmd" then
@@ -273,6 +276,60 @@ local function shareInfo(e, owner)
 			or (FR and "Non partagée : vos lignes ne peuvent pas s'y arrêter" or "Not shared: your lines cannot stop here")
 	end
 	return { key = key, fee = fee or 0, text = text, canEdit = mine }
+end
+
+-- the station group of what the line tool points at (a station, its construction, its group, or the street of a street stop)
+local function sharedGroupOf(e)
+	local okg, sg = pcall(R.stationGroupOf, e)
+	if okg and sg then return sg end
+	local found = nil
+	pcall(function()
+		local edge = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
+		for _, o in ipairs(edge and edge.objects or {}) do
+			local oe = o[1] or o.entity
+			if type(oe) == "number" and api.engine.getComponent(oe, api.type.ComponentType.STATION) then
+				found = R.stationGroupOf(oe)
+				if found then return end
+			end
+		end
+	end)
+	return found
+end
+
+-- The line tool lets a company pick only its own stations (entity_util.isOwnedByPlayerOrNotOwned): a station another company
+-- shares (shares.txt) can be picked too. The fee is booked by the game-script bridge at every stop.
+local function installShareSelect()
+	if U.shareSelectInstalled then return end
+	local okE, eu = pcall(ug_require, "/scripts/entity_util.tl")
+	if not (okE and type(eu) == "table" and type(eu.isOwnedByPlayerOrNotOwned) == "function") then
+		U.shareSelectInstalled = true
+		log("companies: shared stations cannot be picked by the line tool (" .. tostring(eu):sub(1, 120) .. ")")
+		return
+	end
+	U.shareSelectInstalled = true
+	if eu.__mpfShare then return end
+	eu.__mpfShare = true
+	local orig = eu.isOwnedByPlayerOrNotOwned
+	local cache, cacheAt = {}, -1
+	eu.isOwnedByPlayerOrNotOwned = function(entity, ...)
+		if orig(entity, ...) then return true end
+		if not U.shares or next(U.shares) == nil or type(entity) ~= "number" then return false end
+		local now = os.clock()
+		if now - cacheAt > 1 then cache = {}; cacheAt = now end
+		local v = cache[entity]
+		if v == nil then
+			v = false
+			local sg = sharedGroupOf(entity)
+			if sg then
+				local okk, key = pcall(R.sgKey, sg)
+				local fee = okk and key and U.shares[key] or nil
+				v = fee ~= nil and fee > 0
+			end
+			cache[entity] = v
+		end
+		return v
+	end
+	log("companies: the line tool can pick the stations shared by the other companies")
 end
 
 local function sendShare(key, fee)
@@ -504,9 +561,23 @@ local function pollControl()
 end
 
 local function tick(pendingState)
+	-- which company the interface acts as (logged when it changes, and how often it read another one in between)
+	pcall(function()
+		local p = api.engine.util.getPlayer()
+		U.uiReads = (U.uiReads or 0) + 1
+		if p ~= U.uiPlayer then
+			log("the interface plays " .. tostring(p) .. " (was " .. tostring(U.uiPlayer) .. ", " .. tostring(U.uiReads) .. " reads)")
+			U.uiPlayer = p
+			U.uiReads = 0
+		end
+	end)
 	pcall(pollBindings)
 	pcall(pollCompanies)
 	pcall(pollShares)
+	if U.coMap and not U.shareSelectInstalled then
+		local oks, errs = pcall(installShareSelect)
+		if not oks then U.shareSelectInstalled = true; log("companies: share pick not installed: " .. tostring(errs)) end
+	end
 	if U.coMap and not U.ownerInstalled and U.react and U.builtin then
 		local oko, erro = pcall(installOwnerLine, U.react, U.builtin)
 		if not oko then log("companies: owner line not installed: " .. tostring(erro)) end
@@ -527,7 +598,9 @@ local function tick(pendingState)
 			end)
 			if okw and type(r) == "table" then
 				local p = r.param or {}
-				log("selftest window of " .. tostring(e) .. ": recipe " .. tostring(r.recipe) .. ", owner '" .. tostring(p.ownerText) .. "', share '" .. tostring(p.shareText) .. "' edit " .. tostring(p.shareEdit) .. " key " .. tostring(p.shareKey))
+				local oke, eu = pcall(ug_require, "/scripts/entity_util.tl")
+				local pick = oke and type(eu) == "table" and eu.isOwnedByPlayerOrNotOwned(e)
+				log("selftest window of " .. tostring(e) .. ": recipe " .. tostring(r.recipe) .. ", owner '" .. tostring(p.ownerText) .. "', share '" .. tostring(p.shareText) .. "' edit " .. tostring(p.shareEdit) .. " key " .. tostring(p.shareKey) .. " pickable " .. tostring(pick))
 			else
 				log("selftest window of " .. tostring(e) .. ": " .. tostring(r):sub(1, 200))
 			end

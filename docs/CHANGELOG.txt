@@ -1,6 +1,25 @@
 MPFever - Changelog
 ===================
 
+0.3.4-experimental - no more crash on resynchronisation, companies stay in sync, shared stations usable
+  - FIX (crash): the host's game (or a client's) could crash while loading the game of a resynchronisation, or a little
+    after it: the module still wrote this machine's company into the game that had just been unloaded (freed memory).
+    It is now written by the simulation only, into the game it is running. Reproduced on the savegame of the report
+    (crash at the second resynchronisation) and checked: three resynchronisations in a row, no crash.
+  - FIX (crash): a building held when a resynchronisation started (its tool clicked just before) was released into the
+    newly loaded game and crashed it; such builds are now dropped.
+  - FIX (desync, separate companies): the games of the players drifted apart within a minute (vehicles, money of the
+    savegame's company, then towns) and were resynchronised again and again: the engine simulated slightly differently
+    on a game whose player plays another company. Every game now simulates with the same company and only the
+    interface of each player acts as its own company. Checked on the savegame of the report: identical for 5 minutes
+    with a resynchronisation in between (before: a drift after 30 seconds).
+  - FIX (desync): a depot or station built at the dead end of a street (its entrance joining the street's last node)
+    could not be rebuilt on the other games ("removal differs", then a resynchronisation): fixed and checked on the
+    savegame of the report (roads identical to the player's).
+  - FIX (shared stations): the line tool did not let another company pick a shared station; it does now (only the
+    stations shared with a fee above 0).
+  - FIX (separate companies): the money popups over the buildings only show the player's own company.
+
 0.3.3-experimental - companies kept, contracts and shared stations, fewer desyncs
   - FIX (companies): after a resynchronisation (a player joining, a difference), the request of a player
     to find their company again could arrive while the host's game was still loading and was lost: the

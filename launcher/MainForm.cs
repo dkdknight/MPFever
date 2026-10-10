@@ -40,7 +40,7 @@ namespace MPFever
 
     sealed class MainForm : Form
     {
-        public const string Version = "0.3.3-experimental";
+        public const string Version = "0.3.4-experimental";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;

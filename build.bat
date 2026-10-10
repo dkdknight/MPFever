@@ -16,7 +16,7 @@ echo === 2/3 launcher
 "%MSBUILD%" launcher\MPFever.csproj -p:Configuration=Release -v:minimal -nologo || exit /b 1
 
 echo === 3/3 package
-set "VERSION=0.3.3-experimental"
+set "VERSION=0.3.4-experimental"
 set "DIST=release\dist\MPFever"
 if exist release\dist rmdir /s /q release\dist
 mkdir "%DIST%" || exit /b 1

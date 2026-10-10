@@ -194,6 +194,27 @@ local hashCostsShown = 0
 local function simHash(terrainSig, reg)
 	local tStart = os.clock()
 	local parts = R.contentHash(C.hashStr, C.dump)
+	-- diagnostic (MPFEVER_VDUMP set): every vehicle and every company's money at each checkpoint, to diff two games
+	if os.getenv("MPFEVER_VDUMP") then
+		pcall(function()
+			local t = { "== t=" .. tostring(gameTime()) }
+			for _, e in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
+				local tv = api.engine.getComponent(e, api.type.ComponentType.TRANSPORT_VEHICLE)
+				local mp = api.engine.getComponent(e, api.type.ComponentType.MOVE_PATH)
+				local po = api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED)
+				local nm = api.engine.getComponent(e, api.type.ComponentType.NAME)
+				t[#t + 1] = string.format("%s owner=%s line=%s stop=%s state=%s | %s", nm and tostring(nm.name) or tostring(e), po and tostring(po.player) or "-",
+					tostring(tv and tv.line), tostring(tv and tv.stopIndex), tostring(tv and tv.state), mp and C.dump(mp.dyn) or "depot")
+			end
+			pcall(function()
+				for _, c in ipairs(reg and reg.list or {}) do
+					local acc = api.engine.getComponent(c.ent, api.type.ComponentType.ACCOUNT)
+					t[#t + 1] = "account " .. tostring(c.id) .. " " .. tostring(acc and acc.balance)
+				end
+			end)
+			C.appendFile(C.DIR .. BS .. "vdump.txt", table.concat(t, NL) .. NL)
+		end)
+	end
 	local costs = {}
 	for k, v in pairs(R.partCost or {}) do costs[k] = v end
 	local tMark = os.clock()
@@ -2278,13 +2299,17 @@ local function replayNativeConstruction(a)
 		pcall(function() nSeg = #rm.proposal.removedSegments engSeg = ids(rm.proposal.removedSegments, "entity") end)
 		pcall(function() nNodes = #rm.proposal.removedNodes engNodes = ids(rm.proposal.removedNodes, "entity") end)
 		log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: removal segments tool {" .. table.concat((function() local t = {} for i, v in ipairs(rmIds) do t[i] = tostring(v) end return t end)(), ",") .. "} engine {" .. engSeg .. "}; nodes tool {" .. table.concat(capNodes, ",") .. "} engine {" .. engNodes .. "}")
-		if nSeg ~= #rmIds or nNodes ~= #capNodes then
+		-- (same segments, other nodes: the engine also removes the free end of a dead-end street the tool kept, because the
+		-- construction's entrance joins it there; the tool's removed nodes are then written instead of the engine's)
+		local toolNodes = nSeg == #rmIds and nNodes ~= #capNodes and nNodes >= 0
+		if nSeg ~= #rmIds or nNodes < 0 then
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the engine's removal differs from the tool's (desync)")
 			replayFailed(a, "removal differs")
 			return
 		end
+		if toolNodes then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the tool's removed nodes are kept (the engine's removal has other nodes)") end
 		C.errors = {}
-		local okp, P = pcall(C.rebuildNativeWithConstruction, m, conv, rm)
+		local okp, P = pcall(C.rebuildNativeWithConstruction, m, conv, rm, { toolNodes = toolNodes })
 		if not okp or not P then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: not rebuilt (" .. shortErr(P) .. ")") replayFailed(a, "native rebuild") return end
 		do
 			local notes = {}
@@ -2308,6 +2333,7 @@ local function replayNativeConstruction(a)
 			for vi, variant in ipairs({ { noConfigs = true }, { noConfigs = true, noMaps = true } }) do
 				if okk and cmd then break end
 				C.errors = {}
+				variant.toolNodes = toolNodes
 				local okp2, P2 = pcall(C.rebuildNativeWithConstruction, m, conv, rm, variant)
 				if okp2 and P2 then
 					okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(P2, ctx2, false, true) end)

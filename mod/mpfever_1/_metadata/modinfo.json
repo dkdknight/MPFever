@@ -1,6 +1,6 @@
 {
     "authors": [ { "name": "MPFever", "role": "CREATOR" } ],
-    "description": "Experimental cooperative multiplayer for Transport Fever 3 (version 0.3.3-experimental). The mod does nothing in a normal solo game: it only becomes active when the game is started by MPFever.exe.",
+    "description": "Experimental cooperative multiplayer for Transport Fever 3 (version 0.3.4-experimental). The mod does nothing in a normal solo game: it only becomes active when the game is started by MPFever.exe.",
     "name": "MPFever Multiplayer",
     "summary": "Experimental co-op multiplayer (start the game through MPFever.exe)",
     "tags": [ "Script Mod" ],
