@@ -1,0 +1,79 @@
+# Smoke check: the project still builds with its own build.bat (native module + launcher + package).
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022   # VS 2022 17.14 / MSVC 14.44: the toolset the project is built with today
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: docs/CHANGELOG.txt has a block for VERSION in build.bat
+        shell: pwsh
+        run: |
+          $global:LASTEXITCODE = 0
+          $v = ./.github/scripts/Get-ReleaseVersion.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.github/scripts/Get-ChangelogSection.ps1 -Version $v -OutFile staging/RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Plain script, standard library only (Python is preinstalled on the runner): translations vs the texts of the code.
+      - name: Translations (tests/test_lang.py)
+        shell: pwsh
+        run: |
+          python tests/test_lang.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build (build.bat) and check the package
+        shell: pwsh
+        run: |
+          ./.github/scripts/Build-Release.ps1 -OutDir staging
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # MPFever.exe --selftest opens no window: it starts the relay on TCP 28191, connects a client to 127.0.0.1
+      # and passes a few messages through two fake game folders in %TEMP%. Exit code 0 = ok.
+      # It never starts the game and never reads Steam. A WinExe does not make PowerShell wait, hence Start-Process -Wait.
+      - name: Launcher self-test
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $exe = (Resolve-Path 'launcher/bin/Release/MPFever.exe').Path
+          $out = Join-Path $env:RUNNER_TEMP 'selftest.txt'
+          $code = 1
+          foreach ($attempt in 1, 2) {   # the test waits a fixed 800 ms for its messages: one retry for a slow runner
+            $p = Start-Process -FilePath $exe -ArgumentList '--selftest' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out
+            $code = $p.ExitCode
+            Write-Host "--- attempt $attempt, exit code $code"
+            Get-Content $out
+            if ($code -eq 0) { break }
+          }
+          if ($code -ne 0) {
+            Write-Host "::error title=Launcher self-test failed::MPFever.exe --selftest exited with code $code."
+            exit 1
+          }
+          if (-not (Select-String -Path $out -Pattern 'SELFTEST OK' -Quiet)) {
+            Write-Host '::warning title=Launcher self-test::exit code 0 but no SELFTEST OK line captured on stdout.'
+          }
+          exit 0
+
+      - name: Keep the package for a week
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPFever-build
+          path: staging/MPFever-*.zip*
+          if-no-files-found: error
+          retention-days: 7
