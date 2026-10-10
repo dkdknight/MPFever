@@ -4,19 +4,6 @@ rem Requires Visual Studio 2022 or later with the "Desktop development with C++"
 rem (.NET Framework 4.8 targeting pack).
 setlocal
 cd /d "%~dp0"
-rem Everything shown in the console is also written to build.log (UTF-8, next to this file).
-if /i "%~1"=="--logged" goto :build
-rem UTF-8 console while building (messages with umlauts), the previous code page restored afterwards
-for /f "tokens=2 delims=:." %%a in ('chcp') do set "OLDCP=%%a"
-chcp 65001 >nul
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$w = New-Object IO.StreamWriter((Join-Path $PWD 'build.log'), $false, (New-Object Text.UTF8Encoding $false)); & cmd.exe /d /c call '%~nx0' --logged '2>&1' | ForEach-Object { $_; $w.WriteLine($_); $w.Flush() }; $c = $LASTEXITCODE; $w.Close(); if ($c -ne 0) { Write-Host ('BUILD FAILED (code ' + $c + '), details in build.log') -ForegroundColor Red } else { Write-Host 'Log: build.log' }; exit $c"
-set "RC=%errorlevel%"
-if defined OLDCP chcp %OLDCP: =% >nul
-rem started by a double-click: keep the window open to read the result
-echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && pause
-exit /b %RC%
-
-:build
 echo MPFever build %date% %time%
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (echo vswhere.exe not found: install Visual Studio & exit /b 1)
