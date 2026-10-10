@@ -22,6 +22,7 @@ namespace MPFever
                 Log.Line += l => Console.WriteLine(l);
                 return SelfTest.Run();
             }
+            Theme.InitDpi();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Log.Init(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs"));
@@ -58,20 +59,27 @@ namespace MPFever
         const double UnitsPerSecond = 1000;    // game time units per real second at x1
         const double HashEverySeconds = 10;
 
-        readonly TextBox nameBox = new TextBox { Text = Environment.UserName, Width = 140 };
-        readonly TextBox hostBox = new TextBox { Text = "127.0.0.1", Width = 140 };
-        readonly NumericUpDown portBox = new NumericUpDown { Minimum = 1024, Maximum = 65535, Value = 28090, Width = 70 };
-        readonly Button hostBtn = new Button { Text = T("Héberger", "Host"), AutoSize = true };
-        readonly Button joinBtn = new Button { Text = T("Rejoindre par IP", "Join by IP"), AutoSize = true };
-        readonly Button localBtn = new Button { Text = T("Test local (2 jeux)", "Local test (2 games)"), AutoSize = true };
-        readonly Button startBtn = new Button { Text = T("▶ Démarrer la partie", "▶ Start the game"), AutoSize = true, Enabled = false };
-        readonly Button pauseBtn = new Button { Text = "Pause", AutoSize = true, Enabled = false };
-        readonly Button x1Btn = new Button { Text = "x1", AutoSize = true, Enabled = false };
-        readonly Button x2Btn = new Button { Text = "x2", AutoSize = true, Enabled = false };
-        readonly Button x4Btn = new Button { Text = "x4", AutoSize = true, Enabled = false };
-        readonly Button detBtn = new Button { Text = T("Test déterminisme", "Determinism test"), AutoSize = true, Enabled = false };
-        readonly TextBox logBox = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Font = new Font("Consolas", 9f), BackColor = Color.White };
-        readonly Label status = new Label { AutoSize = true, Text = T("Prêt.", "Ready."), Font = new Font("Segoe UI", 10f, FontStyle.Bold), Padding = new Padding(0, 4, 0, 0) };
+        readonly TextBox nameBox = new TextBox { Text = Environment.UserName };
+        readonly TextBox hostBox = new TextBox { Text = "127.0.0.1" };
+        readonly NumericUpDown portBox = new NumericUpDown { Minimum = 1024, Maximum = 65535, Value = 28090 };
+        readonly ModernButton hostBtn = new ModernButton(ButtonKind.Primary) { Text = T("Héberger une partie", "Host a game") };
+        readonly ModernButton joinBtn = new ModernButton(ButtonKind.Secondary) { Text = T("Rejoindre par IP", "Join by IP") };
+        readonly ModernButton localBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Test local (2 jeux)", "Local test (2 games)") };
+        readonly ModernButton startBtn = new ModernButton(ButtonKind.Primary) { Text = T("▶  Démarrer la partie", "▶  Start the game"), Enabled = false };
+        readonly ModernButton pauseBtn = new ModernButton(ButtonKind.Segment) { Text = "❚❚  Pause", Enabled = false };
+        readonly ModernButton x1Btn = new ModernButton(ButtonKind.Segment) { Text = "x1", Enabled = false };
+        readonly ModernButton x2Btn = new ModernButton(ButtonKind.Segment) { Text = "x2", Enabled = false };
+        readonly ModernButton x4Btn = new ModernButton(ButtonKind.Segment) { Text = "x4", Enabled = false };
+        readonly ModernButton detBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Test déterminisme", "Determinism test"), Enabled = false };
+        readonly RichTextBox logBox = new RichTextBox { ReadOnly = true, BorderStyle = BorderStyle.None, ScrollBars = RichTextBoxScrollBars.Vertical, Dock = DockStyle.Fill, Font = Theme.Mono(9f), BackColor = Theme.Surface, ForeColor = Theme.Text, DetectUrls = false, WordWrap = true };
+        readonly Label status = new Label { AutoSize = false, AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Text = T("Prêt.", "Ready."), ForeColor = Theme.Muted };
+
+        // ---- dashboard (display only)
+        HeaderBar header;
+        StatTile playersTile, speedTile, actionsTile, syncTile;
+        readonly Label hint = new Label { Dock = DockStyle.Fill, ForeColor = Theme.Text, AutoSize = false };
+        readonly Label gameLabel = new Label { Dock = DockStyle.Right, AutoSize = false, AutoEllipsis = true, Width = 0, TextAlign = ContentAlignment.MiddleRight, ForeColor = Theme.Faint };
+        int logLines;
 
         string gameDir;
         Relay relay;
@@ -140,24 +148,9 @@ namespace MPFever
         {
             this.autotest = autotest;
             Text = "MPFever " + Version + T(" – multijoueur Transport Fever 3 (expérimental)", " – Transport Fever 3 multiplayer (experimental)");
-            Width = 1150; Height = 680;
-            StartPosition = FormStartPosition.CenterScreen;
+            BuildUi();
 
-            var row1 = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(6, 6, 6, 0) };
-            row1.Controls.AddRange(new Control[] {
-                new Label { Text = T("Nom :", "Name:"), AutoSize = true, Padding = new Padding(0, 6, 0, 0) }, nameBox,
-                new Label { Text = T("Hôte :", "Host:"), AutoSize = true, Padding = new Padding(8, 6, 0, 0) }, hostBox,
-                new Label { Text = T("Port :", "Port:"), AutoSize = true, Padding = new Padding(8, 6, 0, 0) }, portBox,
-                hostBtn, joinBtn, localBtn });
-            var row2 = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(6, 2, 6, 0) };
-            row2.Controls.AddRange(new Control[] { startBtn, pauseBtn, x1Btn, x2Btn, x4Btn, detBtn, status });
-            localBtn.Visible = Dev;
-            detBtn.Visible = Dev;
-            Controls.Add(logBox);
-            Controls.Add(row2);
-            Controls.Add(row1);
-
-            Log.Line += l => { try { BeginInvoke((Action)(() => logBox.AppendText(l + Environment.NewLine))); } catch { } };
+            Log.Line += l => { try { BeginInvoke((Action)(() => AppendLog(l))); } catch { } };
 
             hostBtn.Click += (s, e) => Guard(() => StartHost(PlayerName(), true));
             joinBtn.Click += (s, e) => Guard(() => StartClient(PlayerName(), hostBox.Text.Trim(), (int)portBox.Value, true));
@@ -173,6 +166,259 @@ namespace MPFever
             var uiTimer = new System.Windows.Forms.Timer { Interval = 500 };
             uiTimer.Tick += (s, e) => RefreshStatus();
             uiTimer.Start();
+        }
+
+        // ---------------------------------------------------------------- window layout (display only)
+
+        void BuildUi()
+        {
+            var S = (Func<int, int>)Theme.S;
+            BackColor = Theme.Bg;
+            ForeColor = Theme.Text;
+            Font = Theme.Ui(9.75f);
+            var work = Screen.PrimaryScreen.WorkingArea;
+            Size = new Size(Math.Min(S(1220), work.Width), Math.Min(S(780), work.Height));
+            MinimumSize = new Size(Math.Min(S(960), work.Width), Math.Min(S(640), work.Height));
+            StartPosition = FormStartPosition.CenterScreen;
+            var icon = Theme.AppIcon();
+            if (icon != null) Icon = icon;
+
+            header = new HeaderBar(T("Multijoueur pour Transport Fever 3", "Multiplayer for Transport Fever 3"), "v" + Version);
+
+            // ---- left column: connection + contextual help
+            var conn = new Card { };
+            var hostRow = new TableLayoutPanel { Height = S(62), ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, Padding = Padding.Empty };
+            hostRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            hostRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, S(104)));
+            var hostField = Ui.Field(T("Adresse de l'hôte", "Host address"), hostBox);
+            var portField = Ui.Field("Port", portBox);
+            hostField.Dock = portField.Dock = DockStyle.Fill;
+            hostField.Margin = new Padding(0, 0, S(10), 0);
+            portField.Margin = Padding.Empty;
+            hostRow.Controls.Add(hostField, 0, 0);
+            hostRow.Controls.Add(portField, 1, 0);
+            var connItems = new List<Control> {
+                Ui.Caption(T("Connexion", "Connection")),
+                Ui.Field(T("Votre nom", "Your name"), nameBox),
+                Ui.Gap(8), hostRow, Ui.Gap(16), hostBtn, Ui.Gap(8), joinBtn };
+            if (Dev) connItems.AddRange(new Control[] { Ui.Gap(8), localBtn });
+            Ui.StackTop(conn, connItems.ToArray());
+            Ui.FitHeight(conn);
+
+            var info = new Card();
+            hint.Font = Theme.Ui(9.75f);
+            info.Controls.Add(hint);
+            Ui.StackTop(info, Ui.Caption(T("Que faire ?", "What next?")));
+
+            var left = new Panel { Dock = DockStyle.Left, Width = S(340), Padding = new Padding(0, 0, S(16), 0) };
+            info.Dock = DockStyle.Fill;
+            left.Controls.Add(info);
+            Ui.StackTop(left, conn, Ui.Gap(14));
+
+            // ---- right column: session controls, dashboard, log
+            var session = new Card { Height = S(74), Padding = new Padding(S(16), S(17), S(16), S(16)) };
+            var bar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = Padding.Empty };
+            startBtn.Fit(40); startBtn.Margin = new Padding(0, 0, S(18), 0);
+            var speedLabel = new Label { Text = T("VITESSE", "SPEED"), AutoSize = true, Font = Theme.Semibold(8f), ForeColor = Theme.Muted, Margin = new Padding(0, S(12), S(10), 0) };
+            pauseBtn.Fit(30); pauseBtn.Margin = new Padding(0, 0, S(4), 0);
+            foreach (var b in new[] { x1Btn, x2Btn, x4Btn }) { b.Width = S(52); b.Margin = new Padding(0, 0, S(4), 0); }
+            bar.Controls.AddRange(new Control[] { startBtn, speedLabel, pauseBtn, x1Btn, x2Btn, x4Btn });
+            if (Dev) { detBtn.Height = S(38); detBtn.Fit(); detBtn.Margin = new Padding(S(14), 0, 0, 0); bar.Controls.Add(detBtn); }
+            session.Controls.Add(bar);
+
+            playersTile = new StatTile(T("Joueurs", "Players"));
+            speedTile = new StatTile(T("Vitesse", "Speed"));
+            actionsTile = new StatTile(T("Actions relayées", "Actions relayed"));
+            syncTile = new StatTile(T("Synchronisation", "Sync"));
+            var tiles = new TableLayoutPanel { Height = S(96), ColumnCount = 4, RowCount = 1, Margin = Padding.Empty, Padding = Padding.Empty };
+            var tileList = new[] { playersTile, speedTile, actionsTile, syncTile };
+            for (int i = 0; i < tileList.Length; i++)
+            {
+                tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+                tileList[i].Dock = DockStyle.Fill;
+                tileList[i].Margin = new Padding(0, 0, i < tileList.Length - 1 ? S(12) : 0, 0);
+                tiles.Controls.Add(tileList[i], i, 0);
+            }
+
+            var logCard = new Card { Dock = DockStyle.Fill, Padding = new Padding(S(18), S(12), S(8), S(10)) };
+            var logHead = new Panel { Height = S(40) };
+            var logTitle = Ui.Caption(T("Journal", "Log"));
+            logTitle.Dock = DockStyle.Left; logTitle.Width = S(160); logTitle.Padding = new Padding(0, S(8), 0, 0);
+            var tools = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, Padding = new Padding(0, 0, S(8), 0) };
+            var clearBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Effacer", "Clear") }.Fit();
+            var copyBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Copier", "Copy") }.Fit();
+            var folderBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Dossier des journaux", "Logs folder") }.Fit();
+            foreach (var b in new[] { folderBtn, copyBtn, clearBtn }) { b.Margin = new Padding(S(6), 0, 0, 0); tools.Controls.Add(b); }
+            logHead.Controls.Add(logTitle);
+            logHead.Controls.Add(tools);
+            logCard.Controls.Add(logBox);
+            Ui.StackTop(logCard, logHead, Ui.Gap(4));
+            clearBtn.Click += (s, e) => { logBox.Clear(); logLines = 0; };
+            copyBtn.Click += (s, e) => { try { if (logBox.TextLength > 0) Clipboard.SetText(logBox.Text); } catch { } };
+            folderBtn.Click += (s, e) =>
+            {
+                try { Process.Start("explorer.exe", "\"" + Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs") + "\""); }
+                catch (Exception ex) { Log.W(ex.Message); }
+            };
+
+            var right = new Panel { Dock = DockStyle.Fill };
+            right.Controls.Add(logCard);
+            Ui.StackTop(right, session, Ui.Gap(14), tiles, Ui.Gap(14));
+
+            var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(S(20), S(18), S(20), S(16)) };
+            body.Controls.Add(right);
+            body.Controls.Add(left);
+
+            // ---- status bar
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = S(32), BackColor = Theme.Surface, Padding = new Padding(S(20), 0, S(20), 0) };
+            footer.Paint += (s, e) => { using (var p = new Pen(Theme.Border)) e.Graphics.DrawLine(p, 0, 0, footer.Width, 0); };
+            status.Font = Theme.Ui(9f);
+            gameLabel.Font = Theme.Ui(8.5f);
+            const string author = "dkdknight";
+            var creditFont = Theme.Ui(8.5f);
+            var by = new Label { Text = "© by", AutoSize = false, Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Font = creditFont, ForeColor = Theme.Faint };
+            by.Width = TextRenderer.MeasureText(by.Text, creditFont).Width + S(16);
+            var linkFont = Theme.Ui(8.5f, FontStyle.Underline);
+            var credit = new Label
+            {
+                Text = author, AutoSize = false, Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleLeft,
+                Font = creditFont, ForeColor = Theme.Accent, Cursor = Cursors.Hand,
+            };
+            credit.Padding = new Padding(S(3), 0, 0, 0);
+            credit.Width = TextRenderer.MeasureText(author, linkFont).Width + S(8);
+            new ToolTip().SetToolTip(credit, "github.com/dkdknight/MPFever");
+            credit.MouseEnter += (s, e) => { credit.Font = linkFont; credit.ForeColor = Theme.AccentHover; };
+            credit.MouseLeave += (s, e) => { credit.Font = creditFont; credit.ForeColor = Theme.Accent; };
+            credit.Click += (s, e) =>
+            {
+                try { Process.Start("https://github.com/dkdknight/MPFever"); }
+                catch (Exception ex) { Log.W(ex.Message); }
+            };
+            footer.Controls.Add(status);
+            footer.Controls.Add(gameLabel);
+            footer.Controls.Add(by);
+            footer.Controls.Add(credit);   // docked first: rightmost
+
+            Controls.Add(body);
+            Controls.Add(footer);
+            header.Dock = DockStyle.Top;
+            Controls.Add(header);
+
+            HandleCreated += (s, e) => Theme.DarkTitleBar(Handle);
+            logBox.HandleCreated += (s, e) => Theme.DarkScrollBars(logBox);
+            UpdateDashboard();
+        }
+
+        static Color LogColor(string s)
+        {
+            bool Has(params string[] w) => w.Any(x => s.IndexOf(x, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (s.StartsWith("!!!") || Has("OUT OF SYNC", "DÉSYNCHRONIS", "Error", "Erreur", "impossible", "Cannot ", "cancelled", "abandonnée")) return Theme.Danger;
+            if (s.StartsWith("===")) return Theme.Accent;
+            if (s.StartsWith("    ~") || Has("WARNING", "ATTENTION", "drift", "dérive", "refused", "refusée", "lost", "perdue", "not found", "introuvable")) return Theme.Warning;
+            if (Has("IDENTICAL", "IDENTIQUE", "joined", "a rejoint", "reconnect", "Connected", "Connecté")) return Theme.Success;
+            if (s.StartsWith("Action ") || s.StartsWith("[")) return Theme.Muted;
+            if (s.StartsWith("    ")) return Theme.Muted;
+            return Theme.Text;
+        }
+
+        void AppendLog(string l)
+        {
+            // "HH:mm:ss.fff text": the time in a quieter colour
+            bool timed = l.Length > 13 && l[2] == ':' && l[12] == ' ';
+            string text = timed ? l.Substring(13) : l;
+            logBox.SelectionStart = logBox.TextLength;
+            logBox.SelectionLength = 0;
+            if (timed)
+            {
+                logBox.SelectionColor = Theme.Faint;
+                logBox.AppendText(l.Substring(0, 8) + "  ");
+            }
+            logBox.SelectionColor = LogColor(text);
+            logBox.AppendText(text + "\n");
+            if (++logLines > 6000)
+            {
+                // keep the window light; the full log stays in logs\
+                logBox.ReadOnly = false;
+                logBox.Select(0, logBox.GetFirstCharIndexFromLine(1000));
+                logBox.SelectedText = "";
+                logBox.ReadOnly = true;
+                logLines -= 1000;
+            }
+            Theme.ScrollToEnd(logBox);
+        }
+
+        /// <summary>The tiles, header badge and help text, from the session state (every 500 ms).</summary>
+        void UpdateDashboard()
+        {
+            if (header == null) return;
+            bool host = relay != null, client = !host && clients.Count > 0;
+            bool st, paused; int sp;
+            lock (sessionGate) { st = started; paused = pauseAt.HasValue; sp = speed; }
+
+            if (host) header.SetRole(T("HÔTE", "HOST"), Theme.Accent);
+            else if (client) header.SetRole("CLIENT", Theme.Info);
+            else if (menuMode) header.SetRole(T("MENU DU JEU", "GAME MENU"), Theme.Success);
+            else header.SetRole(T("PRÊT", "READY"), Theme.Muted);
+
+            // players
+            if (host)
+            {
+                string[] names; lock (players) names = players.OrderBy(x => x).ToArray();
+                playersTile.Set(names.Length.ToString(), names.Length == 0 ? T("en attente des jeux", "waiting for games") : string.Join(", ", names),
+                    names.Length > 1 ? Theme.Success : names.Length == 1 ? Theme.Info : Theme.Faint);
+            }
+            else if (client) playersTile.Set("✔", T("connecté à l'hôte", "connected to the host"), Theme.Info);
+            else playersTile.Set("—", T("pas de session", "no session"), Theme.Faint);
+
+            // speed
+            string spread = "";
+            lock (clocks) if (clocks.Count > 1) { var est = clocks.Values.Select(Estimate).ToList(); spread = T($"écart {(est.Max() - est.Min()) / Step:0} pas", $"gap {(est.Max() - est.Min()) / Step:0} steps"); }
+            if (!host) speedTile.Set("—", client ? T("réglée par l'hôte", "set by the host") : T("non démarrée", "not started"), Theme.Faint);
+            else if (!st) speedTile.Set("—", T("non démarrée", "not started"), Theme.Faint);
+            else if (paused) speedTile.Set("Pause", spread, Theme.Warning);
+            else speedTile.Set("x" + sp, spread, Theme.Success);
+
+            // actions
+            if (host) actionsTile.Set(actsRelayed.ToString("N0"), T($"refusées {actRefused} · échecs {actFails}", $"refused {actRefused} · failed {actFails}"),
+                actFails > 0 ? Theme.Warning : actsRelayed > 0 ? Theme.Info : Theme.Faint);
+            else actionsTile.Set("—", "", Theme.Faint);
+
+            // sync
+            var s = syncText ?? "—";
+            int open = s.IndexOf('(');
+            string why = open >= 0 ? s.Substring(open + 1).TrimEnd(')') : "";
+            string total = desyncs > 0 ? T($"{desyncs} désynchronisation(s) au total", $"{desyncs} desync(s) in total") : T("aucune désynchronisation", "no desync so far");
+            if (resyncing) syncTile.Set(T("Resynchro…", "Resyncing…"), T("rechargement de la partie de l'hôte", "reloading the host's game"), Theme.Info, true);
+            else if (!host) syncTile.Set("—", client ? T("vérifiée par l'hôte", "checked by the host") : "", Theme.Faint);
+            else if (s.StartsWith("SYNC ✔")) syncTile.Set(T("Synchrone", "In sync"), total, Theme.Success, true);
+            else if (s.StartsWith("SYNC ~")) syncTile.Set(T("Légère dérive", "Slight drift"), why, Theme.Warning, true);
+            else if (s == "—") syncTile.Set("—", T("pas encore vérifiée", "not checked yet"), Theme.Faint);
+            else syncTile.Set(T("Désynchronisé", "Out of sync"), why, Theme.Danger, true);
+
+            // speed buttons show what is in effect
+            pauseBtn.Active = host && st && paused;
+            x1Btn.Active = host && st && !paused && sp == 1;
+            x2Btn.Active = host && st && !paused && sp == 2;
+            x4Btn.Active = host && st && !paused && sp == 4;
+
+            // what to do now
+            string h;
+            if (gameDir == null && status.Text == T("Jeu introuvable", "Game not found"))
+                h = T("Transport Fever 3 est introuvable. Vérifiez que le jeu est installé via Steam.", "Transport Fever 3 was not found. Check that the game is installed through Steam.");
+            else if (menuMode && !string.IsNullOrEmpty(menuText)) h = menuText;
+            else if (menuMode) h = T("Le jeu démarre. Choisissez « Multijoueur (MPFever) » dans son menu principal pour héberger ou rejoindre une partie.",
+                                     "The game is starting. Choose « Multiplayer (MPFever) » in its main menu to host or join a game.");
+            else if (host && !st) h = T("Chargez exactement la même sauvegarde dans chaque jeu, puis cliquez sur « Démarrer la partie ».",
+                                        "Load exactly the same savegame in every game, then click « Start the game ».");
+            else if (host) h = T("Partie en cours. La vitesse choisie s'applique à tous les joueurs ; la synchronisation est vérifiée toutes les 10 s.",
+                                 "Game running. The speed you choose applies to every player; sync is checked every 10 s.");
+            else if (client) h = T("Connecté. L'hôte démarre la partie et règle la vitesse.", "Connected. The host starts the game and sets the speed.");
+            else h = T($"Hébergez une partie ou rejoignez un ami avec son adresse IP.\n\nPort par défaut : 28090 (TCP). Pour jouer par Internet, l'hôte doit rediriger ce port sur sa box.",
+                       $"Host a game, or join a friend with their IP address.\n\nDefault port: 28090 (TCP). To play over the Internet, the host must forward this port on their router.");
+            if (hint.Text != h) hint.Text = h;
+
+            string g = gameDir != null ? "Transport Fever 3 · " + gameDir : "";
+            if (gameLabel.Text != g) { gameLabel.Text = g; gameLabel.Width = g == "" ? 0 : TextRenderer.MeasureText(g, gameLabel.Font).Width + Theme.S(8); }
         }
 
         string PlayerName() => string.IsNullOrWhiteSpace(nameBox.Text) ? "joueur" : nameBox.Text.Trim();
@@ -572,11 +818,12 @@ namespace MPFever
         {
             AuditSnapshot();
             if (menuMode) MenuStatus();
+            UpdateDashboard();
             if (relay == null) { if (clients.Count > 0) status.Text = T("Client connecté", "Connected to the host"); return; }
             int n; lock (players) n = players.Count;
             string sp; lock (sessionGate) sp = pauseAt.HasValue ? T("pause", "paused") : "x" + speed;
             string spread = "";
-            lock (clocks) if (clocks.Count > 1) { var est = clocks.Values.Select(Estimate).ToList(); spread = $" · écart {(est.Max() - est.Min()) / Step} pas"; }
+            lock (clocks) if (clocks.Count > 1) { var est = clocks.Values.Select(Estimate).ToList(); spread = T($" · écart {(est.Max() - est.Min()) / Step:0} pas", $" · gap {(est.Max() - est.Min()) / Step:0} steps"); }
             status.Text = started
                 ? T($"{sp} · {n} jeu(x){spread} · actions {actsRelayed} (refus {actRefused}, échecs {actFails}) · {syncText}",
                     $"{sp} · {n} game(s){spread} · actions {actsRelayed} (refused {actRefused}, failed {actFails}) · {syncText}")
