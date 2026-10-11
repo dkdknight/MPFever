@@ -1,0 +1,115 @@
+# Builds the release package when a version tag is pushed and prepares a DRAFT GitHub Release.
+#
+# To publish a version: bump VERSION in build.bat, add its block at the top of docs/CHANGELOG.txt,
+# commit, then push a tag that names the version (0.3.4 or 0.3.4-experimental).
+# The draft contains the zip, its SHA-256 and the changelog block; review it on GitHub, then publish.
+#
+# Needs the native module and the launcher to build with the Visual Studio of the runner
+# (see the note in .github/scripts/Build-Release.ps1 about __chkstk).
+name: release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'     # 0.3.4
+      - '[0-9]+.[0-9]+.[0-9]+-*'   # 0.3.4-experimental
+  workflow_dispatch:                # build only (no release): checks that a branch or tag still builds
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022   # VS 2022 17.14 / MSVC 14.44: the toolset the project is built with today
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check the tag against VERSION in build.bat
+        id: version
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if ($env:REF_TYPE -eq 'tag') {
+            ./.github/scripts/Get-ReleaseVersion.ps1 -Tag $env:REF_NAME
+          } else {
+            ./.github/scripts/Get-ReleaseVersion.ps1
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Release notes from docs/CHANGELOG.txt
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./.github/scripts/Get-ChangelogSection.ps1 -Version $env:VERSION -OutFile staging/RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build (build.bat) and check the package
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./.github/scripts/Build-Release.ps1 -Version $env:VERSION -OutDir staging
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Keep the files for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPFever-${{ steps.version.outputs.version }}
+          path: staging/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest   # only runs the preinstalled gh CLI
+    timeout-minutes: 10
+    permissions:
+      contents: write        # create the draft release; nothing else in the workflow has write access
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MPFever-${{ needs.build.outputs.version }}
+          path: staging
+
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          cd staging
+          sha256sum -c "MPFever-$VERSION.zip.sha256"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error title=Release exists::A release for tag $TAG already exists; not touching it. Delete it (or the tag) and push the tag again."
+            exit 1
+          fi
+
+          args=(--draft --verify-tag --title "MPFever $TAG" --notes-file RELEASE_NOTES.md)
+          # Same as the earlier releases: a plain tag (0.2.10) is a regular release,
+          # a tag with a suffix (0.3.4-experimental) is flagged as a pre-release.
+          if [ "$PRERELEASE" = "true" ]; then args+=(--prerelease); fi
+
+          url=$(gh release create "$TAG" "${args[@]}" "MPFever-$VERSION.zip" "MPFever-$VERSION.zip.sha256")
+          echo "Draft release created: $url"
+          echo "Draft release for \`$TAG\`: $url (review, then publish)" >> "$GITHUB_STEP_SUMMARY"

@@ -83,6 +83,16 @@ It builds:
 
 The release archive contains the launcher, `winhttp.dll`, the mod folder and the player documentation, exactly as published.
 
+### Releases
+
+Releases are prepared by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
+
+1. Set `VERSION` in `build.bat` and write the block for that version at the top of `docs/CHANGELOG.txt`.
+2. Commit, then tag that commit with the version, with or without `-experimental` (`0.3.5` or `0.3.5-experimental`), and push the tag.
+3. The workflow runs `build.bat` on a Windows runner, checks the zip, and creates a **draft** release with `MPFever-<version>.zip`, its `.sha256` and the changelog block as notes. Review the draft on GitHub, then publish it. A tag without suffix gives a regular release, a tag with a suffix gives a pre-release.
+
+The workflow stops before building if the tag does not match `VERSION` or if the changelog has no block for it. Pull requests and pushes to `main` run the same build plus `MPFever.exe --selftest` ([`build.yml`](.github/workflows/build.yml)).
+
 ## Running the tests
 
 ```bat
