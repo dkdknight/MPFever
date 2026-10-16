@@ -13,9 +13,16 @@ namespace MPFever
 {
     static class Program
     {
+        /// <summary>The arguments MPFever was started with (given again to the new MPFever.exe after an update).</summary>
+        public static string[] Args = new string[0];
+
         [STAThread]
         static int Main(string[] args)
         {
+            // --updated: started by the previous MPFever.exe right after it installed an update
+            bool updated = args.Contains("--updated");
+            args = args.Where(a => a != "--updated").ToArray();
+            Args = args;
             if (args.Length > 0 && args[0] == "--selftest")
             {
                 Log.Init(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs"));
@@ -27,6 +34,7 @@ namespace MPFever
             Application.SetCompatibleTextRenderingDefault(false);
             Log.Init(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs"));
             MainForm.InitLanguage();
+            MainForm.JustUpdated = updated;
             bool auto = args.Length > 0 && args[0] == "--autotest";
             MainForm.Dev = auto || args.Contains("--dev");
             // default: the game starts at once and the session is set up from its main menu (MPFever window)
@@ -49,6 +57,8 @@ namespace MPFever
         public static bool Dev;
         public static bool MenuModeDefault;
         public static string JoinAtStart;
+        /// <summary>Started by the previous MPFever.exe after an update (--updated).</summary>
+        public static bool JustUpdated;
         string steamConnect, lastSteamJoin;
         int steamSeq;
         bool menuMode;
@@ -200,7 +210,7 @@ namespace MPFever
             x4Btn.Click += (s, e) => SetSpeed(4, T("hôte", "host"));
             detBtn.Click += (s, e) => new Thread(RunDeterminism) { IsBackground = true }.Start();
 
-            Shown += (s, e) => Init();
+            Shown += (s, e) => CheckUpdateThenInit();
             var uiTimer = new System.Windows.Forms.Timer { Interval = 500 };
             uiTimer.Tick += (s, e) => RefreshStatus();
             uiTimer.Start();
@@ -566,6 +576,64 @@ namespace MPFever
             if (running) { Log.Warn(T("Une session est déjà en cours : relancer MPFever pour en ouvrir une autre.", "A session is already running: restart MPFever to open another one.")); return; }
             try { a(); running = true; hostBtn.Enabled = joinBtn.Enabled = localBtn.Enabled = false; }
             catch (Exception e) { Log.Err(T("Erreur : ", "Error: ") + e.Message); MessageBox.Show(this, e.Message, "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+
+        /// <summary>Before the game starts: a newer MPFever on GitHub (github.com/dkdknight/MPFever/releases) is offered
+        /// in a window, to update now or to go on without updating. The game starts after the answer, or at once when
+        /// GitHub does not answer within a few seconds. No check in developer mode, nor when the game started MPFever for a
+        /// Steam invitation (the game is already running), nor with autoupdate=0 in mpfever_settings.txt.</summary>
+        void CheckUpdateThenInit()
+        {
+            Updater.CleanUp(JustUpdated);
+            if (autotest || Dev || JoinAtStart != null || !Updater.Enabled) { Init(); return; }
+            if (!Updater.InReleaseFolder)
+            {
+                Log.Dim(T("Mises à jour non vérifiées : MPFever.exe n'est pas dans un dossier de version (mod\\mpfever_1 absent)", "Updates not checked: MPFever.exe is not in a release folder (no mod\\mpfever_1)"));
+                Init();
+                return;
+            }
+            status.Text = T("Recherche de mises à jour…", "Checking for updates…");
+            bool answered = false;
+            var timeout = new System.Windows.Forms.Timer { Interval = Updater.CheckTimeoutMs + 1000 };
+            Action<UpdateInfo, string> answer = (u, error) =>
+            {
+                if (answered) return;
+                answered = true;
+                timeout.Dispose();
+                status.Text = T("Prêt.", "Ready.");
+                if (error != null) Log.Dim(F("Recherche de mises à jour impossible : {0}", "Could not check for updates: {0}", error));
+                else if (u == null) Log.Dim(T("MPFever est à jour.", "MPFever is up to date."));
+                else
+                {
+                    Log.Ok(F("Nouvelle version disponible : MPFever {0}", "New version available: MPFever {0}", u.Version));
+                    DialogResult choice;
+                    using (var dlg = new UpdateDialog(u)) choice = dlg.ShowDialog(this);
+                    if (choice == DialogResult.OK)
+                    {
+                        try { Updater.Restart(Program.Args); }
+                        catch (Exception e)
+                        {
+                            Log.Err(e.Message);
+                            MessageBox.Show(this, F("MPFever {0} est installé mais n'a pas pu être relancé : {1}\nRelancez MPFever.", "MPFever {0} is installed but could not be restarted: {1}\nPlease start MPFever again.", u.Version, e.Message),
+                                "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        }
+                        Close();
+                        return;
+                    }
+                    Log.W(F("Mise à jour ignorée : MPFever {0} reste installé", "Update skipped: MPFever {0} stays installed", Version));
+                }
+                Init();
+            };
+            timeout.Tick += (s, e) => answer(null, T("pas de réponse de GitHub", "no answer from GitHub"));
+            timeout.Start();
+            new Thread(() =>
+            {
+                UpdateInfo u = null;
+                string error = null;
+                try { u = Updater.Check(); }
+                catch (Exception e) { error = Updater.Describe(e); }
+                try { BeginInvoke((Action)(() => answer(u, error))); } catch { }
+            }) { IsBackground = true, Name = "Update check" }.Start();
         }
 
         void Init()

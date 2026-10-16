@@ -132,10 +132,17 @@ WHAT MPFEVER CHANGES ON YOUR PC
   settings.lua.bak_mpfever).
 - It installs the mod files in your Transport Fever 3 user mods folder.
 MPFever connects to the address you type (or the one of the Steam invitation you accept).
-The only other connection: when you host, it asks api.ipify.org (a public service that
-answers with your public IP address, nothing else is sent) so that the address given to
-Steam invitations works from the internet. Write  lookupip=0  in mpfever_settings.txt (next to
-MPFever.exe) to disable this; invitations then carry your local address.
+The only other connections:
+- At startup, before the game starts, it asks GitHub (api.github.com) for the newest
+  MPFever release. When there is a newer one, the launcher shows "New update available":
+  "Update" downloads it from github.com/dkdknight/MPFever/releases, checks it, replaces
+  MPFever's files (your mpfever_settings.txt and logs are kept) and restarts MPFever;
+  "Continue without updating" starts the game with the version you have. Write
+  autoupdate=0  in mpfever_settings.txt (next to MPFever.exe) to disable this check.
+- When you host, it asks api.ipify.org (a public service that answers with your public IP
+  address, nothing else is sent) so that the address given to Steam invitations works from
+  the internet. Write  lookupip=0  in mpfever_settings.txt (next to MPFever.exe) to disable
+  this; invitations then carry your local address.
 
 UNINSTALL: delete winhttp.dll and steam_appid.txt from the game folder, delete the
 folder mods\mpfever_1 in your Transport Fever 3 user folder, and delete the MPFever
