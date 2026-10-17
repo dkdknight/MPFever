@@ -1099,7 +1099,7 @@ end
 -- the new ends of the construction's own segments that no other segment of the build uses.
 local function isConSegment(sg)
 	local tpl = tostring(sg and sg.comp and sg.comp.roadTemplate or "")
-	return tpl:find("/constructions/", 1, true) ~= nil or tpl:find("simple.street_template", 1, true) ~= nil
+	return tpl:find("/constructions/", 1, true) ~= nil or tpl:find("/track/simple/simple[%w_]*%.street_template") ~= nil
 end
 
 function C.frozenNodesOf(m, i)

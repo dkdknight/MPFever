@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -997,6 +997,17 @@ namespace MPFever
             return cond();
         }
 
+        // autotest: the games that closed or stopped (crashed) during the test; their test cannot say "in sync" (the Leawood runs
+        // of 0.3.13: a game crashed on a bulldoze, the other waited for it and the test still ended "IN SYNC"). A crashed game can
+        // stay open after writing its crash save: a game that sent no clock for 120 s counts as stopped too.
+        string ClosedGames()
+        {
+            var l = new List<string>();
+            lock (games) l.AddRange(games.Where(g => g.Role != "menu" && !g.GameRunning).Select(g => g.Name + " (closed)"));
+            lock (clocks) l.AddRange(clocks.Where(c => Now - c.Value.At > 120).Select(c => c.Key + " (no clock for " + (int)(Now - c.Value.At) + " s)"));
+            return string.Join(", ", l);
+        }
+
         void AutoTest()
         {
             try
@@ -1038,6 +1049,7 @@ namespace MPFever
                 foreach (var scenario in scenarios)
                 foreach (var role in new[] { "host", "client" })
                 {
+                    if (ClosedGames() != "") break;
                     if (scenario == "census")
                     {
                         // every game, paused at the same time, writes its census (MPFEVER_CENSUS): compared afterwards
@@ -1060,9 +1072,17 @@ namespace MPFever
                     lock (autoDone) autoDone.Remove(role);
                     AutoLine("scenario " + scenario + " by " + role);
                     HostSend(Msg.Make(scenario, hostName, "{[\"role\"]=\"" + role + "\",[\"offset\"]=" + (role == "host" ? 0 : 7) + (role == "host" ? ",[\"ab\"]=true" : "") + "}"));
-                    bool done = WaitUntil(() => { lock (autoDone) return autoDone.ContainsKey(role); }, 180);
-                    lock (autoDone) AutoLine(role + " scenario: " + (done ? autoDone[role] : "TIMEOUT"));
+                    bool done = WaitUntil(() => { lock (autoDone) return autoDone.ContainsKey(role) || ClosedGames() != ""; }, 180);
+                    lock (autoDone) AutoLine(role + " scenario: " + (autoDone.ContainsKey(role) ? autoDone[role] : "TIMEOUT"));
+                    if (ClosedGames() != "") break;
                     Thread.Sleep(5000);
+                }
+                string closed = ClosedGames();
+                if (closed != "")
+                {
+                    AutoLine("GAME CLOSED during the test: " + closed);
+                    AutoLine("sync: FAILED (a game closed) (desyncs " + desyncs + ", refused " + actRefused + ")");
+                    return;
                 }
                 Thread.Sleep(5000);
                 RequestHash();

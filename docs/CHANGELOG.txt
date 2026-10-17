@@ -1,7 +1,19 @@
 MPFever - Changelog
 ===================
 
-0.3.13-experimental - the main menu no longer crashes when MPFever's menu file fails to load
+0.3.13-experimental - the main menu no longer crashes when MPFever's menu file fails to load; electrified rail stations
+  - FIX (issue #46): a rail station with electrified tracks built by another player was refused on the other games
+    ("Construction Not Possible" in every form, then a resynchronisation). Its tracks use simple_catenary.street_template,
+    which the replay did not recognise as the station's own tracks (only simple.street_template), so the station did not
+    take the exact native construction replay. Checked: the station of the issue's log (modular cargo station, 2 tracks,
+    catenary, 48 segments) replayed at 6 places of a large savegame: built 5 times with its 48 segments, refused once
+    for a real collision with a road.
+  - AUTOTEST: a game that crashed during the test (process closed, or no clock for 120 s: a crashed game can stay open
+    after writing its crash save) now ends the test as "FAILED (a game closed)" instead of "IN SYNC". replayfile: an act
+    with shift = {x, y} is moved there (at the height of the ground) to replay a player's build on another savegame.
+  - NOTE (not MPFever): bulldozing a dead-end street with the engine's own removal proposal from a script can crash the
+    game (assertion AreAllNodesEmpty in TransportNetworkSystem.cpp:635), also with MPFever not active. Seen on a large
+    savegame from mod.io (Leawood); reported here so that crashes with that assertion are not taken for MPFever's.
   - FIX: when mpfever_menu.lua (or mpfever_pause.lua) failed to load, the game crashed at start with "module
     'mpfever_1::/gui/main/react.lua' not found". The game's require (base/init.lua) puts the file's path on its
     require stack before loading it and only takes it off when the file ran to its end: our failed file stayed on it,

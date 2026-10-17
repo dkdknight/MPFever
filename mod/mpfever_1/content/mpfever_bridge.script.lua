@@ -2701,7 +2701,7 @@ end
 -- rail station): they belong to the construction, whose own script makes them
 local function isConstructionSegment(sg)
 	local tpl = tostring(sg and sg.comp and sg.comp.roadTemplate or "")
-	return tpl:find("/constructions/", 1, true) ~= nil or tpl:find("simple.street_template", 1, true) ~= nil
+	return tpl:find("/constructions/", 1, true) ~= nil or tpl:find("/track/simple/simple[%w_]*%.street_template") ~= nil
 end
 
 local function hasConstructionSegments(m)
@@ -6633,6 +6633,18 @@ local function runReplayFile(p)
 			if not acts[k] then return autoFinish() end
 			local a = C.deser(acts[k])
 			a.uid = "act:" .. k .. ":" .. tostring(a.uid)
+			-- a build from another map (a player's log): shift = {x, y} moves it there, at the height of the ground there
+			if type(a.shift) == "table" then
+				local m, dx, dy, dz = a.args[1], nil, nil, 0
+				local n1 = m.proposal.addedNodes[1].comp.position
+				dx, dy = a.shift[1] - n1.x, a.shift[2] - n1.y
+				pcall(function() dz = api.engine.terrain.getHeightAt(api.type.Vec2f.new(a.shift[1], a.shift[2])) - n1.z end)
+				local function mv(v) if type(v) == "table" and v.x then v.x, v.y, v.z = v.x + dx, v.y + dy, v.z + dz end end
+				for _, nd in ipairs(m.proposal.addedNodes or {}) do mv(nd.comp.position) end
+				for _, sg in ipairs(m.proposal.addedSegments or {}) do mv(sg.comp.position0); mv(sg.comp.position1) end
+				for _, ce in ipairs(m.toAdd or {}) do local t = ce.transf; if t then t[13], t[14], t[15] = t[13] + dx, t[14] + dy, t[15] + dz end end
+				log(string.format("REPLAYFILE act %d shifted by %.1f %.1f %.1f", k, dx, dy, dz))
+			end
 			local st = a.args[1].proposal
 			local line = "act " .. k .. ": originator +" .. #st.addedSegments .. " -" .. #st.removedSegments .. ", edges before " .. #R.allEdges()
 			if k == 2 then
