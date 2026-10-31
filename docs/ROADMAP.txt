@@ -73,8 +73,10 @@ it is stable enough.
       one cheap loan at a time, their own start money (0.5.14)
   [x] Never bankrupt; a floor of money; freight that pays off in the long run (an industry grows when its cargo is
       carried) (0.6.0)
-  [ ] Deliveries of goods to the towns (prepared in 0.6.0, off until tested)
-  [ ] Trains (tracks, stations, signals, depots) and warehouses
+  [x] Deliveries of goods to the towns (0.6.2)
+  [x] Railways: two stations, the track (round the towns, bridges over roads, tracks and rivers), a depot, a line and
+      trains; a train more where cargo piles up, the trains of a losing line sold (0.6.4, experimental)
+  [ ] Signals, electric trains and warehouses
   [ ] Ships and planes
   [ ] Computer companies on a dedicated server
 
