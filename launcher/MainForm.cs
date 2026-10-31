@@ -74,7 +74,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.5";
+        public const string Version = "0.6.6";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -766,6 +766,7 @@ namespace MPFever
         void CheckUpdateThenInit()
         {
             Updater.CleanUp(JustUpdated);
+            ShowPrivacyOnce();
             if (autotest || Dev || JoinAtStart != null || !Updater.Enabled) { Init(); StartUpdateWatch(); return; }
             if (!Updater.InReleaseFolder)
             {
@@ -968,6 +969,20 @@ namespace MPFever
             return "Company mode: " + (companyMode == "separate" ? "one company per player" : "one company for everybody") + "; role: " + role
                 + (hostName != null ? " (host " + BaseName(hostName) + ")" : "") + Environment.NewLine
                 + "Players: " + (ready.Length > 0 ? string.Join(", ", ready.Select(BaseName)) : "-") + "; game running: " + (st ? "yes" : "no");
+        }
+
+        /// <summary>What MPFever contacts by itself and how to turn each off (docs/PRIVACY.txt, in the archive): told once, in a
+        /// window, before the first update check. Not for a dedicated server (a window would hold a server that starts with
+        /// Windows: its console tells its part at each start, see ServerListAnnounceLoop), nor when the game started MPFever for
+        /// a Steam invitation (the window would open behind the game: it waits for the next start), nor in tests.</summary>
+        void ShowPrivacyOnce()
+        {
+            if (autotest || Dev || ServerMode || JoinAtStart != null) return;
+            if (LoadSettings().TryGetValue("privacyShown", out var v) && v == "1") return;
+            SaveSetting("privacyShown", "1");
+            MessageBox.Show(this, T("MPFever contacte de lui-même :\n- GitHub, pour chercher les mises à jour (autoupdate=0 pour l'arrêter) ;\n- api.ipify.org, pour connaître l'adresse publique d'un hôte (lookupip=0) ;\n- votre box, pour y ouvrir le port de la partie quand vous hébergez (upnp=0) ;\n- mpfever.knight-hd.fr, la liste des serveurs publics (serverlist=0), où un serveur dédié s'annonce avec son nom, son monde, ses joueurs, son adresse et son identifiant Steam (public=false dans mpfever_server.properties).\n\nCes réglages sont dans la fenêtre ⚙ Réglages ou dans mpfever_settings.txt, à côté de MPFever.exe. MPFever n'envoie rien d'autre sans que vous le demandiez (jouer ensemble, installer les mods manquants, signaler un problème). Détails : PRIVACY.txt.",
+                "MPFever contacts by itself:\n- GitHub, to look for updates (autoupdate=0 turns it off);\n- api.ipify.org, to find a host's public address (lookupip=0);\n- your router, to open the game's port when you host (upnp=0);\n- mpfever.knight-hd.fr, the list of public servers (serverlist=0), where a dedicated server announces itself with its name, world, players, address and Steam ID (public=false in mpfever_server.properties).\n\nThese settings are in the ⚙ Settings window or in mpfever_settings.txt, next to MPFever.exe. MPFever sends nothing else unless you ask for it (playing together, installing missing mods, reporting a problem). Details: PRIVACY.txt."),
+                T("MPFever : confidentialité", "MPFever: privacy"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         void Init()

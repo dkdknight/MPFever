@@ -1,0 +1,121 @@
+# The published archives, started by hand (Actions > Release build > Run workflow, on a branch or a tag): builds them from
+# the repository's code with build.bat, as the CI does, then has MPFever.exe and winhttp.dll signed in the players' and the
+# dedicated server's archives by SignPath (README.md, "Code signing policy"; .signpath/artifact-configuration.xml is the
+# configuration of the SignPath project). Each signature waits for an approver's yes in SignPath. Nothing is published: the
+# archives stay in the run's artifacts, to be tested, then attached to a GitHub release by hand. Without SignPath set up
+# (secret SIGNPATH_API_TOKEN and variable SIGNPATH_ORGANIZATION_ID of the repository), the archives are left unsigned.
+name: Release build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: windows-2022
+    # (the signature waits for an approver: up to 2 hours below)
+    timeout-minutes: 180
+    env:
+      SIGNPATH_ON: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lua for the tests
+        run: python -m pip install lupa==2.8
+
+      - name: Build, test, pack
+        shell: pwsh
+        run: |
+          cmd /c build.bat 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path build.bat -Pattern '^set "VERSION=([^"]+)"').Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      # (the two archives the players and the servers download; the server list's is for its own PC only)
+      - name: Unsigned archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPFever-${{ steps.version.outputs.version }}-unsigned
+          path: |
+            release/MPFever-${{ steps.version.outputs.version }}.zip
+            release/MPFever-${{ steps.version.outputs.version }}-server.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      # (SignPath gets the archives' two folders, not the zips: build.bat's zips name their entries with backslashes, which
+      # MPFever's updater reads but other tools may not; the signed folders are zipped again below as build.bat does)
+      - name: Folders to sign
+        if: env.SIGNPATH_ON == 'true'
+        id: tosign
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPFever-${{ steps.version.outputs.version }}-to-sign
+          path: |
+            release/dist/MPFever
+            release/dist-server/MPFever-Server
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Signature (SignPath)
+        if: env.SIGNPATH_ON == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: MPFever
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: release
+          github-artifact-id: ${{ steps.tosign.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed-folders
+
+      - name: Zip the signed folders
+        if: env.SIGNPATH_ON == 'true'
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force signed | Out-Null
+          foreach ($p in @(@('signed-folders\dist\MPFever', "MPFever-$v.zip"), @('signed-folders\dist-server\MPFever-Server', "MPFever-$v-server.zip"))) {
+            foreach ($f in 'MPFever.exe', 'winhttp.dll') {
+              $sig = Get-AuthenticodeSignature (Join-Path $p[0] $f)
+              if ($sig.Status -ne 'Valid') { throw "$($p[0])\$f is not signed: $($sig.Status)" }
+            }
+            # (Windows PowerShell's zip, as build.bat makes it)
+            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path '$($p[0])'), (Join-Path (Resolve-Path 'signed') '$($p[1])'), 'Optimal', `$true)"
+            if ($LASTEXITCODE -ne 0) { throw "zip of $($p[0]) failed" }
+          }
+
+      - name: Signed archives
+        if: env.SIGNPATH_ON == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPFever-${{ steps.version.outputs.version }}-signed
+          path: signed/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      # (the hashes for the release notes, on the run's page)
+      - name: Hashes
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $signed = $env:SIGNPATH_ON -eq 'true'
+          $dir = if ($signed) { 'signed' } else { 'release' }
+          $lines = @("## MPFever $v ($(if ($signed) { 'signed' } else { 'NOT signed: SignPath is not set up' }))", "")
+          foreach ($f in "MPFever-$v.zip", "MPFever-$v-server.zip") {
+            $h = (Get-FileHash (Join-Path $dir $f) -Algorithm SHA256).Hash
+            $lines += "- ``$f``, SHA-256 ``$h``"
+          }
+          $lines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $lines -join "`n"

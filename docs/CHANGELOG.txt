@@ -1,6 +1,18 @@
 MPFever - Changelog
 ===================
 
+0.6.6 - code signing (SignPath Foundation), privacy policy
+  - NEW: MPFever.exe and winhttp.dll carry the release's version in their properties (winhttp.dll gets a version resource
+    written by tools/mkres.py), and the published archives can be built and signed on GitHub by the "Release build"
+    workflow (.github/workflows/release.yml, started by hand): the same build.bat, then the signature of both files by
+    SignPath (free code signing for open source, certificate by SignPath Foundation; .signpath/artifact-configuration.xml).
+    Until SignPath Foundation has accepted MPFever, the workflow leaves the archives unsigned. Signed files are what
+    Windows' Smart App Control and SmartScreen expect: no more "Bad Image ... 0xc0e90002" once the releases are signed.
+  - NEW: docs/PRIVACY.txt (shipped as PRIVACY.txt) lists everything MPFever contacts by itself and how to turn each off;
+    it is summed up in a window the first time MPFever starts (a dedicated server says its part in its console). README:
+    Privacy and Code signing policy sections.
+  - Otherwise 0.6.5.
+
 0.6.5 - the players' reports of 2026-10-31: three causes of reloads found and fixed
   - FIX (issue #111): a session that reloaded the host's game every two minutes from the first check on, for "ages". One
     player had copied MPFever.exe alone, without winhttp.dll next to it: the native module in his game folder stayed an old

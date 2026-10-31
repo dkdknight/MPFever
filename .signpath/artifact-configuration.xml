@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The artifact configuration of the SignPath project "MPFever" (slug "release"), copied into SignPath by hand. What the
+     Release build workflow (.github/workflows/release.yml) sends is one artifact holding the folders of the players' and
+     the dedicated server's archives (dist/MPFever and dist-server/MPFever-Server, as build.bat leaves them in release\); in
+     each, MPFever.exe and winhttp.dll are signed, and only if their product name is MPFever and their product version is
+     the release's (build.bat sets both; the workflow passes the version). The workflow zips the signed folders itself. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" default-value="0.0.0" />
+  </parameters>
+  <zip-file>
+    <directory path="dist/MPFever">
+      <pe-file path="MPFever.exe" product-name="MPFever" product-version="${version}">
+        <authenticode-sign />
+      </pe-file>
+      <pe-file path="winhttp.dll" product-name="MPFever" product-version="${version}">
+        <authenticode-sign />
+      </pe-file>
+    </directory>
+    <directory path="dist-server/MPFever-Server">
+      <pe-file path="MPFever.exe" product-name="MPFever" product-version="${version}">
+        <authenticode-sign />
+      </pe-file>
+      <pe-file path="winhttp.dll" product-name="MPFever" product-version="${version}">
+        <authenticode-sign />
+      </pe-file>
+    </directory>
+  </zip-file>
+</artifact-configuration>

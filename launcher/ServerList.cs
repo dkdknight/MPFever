@@ -146,6 +146,9 @@ namespace MPFever
             var url = ServerListUrl();
             if (server == null || !server.Public) return;
             if (url == "") { Log.Warn(T("public=true, mais aucune liste de serveurs n'est connue (serverlist= dans mpfever_settings.txt) : le serveur n'y apparaît pas.", "public=true, but no server list is known (serverlist= in mpfever_settings.txt): the server is not listed.")); return; }
+            // (docs/PRIVACY.txt: what the server sends, told in its console at each start instead of the players' window)
+            Log.Dim(T("Confidentialité : tant que son monde tourne, ce serveur annonce son nom, son monde, ses joueurs, son adresse et son identifiant Steam à la liste des serveurs publics (public=false dans mpfever_server.properties l'en retire). Détails : PRIVACY.txt.",
+                "Privacy: while its world runs, this server announces its name, world, players, address and Steam ID to the public server list (public=false in mpfever_server.properties keeps it out). Details: PRIVACY.txt."));
             string build = "";
             try { build = Reporter.GameBuild(gameDir) ?? ""; } catch { }
             while (serverStarted && !serverStopping)

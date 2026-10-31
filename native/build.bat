@@ -23,6 +23,10 @@ cl /nologo /c /WX /O2 /GS- /Zl /EHs-c- /GR- /std:c++17 mpf_math.cpp /Fo:out\mpf_
 ml64 /nologo /c /Fo out\mpf_math_asm.obj mpf_math_asm.asm || exit /b 1
 rem __chkstk, which recent toolsets call and the CRT would give (the module links without it)
 ml64 /nologo /c /Fo out\chkstk.obj chkstk.asm || exit /b 1
+rem the module's version (Properties > Details: code signing checks its product name and version), VERSION of build.bat:
+rem a compiled resource written by tools\mkres.py, since the C++ tools have no resource compiler without the Windows SDK
+if not defined VERSION set "VERSION=0.0.0"
+python ..\tools\mkres.py out\version.res %VERSION% || (echo Python not found: install Python 3 & exit /b 1)
 rem the module takes the name winhttp.dll: the game loads it by itself from its folder
-link /nologo /WX /DLL /NODEFAULTLIB /ENTRY:DllMain /DEF:winhttp.def /OUT:out\winhttp.dll out\mpfever_native.obj out\winhttp_proxy.obj out\mpf_steamnet.obj out\mpf_math.obj out\mpf_math_asm.obj out\chkstk.obj out\kernel32.lib || exit /b 1
+link /nologo /WX /DLL /NODEFAULTLIB /ENTRY:DllMain /DEF:winhttp.def /OUT:out\winhttp.dll out\mpfever_native.obj out\winhttp_proxy.obj out\mpf_steamnet.obj out\mpf_math.obj out\mpf_math_asm.obj out\chkstk.obj out\version.res out\kernel32.lib || exit /b 1
 echo BUILD OK

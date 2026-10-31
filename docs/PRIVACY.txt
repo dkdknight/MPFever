@@ -1,0 +1,68 @@
+MPFever - privacy policy
+========================
+
+MPFever has no account, no advertising and no statistics: it collects nothing about you for itself. This page lists every
+connection MPFever makes, what it sends, and how to turn off those it makes by itself. MPFever shows a short version of it
+the first time it starts.
+
+
+1. Connections MPFever makes by itself
+--------------------------------------
+
+Most of them can be turned off in MPFever's ⚙ Settings window. They are kept in mpfever_settings.txt, next to MPFever.exe
+(one "name=value" per line), where the settings named here can also be written by hand.
+
+- Updates: at start, MPFever asks GitHub (api.github.com, github.com) for its newest version, and downloads it when there
+  is one. GitHub sees your IP address, as for any visit. Turn off: autoupdate=0 (autoupdate=ask offers updates first).
+
+- Your public address (hosts only): to show the address friends type to join, the host's MPFever asks api.ipify.org for
+  its public IP address. ipify sees your IP address. Turn off: lookupip=0 (the local address is shown instead).
+
+- Opening the port on your router (hosts only): when you host, MPFever asks your router (UPnP or NAT-PMP, on your own
+  network only) to forward the game's port to your PC, and removes the forwarding when the session ends or MPFever closes.
+  Turn off: upnp=0 (then forward the port by hand, or join through Steam).
+
+- The list of public servers (mpfever.knight-hd.fr, run by MPFever's author, behind Cloudflare):
+  - the multiplayer page reads the list while its « Public servers » tab is open; the list service sees your IP address
+    and keeps no record of who reads the list;
+  - a dedicated server announces itself there every 30 seconds while its world runs: its name, message of the day, world,
+    company mode, MPFever version and game build, number of players and maximum, whether it asks for a password, its port,
+    the address given by public-address= (else the IP address it connects from) and its Steam ID (so that players can join
+    it through Steam). The service checks that the server can be reached, shows these to every player, forgets the server
+    90 seconds after its last announce, and writes in its log the server's name, address and port when it appears,
+    disappears or becomes reachable or not (the log keeps the last 2 to 4 MB). Turn off: public=false in
+    mpfever_server.properties keeps a server out of the list; serverlist=0 in mpfever_settings.txt turns the list off
+    entirely.
+
+
+2. Connections you ask for
+--------------------------
+
+- Playing together: hosting, joining a game, a dedicated server. The players' games exchange what the game needs (builds,
+  game time, chat, player and company names, mod list, savegames) with the host or the server you chose, directly or
+  through Steam (Steam networking: Valve sees the connection, as for any Steam game).
+
+- Missing mods: when you join a game, the game's Mod Hub installs the host's mods you lack (turn off: automods=0), and
+  the host can send you the mods the Mod Hub does not have.
+
+- « Report a problem »: MPFever puts the logs of the session in a zip in its reports folder and opens a new GitHub issue in
+  your browser. Nothing is sent by MPFever itself: you choose to attach the zip and to post the issue, with your own GitHub
+  account, and GitHub issues are public. Before writing the zip, MPFever takes out of the text logs your Windows account's
+  and PC's names, your Steam account numbers, public IP addresses and e-mail addresses. Player names, savegame names and
+  the game's settings stay: the logs are about them.
+
+- Links (Discord, Ko-fi, Nexus Mods, GitHub): they open in your browser only when you click them.
+
+
+3. On your PC
+-------------
+
+MPFever writes its settings, logs, reports and session files next to MPFever.exe and in the game's folders, and installs
+its files in the game's folder (see README.txt, "UNINSTALL", to remove them). They stay on your PC.
+
+
+4. Questions
+------------
+
+Open an issue on https://github.com/dkdknight/MPFever/issues. The source code of every part of MPFever, including the list
+service (serverlist folder), is published there under the GNU General Public License.

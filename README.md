@@ -28,6 +28,8 @@ Each player plays in their own copy of the game. MPFever replays every player's 
 - [Troubleshooting](#troubleshooting)
 - [Reporting a problem](#reporting-a-problem)
 - [For developers](#for-developers)
+- [Privacy](#privacy)
+- [Code signing policy](#code-signing-policy)
 - [Credits and support](#credits-and-support)
 
 ---
@@ -201,6 +203,8 @@ build.bat
 
 It builds `native\out\winhttp.dll` and `launcher\bin\Release\MPFever.exe`, runs the tests (below), and makes the archives in `release\` only when they all pass. A compiler warning stops the build too.
 
+The published archives are built on GitHub by the [Release build](.github/workflows/release.yml) workflow, started by hand: the same `build.bat`, from the repository's code, then the signature of `MPFever.exe` and `winhttp.dll` (see [Code signing policy](#code-signing-policy)). It publishes nothing: its archives are tested, then attached to a release by hand.
+
 ### Game updates and signatures
 
 The native module finds the places it patches in the game's code by their signatures, in `mpfever_sigs.txt`, shipped next to `MPFever.exe`. A feature whose places are not all found stays off, and `native.log` says so.
@@ -221,6 +225,22 @@ python tools\mksigs.py check "<path>\TransportFever3.exe"
   - `tests\test_lang.py`: every text translated in every language;
   - `MPFever.exe --selftest`: the relay, the client, the server settings, the updates, UPnP and the redaction of reports.
 - `MPFever.exe --autotest <savegame>`: two real games on one PC, with scenarios chosen by environment variables. See [RESEARCH](docs/RESEARCH.md).
+
+---
+
+## Privacy
+
+MPFever has no account, no advertising and no statistics. By itself, it contacts only GitHub (updates), api.ipify.org (a host's public address), your router (to open the port when you host) and the list of public servers, and each can be turned off. The full list, with what is sent and how to turn it off, is in the [privacy policy](docs/PRIVACY.txt), shipped in every archive as `PRIVACY.txt` and summed up in a window the first time MPFever starts.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+*Applied for: the releases are signed once SignPath Foundation has accepted MPFever. Earlier releases are not signed.*
+
+- `MPFever.exe` and `winhttp.dll`, in the players' and the dedicated server's archives, are signed. They are built on GitHub from this repository's code by the [Release build](.github/workflows/release.yml) workflow; every signature is approved by hand.
+- Committers and reviewers: [dkdknight](https://github.com/dkdknight). A pull request from anyone else is reviewed by a committer before it is merged.
+- Approvers: [dkdknight](https://github.com/dkdknight).
+- Privacy: see [Privacy](#privacy) and the [privacy policy](docs/PRIVACY.txt). This program does not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it, except the connections listed there, which can each be turned off.
 
 ---
 
