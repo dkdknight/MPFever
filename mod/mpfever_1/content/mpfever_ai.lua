@@ -3937,7 +3937,8 @@ end
 
 -- Whether a railway between two industries can be laid, before anything is built: the places its two stations would take
 -- (RL.stationPlace, the second one turned towards the first), their ends facing each other (80 m out of each centre), and some
--- way between those ends clear of what is in its way (RL.trackProposal: towns, slopes, bridges; no dry run). True, or false and why
+-- way between those ends clear of what is in its way (RL.trackProposal: towns, slopes, bridges) that the engine's dry run lets
+-- through too. True, or false and why
 function RL.corridor(E, co, from, to, a)
 	local pa = RL.stationPlace(E, co, from, a)
 	if not pa then return false, "no place for a station near industry " .. from.e end
@@ -3950,10 +3951,32 @@ function RL.corridor(E, co, from, to, a)
 	p0.z, p1.z = E.groundZ(pa.x, pa.y, 0), E.groundZ(pb.x, pb.y, 0)
 	local W = RL.world(E, co, RL.box(p0, p1))
 	local why = "no way"
+	local bits = keepBuildings() and withoutBuildings(CTX_ROAD) or CTX_ROAD
+	local ctx = context(E, co.ent, bits)
 	for _, w in ipairs(RL.ways(E, p0, u, p1, back, W)) do
-		local sp, _, refused = RL.trackProposal(E, co, -1, p0, u, -2, p1, back, currentYear(E), w.way, W)
-		if sp then return true end
-		why = tostring(refused)
+		local sp, _, refused = RL.trackProposal(E, co, -9001, p0, u, -9002, p1, back, currentYear(E), w.way, W)
+		if sp then
+			-- (0.6.4: and the engine's dry run of that track, its two ends new nodes where the stations' ends will be: what the
+			-- checks do not see (a bridge's piers on a track, water, the slopes) refused it after the stations were built)
+			local api = E.api
+			local ssp = sp.streetProposal
+			local nodes = ssp.nodesToAdd or {}
+			for k, q in ipairs({ p0, p1 }) do
+				local ne = api.type.NodeAndEntity.new()
+				ne.entity = -9000 - k
+				local bn = ne.comp
+				bn.position = api.type.Vec3f.new(q.x, q.y, q.z)
+				ne.comp = bn
+				nodes[#nodes + 1] = ne
+			end
+			ssp.nodesToAdd = nodes
+			sp.streetProposal = ssp
+			local okd, pd = pcall(function() return api.engine.util.proposal.makeProposalData(sp, ctx) end)
+			if okd and pd and #pd.errorState.messages == 0 and not pd.errorState.critical then return true end
+			why = w.what .. ": " .. (okd and pd and (E.C.ser(E.C.marshal(pd.errorState.messages)) .. RL.collides(E, pd)) or tostring(pd))
+		else
+			why = tostring(refused)
+		end
 	end
 	return false, why
 end
