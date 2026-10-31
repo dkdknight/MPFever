@@ -8,10 +8,13 @@ MPFever - Changelog
     the track between them, a depot behind the first station, a line and a train (the cheapest locomotive of 400 kW or more
     that needs no catenary, the wagons that carry the most of that cargo for their price). The track goes round the towns (a
     search over a grid of 100 m), in wide curves, at most 3 % up or down, and over every road and track in its way on a
-    bridge, as a player's track crosses a road: nothing of the others is touched. A railway whose track cannot be laid is
-    left after three tries. Each build is a build of the company, held and replayed by every game as a player's. The
-    company's trains and lines of trains are kept apart from its buses and trucks. Test: tests/test_ai_rail.py.
-    MPFEVER_AIRAIL=0: no railways, as before.
+    bridge, as a player's track crosses a road: nothing of the others is touched. Only for a producer of 300 a year or
+    more that no other company serves. The whole track is tried first (a dry run between the two stations' places): a
+    railway that cannot be laid costs nothing. Each build is a build of the company, held and replayed by every game as a
+    player's. Its lines of trains are then looked after: a train more where the cargo piles up (3 at most) while the line
+    does not lose money; the trains of a line that loses money with nothing to carry are sold and none is bought for it
+    again (the track and the stations stay). The company's trains and lines of trains are kept apart from its buses and
+    trucks. Test: tests/test_ai_rail.py. MPFEVER_AIRAIL=0: no railways, as before.
   - FIX (issue #109): a depot or a station put on a street with stops reloaded the host's game for everybody ("2 edge
     object(s) of the construction (an airport's signs) not replayed"). The tool takes the street's stops away and puts them
     back on the new pieces of that street; the engine's conversion of the construction has no such stops. They are now taken
