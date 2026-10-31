@@ -1734,24 +1734,26 @@ local function bestPair(E, co, lines, stops)
 	return best
 end
 
--- (0.6.4.1) The segments a company may put a stop on: none that ends at a junction with traffic lights. A stop is built as the
--- segment replaced with the configurations of its two junctions removed (see buildStop); at a junction with traffic lights the
--- engine was left with lights and no configuration and asserted ('it != components.end()', on that junction and on the stops of
--- the next street), and the host's game stopped: twice at the same junction in a 60-minute test with the players' world of #109
--- (test o2 of 2026-10-31). MPFEVER_AISTOPLIGHTS=1: as before
+-- (0.6.4.1) The segments a company may put a stop on: none that ends at a junction with a configuration of its own (lane connections,
+-- crosswalks, traffic lights). A stop is built as the segment replaced with the configurations of its two junctions removed and
+-- none put back (see buildStop); the engine was then left with a junction whose lights or neighbouring stops still needed its
+-- configuration and asserted ('it != components.end()', on the junction and on a stop of the next street): the host's game stopped,
+-- three times in the tests of 2026-10-31 with the players' world of #109 (a junction with traffic lights twice, another one once).
+-- MPFEVER_AISTOPLIGHTS=1: as before
 local function stopSegments(E, co, segs)
 	if os.getenv("MPFEVER_AISTOPLIGHTS") == "1" then return segs end
 	local api = E.api
 	local out = {}
 	for _, s in ipairs(segs) do
-		local lights = false
+		local configured = false
 		pcall(function()
 			local c = api.engine.getComponent(s.e, api.type.ComponentType.BASE_EDGE)
 			for _, nd in ipairs({ c.node0, c.node1 }) do
-				if api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_TRAFFIC_LIGHT) then lights = true end
+				if api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_TRAFFIC_LIGHT)
+					or api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_CONFIG) then configured = true end
 			end
 		end)
-		if not lights then out[#out + 1] = s end
+		if not configured then out[#out + 1] = s end
 	end
 	return out
 end
