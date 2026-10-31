@@ -148,7 +148,7 @@ E = {
   send = function(name, a) SENT[#SENT + 1] = { name = name, a = a } end,
   gameTime = function() return TIME end,
   stampFor = function(t) return t end,
-  deferredSend = function(cmd, cb) BUILDS[#BUILDS + 1] = cmd; G.autoBuildSeq = G.autoBuildSeq + 1; LASTCB = cb end,
+  deferredSend = function(cmd, cb, proposal, still) BUILDS[#BUILDS + 1] = cmd; G.autoBuildSeq = G.autoBuildSeq + 1; LASTCB = cb; LASTSTILL = still end,
   nodePosition = function(n) return NODES and NODES[n] or nil end,
   groundZ = function(x, y, z) return z or 0 end,
   vec = function(v) return v end,

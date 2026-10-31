@@ -7072,7 +7072,25 @@ end
 -- autotest: a scripted build follows the tools' path (announced, every game holds at its time, then it is sent)
 G.autoBuildSeq = 0
 -- (proposal: the native proposal the command was made from, kept as a tool's is with MPFEVER_RESTALETEST=1, see G.restale)
-local function deferredSend(cmd, cb, proposal)
+-- (0.6.4.1) A computer company's build checked again when it is released (still: a function, true when what the build removes is
+-- still as it was made against, else why not): it is made from the interface's view of the world and goes to the engine a few
+-- steps later, and what it removes may have been replaced meanwhile. A stop built on a segment that a stop of the same company had
+-- just replaced: its segment rebuilt without the other stop, the engine asserted ('it != components.end()') and the host's game
+-- stopped (o2 test, 2026-10-31). Not sent then: the others stop holding for it, as for a refused build. MPFEVER_AISTILL=0: as before
+local function stillOk(id, still, cb)
+	if type(still) ~= "function" or os.getenv("MPFEVER_AISTILL") == "0" then return true end
+	local okS, res = pcall(still)
+	-- (a check that cannot run never stops a build)
+	if not okS or res == true then return true end
+	log("autotest build " .. id .. " not sent: " .. tostring(res))
+	for _, e in ipairs(G.natShipIds or {}) do
+		if e.id == id then G.leadRefused(e, "changed since it was made: " .. tostring(res)); break end
+	end
+	if cb then pcall(cb, nil, false) end
+	return false
+end
+
+local function deferredSend(cmd, cb, proposal, still)
 	-- (as a tool's build: refused during a resynchronisation, see G.resyncRefuse)
 	if G.resyncRefuse("autotest build") then
 		if cb then G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() pcall(cb, nil, false) end } end
@@ -7100,7 +7118,7 @@ local function deferredSend(cmd, cb, proposal)
 			end
 			if cb then return cb(res, success, ...) end
 		end
-		G.natRelease[#G.natRelease + 1] = { id = id, at = now, lead = true, fn = function() O.sendCommand(cmd, answer) end }
+		G.natRelease[#G.natRelease + 1] = { id = id, at = now, lead = true, fn = function() if stillOk(id, still, cb) then O.sendCommand(cmd, answer) end end }
 		send("nat_pending", { origin = G.me, at = now, id = id, lead = true })
 		G.leadStats.atOnce = G.leadStats.atOnce + 1
 		log("BUILDLEAD autotest build " .. id .. " released at once at t=" .. now .. " [frame " .. G.frames .. "]")
@@ -7110,7 +7128,7 @@ local function deferredSend(cmd, cb, proposal)
 	local pt = paused and G.ptOn or nil
 	-- (MPFEVER_RESTALETEST=1: kept like a tool's proposal, made again at its release when another player built meanwhile, see
 	-- G.restale)
-	G.natRelease[#G.natRelease + 1] = { id = id, at = at, fn = function() O.sendCommand(cmd, cb) end, paused = pt, frame0 = G.frames,
+	G.natRelease[#G.natRelease + 1] = { id = id, at = at, fn = function() if stillOk(id, still, cb) then O.sendCommand(cmd, cb) end end, paused = pt, frame0 = G.frames,
 		t0 = now, cb = cb, copy = (os.getenv("MPFEVER_RESTALETEST") == "1" and proposal ~= nil) and select(2, pcall(C.compactProposal, proposal)) or nil }
 	if pt then G.ptIssue(G.me, id) end
 	markPending(id, { x = 0, y = 0 })

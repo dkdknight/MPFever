@@ -475,7 +475,8 @@ local function context(E, ent, bits)
 end
 
 -- a build as a tool's, for the company: held at its time, shipped with the company's number (the others build it for it)
-local function build(E, coId, cmd, what, ctxBits, jr)
+-- (still: see deferredSend in the bridge, checked again when the build is released, 0.6.4.1)
+local function build(E, coId, cmd, what, ctxBits, jr, still)
 	local G = E.G
 	local A = G.AI
 	A.busy = { what = what, since = G.frames }
@@ -497,7 +498,7 @@ local function build(E, coId, cmd, what, ctxBits, jr)
 		if success and jr then journal(E, coId, jr.kind, jr.pos, jr.a, jr.b) end
 		-- (a build this game did not take, res nil, is no refusal of the place: not counted against it)
 		if not success and (res ~= nil or os.getenv("MPFEVER_AIRETRY") == "0") then A.failed = A.failed or {}; A.failed[what] = (A.failed[what] or 0) + 1 end
-	end)
+	end, nil, still)
 	-- (a build this game did not take, during a resynchronisation or with no company here: no number of its own, nothing written
 	-- for it - the number would be the previous build's, perhaps another company's, 0.5.14)
 	if G.autoBuildSeq == seq0 and os.getenv("MPFEVER_AIRETRY") ~= "0" then L(E, what .. ": not taken by this game"); return end
@@ -552,7 +553,18 @@ local function buildStop(E, co, seg, n)
 	sp.streetProposal = ssp
 	local cmd = api.cmd.makeWorldBuildProposalCmd(sp, context(E, co.ent, CTX_STOP), false, true, true)
 	local pa, pb = E.nodePosition(c.node0), E.nodePosition(c.node1)
-	build(E, co.id, cmd, "stop " .. n, CTX_STOP, { kind = "stop", pos = pa and pb and { x = (pa.x + pb.x) / 2, y = (pa.y + pb.y) / 2, z = (pa.z + pb.z) / 2 } or nil })
+	-- (0.6.4.1: the segment as it was when this build was made: the same ends and still no stop, else not sent, see deferredSend.
+	-- A stop built on a segment another stop had just replaced stopped the host's game, test o2 of 2026-10-31)
+	local n0, n1 = c.node0, c.node1
+	local function still()
+		local c2 = api.engine.getComponent(seg, api.type.ComponentType.BASE_EDGE)
+		if not c2 then return "segment " .. seg .. " no longer exists" end
+		if c2.node0 ~= n0 or c2.node1 ~= n1 then return "segment " .. seg .. " is another segment now" end
+		if #c2.objects > 0 then return "segment " .. seg .. " carries " .. #c2.objects .. " object(s) now" end
+		return true
+	end
+	L(E, "stop " .. tostring(n) .. " on segment " .. seg)
+	build(E, co.id, cmd, "stop " .. n, CTX_STOP, { kind = "stop", pos = pa and pb and { x = (pa.x + pb.x) / 2, y = (pa.y + pb.y) / 2, z = (pa.z + pb.z) / 2 } or nil }, still)
 	return true
 end
 
