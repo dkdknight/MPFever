@@ -4018,7 +4018,7 @@ function RL.buildTrack(E, co, ea, eb, what)
 						local cost = 0
 						pcall(function() cost = tonumber(pd.costs) or 0 end)
 						if not spendOk(E, co, cost, what) then return "dear" end
-						L(E, string.format("%s: %.0f m, %s, %d level crossing(s), cost %d", what, len or 0, w.what, ncross or 0, math.floor(cost)))
+						L(E, string.format("%s: %.0f m, %s, %d crossing(s) bridged, cost %d", what, len or 0, w.what, ncross or 0, math.floor(cost)))
 						build(E, co.id, api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true, true), what, bits,
 							{ kind = "railtrack", pos = { x = (ea.p.x + eb.p.x) / 2, y = (ea.p.y + eb.p.y) / 2, z = (ea.p.z + eb.p.z) / 2 } })
 						return true
