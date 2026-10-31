@@ -4912,6 +4912,27 @@ G.replayByReplace = function(a)
 	return true
 end
 
+-- (0.6.4, issue #109) Whether the edge objects a construction's build adds are the stops of the street it cuts: a tram depot put
+-- on a street with stops, the tool takes them away and re-creates them on the new pieces of that street. All of them on new
+-- segments of the build that are not the construction's own (an airport's signs are on its runways: not these), each with its
+-- model and its segment's geometry, as G.eoDryRun needs. MPFEVER_CONSTOPS=0: never (the host's game reloaded, as before)
+G.conStopsOk = function(m)
+	if os.getenv("MPFEVER_CONSTOPS") == "0" then return false end
+	local st = type(m) == "table" and m.proposal
+	if type(st) ~= "table" or #(st.edgeObjectsToAdd or {}) == 0 then return false end
+	local seg = {}
+	for _, sg in ipairs(st.addedSegments or {}) do
+		if type(sg) == "table" and type(sg.entity) == "number" and sg.entity < 0 then seg[sg.entity] = sg end
+	end
+	for _, o in ipairs(st.edgeObjectsToAdd) do
+		local sg = type(o) == "table" and type(o.model) == "string" and seg[o.segmentEntity] or nil
+		local c = sg and sg.comp
+		if type(c) ~= "table" or isConstructionSegment(sg) or type(c.position0) ~= "table" or type(c.position1) ~= "table"
+			or type(c.tangent0) ~= "table" or type(c.tangent1) ~= "table" then return false end
+	end
+	return true
+end
+
 local function replayNativeConstruction(a)
 	local m0 = a.args[1]
 	if not hasConstructionSegments(m0) and not a.industryEdit and not a.ownTracks then return false end
@@ -5006,118 +5027,153 @@ local function replayNativeConstruction(a)
 			return
 		end
 		if toolNodes then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the tool's removed nodes are kept (the engine's removal has other nodes)") end
-		-- the construction's edge objects (an airport's signs on its own runways and taxiways, issue #50) go in the same
-		-- proposal, as the tool's; if this game cannot make it so, the replay goes without them and the host's game is
-		-- reloaded once built (they are never placed afterwards: issue #49)
-		local nEO = #(m.proposal.edgeObjectsToAdd or {})
-		local withObjects = nEO > 0 and type(eoNative) == "table" and #eoNative >= nEO
-		local ctx2 = api.type.Context.new()
-		ctx2.checkTerrainAlignment = true
-		ctx2.cleanupStreetGraph = false
-		-- (0.6: a computer company's garage keeps the town buildings in its way, the build then fails on every game instead of
-		-- taking them down: a.keepBuildings, set by mpfever_ai.lua, MPFEVER_AIKEEPBUILDINGS=0 there: not set, as before)
-		ctx2.gatherBuildings = a.keepBuildings ~= true
-		ctx2.gatherFields = true
-		ctx2.player = api.engine.util.getPlayer()
-		G.refundInto(ctx2)
-		if a.keepBuildings == true then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the town buildings in its way are kept (a computer company's build)") end
-		local okk, cmd = false, nil
-		if withObjects then
-			C.errors = {}
-			local okw, PW = pcall(C.rebuildNativeWithConstruction, m, conv, rm, { toolNodes = toolNodes, withObjects = eoNative })
-			if okw and PW then okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(PW, ctx2, false, true) end) end
-			if okk and cmd then
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: with its " .. nEO .. " edge object(s)")
-			else
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: not made with its " .. nEO .. " edge object(s) ("
-					.. (okw and shortErr(cmd) or tostring(PW):gsub("^.*%.lua" .. string.char(34) .. "%]:%d+: ", ""):sub(1, 700)) .. "): without them, then resynchronisation")
-				okk, cmd, withObjects = false, nil, false
-			end
-		end
-		local okp, P = true, nil
-		if not cmd then
-			C.errors = {}
-			okp, P = pcall(C.rebuildNativeWithConstruction, m, conv, rm, { toolNodes = toolNodes })
-		end
-		if not cmd and (not okp or not P) then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: not rebuilt (" .. shortErr(P) .. ")") replayFailed(a, "native rebuild") return end
-		do
-			local notes = {}
-			for _, e in ipairs(C.errors) do if not tostring(e):find("no writable member 'params'", 1, true) then notes[#notes + 1] = e end end
-			if #notes > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: rebuild notes " .. table.concat(notes, "; ")) end
-			log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: frozen nodes of the first construction " .. tostring(C.frozenHow))
-			if C.replacedCons then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: replaced as the engine replaces them: " .. C.replacedCons) end
-		end
-		if not cmd then okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(P, ctx2, false, true) end) end
-		if (not okk or not cmd) and os.getenv("MPFEVER_DEPOTEXP") then
-			local oke, erre = pcall(depotExperiments, a, m, conv, rm, ctx2)
-			if not oke then log("DEPOTEXP failed: " .. tostring(erre)) end
-		end
-		if not okk or not cmd then
-			log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: command " .. shortErr(cmd))
-			-- the engine's own node configurations and id maps are recomputed when the proposal does not carry them
-			for vi, variant in ipairs({ { noConfigs = true }, { noConfigs = true, noMaps = true } }) do
-				if okk and cmd then break end
+		-- (0.6.4, issue #109: the stops of the street the construction cuts, which the tool re-creates on the new pieces of that
+		-- street, are not in the engine's conversion of the construction: they are taken from a dry run as for a street build,
+		-- G.eoDryRun, and go in the same proposal; before, the construction was built without them and the host's game reloaded)
+		local eoRank, eoRes = false, nil
+		local function finish()
+			-- the construction's edge objects (an airport's signs on its own runways and taxiways, issue #50) go in the same
+			-- proposal, as the tool's; if this game cannot make it so, the replay goes without them and the host's game is
+			-- reloaded once built (they are never placed afterwards: issue #49)
+			local nEO = #(m.proposal.edgeObjectsToAdd or {})
+			local withObjects = nEO > 0 and type(eoNative) == "table" and #eoNative >= nEO
+			local ctx2 = api.type.Context.new()
+			ctx2.checkTerrainAlignment = true
+			ctx2.cleanupStreetGraph = false
+			-- (0.6: a computer company's garage keeps the town buildings in its way, the build then fails on every game instead of
+			-- taking them down: a.keepBuildings, set by mpfever_ai.lua, MPFEVER_AIKEEPBUILDINGS=0 there: not set, as before)
+			ctx2.gatherBuildings = a.keepBuildings ~= true
+			ctx2.gatherFields = true
+			ctx2.player = api.engine.util.getPlayer()
+			G.refundInto(ctx2)
+			if a.keepBuildings == true then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the town buildings in its way are kept (a computer company's build)") end
+			local okk, cmd = false, nil
+			if withObjects then
 				C.errors = {}
-				variant.toolNodes = toolNodes
-				local okp2, P2 = pcall(C.rebuildNativeWithConstruction, m, conv, rm, variant)
-				if okp2 and P2 then
-					okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(P2, ctx2, false, true) end)
-					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: second try " .. vi .. " (" .. (variant.noMaps and "without node configurations and id maps" or "without node configurations") .. "): " .. ((okk and cmd) and "command made" or shortErr(cmd)))
+				local okw, PW = pcall(C.rebuildNativeWithConstruction, m, conv, rm, { toolNodes = toolNodes, withObjects = eoNative,
+					eoByRank = eoRank or nil, eoMaps = eoRank and os.getenv("MPFEVER_EOMAPS") ~= "0" or nil })
+				if okw and PW then okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(PW, ctx2, false, true) end) end
+				if okk and cmd then
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: with its " .. nEO .. " edge object(s)")
+				else
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: not made with its " .. nEO .. " edge object(s) ("
+						.. (okw and shortErr(cmd) or tostring(PW):gsub("^.*%.lua" .. string.char(34) .. "%]:%d+: ", ""):sub(1, 700)) .. "): without them, then resynchronisation")
+					okk, cmd, withObjects = false, nil, false
 				end
 			end
-		end
-		if not okk or not cmd then
-			-- (0.6: a computer company's garage that keeps the town buildings, a.keepBuildings: not the two-step replay, which gathers
-			-- the buildings in its way; the host's game is reloaded instead, as when this replay returns false, see replayAction)
-			if a.keepBuildings == true then
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: a computer company's build, no two-step replay (it takes buildings down)")
-				replayFailed(a, "computer company's build not replayed")
+			local okp, P = true, nil
+			if not cmd then
+				C.errors = {}
+				okp, P = pcall(C.rebuildNativeWithConstruction, m, conv, rm, { toolNodes = toolNodes })
+			end
+			if not cmd and (not okp or not P) then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: not rebuilt (" .. shortErr(P) .. ")") replayFailed(a, "native rebuild") return end
+			do
+				local notes = {}
+				for _, e in ipairs(C.errors) do if not tostring(e):find("no writable member 'params'", 1, true) then notes[#notes + 1] = e end end
+				if #notes > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: rebuild notes " .. table.concat(notes, "; ")) end
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: frozen nodes of the first construction " .. tostring(C.frozenHow))
+				if C.replacedCons then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: replaced as the engine replaces them: " .. C.replacedCons) end
+			end
+			if not cmd then okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(P, ctx2, false, true) end) end
+			if (not okk or not cmd) and os.getenv("MPFEVER_DEPOTEXP") then
+				local oke, erre = pcall(depotExperiments, a, m, conv, rm, ctx2)
+				if not oke then log("DEPOTEXP failed: " .. tostring(erre)) end
+			end
+			if not okk or not cmd then
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: command " .. shortErr(cmd))
+				-- the engine's own node configurations and id maps are recomputed when the proposal does not carry them
+				for vi, variant in ipairs({ { noConfigs = true }, { noConfigs = true, noMaps = true } }) do
+					if okk and cmd then break end
+					C.errors = {}
+					variant.toolNodes = toolNodes
+					local okp2, P2 = pcall(C.rebuildNativeWithConstruction, m, conv, rm, variant)
+					if okp2 and P2 then
+						okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(P2, ctx2, false, true) end)
+						log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: second try " .. vi .. " (" .. (variant.noMaps and "without node configurations and id maps" or "without node configurations") .. "): " .. ((okk and cmd) and "command made" or shortErr(cmd)))
+					end
+				end
+			end
+			if not okk or not cmd then
+				-- (0.6: a computer company's garage that keeps the town buildings, a.keepBuildings: not the two-step replay, which gathers
+				-- the buildings in its way; the host's game is reloaded instead, as when this replay returns false, see replayAction)
+				if a.keepBuildings == true then
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: a computer company's build, no two-step replay (it takes buildings down)")
+					replayFailed(a, "computer company's build not replayed")
+					return
+				end
+				-- (the street part and the construction in two steps, see replayTwoStep)
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: trying the two-step replay")
+				if not replayTwoStep(a) then replayFailed(a, "native command") end
 				return
 			end
-			-- (the street part and the construction in two steps, see replayTwoStep)
-			log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: trying the two-step replay")
-			if not replayTwoStep(a) then replayFailed(a, "native command") end
+			toSim("replaying", { tok = a.tsTok })
+			replaySend(cmd, function(res2, success2)
+				if not success2 then
+					local why = ""
+					pcall(function() why = C.ser(C.marshal(res2.resultProposalData.errorState.messages)) end)
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: refused " .. why .. " (desync)")
+					logRefusal(a, res2)
+					replayFailed(a, "native construction refused " .. why)
+					return
+				end
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction BUILT")
+				-- the edge objects of the tool's build (an airport's or an airfield's signs on its runways and taxiways) are not
+				-- made by the engine's conversion. 0.3.13 placed them afterwards as stops are, by rebuilding each segment: those
+				-- segments are the construction's own (frozen) edges, the construction kept the removed ones, and the game crashed
+				-- as soon as the construction was selected or demolished (assertion 'it != components.end()', BaseEdge; issue
+				-- #49). Never rebuilt now: they go in the replay's proposal (checked below), else the host's game is reloaded for
+				-- everybody at once (the airport as the host has it).
+				if nEO > 0 and not withObjects then
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: " .. nEO
+						.. " edge object(s) of the construction (an airport's signs) not replayed: resynchronisation")
+					replayFailed(a, "construction edge objects (airport signs)")
+				end
+				pcall(function()
+					local st = res2.proposal.proposal
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " engine applied: +nodes " .. #st.addedNodes .. " -nodes " .. #st.removedNodes .. " +segments " .. #st.addedSegments .. " -segments " .. #st.removedSegments .. " +constructions " .. #res2.proposal.toAdd)
+				end)
+				local expected = #(m.proposal.addedSegments or {}) - #(m.proposal.removedSegments or {})
+				-- (an airport's signs are edge objects of the tool's build: are they here too?)
+				local objExpected = #(m.proposal.edgeObjectsToAdd or {}) - #(m.proposal.edgeObjectsToRemove or {})
+				G.waits[#G.waits + 1] = { at = G.frames + 10 + 30 * #(a.stopsAfter or {}) + 30, fn = function()
+					local got = #R.allEdges() - edgesBefore
+					local objs = 0
+					pcall(function() for _ in pairs(api.engine.system.streetSystem.getEdgeObject2EdgeMap()) do objs = objs + 1 end end)
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. (got == expected and "" or " SEGMENT COUNT DIFFERS")
+						.. (objExpected ~= 0 and (", edge objects here " .. (objs - objsBefore) .. ", originator " .. objExpected
+							.. (objs - objsBefore == objExpected and "" or " EDGE OBJECT COUNT DIFFERS")) or ""))
+					if withObjects and objs - objsBefore ~= objExpected then replayFailed(a, "construction edge objects differ") end
+				end }
+			end)
+		end
+		local nTool = #(m.proposal.edgeObjectsToAdd or {})
+		if nTool > 0 and (type(eoNative) ~= "table" or #eoNative < nTool) and G.conStopsOk(m) then
+			local okd, dry2, n = pcall(G.eoDryRun, m)
+			if not okd or not dry2 then
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the dry run of its " .. nTool .. " stop(s) not made (" .. shortErr(dry2) .. ")")
+				return finish()
+			end
+			log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: " .. n .. " stop(s) of the street it cuts: their conversion by the engine (dry run)")
+			replaySend(dry2, function(res3, success3)
+				if success3 then
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the dry run of its stops was built instead of refused (desync)")
+					replayFailed(a, "edge object dry run built")
+					return
+				end
+				local eo = {}
+				pcall(function() local l = res3.proposal.proposal.edgeObjectsToAdd; for i = 1, #l do eo[i] = l[i] end end)
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the engine's conversion of its stops has " .. #eo .. ", the tool's build " .. n .. " (dry run: twice)")
+				if #eo == 2 * n then
+					local first = {}
+					for i = 1, n do first[i] = eo[i] end
+					-- (the converted objects live in that result: kept until the build is made)
+					eoNative, eoRank, eoRes = first, true, res3
+				end
+				finish()
+			end)
 			return
 		end
-		toSim("replaying", { tok = a.tsTok })
-		replaySend(cmd, function(res2, success2)
-			if not success2 then
-				local why = ""
-				pcall(function() why = C.ser(C.marshal(res2.resultProposalData.errorState.messages)) end)
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: refused " .. why .. " (desync)")
-				logRefusal(a, res2)
-				replayFailed(a, "native construction refused " .. why)
-				return
-			end
-			log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction BUILT")
-			-- the edge objects of the tool's build (an airport's or an airfield's signs on its runways and taxiways) are not
-			-- made by the engine's conversion. 0.3.13 placed them afterwards as stops are, by rebuilding each segment: those
-			-- segments are the construction's own (frozen) edges, the construction kept the removed ones, and the game crashed
-			-- as soon as the construction was selected or demolished (assertion 'it != components.end()', BaseEdge; issue
-			-- #49). Never rebuilt now: they go in the replay's proposal (checked below), else the host's game is reloaded for
-			-- everybody at once (the airport as the host has it).
-			if nEO > 0 and not withObjects then
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: " .. nEO
-					.. " edge object(s) of the construction (an airport's signs) not replayed: resynchronisation")
-				replayFailed(a, "construction edge objects (airport signs)")
-			end
-			pcall(function()
-				local st = res2.proposal.proposal
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " engine applied: +nodes " .. #st.addedNodes .. " -nodes " .. #st.removedNodes .. " +segments " .. #st.addedSegments .. " -segments " .. #st.removedSegments .. " +constructions " .. #res2.proposal.toAdd)
-			end)
-			local expected = #(m.proposal.addedSegments or {}) - #(m.proposal.removedSegments or {})
-			-- (an airport's signs are edge objects of the tool's build: are they here too?)
-			local objExpected = #(m.proposal.edgeObjectsToAdd or {}) - #(m.proposal.edgeObjectsToRemove or {})
-			G.waits[#G.waits + 1] = { at = G.frames + 10 + 30 * #(a.stopsAfter or {}) + 30, fn = function()
-				local got = #R.allEdges() - edgesBefore
-				local objs = 0
-				pcall(function() for _ in pairs(api.engine.system.streetSystem.getEdgeObject2EdgeMap()) do objs = objs + 1 end end)
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. (got == expected and "" or " SEGMENT COUNT DIFFERS")
-					.. (objExpected ~= 0 and (", edge objects here " .. (objs - objsBefore) .. ", originator " .. objExpected
-						.. (objs - objsBefore == objExpected and "" or " EDGE OBJECT COUNT DIFFERS")) or ""))
-				if withObjects and objs - objsBefore ~= objExpected then replayFailed(a, "construction edge objects differ") end
-			end }
-		end)
+		finish()
 	end)
 	return true
 end

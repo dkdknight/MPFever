@@ -12,6 +12,11 @@ MPFever - Changelog
     left after three tries. Each build is a build of the company, held and replayed by every game as a player's. The
     company's trains and lines of trains are kept apart from its buses and trucks. Test: tests/test_ai_rail.py.
     MPFEVER_AIRAIL=0: no railways, as before.
+  - FIX (issue #109): a depot or a station put on a street with stops reloaded the host's game for everybody ("2 edge
+    object(s) of the construction (an airport's signs) not replayed"). The tool takes the street's stops away and puts them
+    back on the new pieces of that street; the engine's conversion of the construction has no such stops. They are now taken
+    from a dry run, as for a street build, and the construction is built with them in one build, as on the builder's game.
+    Test: tests/test_constops.py. MPFEVER_CONSTOPS=0: as before.
   - FIX: an action that reached a game with a margin of one step could be applied there a few steps late: the host's next
     clock moved the native stop point on before the game's simulation had taken the action. In a 45-minute test at 4x a
     vehicle was sent to its line 4 steps late on one game, then vehicles, money and towns drifted apart. A queued action
