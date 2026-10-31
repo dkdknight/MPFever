@@ -48,7 +48,7 @@ local LV = LEVELS[2]
 local RL = { MIN = 2500, MAX = 15000, LEN = 3, STEP = 60, GRADE = 0.03, STATION = "::/stations/rail/modular_station/modular_station.con",
 	DEPOT = "::/depots/rail/rail_depot.con", DEPOT_EXIT = { x = -12.2, y = -90 }, POWER = 400, WAGONS = 6,
 	OFFSETS = { 0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4 }, CELL = 100, CROSS = 300, ALONG = 150, LEG = 600, LEAD = 500, RADIUS = 80, TRIES = 3, SPAN = 50, CLEAR = 7, WATER = 300, WET = 400, IDLE_TRIES = 20,
-	RAMP = 0.07, LOOK = 7200, MAXTRAINS = 3 }
+	RAMP = 0.07, LOOK = 7200, MAXTRAINS = 3, NEAR = 8, NEARCELL = 20, MINPROD = 300 }
 
 local function L(E, s) E.log("AI" .. (AINUM ~= 1 and tostring(AINUM) or "") .. " " .. s) end
 
@@ -3314,8 +3314,9 @@ function RL.train(E, cargo)
 	return { loco = loco, wagon = wagon, n = n, seats = n * wagon.cap, price = loco.price + n * wagon.price }, year
 end
 
--- the best railway not built yet: a producer and an industry that takes its cargo RL.MIN to RL.MAX apart, neither served by
--- another company (PvE, as the trucks), the producer not served by this one, the most cargo times the distance
+-- the best railway not built yet: a producer that makes RL.MINPROD a year of a cargo or more now (one the company's trucks serve
+-- too: the railway carries more, further) and an industry that takes it RL.MIN to RL.MAX apart, neither served by another company
+-- (PvE, as the trucks), no train station of the company near the producer; the most cargo times the distance
 function RL.route(E, co, lines, stations)
 	local inds = industries(E)
 	local others = servedByOthers(E, co.ent)
@@ -3326,10 +3327,13 @@ function RL.route(E, co, lines, stations)
 		-- (not a producer one of its train stations already serves)
 		local near = false
 		for _, s in ipairs(stations or {}) do if dist(s.pos, a.pos) < 500 then near = true end end
-		if not near and not others[a.road.group] and not mine[a.road.group] and not ((E.G.AI.railTried or {})[a.e]) then
+		-- (0.6.4: a producer its trucks serve too: a railway is where its trucks made it grow; RL.MINPROD a year at least, what it
+		-- makes now: a clay pit of 110 a year left a train standing for weeks and its line losing money)
+		if not near and not others[a.road.group] and not ((E.G.AI.railTried or {})[a.e]) then
 			for _, c in ipairs(a.outputs) do
-				local made = producedOf(E, a, c)
-				if made and made > 0 then
+				local made = 0
+				pcall(function() made = E.api.engine.util.stock.getCargoProducedPerYear(a.stockList, c) or 0 end)
+				if made >= RL.MINPROD then
 					for _, b in ipairs(inds) do
 						if b.e ~= a.e and not others[b.road.group] and takes(E, b, c) then
 							local d = dist(a.pos, b.pos)
@@ -3471,7 +3475,7 @@ end
 -- constructions (their place and a reach: 220 m for an industry, 90 m else)
 function RL.world(E, co, box)
 	local api = E.api
-	local W = { edges = {}, houses = {}, cons = {}, box = box, segmap = api.engine.system.streetSystem.getNode2SegmentMap() }
+	local W = { edges = {}, houses = {}, cons = {}, box = box, segmap = api.engine.system.streetSystem.getNode2SegmentMap(), grid = {} }
 	local eco = E.C.eco and E.C.eco() or nil
 	local open = {}
 	-- (another company's street or track: only when its rule for them is open, see mpfever_eco.lua)
@@ -3502,7 +3506,19 @@ function RL.world(E, co, box)
 			for i = 0, n do pts[#pts + 1] = (RL.herm(m, i / n)) end
 			local street = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE_STREET) ~= nil
 			local owner = ownerOf(E, e)
-			W.edges[#W.edges + 1] = { e = e, m = m, pts = pts, street = street, owner = owner, cut = #c.objects == 0 and mayCut(owner, street) }
+			local w = { e = e, m = m, pts = pts, street = street, owner = owner, cut = #c.objects == 0 and mayCut(owner, street) }
+			W.edges[#W.edges + 1] = w
+			-- (each piece of its curve in the cells of RL.NEAR m it touches, for the distance checks)
+			for j = 1, #pts - 1 do
+				local a, b = pts[j], pts[j + 1]
+				local i0, j0 = math.floor(math.min(a.x, b.x) / RL.NEARCELL), math.floor(math.min(a.y, b.y) / RL.NEARCELL)
+				local i1, j1 = math.floor(math.max(a.x, b.x) / RL.NEARCELL), math.floor(math.max(a.y, b.y) / RL.NEARCELL)
+				for ci = i0, i1 do for cj = j0, j1 do
+					local k = ci .. ":" .. cj
+					W.grid[k] = W.grid[k] or {}
+					W.grid[k][#W.grid[k] + 1] = { w = w, a = a, b = b }
+				end end
+			end
 		end)
 	end
 	for _, e in ipairs(E.R.entitiesWith("CONSTRUCTION")) do
@@ -3763,6 +3779,31 @@ function RL.trackProposal(E, co, n0, p0, d0, n1, p1, d1, year, way, W)
 	end
 	for _, b in ipairs(spans) do
 		if b.t0 * L0 < 30 or (1 - b.t1) * L0 < 30 then return nil, L0, "a bridge too near its ends" end
+	end
+	-- (0.6.4) along a segment it does not cross: no closer than RL.NEAR m, but on a bridge and near its two ends (the dry run
+	-- refused such tracks, "Collision" with a street or track it ran beside)
+	if W.grid then
+		local cs = RL.NEARCELL
+		for _, q in ipairs(poly) do
+			local onBridge = q.t * L0 < 40 or (1 - q.t) * L0 < 40
+			for _, b in ipairs(spans) do if q.t >= b.t0 - 15 / L0 and q.t <= b.t1 + 15 / L0 then onBridge = true end end
+			if not onBridge then
+				local ci, cj = math.floor(q.x / cs), math.floor(q.y / cs)
+				for di = -1, 1 do for dj = -1, 1 do
+					for _, piece in ipairs(W.grid[(ci + di) .. ":" .. (cj + dj)] or {}) do
+						local w = piece.w
+						if not (w.m.node0 == n0 or w.m.node1 == n0 or w.m.node0 == n1 or w.m.node1 == n1) then
+							local a, b = piece.a, piece.b
+							local vx, vy = b.x - a.x, b.y - a.y
+							local l2 = vx * vx + vy * vy
+							local u = l2 > 0 and math.max(0, math.min(1, ((q.x - a.x) * vx + (q.y - a.y) * vy) / l2)) or 0
+							local dx, dy = a.x + vx * u - q.x, a.y + vy * u - q.y
+							if dx * dx + dy * dy < RL.NEAR * RL.NEAR then return nil, L0, "it runs " .. RL.NEAR .. " m or less beside " .. (w.street and "street " or "track ") .. w.e end
+						end
+					end
+				end end
+			end
+		end
 	end
 	-- the track's points: every RL.STEP m outside the bridges, and the two ends of each bridge (fixed at its height)
 	local k = math.max(2, math.ceil(L0 / RL.STEP))

@@ -6,12 +6,13 @@ tests/ai_mock.py:
     stay within the grade over hilly ground and end at the nodes' heights, every piece a track (type 1) of the company;
   - what is in its way: a street crossed on a 50 m concrete bridge 7 m over it, nothing of the street touched; two streets 30 m
     apart (even ones it may not cut) under one bridge; a bridge with no room before its end, a street crossed nearly along, a
-    town house 30 m away, a curve too tight: refused; a river crossed on a bridge 7 m over the water, a lake 500 m wide refused;
+    town house 30 m away, a curve too tight, a street 5 m beside it: refused; a river crossed on a bridge 7 m over the water, a lake 500 m wide refused;
     a town in the middle of a 6 km way: the straight track refused, the search's (A*) way round it taken;
   - the train: the cheapest locomotive strong enough that needs no catenary (not the electric one, not one off sale, not an 18 M
     Big Boy), the wagon that carries
     the most of the cargo, as many wagons as the platforms take;
-  - the route: a producer and an industry that takes its cargo 4 km apart (not 1 km: the trucks' reach);
+  - the route: a producer and an industry that takes its cargo 4 km apart (not 1 km: the trucks' reach), none for a producer
+    making less than 300 a year;
   - the lines and vehicles of trains are kept from the buses and trucks' rules (myLines, myVehicles), all lines with all;
   - a line given up is destroyed only once no person or cargo travels on it or waits at its stops (after 20 looks all the
     same; MPFEVER_AIDESTROYIDLE=0: at once, as before);
@@ -163,6 +164,31 @@ def main():
       return sp == nil and tostring(why):find("slantwise", 1, true) ~= nil, tostring(why)
     ''')
     check(res[0], f"a street it would cross nearly along: refused ({res[1]})")
+    res = run('''
+      -- the cells of the distance checks, as RL.world makes them
+      function GRID(W)
+        W.grid = {}
+        for _, w in ipairs(W.edges) do
+          for j = 1, #w.pts - 1 do
+            local a, b = w.pts[j], w.pts[j + 1]
+            for ci = math.floor(math.min(a.x, b.x) / 20), math.floor(math.max(a.x, b.x) / 20) do
+              for cj = math.floor(math.min(a.y, b.y) / 20), math.floor(math.max(a.y, b.y) / 20) do
+                local k = ci .. ":" .. cj
+                W.grid[k] = W.grid[k] or {}
+                W.grid[k][#W.grid[k] + 1] = { w = w, a = a, b = b }
+              end
+            end
+          end
+        end
+        return W
+      end
+      local beside = GRID({ edges = { STREET(501, { x = 1000, y = 5 }, { x = 1400, y = 5 }, 61, 62, true) }, houses = {}, cons = {}, segmap = {} })
+      local sp, len, why = WAY(beside)
+      local across = GRID({ edges = { STREET(502, { x = 1500, y = -300 }, { x = 1500, y = 300 }, 63, 64, true) }, houses = {}, cons = {}, segmap = {} })
+      local sp2, len2, why2 = WAY(across)
+      return sp == nil and tostring(why):find("beside", 1, true) ~= nil and sp2 ~= nil, tostring(why) .. " / " .. tostring(why2)
+    ''')
+    check(res[0], f"a street 5 m beside its way: refused; a street across it: crossed on its bridge, not too near ({res[1]})")
     res = run(BRIDGE + '''
       -- a river 100 m wide across the way (the ground under the water level, 0, from 1450 to 1550)
       E.groundZ = function(x, y, z) if x > 1450 and x < 1550 then return -3 end return 10 end
@@ -243,6 +269,7 @@ def main():
     r = run('return M.f.RL.route(E, { ent = 700 }, {}, {})')
     check(r is not None and r["from"].e == 1001 and r.to.e == 1101 and r.cargo == 2, "the farm to the mill 4 km away, not the one 1 km away")
     check(run('return M.f.RL.route(E, { ent = 700 }, {}, { { pos = { x = 100, y = 0 } } }) == nil'), "not a producer one of its train stations serves")
+    check(run('PROD[1004] = 110; local r = M.f.RL.route(E, { ent = 700 }, {}, {}); PROD[1004] = 300; return r == nil'), "a producer of 110 a year: no railway (300 at least)")
 
     print("a line given up is destroyed only once nothing waits")
     res = run('''
