@@ -15,6 +15,8 @@ tests/ai_mock.py:
   - the lines and vehicles of trains are kept from the buses and trucks' rules (myLines, myVehicles), all lines with all;
   - a line given up is destroyed only once no person or cargo travels on it or waits at its stops (after 20 looks all the
     same; MPFEVER_AIDESTROYIDLE=0: at once, as before);
+  - a line of trains: a train more when cargo piles up at its first stop (bought at the depot that reaches it, then sent to
+    the line); none while it loses money or has 3 trains;
   - MPFEVER_AIRAIL=0: no railway, every line and vehicle as before.
 Needs lupa (pip install lupa). Run: python tests/test_ai_rail.py
 """
@@ -286,6 +288,49 @@ def main():
     check(run('return #M.f.myLines(E, 700, true)') == 2, "all lines with all")
     check(run('return #M.f.myVehicles(E, 700)') == 1 and run('return M.f.myVehicles(E, 700)[1].e') == 802, "a train not among the vehicles")
     check(run('return #M.f.RL.trains(E, 700)') == 1, "the company's trains")
+    print("lines of trains managed")
+    res = run('''
+      -- line 601 (rail, first group 41): train 801 on it, grain (cargo 2) loaded at its first stop; a depot 950 that reaches it
+      local gc = api.engine.getComponent
+      api.engine.getComponent = function(e, ct)
+        if ct == "LINE" and e == 601 then
+          local load = {}; for k = 1, 6 do load[k] = (k == 3) end
+          return { stops = { { stationGroup = 41, stopConfig = { load = load } }, { stationGroup = 42 } }, vehicleInfo = { transportModes = {} } }
+        end
+        if ct == "STATION_GROUP" and e == 41 then return { stations = { 4100 } } end
+        if ct == "STATION" and e == 4100 then return { terminals = { { vehicleNodeId = 4101 } } } end
+        if ct == "CONSTRUCTION" and e == 950 then return { fileName = "::/depots/rail/rail_depot.con", depots = { 951 }, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } } end
+        if ct == "VEHICLE_DEPOT" and e == 951 then return { outNodes = { 952 } } end
+        if ct == "TRANSPORT_VEHICLE" and (e == 803 or e == 804) then local c = gc(e, ct); if c then c.carrier = 1 end return c end
+        return gc(e, ct)
+      end
+      CONS = { 950 }; OWN[950] = 700
+      MONEY[700] = 50000000
+      LBAL[601] = 300000
+      WAIT[601] = 500
+      ACTS = {}
+      G.AI = {}; G.AIS = {}
+      local co = { ent = 700, id = 2 }
+      local bought = M.f.RL.manage(E, co, 50000000)
+      local buy = lastAct("makeVehicleBuyCmd")
+      local first = bought == true and buy ~= nil and buy.args[2] == 951 and G.AI.trainFor == 601
+      -- the next look: the idle train sent to that line
+      VEH[#VEH + 1] = 803; OWN[803] = 700; VLINE[803] = -1
+      local sent = M.f.RL.manage(E, co, 50000000)
+      local set = lastAct("makeVehicleSetLineCmd")
+      local second = sent == true and set ~= nil and set.args[1] == 803 and set.args[2] == 601
+      -- a line that loses money (past its first two months): no train more
+      ACTS = {}; G.AI.railLookAt = nil; VLINE[803] = 601; LBAL[601] = -500000; G.AI.railSince = { [601] = TIME - 500000 }
+      local lose = M.f.RL.manage(E, co, 50000000)
+      -- three trains already: none more
+      LBAL[601] = 300000; G.AI.railLookAt = nil; VEH[#VEH + 1] = 804; OWN[804] = 700; VLINE[804] = 601
+      local full = M.f.RL.manage(E, co, 50000000)
+      api.engine.getComponent = gc
+      VEH = { 801, 802 }
+      return tostring(first) .. " " .. tostring(second) .. " " .. tostring(lose) .. " " .. tostring(full) .. " " .. acts("makeVehicleBuyCmd")
+    ''')
+    check(res == "true true false false 0", f"cargo piling up: a train more at its depot, then sent to the line; losing money or 3 trains: none ({res})")
+
     run('os.getenv = (function(g) return function(k) if k == "MPFEVER_AIRAIL" then return "0" end return g(k) end end)(os.getenv)')
     check(run('return #M.f.myLines(E, 700)') == 2 and run('return #M.f.myVehicles(E, 700)') == 2, "MPFEVER_AIRAIL=0: every line and vehicle, as before")
     check(run('return M.f.RL.project(E, { ent = 700, id = 2 }, {}, 1e9, true)') is False, "MPFEVER_AIRAIL=0: no railway")

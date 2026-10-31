@@ -48,7 +48,7 @@ local LV = LEVELS[2]
 local RL = { MIN = 2500, MAX = 15000, LEN = 3, STEP = 60, GRADE = 0.03, STATION = "::/stations/rail/modular_station/modular_station.con",
 	DEPOT = "::/depots/rail/rail_depot.con", DEPOT_EXIT = { x = -12.2, y = -90 }, POWER = 400, WAGONS = 6,
 	OFFSETS = { 0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4 }, CELL = 100, CROSS = 300, ALONG = 150, LEG = 600, LEAD = 500, RADIUS = 80, TRIES = 3, SPAN = 50, CLEAR = 7, WATER = 300, WET = 400, IDLE_TRIES = 20,
-	RAMP = 0.07 }
+	RAMP = 0.07, LOOK = 7200, MAXTRAINS = 3 }
 
 local function L(E, s) E.log("AI" .. (AINUM ~= 1 and tostring(AINUM) or "") .. " " .. s) end
 
@@ -3940,6 +3940,13 @@ function RL.buildTrack(E, co, ea, eb, what)
 			else
 				pcall(function() why = E.C.ser(E.C.marshal(pd.errorState.messages)) end)
 				why = why .. RL.collides(E, pd)
+				-- (a segment it collides with: was it among what is in its way (W), and crossed (on a bridge)? for the logs)
+				pcall(function()
+					local ce = pd.collisionInfo.collisionEntities[1].entity
+					local known = false
+					for _, x in ipairs(W.edges) do if x.e == ce then known = true end end
+					why = why .. (known and " (known)" or " (not known)") .. (refused and "" or "")
+				end)
 				if #pd.errorState.messages == 0 and not pd.errorState.critical then
 					if keepBuildings() and buildingsHit(E, pd) > 0 then
 						why = "town buildings in its way"
@@ -4238,26 +4245,99 @@ function RL.project(E, co, lines, money, begin)
 		local t = RL.train(E, u.cargo)
 		if not t then return false end
 		if not spendOk(E, co, t.price, "train") then return "wait" end
-		local parts = {}
-		local function part(id)
-			return { part = { modelId = id, reversed = false, compartment2loadConfig = { { loadConfigIndex = 0, cargoTypeId = -1, __ud = true } },
-				color = { x = -1, y = -1, z = -1, __vec = true }, __ud = true }, purchaseTime = 0, maintenanceChange = 0, maintenanceState = 1,
-				autoLoadConfig = { true }, __ud = true }
-		end
-		parts[1] = part(t.loco.id)
-		for _ = 1, t.n do parts[#parts + 1] = part(t.wagon.id) end
-		local groups, mus = {}, {}
-		for i = 1, #parts do groups[i] = 1; mus[i] = "" end
-		local cfg = { vehicles = parts, vehicleGroups = groups, muFileNames = mus, __ud = true }
-		act(E, co.id, "makeVehicleBuyCmd", { n = 3, [1] = co.ent, [2] = depot.depot, [3] = cfg })
-		A.busy = { what = "train for line " .. line.e, since = E.G.frames, until_ = E.G.frames + 600 }
-		L(E, string.format("train requested: %s + %d x %s (%d %s) at depot %d", t.loco.name, t.n, t.wagon.name, t.seats, cargoName(E, u.cargo), depot.depot))
-		journal(E, co.id, "train", depot.pos, tostring(t.loco.name):match("([^/]+)%.mdl$") or t.loco.name, u.cargo)
+		RL.buyTrain(E, co, depot.depot, t, u.cargo, depot.pos)
 		return true
 	end
 	-- done: this railway runs
 	A.rail = nil
 	return false
+end
+
+-- The company's lines of trains, every RL.LOOK frames: its trains, its result over the last two months, the cargo waiting at its
+-- first stop (logged); a train more (RL.MAXTRAINS at most) when more than 1.5 trains' worth waits there, the line does not lose
+-- money (or is younger than its two months) and the company can pay for it, bought at the company's depot that reaches it.
+-- True when it bought one
+function RL.manage(E, co, money)
+	local A = E.G.AI
+	local api = E.api
+	-- (a train bought for a line, idle in its depot: sent to that line at once)
+	if A.trainFor then
+		for _, v in ipairs(RL.trains(E, co.ent)) do
+			if v.line < 0 then
+				act(E, co.id, "makeVehicleSetLineCmd", { n = 3, [1] = v.e, [2] = A.trainFor, [3] = 0 })
+				A.busy = { what = "train " .. v.e .. " to line " .. A.trainFor, since = E.G.frames, until_ = E.G.frames + 120 }
+				L(E, "train " .. v.e .. " sent to line " .. A.trainFor)
+				A.trainFor = nil
+				return true
+			end
+		end
+	end
+	if A.railLookAt and E.G.frames < A.railLookAt then return false end
+	A.railLookAt = E.G.frames + RL.LOOK
+	local trains = RL.trains(E, co.ent)
+	if #trains == 0 then return false end
+	for _, l in ipairs(myLines(E, co.ent, true)) do
+		if l.groups[1] and RL.isRailGroup(E, l.groups[1]) then
+			local n, model = 0, nil
+			for _, v in ipairs(trains) do if v.line == l.e then n = n + 1; model = model or v.e end end
+			local cargo, waiting = nil, 0
+			pcall(function()
+				local lc = E.C.marshal(api.engine.getComponent(l.e, api.type.ComponentType.LINE))
+				for i, on in pairs(lc.stops[1].stopConfig.load) do if on == true then cargo = i - 1 end end
+			end)
+			if cargo then pcall(function() waiting = api.engine.system.simEntityAtTerminalSystem.getLineStopSimEntitiesCount(l.e, 0, cargo) or 0 end) end
+			local bal = lineBalance(E, l.e)
+			local t = cargo and RL.train(E, cargo)
+			L(E, string.format("train line %d (%s): %d train(s), 2-month result %s, %d waiting at its first stop", l.e, cargo and cargoName(E, cargo) or "?", n,
+				bal and tostring(math.floor(bal)) or "?", waiting))
+			A.railSince = A.railSince or {}
+			A.railSince[l.e] = A.railSince[l.e] or E.gameTime()
+			local young = E.gameTime() - A.railSince[l.e] < 240000
+			if t and n > 0 and n < RL.MAXTRAINS and waiting > 1.5 * t.seats and ((bal or 0) >= 0 or young) and money - (A.loanCash or 0) > RESERVE + t.price then
+				-- (the company's depot that reaches the line's first stop)
+				local nodes = {}
+				pcall(function()
+					local sg = api.engine.getComponent(l.groups[1], api.type.ComponentType.STATION_GROUP)
+					for k = 1, #sg.stations do
+						local sc = api.engine.getComponent(sg.stations[k], api.type.ComponentType.STATION)
+						for i = 1, #sc.terminals do nodes[#nodes + 1] = sc.terminals[i].vehicleNodeId end
+					end
+				end)
+				for _, d in ipairs(RL.mine(E, co, "rail_depot")) do
+					for _, dp in ipairs(d.c.depots) do
+						local outs = {}
+						pcall(function() local vd = api.engine.getComponent(dp, api.type.ComponentType.VEHICLE_DEPOT); for k = 1, #vd.outNodes do outs[#outs + 1] = vd.outNodes[k] end end)
+						if #outs > 0 and #nodes > 0 and RL.path(E, outs, nodes) then
+							if not spendOk(E, co, t.price, "train") then return false end
+							RL.buyTrain(E, co, dp, t, cargo, d.pos)
+							A.trainFor = l.e
+							L(E, string.format("train line %d: %d waiting, a train more (%d)", l.e, waiting, n + 1))
+							return true
+						end
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+-- buys a train (RL.train's t) at a depot
+function RL.buyTrain(E, co, depot, t, cargo, pos)
+	local A = E.G.AI
+	local function part(id)
+		return { part = { modelId = id, reversed = false, compartment2loadConfig = { { loadConfigIndex = 0, cargoTypeId = -1, __ud = true } },
+			color = { x = -1, y = -1, z = -1, __vec = true }, __ud = true }, purchaseTime = 0, maintenanceChange = 0, maintenanceState = 1,
+			autoLoadConfig = { true }, __ud = true }
+	end
+	local parts = { part(t.loco.id) }
+	for _ = 1, t.n do parts[#parts + 1] = part(t.wagon.id) end
+	local groups, mus = {}, {}
+	for i = 1, #parts do groups[i] = 1; mus[i] = "" end
+	act(E, co.id, "makeVehicleBuyCmd", { n = 3, [1] = co.ent, [2] = depot, [3] = { vehicles = parts, vehicleGroups = groups, muFileNames = mus, __ud = true } })
+	A.busy = { what = "train", since = E.G.frames, until_ = E.G.frames + 600 }
+	L(E, string.format("train requested: %s + %d x %s (%d %s) at depot %d", t.loco.name, t.n, t.wagon.name, t.seats, cargoName(E, cargo), depot))
+	journal(E, co.id, "train", pos, tostring(t.loco.name):match("([^/]+)%.mdl$") or t.loco.name, cargo)
 end
 
 -- the company's trains: { e, line }
@@ -4495,6 +4575,8 @@ local function step(E)
 		local begin = grow and money - (A.loanCash or 0) >= RESERVE + (LV.freeCash or 0)
 		local r = RL.project(E, co, myLines(E, co.ent, true), money, begin)
 		if r == true then return end
+		-- (and its lines of trains: a train more where cargo piles up, see RL.manage)
+		if RL.manage(E, co, money) == true then return end
 	end
 	-- (0.6) its long-term freight line when it has none under way and can afford one (see ltProject): before the freight of plenty of
 	-- money and the buses' new projects. A path search alone builds nothing: the look goes on
