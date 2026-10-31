@@ -17,7 +17,7 @@ tests/ai_mock.py:
   - a line given up is destroyed only once no person or cargo travels on it or waits at its stops (after 20 looks all the
     same; MPFEVER_AIDESTROYIDLE=0: at once, as before);
   - a line of trains: a train more when cargo piles up at its first stop (bought at the depot that reaches it, then sent to
-    the line); none while it loses money or has 3 trains;
+    the line); none while it loses money or has 3 trains; a train sold a look once it lost money with nothing waiting 5 looks;
   - MPFEVER_AIRAIL=0: no railway, every line and vehicle as before.
 Needs lupa (pip install lupa). Run: python tests/test_ai_rail.py
 """
@@ -352,11 +352,16 @@ def main():
       -- three trains already: none more
       LBAL[601] = 300000; G.AI.railLookAt = nil; VEH[#VEH + 1] = 804; OWN[804] = 700; VLINE[804] = 601
       local full = M.f.RL.manage(E, co, 50000000)
+      -- losing money with nothing waiting, past its first two months: a train sold after 5 looks
+      ACTS = {}; LBAL[601] = -500000; WAIT[601] = 0
+      local sold = 0
+      for i = 1, 6 do G.AI.railLookAt = nil; if M.f.RL.manage(E, co, 50000000) == true then sold = sold + 1 end end
+      local sale = acts("makeVehicleSellCmd")
       api.engine.getComponent = gc
       VEH = { 801, 802 }
-      return tostring(first) .. " " .. tostring(second) .. " " .. tostring(lose) .. " " .. tostring(full) .. " " .. acts("makeVehicleBuyCmd")
+      return tostring(first) .. " " .. tostring(second) .. " " .. tostring(lose) .. " " .. tostring(full) .. " " .. acts("makeVehicleBuyCmd") .. " " .. sale
     ''')
-    check(res == "true true false false 0", f"cargo piling up: a train more at its depot, then sent to the line; losing money or 3 trains: none ({res})")
+    check(res == "true true false false 0 2", f"cargo piling up: a train more at its depot, then sent to the line; losing money or 3 trains: none; losing with nothing waiting 5 looks: a train sold a look ({res})")
 
     run('os.getenv = (function(g) return function(k) if k == "MPFEVER_AIRAIL" then return "0" end return g(k) end end)(os.getenv)')
     check(run('return #M.f.myLines(E, 700)') == 2 and run('return #M.f.myVehicles(E, 700)') == 2, "MPFEVER_AIRAIL=0: every line and vehicle, as before")

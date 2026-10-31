@@ -48,7 +48,7 @@ local LV = LEVELS[2]
 local RL = { MIN = 2500, MAX = 15000, LEN = 3, STEP = 60, GRADE = 0.03, STATION = "::/stations/rail/modular_station/modular_station.con",
 	DEPOT = "::/depots/rail/rail_depot.con", DEPOT_EXIT = { x = -12.2, y = -90 }, POWER = 400, WAGONS = 6,
 	OFFSETS = { 0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4 }, CELL = 100, CROSS = 300, ALONG = 150, LEG = 600, LEAD = 500, RADIUS = 80, TRIES = 3, SPAN = 50, CLEAR = 7, WATER = 300, WET = 400, IDLE_TRIES = 20,
-	RAMP = 0.07, LOOK = 7200, MAXTRAINS = 3, NEAR = 8, NEARCELL = 20, MINPROD = 300 }
+	RAMP = 0.07, LOOK = 7200, MAXTRAINS = 3, NEAR = 8, NEARCELL = 20, MINPROD = tonumber(os.getenv("MPFEVER_AIRAILMIN") or "") or 300, LOSSLOOKS = 5 }
 
 local function L(E, s) E.log("AI" .. (AINUM ~= 1 and tostring(AINUM) or "") .. " " .. s) end
 
@@ -3314,7 +3314,7 @@ function RL.train(E, cargo)
 	return { loco = loco, wagon = wagon, n = n, seats = n * wagon.cap, price = loco.price + n * wagon.price }, year
 end
 
--- the best railway not built yet: a producer that makes RL.MINPROD a year of a cargo or more now (one the company's trucks serve
+-- the best railway not built yet: a producer that makes RL.MINPROD a year of a cargo or more now (tests: MPFEVER_AIRAILMIN) (one the company's trucks serve
 -- too: the railway carries more, further) and an industry that takes it RL.MIN to RL.MAX apart, neither served by another company
 -- (PvE, as the trucks), no train station of the company near the producer; the most cargo times the distance
 function RL.route(E, co, lines, stations)
@@ -4296,8 +4296,8 @@ end
 
 -- The company's lines of trains, every RL.LOOK frames: its trains, its result over the last two months, the cargo waiting at its
 -- first stop (logged); a train more (RL.MAXTRAINS at most) when more than 1.5 trains' worth waits there, the line does not lose
--- money (or is younger than its two months) and the company can pay for it, bought at the company's depot that reaches it.
--- True when it bought one
+-- money (or is younger than its two months) and the company can pay for it, bought at the company's depot that reaches it; a
+-- train less when it loses money with nothing waiting RL.LOSSLOOKS looks in a row. True when it bought or sold one
 function RL.manage(E, co, money)
 	local A = E.G.AI
 	local api = E.api
@@ -4334,6 +4334,15 @@ function RL.manage(E, co, money)
 			A.railSince = A.railSince or {}
 			A.railSince[l.e] = A.railSince[l.e] or E.gameTime()
 			local young = E.gameTime() - A.railSince[l.e] < 240000
+			-- (a line that loses money past its first two months with nothing waiting, RL.LOSSLOOKS looks in a row: its trains sold
+			-- one a look, its stations and track kept for a train later; a line of trains is never destroyed)
+			A.railLoss = A.railLoss or {}
+			if not young and (bal or 0) < 0 and waiting == 0 and n > 0 then A.railLoss[l.e] = (A.railLoss[l.e] or 0) + 1 else A.railLoss[l.e] = 0 end
+			if A.railLoss[l.e] >= RL.LOSSLOOKS and model then
+				A.railLoss[l.e] = RL.LOSSLOOKS - 1
+				sellVehicle(E, co, model, "train line " .. l.e .. " losing money with nothing to carry", l.e)
+				return true
+			end
 			if t and n > 0 and n < RL.MAXTRAINS and waiting > 1.5 * t.seats and ((bal or 0) >= 0 or young) and money - (A.loanCash or 0) > RESERVE + t.price then
 				-- (the company's depot that reaches the line's first stop)
 				local nodes = {}
