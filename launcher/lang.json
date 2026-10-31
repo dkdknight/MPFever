@@ -18564,6 +18564,19 @@
       "ko": "Windows 스마트 앱 컨트롤이 MPFever를 차단합니다(게임 오류 0xc0e90002): Windows 보안 > 앱 및 브라우저 컨트롤에서 끄세요.",
       "zh-CN": "Windows 的智能应用控制阻止了 MPFever（游戏错误 0xc0e90002）：请在 Windows 安全中心 > 应用和浏览器控制中将其关闭。",
       "zh-TW": "Windows 的智慧型應用程式控制封鎖了 MPFever（遊戲錯誤 0xc0e90002）：請在 Windows 安全性 > 應用程式與瀏覽器控制中將其關閉。"
+    },
+    "Diagnostic build: detailed logs (the free-id queue, the state at every check). After a resynchronisation, send every player's report.": {
+      "de": "Diagnoseversion: ausführliche Protokolle (Warteschlange der freien IDs, Zustand bei jeder Prüfung). Schickt nach einer Resynchronisation den Bericht jedes Spielers.",
+      "es": "Versión de diagnóstico: registros detallados (la cola de identificadores libres, el estado en cada comprobación). Tras una resincronización, enviad el informe de cada jugador.",
+      "it": "Versione di diagnostica: log dettagliati (la coda degli identificativi liberi, lo stato a ogni controllo). Dopo una risincronizzazione, inviate il rapporto di ogni giocatore.",
+      "nl": "Diagnoseversie: uitgebreide logboeken (de wachtrij van vrije id's, de toestand bij elke controle). Stuur na een hersynchronisatie het rapport van elke speler.",
+      "pl": "Wersja diagnostyczna: szczegółowe dzienniki (kolejka wolnych identyfikatorów, stan przy każdej kontroli). Po resynchronizacji wyślijcie raport każdego gracza.",
+      "pt-BR": "Versão de diagnóstico: registros detalhados (a fila de identificadores livres, o estado a cada verificação). Depois de uma ressincronização, enviem o relatório de cada jogador.",
+      "ru": "Диагностическая версия: подробные журналы (очередь свободных идентификаторов, состояние при каждой проверке). После ресинхронизации отправьте отчёт каждого игрока.",
+      "ja": "診断版：詳細ログ（空き ID のキュー、各チェック時の状態）。再同期のあとは、全プレイヤーのレポートを送ってください。",
+      "ko": "진단 버전: 상세 로그(빈 ID 대기열, 매 점검 시 상태). 재동기화 후에는 모든 플레이어의 보고서를 보내 주세요.",
+      "zh-CN": "诊断版本：详细日志（空闲 ID 队列、每次检查时的状态）。重新同步后，请发送每位玩家的报告。",
+      "zh-TW": "診斷版本：詳細日誌（空閒 ID 佇列、每次檢查時的狀態）。重新同步後，請傳送每位玩家的報告。"
     }
   }
 }

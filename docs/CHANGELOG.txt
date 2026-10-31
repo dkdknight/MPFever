@@ -1,6 +1,12 @@
 MPFever - Changelog
 ===================
 
+0.6.4.1 - diagnostic build (sent to the players whose sessions resync without a known cause)
+  - NEW: a file diag.txt next to MPFever.exe turns on the logs that tell where two games part, in every game it starts: the
+    free-id queue at every 50th step (native.log; tools/freeq_diff.py names the first step where the games give new entities
+    other ids), a dump of the state at every check, the detailed logs. The launcher and the reports say so. Without that file
+    nothing changes. Test: the launcher's self-test. Otherwise 0.6.4.
+
 0.6.4 - computer companies build railways, the host's company ranks with its own work
   - NEW (computer companies, experimental): railways. A producer far from the industry that takes its cargo (2.5 to 15 km,
     beyond the trucks' reach) gets a railway once the company has the money for all of it (about 11 million for 8 km in

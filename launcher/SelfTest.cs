@@ -57,6 +57,7 @@ namespace MPFever
             ok &= RunRedact();
             ok &= RunGameDir();
             ok &= RunSmartAppControl();
+            ok &= RunDiag();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -250,6 +251,34 @@ namespace MPFever
                 GameInstall.ChosenDir = keptChosen;
                 try { Directory.Delete(root, true); } catch { }
             }
+            return ok;
+        }
+
+        /// <summary>(0.6.4.1) The diagnostic build: its logs on in every game it starts (MPFEVER_DIAG=1 here, diag.txt for the
+        /// players), a test's own values kept, nothing without it.</summary>
+        static bool RunDiag()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_DIAG");
+            try
+            {
+                bool file = File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "diag.txt"));
+                Environment.SetEnvironmentVariable("MPFEVER_DIAG", null);
+                var env = new System.Collections.Specialized.StringDictionary();
+                GameInstall.DiagEnv(env);
+                Check(file || env.Count == 0, "diagnostic: off without diag.txt, no variable set");
+                Environment.SetEnvironmentVariable("MPFEVER_DIAG", "1");
+                Check(GameInstall.DiagOn(), "diagnostic: MPFEVER_DIAG=1 turns it on");
+                env = new System.Collections.Specialized.StringDictionary();
+                env["MPFEVER_SDUMP"] = "0";
+                GameInstall.DiagEnv(env);
+                Check(env["MPFEVER_FREEQLOG"] == "1" && env["MPFEVER_STEPLOG"] == "1", "diagnostic: the free-id log and the detailed logs on");
+                Check(env["MPFEVER_SDUMP"] == "0", "diagnostic: a test's own value kept");
+                Check(Options.ModFile().Contains("MPFEVER_STEPLOG=1"), "diagnostic: the mod's settings ask for the detailed logs");
+            }
+            catch (Exception e) { Check(false, "diagnostic: " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_DIAG", kept); }
             return ok;
         }
 

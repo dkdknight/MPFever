@@ -74,7 +74,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.4";
+        public const string Version = "0.6.4.1";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -926,7 +926,7 @@ namespace MPFever
                 sb.AppendLine("MPFever " + Version + ", game build " + Reporter.GameBuild(gameDir));
                 // (after the game closed: the session it left then, see LeaveOnGameExit)
                 sb.AppendLine(leftSession ?? SessionLines(false));
-                sb.AppendLine("Settings changed: " + Options.Changed());
+                sb.AppendLine("Settings changed: " + Options.Changed() + (GameInstall.DiagOn() ? "; DIAGNOSTIC BUILD (free-id log, state dumps)" : ""));
                 sb.AppendLine("Sync: " + syncText + "; desyncs " + desyncs + ", resynchronisations " + resyncId + ", actions relayed " + actsRelayed + ", refused " + actRefused);
                 sb.AppendLine("Processor: " + Reporter.Processor() + "; " + Reporter.WindowsVersion());
                 sb.AppendLine("Report made " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + (crashed ? " after a crash of the game" : ""));
@@ -979,6 +979,9 @@ namespace MPFever
             else try { GameInstall.EnsureSteamAppId(gameDir); } catch (Exception e) { Log.W("steam_appid.txt : " + e.Message); }
             try { GameInstall.InstallNative(gameDir); } catch (Exception e) { Log.W("winhttp.dll: " + e.Message); }
             if (!autotest) WarnSmartAppControl();
+            if (GameInstall.DiagOn())
+                Log.Warn(T("Version de diagnostic : journaux détaillés (file des identifiants, état à chaque contrôle). Après une resynchronisation, envoyez le rapport de chaque joueur.",
+                           "Diagnostic build: detailed logs (the free-id queue, the state at every check). After a resynchronisation, send every player's report."));
             try { GameInstall.EnsureModActive(); } catch (Exception e) { Log.W("settings.lua: " + e.Message); }
             try { GameInstall.InstallMod(); } catch (Exception e) { Log.Warn(T("Installation du mod : ", "Mod installation: ") + e.Message); }
             if (!autotest && !ServerMode) WarnIncompatibleMods();

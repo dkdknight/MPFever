@@ -128,6 +128,8 @@ namespace MPFever
             foreach (var o in All.Where(x => !x.Launcher))
             {
                 string v = o.Session && HostSession != null && HostSession.TryGetValue(o.Key, out var hv) ? hv : Value(o, IsOn(o));
+                // (the diagnostic build: the detailed logs, whatever this player chose, see GameInstall.DiagOn)
+                if (o.Key == "MPFEVER_STEPLOG" && GameInstall.DiagOn()) v = "1";
                 lines.Add(o.Key + "=" + v);
             }
             return string.Join("\n", lines) + "\n";

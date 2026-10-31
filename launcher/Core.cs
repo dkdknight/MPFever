@@ -737,6 +737,7 @@ namespace MPFever
             // application script: starts the host's savegame after a resynchronisation (and loads the autotest save)
             psi.Arguments = "--script mpfever_1::/mpfever_auto.lua";
             if (AutoSave != null) psi.EnvironmentVariables["MPFEVER_SAVE"] = AutoSave;
+            GameInstall.DiagEnv(psi.EnvironmentVariables);
             // tests: settings for one game only, MPFEVER_ENV_HOST / MPFEVER_ENV_CLIENT = "NAME=value;NAME=value"
             var roleEnv = Environment.GetEnvironmentVariable("MPFEVER_ENV_" + (Role ?? "").ToUpperInvariant());
             if (!string.IsNullOrEmpty(roleEnv))
@@ -2031,6 +2032,23 @@ namespace MPFever
             if (string.IsNullOrEmpty(gameDir) || Environment.GetEnvironmentVariable("MPFEVER_GOG") == "0") return false;
             var d = gameDir.Replace('/', '\\').TrimEnd('\\') + "\\";
             return d.IndexOf(@"\steamapps\common\", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
+        /// <summary>(0.6.4.1) The diagnostic build sent to the players whose sessions resync without a known cause (#107, #109): a
+        /// file diag.txt next to MPFever.exe (or MPFEVER_DIAG=1) turns on, in every game this launcher starts, the logs that tell
+        /// where two games part: the free-id queue at every 50th step (native.log, "freeq step ...", compared by
+        /// tools/freeq_diff.py: the first step where the games give new entities other ids), a dump of the state at every
+        /// check (sdump rings) and the detailed logs. Off without that file: nothing changes for the other players.</summary>
+        public static bool DiagOn()
+            => Environment.GetEnvironmentVariable("MPFEVER_DIAG") == "1"
+               || File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "diag.txt"));
+
+        /// <summary>(0.6.4.1) The diagnostic build's variables for a game (see DiagOn); a test's own values are kept.</summary>
+        public static void DiagEnv(System.Collections.Specialized.StringDictionary env)
+        {
+            if (!DiagOn()) return;
+            foreach (var kv in new[] { ("MPFEVER_FREEQLOG", "1"), ("MPFEVER_SDUMP", "all"), ("MPFEVER_STEPLOG", "1") })
+                if (string.IsNullOrEmpty(env[kv.Item1])) env[kv.Item1] = kv.Item2;
         }
 
         /// <summary>(0.6.4) Windows 11's Smart App Control (Defender's "Intelligent App Control"): 0 off, 1 on, 2 evaluation, -1
