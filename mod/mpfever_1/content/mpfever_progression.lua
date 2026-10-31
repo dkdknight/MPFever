@@ -340,7 +340,13 @@ function PG.tally(prog, reg, towns, game, say, now)
 			end
 		end
 		local ok, level = pcall(game.levelFor, r.experience)
-		if ok and type(level) == "number" then r.potential = level end
+		if ok and type(level) == "number" then
+			-- (0.6.5, #110) below the game's first threshold (the world's population when the game began) the game's levelFor
+			-- answers 0: a company that had taken rank 1 was told "has reached rank 0, not 3" (six times in #109's logs). The
+			-- rank reached is never below 1 nor below the rank taken. MPFEVER_RANKFLOOR=0: as before
+			if os.getenv("MPFEVER_RANKFLOOR") ~= "0" then level = math.max(level, 1, r.level) end
+			r.potential = level
+		end
 		if say then say(string.format("ranks at t=%s: company %d score %.4f, experience %d, rank %d reached, %d taken", tostring(now), id, scores[id], r.experience, r.potential, r.level)) end
 	end
 	return scores

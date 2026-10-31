@@ -18577,6 +18577,45 @@
       "ko": "진단 버전: 상세 로그(빈 ID 대기열, 매 점검 시 상태). 재동기화 후에는 모든 플레이어의 보고서를 보내 주세요.",
       "zh-CN": "诊断版本：详细日志（空闲 ID 队列、每次检查时的状态）。重新同步后，请发送每位玩家的报告。",
       "zh-TW": "診斷版本：詳細日誌（空閒 ID 佇列、每次檢查時的狀態）。重新同步後，請傳送每位玩家的報告。"
+    },
+    "Measure \"{0}\" not made on {1} (MPFever's native module missing or an old one: reinstall MPFever, extracting the whole archive, winhttp.dll included): not compared": {
+      "de": "Messung \"{0}\" bei {1} nicht gemacht (natives Modul von MPFever fehlt oder ist veraltet: MPFever neu installieren und das ganze Archiv entpacken, winhttp.dll eingeschlossen): nicht verglichen",
+      "es": "Medida \"{0}\" no realizada en {1} (módulo nativo de MPFever ausente o antiguo: reinstala MPFever extrayendo todo el archivo, winhttp.dll incluido): no comparada",
+      "it": "Misura \"{0}\" non eseguita su {1} (modulo nativo di MPFever mancante o vecchio: reinstalla MPFever estraendo tutto l'archivio, winhttp.dll compreso): non confrontata",
+      "nl": "Meting \"{0}\" niet gedaan bij {1} (native module van MPFever ontbreekt of is oud: installeer MPFever opnieuw door het hele archief uit te pakken, inclusief winhttp.dll): niet vergeleken",
+      "pl": "Pomiar \"{0}\" nie wykonany u {1} (brak lub stary moduł natywny MPFever: zainstaluj MPFever ponownie, rozpakowując całe archiwum wraz z winhttp.dll): nie porównano",
+      "pt-BR": "Medida \"{0}\" não feita em {1} (módulo nativo do MPFever ausente ou antigo: reinstale o MPFever extraindo todo o arquivo, winhttp.dll incluído): não comparada",
+      "ru": "Измерение \"{0}\" не выполнено у {1} (нативный модуль MPFever отсутствует или устарел: переустановите MPFever, распаковав весь архив, включая winhttp.dll): не сравнивается",
+      "ja": "測定「{0}」は {1} で行われていません（MPFever のネイティブモジュールが無いか古いです：アーカイブ全体（winhttp.dll を含む）を展開して MPFever を再インストールしてください）：比較しません",
+      "ko": "측정 \"{0}\"이(가) {1}에서 수행되지 않았습니다(MPFever 네이티브 모듈이 없거나 오래됨: winhttp.dll을 포함한 전체 압축 파일을 풀어 MPFever를 다시 설치하세요): 비교하지 않음",
+      "zh-CN": "{1} 未进行测量“{0}”（MPFever 原生模块缺失或过旧：请解压整个压缩包（含 winhttp.dll）重新安装 MPFever）：不比较",
+      "zh-TW": "{1} 未進行測量「{0}」（MPFever 原生模組缺失或過舊：請解壓整個壓縮檔（含 winhttp.dll）重新安裝 MPFever）：不比較"
+    },
+    "MPFever's file winhttp.dll is missing next to MPFever.exe: reinstall MPFever, extracting the whole archive into the same folder.": {
+      "de": "Die Datei winhttp.dll von MPFever fehlt neben MPFever.exe: MPFever neu installieren und das ganze Archiv in denselben Ordner entpacken.",
+      "es": "Falta el archivo winhttp.dll de MPFever junto a MPFever.exe: reinstala MPFever extrayendo todo el archivo en la misma carpeta.",
+      "it": "Il file winhttp.dll di MPFever manca accanto a MPFever.exe: reinstalla MPFever estraendo tutto l'archivio nella stessa cartella.",
+      "nl": "Het bestand winhttp.dll van MPFever ontbreekt naast MPFever.exe: installeer MPFever opnieuw door het hele archief in dezelfde map uit te pakken.",
+      "pl": "Brak pliku winhttp.dll MPFever obok MPFever.exe: zainstaluj MPFever ponownie, rozpakowując całe archiwum do tego samego folderu.",
+      "pt-BR": "O arquivo winhttp.dll do MPFever está ausente ao lado do MPFever.exe: reinstale o MPFever extraindo todo o arquivo na mesma pasta.",
+      "ru": "Файл winhttp.dll MPFever отсутствует рядом с MPFever.exe: переустановите MPFever, распаковав весь архив в ту же папку.",
+      "ja": "MPFever の winhttp.dll が MPFever.exe の隣にありません：アーカイブ全体を同じフォルダーに展開して MPFever を再インストールしてください。",
+      "ko": "MPFever의 winhttp.dll 파일이 MPFever.exe 옆에 없습니다: 전체 압축 파일을 같은 폴더에 풀어 MPFever를 다시 설치하세요.",
+      "zh-CN": "MPFever.exe 旁缺少 MPFever 的 winhttp.dll 文件：请将整个压缩包解压到同一文件夹以重新安装 MPFever。",
+      "zh-TW": "MPFever.exe 旁缺少 MPFever 的 winhttp.dll 檔案：請將整個壓縮檔解壓到同一資料夾以重新安裝 MPFever。"
+    },
+    "MPFever's file winhttp.dll is missing next to MPFever.exe: MPFever was copied without the other files of the archive.\n\nWithout it, the game's native module stays an old one or missing, and the sessions with the other players resynchronise again and again (the \"ages\" measure).\n\nClose MPFever, extract the whole archive MPFever-x.y.z.zip (all its files) into the same folder, then start it again.": {
+      "de": "Die Datei winhttp.dll von MPFever fehlt neben MPFever.exe: MPFever wurde ohne die anderen Dateien des Archivs kopiert.\n\nOhne sie bleibt das native Modul des Spiels veraltet oder fehlt, und die Sitzungen mit den anderen Spielern werden immer wieder neu synchronisiert (Messung \"ages\").\n\nSchließen Sie MPFever, entpacken Sie das ganze Archiv MPFever-x.y.z.zip (alle Dateien) in denselben Ordner und starten Sie es erneut.",
+      "es": "Falta el archivo winhttp.dll de MPFever junto a MPFever.exe: MPFever se copió sin los demás archivos del archivo comprimido.\n\nSin él, el módulo nativo del juego sigue siendo antiguo o falta, y las partidas con los demás jugadores se resincronizan una y otra vez (medida \"ages\").\n\nCierra MPFever, extrae todo el archivo MPFever-x.y.z.zip (todos sus archivos) en la misma carpeta y vuelve a iniciarlo.",
+      "it": "Il file winhttp.dll di MPFever manca accanto a MPFever.exe: MPFever è stato copiato senza gli altri file dell'archivio.\n\nSenza di esso, il modulo nativo del gioco resta vecchio o mancante, e le sessioni con gli altri giocatori si risincronizzano di continuo (misura \"ages\").\n\nChiudi MPFever, estrai tutto l'archivio MPFever-x.y.z.zip (tutti i suoi file) nella stessa cartella, poi riavvialo.",
+      "nl": "Het bestand winhttp.dll van MPFever ontbreekt naast MPFever.exe: MPFever is gekopieerd zonder de andere bestanden van het archief.\n\nZonder dit bestand blijft de native module van het spel oud of ontbreekt hij, en de sessies met de andere spelers hersynchroniseren steeds opnieuw (meting \"ages\").\n\nSluit MPFever, pak het hele archief MPFever-x.y.z.zip (alle bestanden) uit in dezelfde map en start het opnieuw.",
+      "pl": "Brak pliku winhttp.dll MPFever obok MPFever.exe: MPFever skopiowano bez pozostałych plików archiwum.\n\nBez niego moduł natywny gry pozostaje stary lub go brakuje, a sesje z innymi graczami wciąż się resynchronizują (pomiar \"ages\").\n\nZamknij MPFever, rozpakuj całe archiwum MPFever-x.y.z.zip (wszystkie pliki) do tego samego folderu i uruchom go ponownie.",
+      "pt-BR": "O arquivo winhttp.dll do MPFever está ausente ao lado do MPFever.exe: o MPFever foi copiado sem os outros arquivos do pacote.\n\nSem ele, o módulo nativo do jogo continua antigo ou ausente, e as sessões com os outros jogadores ressincronizam sem parar (medida \"ages\").\n\nFeche o MPFever, extraia todo o arquivo MPFever-x.y.z.zip (todos os seus arquivos) na mesma pasta e inicie-o de novo.",
+      "ru": "Файл winhttp.dll MPFever отсутствует рядом с MPFever.exe: MPFever был скопирован без остальных файлов архива.\n\nБез него нативный модуль игры остаётся устаревшим или отсутствует, и сеансы с другими игроками ресинхронизируются снова и снова (измерение \"ages\").\n\nЗакройте MPFever, распакуйте весь архив MPFever-x.y.z.zip (все его файлы) в ту же папку и запустите его снова.",
+      "ja": "MPFever の winhttp.dll が MPFever.exe の隣にありません：MPFever がアーカイブの他のファイルなしでコピーされています。\n\nこのファイルがないとゲームのネイティブモジュールが古いままか無いままになり、他のプレイヤーとのセッションが何度も再同期されます（測定「ages」）。\n\nMPFever を閉じ、アーカイブ MPFever-x.y.z.zip 全体（すべてのファイル）を同じフォルダーに展開してから、再び起動してください。",
+      "ko": "MPFever의 winhttp.dll 파일이 MPFever.exe 옆에 없습니다: MPFever가 압축 파일의 다른 파일 없이 복사되었습니다.\n\n이 파일이 없으면 게임의 네이티브 모듈이 오래되었거나 없는 상태로 남아, 다른 플레이어와의 세션이 계속 재동기화됩니다(\"ages\" 측정).\n\nMPFever를 닫고, 압축 파일 MPFever-x.y.z.zip 전체(모든 파일)를 같은 폴더에 푼 다음 다시 시작하세요.",
+      "zh-CN": "MPFever.exe 旁缺少 MPFever 的 winhttp.dll 文件：MPFever 被单独复制，没有压缩包中的其他文件。\n\n没有它，游戏的原生模块会保持过旧或缺失，与其他玩家的联机会不断重新同步（“ages”测量）。\n\n请关闭 MPFever，将整个压缩包 MPFever-x.y.z.zip（所有文件）解压到同一文件夹，然后重新启动。",
+      "zh-TW": "MPFever.exe 旁缺少 MPFever 的 winhttp.dll 檔案：MPFever 被單獨複製，沒有壓縮檔中的其他檔案。\n\n沒有它，遊戲的原生模組會保持過舊或缺失，與其他玩家的連線會不斷重新同步（「ages」測量）。\n\n請關閉 MPFever，將整個壓縮檔 MPFever-x.y.z.zip（所有檔案）解壓到同一資料夾，然後重新啟動。"
     }
   }
 }

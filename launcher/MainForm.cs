@@ -74,7 +74,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.4.1";
+        public const string Version = "0.6.5";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -248,6 +248,11 @@ namespace MPFever
         readonly Dictionary<string, int> partStreak = new Dictionary<string, int>();
         int postResyncHashN = -1;
         readonly HashSet<string> ignoredParts = new HashSet<string>();
+        // (0.6.5, #111) parts a game does not measure, told once (see NotMeasured)
+        readonly HashSet<string> unmeasuredParts = new HashSet<string>();
+        /// <summary>(0.6.5, #111) The value a game gives for a part it does not measure: "off" (ages without the native module's
+        /// tick epochs), "none" (a component the game has not got), "absent" (a key of a newer version).</summary>
+        internal static bool NotMeasured(string shown) => shown == "off" || shown == "none" || shown == "absent";
         // parts every game corrects by itself from the host's values (not a reason to reload)
         // ("names": the default names of new vehicles, lines and stations are in each game's language, and the host's game sends
         // its names after each check (namesync, 0.5.14). Bought in a row, the vehicles kept the part different from one check to
@@ -978,6 +983,7 @@ namespace MPFever
                            "A copy of the game not installed by Steam (GOG?): experimental support. Joining through Steam is not possible there, use the host's address."));
             else try { GameInstall.EnsureSteamAppId(gameDir); } catch (Exception e) { Log.W("steam_appid.txt : " + e.Message); }
             try { GameInstall.InstallNative(gameDir); } catch (Exception e) { Log.W("winhttp.dll: " + e.Message); }
+            if (!autotest) WarnNativeMissing();
             if (!autotest) WarnSmartAppControl();
             if (GameInstall.DiagOn())
                 Log.Warn(T("Version de diagnostic : journaux détaillés (file des identifiants, état à chaque contrôle). Après une resynchronisation, envoyez le rapport de chaque joueur.",
@@ -1001,6 +1007,21 @@ namespace MPFever
                 Guard(StartLocalTest);
                 new Thread(AutoTest) { IsBackground = true, Name = "Autotest" }.Start();
             }
+        }
+
+        /// <summary>(0.6.5, #111) MPFever.exe copied alone, without winhttp.dll next to it: the native module in the game folder
+        /// stays an old one (or none), and the sessions with the others reloaded every two minutes (the "ages" measure off on
+        /// that game). Said plainly before the game starts (a line of the log only before); a dedicated server: in its log.
+        /// MPFEVER_NATIVEWARN=0: the log line only, as before.</summary>
+        void WarnNativeMissing()
+        {
+            if (GameInstall.NativeStatus != "missing" || Environment.GetEnvironmentVariable("MPFEVER_NATIVEWARN") == "0") return;
+            Log.Err(T("Le fichier winhttp.dll de MPFever manque à côté de MPFever.exe : réinstallez MPFever en extrayant toute l'archive dans le même dossier.",
+                      "MPFever's file winhttp.dll is missing next to MPFever.exe: reinstall MPFever, extracting the whole archive into the same folder."));
+            if (ServerMode) return;
+            MessageBox.Show(this, T("Le fichier winhttp.dll de MPFever manque à côté de MPFever.exe : MPFever a été copié sans les autres fichiers de l'archive.\n\nSans lui, le module natif du jeu reste ancien ou absent, et les parties avec les autres joueurs se resynchronisent sans cesse (mesure « ages »).\n\nFermez MPFever, extrayez toute l'archive MPFever-x.y.z.zip (tous ses fichiers) dans le même dossier, puis relancez-le.",
+                                    "MPFever's file winhttp.dll is missing next to MPFever.exe: MPFever was copied without the other files of the archive.\n\nWithout it, the game's native module stays an old one or missing, and the sessions with the other players resynchronise again and again (the \"ages\" measure).\n\nClose MPFever, extract the whole archive MPFever-x.y.z.zip (all its files) into the same folder, then start it again."),
+                            "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         /// <summary>(0.6.4) Windows' Smart App Control is on: it blocks MPFever's winhttp.dll and the game shows nothing but
@@ -1937,7 +1958,7 @@ namespace MPFever
             lock (resyncParts) resyncParts.Clear();   // a host game half received in the session that ends
             hostSaveSha = ""; hostSaveState = ""; hostSaveLocal = null;   // (a lobby opened again is looked at again)
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncDropping = false; resyncSending = false; resyncWaiting.Clear(); ignoredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = ""; lock (partStreak) partStreak.Clear();
+            resyncing = false; resyncDropping = false; resyncSending = false; resyncWaiting.Clear(); ignoredParts.Clear(); unmeasuredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = ""; lock (partStreak) partStreak.Clear();
             joinPending = false;
             lock (lobbyColorOf) lobbyColorOf.Clear();
             lobbyColors = ""; lobbyMode = "";
@@ -3814,6 +3835,21 @@ namespace MPFever
             foreach (var k in keys)
             {
                 var vals = names.Select(nm => got[nm] != null && got[nm].TryGetValue(k, out var v) ? LuaLit.Show(v) : "absent").ToList();
+                // (0.6.5, #111) a part a game does not measure is no difference: "off" (ages: its native module is an older one or
+                // absent, MPFever.exe copied alone without winhttp.dll), "none", "absent" (a key of a newer version). Compared as
+                // texts, "off" against the others' values reloaded the host's game every two minutes (24 checks, 3 reloads in
+                // 10 minutes). Said once per session, with what to do, and left out from then on. MPFEVER_UNMEASURED=0: as before
+                if (Environment.GetEnvironmentVariable("MPFEVER_UNMEASURED") != "0")
+                {
+                    var who = names.Where((nm, i) => NotMeasured(vals[i])).ToList();
+                    if (who.Count > 0 && who.Count < names.Count)
+                    {
+                        if (unmeasuredParts.Add(k))
+                            Log.Warn(F("Mesure « {0} » non faite chez {1} (module natif de MPFever absent ou ancien : réinstallez MPFever en extrayant toute l'archive, winhttp.dll compris) : non comparée",
+                                       "Measure \"{0}\" not made on {1} (MPFever's native module missing or an old one: reinstall MPFever, extracting the whole archive, winhttp.dll included): not compared", k, string.Join(", ", who)));
+                        continue;
+                    }
+                }
                 if (vals.Distinct().Count() > 1) diffs.Add($"{k}: " + string.Join(" | ", names.Select((nm, i) => nm + "=" + vals[i])));
             }
             // (0.6.2, #105) the lines and the vehicles' lines are compared by their names: while the names differ (a default name

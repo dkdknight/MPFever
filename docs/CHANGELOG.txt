@@ -1,6 +1,34 @@
 MPFever - Changelog
 ===================
 
+0.6.5 - the players' reports of 2026-10-31: three causes of reloads found and fixed
+  - FIX (issue #111): a session that reloaded the host's game every two minutes from the first check on, for "ages". One
+    player had copied MPFever.exe alone, without winhttp.dll next to it: the native module in his game folder stayed an old
+    one, his game measured no segment ages ("off"), and the launcher took "off" against the others' value for a difference
+    (24 checks, 3 reloads in 10 minutes). A measure a game does not make (off, none, or a key it has not got) is no longer
+    compared: said once, with what to do, and left out from then on (MPFEVER_UNMEASURED=0: as before). And MPFever now says
+    plainly, before the game starts, when its winhttp.dll is missing next to MPFever.exe: reinstall by extracting the whole
+    archive (a line of the log only before; MPFEVER_NATIVEWARN=0: as before). Test: the launcher's self-test.
+  - FIX (issue #107): a reload 30 s after an upgrade of a motorway (a one-way street) on the builder's game. The upgrade
+    tool sometimes lists its new segments with the old ones' ends swapped; the replays built the upgrade with the engine's
+    replaceSegment, which keeps the old way round: the motorway ran one way on the builder's game and the other way
+    everywhere else, and the vehicles took other roads from then on ("vehicles" out of sync, 5 trucks elsewhere at the first
+    dump). Such an upgrade is now replayed as the tool's own proposal, the same way round everywhere (MPFEVER_UPGREV=0: as
+    before). Test: tests/test_upgrev.py. Not verified in a game yet.
+  - FIX (issues #110, #95; one company per player): "only the host gets ranks". Two causes. Below the game's first threshold
+    the game's level function answers 0, and a company that had taken rank 1 was told "has reached rank 0, not 3" when it
+    took the rank of the notification: the rank reached is never below 1 nor below the rank taken (MPFEVER_RANKFLOOR=0: as
+    before). And the game's own "rank reached" notification is the savegame company's (the host's), which the game shows on
+    every player's game: on another player's game it is now dismissed (MPFEVER_RANKNOTIF=0: as before). Each company's own
+    rank stays in its company window. Test: tests/test_rankfloor.py.
+    (Not changed: the scale. A company's experience is its share of the towns it serves; with several companies that sum
+    stays below the game's own thresholds, so the ranks rise slowly for everybody but the savegame's company, which keeps
+    its start. A different scale is a design choice, to be decided.)
+  - FIX (issue #109): "Report a problem" clicked twice in the same second named the same zip and the second one failed on
+    "the file already exists", leaving a truncated zip (Kev1505in's). A report never takes the name of a zip that exists
+    (-2, -3...). Test: the launcher's self-test.
+  - Includes the 0.6.4.1 fixes below (computer companies' stops; the diagnostic build's diag.txt).
+
 0.6.4.1 - diagnostic build (sent to the players whose sessions resync without a known cause)
   - NEW: a file diag.txt next to MPFever.exe turns on the logs that tell where two games part, in every game it starts: the
     free-id queue at every 50th step (native.log; tools/freeq_diff.py names the first step where the games give new entities

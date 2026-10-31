@@ -28,7 +28,7 @@ where python >nul 2>&1 || (echo Python not found: install Python 3 and lupa ^(pi
 python tests\run_all.py --exe launcher\bin\Release\MPFever.exe || (echo TESTS FAILED: no archive made & exit /b 1)
 
 echo === 4/4 package
-set "VERSION=0.6.4.1"
+set "VERSION=0.6.5"
 set "DIST=release\dist\MPFever"
 if exist release\dist rmdir /s /q release\dist
 mkdir "%DIST%" || exit /b 1

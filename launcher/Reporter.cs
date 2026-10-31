@@ -180,7 +180,7 @@ namespace MPFever
             left = new List<string>();
             Directory.CreateDirectory(ReportsDir);
             var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-            var zip = Path.Combine(ReportsDir, "MPFever-report-" + stamp + ".zip");
+            var zip = FreeName(Path.Combine(ReportsDir, "MPFever-report-" + stamp + ".zip"));
             var files = new List<Entry>();
             void Add(string path, string name)
             {
@@ -242,6 +242,22 @@ namespace MPFever
                 }
             }
             return zip;
+        }
+
+        /// <summary>(0.6.5, #109) A name no file has yet: the same one with -2, -3... before its extension. Two reports made in
+        /// the same second (the button clicked twice) named the same zip, and the second failed on "the file already exists",
+        /// leaving a truncated one (Kev1505in's report of 2026-10-31).</summary>
+        public static string FreeName(string path)
+        {
+            if (!File.Exists(path)) return path;
+            var dir = Path.GetDirectoryName(path) ?? "";
+            var name = Path.GetFileNameWithoutExtension(path);
+            var ext = Path.GetExtension(path);
+            for (int i = 2; ; i++)
+            {
+                var p = Path.Combine(dir, name + "-" + i + ext);
+                if (!File.Exists(p)) return p;
+            }
         }
 
         /// <summary>The browser opens a new issue with this title and text; the text is cut to what a link can carry.</summary>

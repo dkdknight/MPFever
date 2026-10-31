@@ -3994,6 +3994,16 @@ local function upgradePlan(margs, townAuto)
 			local rc = rm.comp or {}
 			if (rc.node0 == c.node0 and rc.node1 == c.node1) or (rc.node0 == c.node1 and rc.node1 == c.node0) then
 				match = rm.entity
+				-- (0.6.5, #107) the tool's new segment runs the other way round than the old one (its ends swapped): replaceSegment
+				-- keeps the old way round, and a one-way street (a motorway, highway_new_large_barriers) ran one way on the
+				-- builder's game and the other way here: the vehicles took other roads from that build on ("vehicles" out of
+				-- sync 33 s after the first such upgrade of Kev1505in's session, 2026-10-31). The tool's own proposal is replayed
+				-- instead (as with replacement maps), the same way round everywhere. MPFEVER_UPGREV=0: as before (the
+				-- decorations' sides swapped only)
+				if rc.node0 == c.node1 and rc.node1 == c.node0 and rc.node0 ~= rc.node1 and os.getenv("MPFEVER_UPGREV") ~= "0" then
+					log("NATIVE REPLAY: the tool's new segment for " .. tostring(rm.entity) .. " runs the other way round: no upgrade plan, the tool's proposal")
+					return no("segment reversed")
+				end
 				-- more than a new template (a bridge, a different track...): replaceSegment would not make it
 				if c.type ~= rc.type or c.typeIndex ~= rc.typeIndex or c.roadType ~= rc.roadType or ad.type ~= rm.type then return no("other segment type") end
 				-- (the decorations, a noise barrier for instance, are put on the engine's upgrade proposal below)

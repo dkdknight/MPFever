@@ -2317,29 +2317,38 @@ namespace MPFever
         /// <summary>Puts the native module next to the game as winhttp.dll: the game imports WINHTTP.dll and Windows
         /// looks in the game folder first, so the game loads the module itself at startup (it relays every WinHTTP
         /// call to the system library, and stays inert unless the game was started by MPFever).</summary>
-        public static void InstallNative(string gameDir)
+        public static void InstallNative(string gameDir) { NativeStatus = InstallNative(gameDir, AppDomain.CurrentDomain.BaseDirectory); }
+
+        /// <summary>(0.6.5, #111) What InstallNative found: null (installed or up to date), "missing" (no winhttp.dll next to
+        /// MPFever.exe: the archive not wholly extracted), "other" (another mod's dll in the game folder), "busy" (the game's
+        /// is an old one and the game is running).</summary>
+        public static string NativeStatus;
+
+        /// <summary>InstallNative with the folder of MPFever's own winhttp.dll given (the self-test); the status, see NativeStatus.</summary>
+        public static string InstallNative(string gameDir, string srcDir)
         {
-            var src = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "winhttp.dll");
+            var src = Path.Combine(srcDir, "winhttp.dll");
             var dst = Path.Combine(gameDir, "winhttp.dll");
             // a game started by Steam from an MPFever invitation starts MPFever.exe from this path
             try { File.WriteAllText(Path.Combine(gameDir, "mpfever_path.txt"), System.Reflection.Assembly.GetExecutingAssembly().Location, Encoding.Unicode); } catch (Exception e) { Log.W("mpfever_path.txt: " + e.Message); }
-            if (!File.Exists(src)) { Log.Warn(L.T("winhttp.dll absent à côté de MPFever.exe : module natif non installé", "winhttp.dll missing next to MPFever.exe: native module not installed")); return; }
+            if (!File.Exists(src)) { Log.Warn(L.T("winhttp.dll absent à côté de MPFever.exe : module natif non installé", "winhttp.dll missing next to MPFever.exe: native module not installed")); return "missing"; }
             if (File.Exists(dst))
             {
                 var cur = File.ReadAllBytes(dst);
-                if (cur.SequenceEqual(File.ReadAllBytes(src))) return;
+                if (cur.SequenceEqual(File.ReadAllBytes(src))) return null;
                 if (Encoding.ASCII.GetString(cur).IndexOf("mpfever_native", StringComparison.Ordinal) < 0)
                 {
                     Log.Warn(L.T("Un autre winhttp.dll (autre mod ?) est déjà dans le dossier du jeu : module natif non installé", "Another winhttp.dll (another mod?) is already in the game folder: native module not installed"));
-                    return;
+                    return "other";
                 }
             }
             try
             {
                 File.Copy(src, dst, true);
                 Log.Ok(L.T("Module natif installé : ", "Native module installed: ") + dst);
+                return null;
             }
-            catch (IOException) { Log.Warn(L.T("Module natif : fermez Transport Fever 3 puis relancez MPFever pour le mettre à jour", "Native module: close Transport Fever 3, then restart MPFever to update it")); }
+            catch (IOException) { Log.Warn(L.T("Module natif : fermez Transport Fever 3 puis relancez MPFever pour le mettre à jour", "Native module: close Transport Fever 3, then restart MPFever to update it")); return "busy"; }
         }
 
         /// <summary>The savegame folders the game itself gave (save_dirs.txt of the MPFever page, kept in the settings): a

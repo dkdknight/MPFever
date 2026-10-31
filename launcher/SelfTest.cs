@@ -58,6 +58,7 @@ namespace MPFever
             ok &= RunGameDir();
             ok &= RunSmartAppControl();
             ok &= RunDiag();
+            ok &= RunIssue111();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -279,6 +280,41 @@ namespace MPFever
             }
             catch (Exception e) { Check(false, "diagnostic: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_DIAG", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.6.5, #111, #109) MPFever.exe copied alone: InstallNative says "missing" (then installs when the file is there,
+        /// nothing when it is the same); a part a game does not measure ("off", "none", "absent") is no difference; a report's
+        /// zip never takes the name of one that exists.</summary>
+        static bool RunIssue111()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var tmp = Path.Combine(Path.GetTempPath(), "mpfever-selftest-111-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var game = Path.Combine(tmp, "game");
+                var app = Path.Combine(tmp, "app");
+                Directory.CreateDirectory(game);
+                Directory.CreateDirectory(app);
+                Check(GameInstall.InstallNative(game, app) == "missing", "#111: no winhttp.dll next to MPFever.exe: \"missing\"");
+                Check(!File.Exists(Path.Combine(game, "winhttp.dll")), "#111: nothing put in the game folder then");
+                File.WriteAllText(Path.Combine(app, "winhttp.dll"), "mpfever_native test 1");
+                Check(GameInstall.InstallNative(game, app) == null && File.ReadAllText(Path.Combine(game, "winhttp.dll")) == "mpfever_native test 1", "#111: the file there: installed");
+                Check(GameInstall.InstallNative(game, app) == null, "#111: the same file: nothing to do");
+                File.WriteAllText(Path.Combine(game, "winhttp.dll"), "some other dll");
+                Check(GameInstall.InstallNative(game, app) == "other", "#111: another mod's dll in the game folder: \"other\", left alone");
+                Check(MainForm.NotMeasured("off") && MainForm.NotMeasured("none") && MainForm.NotMeasured("absent"), "#111: off/none/absent are no measure");
+                Check(!MainForm.NotMeasured("459/1535190763") && !MainForm.NotMeasured("0") && !MainForm.NotMeasured(""), "#111: a value is one");
+                var zip = Path.Combine(tmp, "MPFever-report-20261031-164508.zip");
+                Check(Reporter.FreeName(zip) == zip, "#109: a free name is kept");
+                File.WriteAllText(zip, "x");
+                Check(Reporter.FreeName(zip) == Path.Combine(tmp, "MPFever-report-20261031-164508-2.zip"), "#109: a taken name gets -2");
+                File.WriteAllText(Path.Combine(tmp, "MPFever-report-20261031-164508-2.zip"), "x");
+                Check(Reporter.FreeName(zip) == Path.Combine(tmp, "MPFever-report-20261031-164508-3.zip"), "#109: then -3");
+            }
+            catch (Exception e) { Check(false, "#111: " + e.Message); }
+            finally { try { Directory.Delete(tmp, true); } catch { } }
             return ok;
         }
 

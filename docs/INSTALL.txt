@@ -25,6 +25,9 @@ REQUIREMENTS (every player)
          winhttp.dll
          mod\mpfever_1\...
          (documentation files)
+   Extract ALL the files: MPFever.exe copied alone, without winhttp.dll next to it, leaves
+   the game's native module old or missing, and the sessions with the other players then
+   reload every two minutes (MPFever says so at start).
 3. Start MPFever.exe. At start it finds the game through Steam, installs the mod and
    enables it for new games. The log window shows "Mod installed in ...".
    - If Windows SmartScreen says "Windows protected your PC": click "More info", then

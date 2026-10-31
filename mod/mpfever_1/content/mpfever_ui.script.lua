@@ -4852,6 +4852,19 @@ function N.dismissedBefore(entry)
 	return false
 end
 
+-- (0.6.5, #110) one company per player: the game's own "rank reached" notification is the savegame company's (the host's)
+-- and the game shows it on every player's game; its button then asked a rank the local company had not reached ("company 3
+-- has reached rank 0, not 3", six times in #109's logs: "only the host gets ranks"). Whether notification `n` is a rank
+-- notification of another company than `me` (this game's player entity), when there are several companies (`many`).
+-- MPFEVER_RANKNOTIF=0: shown, as before
+function N.foreignRank(n, me, many)
+	if not many or os.getenv("MPFEVER_RANKNOTIF") == "0" then return false end
+	if type(n) ~= "table" or type(n.type) ~= "string" or not n.type:find("company_notification_rank_up", 1, true) then return false end
+	local p = type(n.params) == "table" and n.params.companyEntity or nil
+	if type(p) == "table" then p = p.entity end
+	return type(p) == "number" and type(me) == "number" and p ~= me
+end
+
 -- periodic (tick): after a load, dismiss again what this player had dismissed and set the log's filter again; log new
 -- notifications and new industries (the first look after a load only counts them)
 function N.tick()
@@ -4873,7 +4886,9 @@ function N.tick()
 			log("notifications: the log's filter set again after the load")
 		end
 	end
-	local again, fresh = 0, 0
+	local again, fresh, foreign = 0, 0, 0
+	local me, many = nil, U.coMap ~= nil and next(U.coMap) ~= nil
+	if many then pcall(function() me = api.engine.util.getPlayer() end) end
 	for _, id in ipairs(history) do
 		if not N.seen[id] then
 			local entry = N.entry(native, id)
@@ -4890,10 +4905,15 @@ function N.tick()
 					N.done[id] = true
 					pcall(function() orig.sendCommand(orig.event("", "Notifications", "dismiss", { id = id })) end)
 					again = again + 1
+				elseif not entry.dismissed and not N.done[id] and N.foreignRank(entry.notification, me, many) then
+					N.done[id] = true
+					pcall(function() orig.sendCommand(orig.event("", "Notifications", "dismiss", { id = id })) end)
+					foreign = foreign + 1
 				end
 			end
 		end
 	end
+	if foreign > 0 then log("notifications: " .. foreign .. " rank notification(s) of another company dismissed (see N.foreignRank)") end
 	if not N.primed then
 		N.primed = true
 		log("notifications: " .. fresh .. " in the list after the load")
