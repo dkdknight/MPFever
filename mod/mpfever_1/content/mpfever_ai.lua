@@ -4034,9 +4034,10 @@ function RL.underway(E, co, lines)
 		s.term = RL.terminals(E, s.con)
 		s.line = s.term and inLine[s.term.group] or nil
 	end
-	-- (a railway running: its line has a train)
+	-- (a railway running: its line has a train; or its trains were sold for its losses, see RL.manage: no train for it again)
 	local running = {}
 	for _, v in ipairs(RL.trains(E, co.ent)) do if v.line >= 0 then running[v.line] = true end end
+	for l in pairs(A.railDropped or {}) do running[l] = true end
 	-- (a pair: a producer's station, and a station of an industry that takes its cargo, not running yet)
 	local paired = {}
 	for _, sa in ipairs(stations) do
@@ -4340,10 +4341,13 @@ function RL.manage(E, co, money)
 			if not young and (bal or 0) < 0 and waiting == 0 and n > 0 then A.railLoss[l.e] = (A.railLoss[l.e] or 0) + 1 else A.railLoss[l.e] = 0 end
 			if A.railLoss[l.e] >= RL.LOSSLOOKS and model then
 				A.railLoss[l.e] = RL.LOSSLOOKS - 1
+				-- (and no train bought for it again: RL.underway and RL.project leave a line given up so, see RL.isRailGroup's callers)
+				A.railDropped = A.railDropped or {}
+				A.railDropped[l.e] = true
 				sellVehicle(E, co, model, "train line " .. l.e .. " losing money with nothing to carry", l.e)
 				return true
 			end
-			if t and n > 0 and n < RL.MAXTRAINS and waiting > 1.5 * t.seats and ((bal or 0) >= 0 or young) and money - (A.loanCash or 0) > RESERVE + t.price then
+			if t and n > 0 and n < RL.MAXTRAINS and not (A.railDropped and A.railDropped[l.e]) and waiting > 1.5 * t.seats and ((bal or 0) >= 0 or young) and money - (A.loanCash or 0) > RESERVE + t.price then
 				-- (the company's depot that reaches the line's first stop)
 				local nodes = {}
 				pcall(function()

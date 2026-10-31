@@ -357,11 +357,13 @@ def main():
       local sold = 0
       for i = 1, 6 do G.AI.railLookAt = nil; if M.f.RL.manage(E, co, 50000000) == true then sold = sold + 1 end end
       local sale = acts("makeVehicleSellCmd")
+      -- given up so: RL.underway takes its stations for a railway running, no train bought for it again
+      local dropped = G.AI.railDropped and G.AI.railDropped[601] == true
       api.engine.getComponent = gc
       VEH = { 801, 802 }
-      return tostring(first) .. " " .. tostring(second) .. " " .. tostring(lose) .. " " .. tostring(full) .. " " .. acts("makeVehicleBuyCmd") .. " " .. sale
+      return tostring(first) .. " " .. tostring(second) .. " " .. tostring(lose) .. " " .. tostring(full) .. " " .. acts("makeVehicleBuyCmd") .. " " .. sale .. " " .. tostring(dropped)
     ''')
-    check(res == "true true false false 0 2", f"cargo piling up: a train more at its depot, then sent to the line; losing money or 3 trains: none; losing with nothing waiting 5 looks: a train sold a look ({res})")
+    check(res == "true true false false 0 2 true", f"cargo piling up: a train more at its depot, then sent to the line; losing money or 3 trains: none; losing with nothing waiting 5 looks: a train sold a look ({res})")
 
     run('os.getenv = (function(g) return function(k) if k == "MPFEVER_AIRAIL" then return "0" end return g(k) end end)(os.getenv)')
     check(run('return #M.f.myLines(E, 700)') == 2 and run('return #M.f.myVehicles(E, 700)') == 2, "MPFEVER_AIRAIL=0: every line and vehicle, as before")
