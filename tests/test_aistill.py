@@ -9,7 +9,8 @@ ends, still no object), run by the bridge's deferredSend just before the build g
     is gone, has other ends, or carries an object now;
   - stillOk (mpfever_bridge.script.lua, through lupa): a true check sends the build; a string does not, the others are told (the
     build cancelled as a refused one) and the company hears a refusal; a check that fails to run sends it; MPFEVER_AISTILL=0 sends it;
-  - deferredSend calls stillOk before both of its sends (held and BUILDLEAD).
+  - deferredSend calls stillOk before both of its sends (held and BUILDLEAD);
+  - stopSegments: no stop on a segment that ends at a junction with traffic lights (the crash of test o2); MPFEVER_AISTOPLIGHTS=1: as before.
 Needs lupa (pip install lupa). Run: python tests/test_aistill.py
 """
 import os
@@ -44,6 +45,16 @@ check(isinstance(got, str) and "another segment" in got, "other ends (the id nam
 run('COMP[60] = nil')
 got = run('return LASTSTILL()')
 check(isinstance(got, str) and "no longer exists" in got, "the segment gone: not sent (" + str(got) + ")")
+
+print("the segments a stop may take")
+run('setComp(61, "BASE_EDGE", { node0 = 81, node1 = 82 }); setComp(62, "BASE_EDGE", { node0 = 82, node1 = 83 }); setComp(63, "BASE_EDGE", { node0 = 84, node1 = 85 })')
+run('setComp(83, "BASE_NODE_TRAFFIC_LIGHT", {})')
+got = run('local t = {} for _, s in ipairs(M.f.stopSegments(E, CO1, { { e = 61 }, { e = 62 }, { e = 63 } })) do t[#t + 1] = s.e end return table.concat(t, ",")')
+check(got == "61,63", "a segment ending at a junction with traffic lights: left out (" + str(got) + ")")
+got = run('ENV = { MPFEVER_AISTOPLIGHTS = "1" }; local n = #M.f.stopSegments(E, CO1, { { e = 62 } }); ENV = {}; return n')
+check(got == 1, "MPFEVER_AISTOPLIGHTS=1: taken, as before")
+src_ai = open(os.path.join(CONTENT, "mpfever_ai.lua"), encoding="utf-8").read()
+check(src_ai.count("stopSegments(E, co, streetSegmentsNear(") == 2, "both places that pick a stop's segment use it")
 
 print("the bridge")
 src = open(os.path.join(CONTENT, "mpfever_bridge.script.lua"), encoding="utf-8").read()

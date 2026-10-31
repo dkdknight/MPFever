@@ -1734,6 +1734,28 @@ local function bestPair(E, co, lines, stops)
 	return best
 end
 
+-- (0.6.4.1) The segments a company may put a stop on: none that ends at a junction with traffic lights. A stop is built as the
+-- segment replaced with the configurations of its two junctions removed (see buildStop); at a junction with traffic lights the
+-- engine was left with lights and no configuration and asserted ('it != components.end()', on that junction and on the stops of
+-- the next street), and the host's game stopped: twice at the same junction in a 60-minute test with the players' world of #109
+-- (test o2 of 2026-10-31). MPFEVER_AISTOPLIGHTS=1: as before
+local function stopSegments(E, co, segs)
+	if os.getenv("MPFEVER_AISTOPLIGHTS") == "1" then return segs end
+	local api = E.api
+	local out = {}
+	for _, s in ipairs(segs) do
+		local lights = false
+		pcall(function()
+			local c = api.engine.getComponent(s.e, api.type.ComponentType.BASE_EDGE)
+			for _, nd in ipairs({ c.node0, c.node1 }) do
+				if api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_TRAFFIC_LIGHT) then lights = true end
+			end
+		end)
+		if not lights then out[#out + 1] = s end
+	end
+	return out
+end
+
 -- the company's stop serving a point (within 200 m), if any
 local function stopAt(stops, p)
 	local best, bd
@@ -1747,7 +1769,7 @@ local function stopNear(E, co, stops, p, key)
 	local avoid = {}
 	for _, s in ipairs(stops) do avoid[#avoid + 1] = s.pos end
 	-- (within the 200 m stopAt takes: a stop built farther was never found again, and another one was built, and another)
-	local segs = streetSegmentsNear(E, p, 200, avoid)
+	local segs = stopSegments(E, co, streetSegmentsNear(E, p, 200, avoid))
 	local tries = (A.failed and A.failed["stop " .. key]) or 0
 	local s = segs[1 + tries]
 	if not s or tries > 4 then return false end
@@ -4719,7 +4741,7 @@ local function step(E)
 				for _, s in ipairs(stops) do avoid[#avoid + 1] = s.pos end
 				-- (within the 200 m townProject takes, 0.5.14: a stop built 200 to 300 m away was never found again and another one
 				-- was built, and another, until the town ran out of streets. MPFEVER_AIRETRY=0: 300 m as before)
-				local segs = streetSegmentsNear(E, w.p, os.getenv("MPFEVER_AIRETRY") == "0" and 300 or 200, avoid)
+				local segs = stopSegments(E, co, streetSegmentsNear(E, w.p, os.getenv("MPFEVER_AIRETRY") == "0" and 300 or 200, avoid))
 				local tries = A.failed and A.failed["stop " .. town .. ":" .. w.use] or 0
 				local s = segs[1 + tries]
 				if not s or tries > 4 then
@@ -4822,7 +4844,7 @@ M.f = { aiCompany = aiCompany, myStops = myStops, myDepots = myDepots, myLines =
 	manageLines = manageLines, lineIdle = lineIdle, mayExpand = mayExpand, spendOk = spendOk, ltSync = ltSync, ltProject = ltProject, connectIndustry = connectIndustry, roadProject = roadProject,
 	townFreightProject = townFreightProject, industryProject = industryProject, freightProject = freightProject,
 	buildingsHit = buildingsHit, stockTakes = stockTakes, stopReaches = stopReaches, townDropPoint = townDropPoint, townGood = townGood,
-	step = step, RL = RL }
+	step = step, RL = RL, stopSegments = stopSegments }
 
 -- (0.6) the pure rules, and the module's state of the company under way, for the offline tests (tests/test_ai_*.py)
 M.p = { floorOf = floorOf, ltBudget = ltBudget, ltJudge = ltJudge, ltScore = ltScore, densest = densest, LT = LT, FLOOR_MIN = FLOOR_MIN,
