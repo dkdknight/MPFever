@@ -110,6 +110,11 @@ TROUBLESHOOTING
   installs the game. Elsewhere, it asks for the game's TransportFever3.exe once and
   keeps that folder. A copy not installed by Steam (GOG) is supported experimentally:
   join with the host's address (not through Steam).
+- "Bad Image ... winhttp.dll ... error status 0xc0e90002" when the game starts: Windows'
+  Smart App Control blocks MPFever's file (MPFever now says so). Turn it off: Windows
+  Security > App & browser control > Smart App Control settings > Off (Windows'
+  antivirus stays on; on some Windows versions it cannot be turned on again without
+  reinstalling Windows).
 - "Cannot connect": check the address, the port, the host's firewall / port
   forwarding, or use a virtual LAN.
 - No "Multiplayer" card in the main menu: the game was not started by

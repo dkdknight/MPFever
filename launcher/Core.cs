@@ -2033,6 +2033,30 @@ namespace MPFever
             return d.IndexOf(@"\steamapps\common\", StringComparison.OrdinalIgnoreCase) < 0;
         }
 
+        /// <summary>(0.6.4) Windows 11's Smart App Control (Defender's "Intelligent App Control"): 0 off, 1 on, 2 evaluation, -1
+        /// unknown (an older Windows). When on, it blocks every file not signed by a known publisher: MPFever's winhttp.dll is
+        /// not, and the game only says "Bad Image ... winhttp.dll ... error status 0xc0e90002", which the players could not
+        /// understand. MPFEVER_SACSTATE=n: that state (tests).</summary>
+        public static int SmartAppControlState()
+        {
+            if (int.TryParse(Environment.GetEnvironmentVariable("MPFEVER_SACSTATE"), out var forced)) return forced;
+            try
+            {
+                using (var k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\CI\Policy"))
+                    if (k?.GetValue("VerifiedAndReputablePolicyState") is int v) return v;
+            }
+            catch { }
+            return -1;
+        }
+
+        /// <summary>(0.6.4) Whether Smart App Control blocks MPFever's winhttp.dll: on only (in evaluation it blocks nothing).
+        /// MPFEVER_SACWARN=0: never told, as before.</summary>
+        public static bool SmartAppControlBlocks()
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_SACWARN") == "0") return false;
+            return SmartAppControlState() == 1;
+        }
+
         /// <summary>(0.6.3) Where GOG installs the game: the folders its installer writes in the registry, then GOG's usual folders.</summary>
         public static IEnumerable<string> GogDirs()
         {

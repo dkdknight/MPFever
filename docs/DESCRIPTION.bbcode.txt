@@ -85,7 +85,7 @@ Click [b]Report a problem[/b] in the in-game MPFever window or in the launcher: 
 
 [line]
 
-[center][size=4][b]Join the [url=https://discord.gg/qhhKfUMSJx]MPFever Discord[/url][/b][/size]: find players, get help and follow the development.[/center]
+[center][size=4][b]Join the [url=https://discord.gg/DfMxFUQZCR]MPFever Discord[/url][/b][/size]: find players, get help and follow the development.[/center]
 
 [center]Enjoying MPFever? A tip helps me keep developing it: ☕ [url=https://ko-fi.com/H2H717LY5N]Ko-fi[/url]
 [b]Thank you, and have fun building together![/b][/center]

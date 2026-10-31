@@ -5669,18 +5669,18 @@
       "zh-CN": "喜欢 MPFever 吗？欢迎在 ko-fi.com/knighthd 支持本项目或感谢作者",
       "zh-TW": "喜歡 MPFever 嗎？歡迎在 ko-fi.com/knighthd 支持本專案或感謝作者"
     },
-    "Players, help and news: join the MPFever Discord at discord.gg/qhhKfUMSJx": {
-      "de": "Mitspieler, Hilfe und Neuigkeiten: Tritt dem MPFever-Discord bei auf discord.gg/qhhKfUMSJx",
-      "es": "Jugadores, ayuda y novedades: únete al Discord de MPFever en discord.gg/qhhKfUMSJx",
-      "it": "Giocatori, aiuto e novità: unisciti al Discord di MPFever su discord.gg/qhhKfUMSJx",
-      "nl": "Spelers, hulp en nieuws: word lid van de MPFever-Discord op discord.gg/qhhKfUMSJx",
-      "pl": "Gracze, pomoc i nowości: dołącz do Discorda MPFever na discord.gg/qhhKfUMSJx",
-      "pt-BR": "Jogadores, ajuda e novidades: entre no Discord do MPFever em discord.gg/qhhKfUMSJx",
-      "ru": "Игроки, помощь и новости: присоединяйтесь к Discord MPFever на discord.gg/qhhKfUMSJx",
-      "ja": "仲間探し、サポート、最新情報：MPFever の Discord に参加しよう discord.gg/qhhKfUMSJx",
-      "ko": "함께할 플레이어, 도움말, 소식: discord.gg/qhhKfUMSJx 에서 MPFever Discord에 참여하세요",
-      "zh-CN": "找玩家、求助、看新闻：加入 MPFever 的 Discord：discord.gg/qhhKfUMSJx",
-      "zh-TW": "找玩家、求助、看新消息：加入 MPFever 的 Discord：discord.gg/qhhKfUMSJx"
+    "Players, help and news: join the MPFever Discord at discord.gg/DfMxFUQZCR": {
+      "de": "Mitspieler, Hilfe und Neuigkeiten: Tritt dem MPFever-Discord bei auf discord.gg/DfMxFUQZCR",
+      "es": "Jugadores, ayuda y novedades: únete al Discord de MPFever en discord.gg/DfMxFUQZCR",
+      "it": "Giocatori, aiuto e novità: unisciti al Discord di MPFever su discord.gg/DfMxFUQZCR",
+      "nl": "Spelers, hulp en nieuws: word lid van de MPFever-Discord op discord.gg/DfMxFUQZCR",
+      "pl": "Gracze, pomoc i nowości: dołącz do Discorda MPFever na discord.gg/DfMxFUQZCR",
+      "pt-BR": "Jogadores, ajuda e novidades: entre no Discord do MPFever em discord.gg/DfMxFUQZCR",
+      "ru": "Игроки, помощь и новости: присоединяйтесь к Discord MPFever на discord.gg/DfMxFUQZCR",
+      "ja": "仲間探し、サポート、最新情報：MPFever の Discord に参加しよう discord.gg/DfMxFUQZCR",
+      "ko": "함께할 플레이어, 도움말, 소식: discord.gg/DfMxFUQZCR 에서 MPFever Discord에 참여하세요",
+      "zh-CN": "找玩家、求助、看新闻：加入 MPFever 的 Discord：discord.gg/DfMxFUQZCR",
+      "zh-TW": "找玩家、求助、看新消息：加入 MPFever 的 Discord：discord.gg/DfMxFUQZCR"
     },
     "♥ Support MPFever": {
       "de": "♥ MPFever unterstützen",
@@ -18538,6 +18538,32 @@
       "ko": "%s용 열차를 구입했습니다 (%s)",
       "zh-CN": "为%s购买了一列火车（%s）",
       "zh-TW": "為%s購買了一列火車（%s）"
+    },
+    "Windows' Smart App Control is on. It blocks MPFever's file winhttp.dll: the game then shows \"Bad Image ... winhttp.dll ... 0xc0e90002\" and MPFever cannot work.\n\nTo play with MPFever, turn it off: Windows Security > App & browser control > Smart App Control settings > Off. Windows' antivirus stays on.\n\nNote: on some versions of Windows, it cannot be turned back on afterwards without reinstalling Windows.\n\nOpen Windows Security now?": {
+      "de": "Die intelligente App-Steuerung von Windows (Smart App Control) ist aktiv. Sie blockiert die MPFever-Datei winhttp.dll: Das Spiel zeigt dann „Ungültiges Bild ... winhttp.dll ... 0xc0e90002“ und MPFever kann nicht funktionieren.\n\nUm mit MPFever zu spielen, schalte sie aus: Windows-Sicherheit > App- & Browsersteuerung > Einstellungen für intelligente App-Steuerung > Aus. Das Antivirenprogramm von Windows bleibt aktiv.\n\nHinweis: Bei manchen Windows-Versionen lässt sie sich danach nur durch eine Neuinstallation von Windows wieder einschalten.\n\nWindows-Sicherheit jetzt öffnen?",
+      "es": "El Control inteligente de aplicaciones de Windows (Smart App Control) está activado. Bloquea el archivo winhttp.dll de MPFever: el juego muestra entonces «Imagen incorrecta ... winhttp.dll ... 0xc0e90002» y MPFever no puede funcionar.\n\nPara jugar con MPFever, desactívalo: Seguridad de Windows > Control de aplicaciones y navegador > Configuración de Control inteligente de aplicaciones > Desactivado. El antivirus de Windows sigue activo.\n\nNota: en algunas versiones de Windows no se puede volver a activar después sin reinstalar Windows.\n\n¿Abrir Seguridad de Windows ahora?",
+      "it": "Il Controllo intelligente delle app di Windows (Smart App Control) è attivo. Blocca il file winhttp.dll di MPFever: il gioco mostra allora «Immagine non valida ... winhttp.dll ... 0xc0e90002» e MPFever non può funzionare.\n\nPer giocare con MPFever, disattivalo: Sicurezza di Windows > Controllo app e browser > Impostazioni di Controllo intelligente delle app > Disattivato. L'antivirus di Windows resta attivo.\n\nNota: su alcune versioni di Windows non può essere riattivato in seguito senza reinstallare Windows.\n\nAprire Sicurezza di Windows ora?",
+      "nl": "Slim app-beheer van Windows (Smart App Control) staat aan. Het blokkeert het MPFever-bestand winhttp.dll: het spel toont dan 'Ongeldige installatiekopie ... winhttp.dll ... 0xc0e90002' en MPFever kan niet werken.\n\nZet het uit om met MPFever te spelen: Windows-beveiliging > App- en browserbeheer > Instellingen voor Slim app-beheer > Uit. De antivirus van Windows blijft aan.\n\nLet op: op sommige versies van Windows kan het daarna alleen weer aan door Windows opnieuw te installeren.\n\nWindows-beveiliging nu openen?",
+      "pl": "Inteligentna kontrola aplikacji systemu Windows (Smart App Control) jest włączona. Blokuje plik winhttp.dll MPFever: gra pokazuje wtedy „Nieprawidłowy obraz ... winhttp.dll ... 0xc0e90002” i MPFever nie może działać.\n\nAby grać z MPFever, wyłącz ją: Zabezpieczenia Windows > Kontrola aplikacji i przeglądarki > Ustawienia inteligentnej kontroli aplikacji > Wyłączone. Antywirus Windows pozostaje włączony.\n\nUwaga: w niektórych wersjach Windows nie da się jej potem włączyć ponownie bez reinstalacji Windows.\n\nOtworzyć teraz Zabezpieczenia Windows?",
+      "pt-BR": "O Controle Inteligente de Aplicativos do Windows (Smart App Control) está ativado. Ele bloqueia o arquivo winhttp.dll do MPFever: o jogo mostra então \"Imagem Inválida ... winhttp.dll ... 0xc0e90002\" e o MPFever não pode funcionar.\n\nPara jogar com o MPFever, desative-o: Segurança do Windows > Controle de aplicativos e do navegador > Configurações do Controle Inteligente de Aplicativos > Desativado. O antivírus do Windows continua ativo.\n\nAtenção: em algumas versões do Windows, ele não pode ser reativado depois sem reinstalar o Windows.\n\nAbrir a Segurança do Windows agora?",
+      "ru": "Интеллектуальное управление приложениями Windows (Smart App Control) включено. Оно блокирует файл MPFever winhttp.dll: игра показывает «Недопустимый образ ... winhttp.dll ... 0xc0e90002», и MPFever не может работать.\n\nЧтобы играть с MPFever, отключите его: Безопасность Windows > Управление приложениями/браузером > Параметры интеллектуального управления приложениями > Выкл. Антивирус Windows остаётся включённым.\n\nВнимание: в некоторых версиях Windows его потом нельзя снова включить без переустановки Windows.\n\nОткрыть «Безопасность Windows» сейчас?",
+      "ja": "Windows のスマート アプリ コントロールがオンになっています。MPFever のファイル winhttp.dll がブロックされ、ゲームに「不正なイメージ ... winhttp.dll ... 0xc0e90002」と表示されて MPFever が動作しません。\n\nMPFever で遊ぶにはオフにしてください：Windows セキュリティ > アプリとブラウザー コントロール > スマート アプリ コントロールの設定 > オフ。Windows のウイルス対策はオンのままです。\n\n注意：Windows のバージョンによっては、一度オフにすると Windows を再インストールしない限り再びオンにできません。\n\n今すぐ Windows セキュリティを開きますか？",
+      "ko": "Windows 스마트 앱 컨트롤이 켜져 있습니다. MPFever의 winhttp.dll 파일이 차단되어 게임에 \"잘못된 이미지 ... winhttp.dll ... 0xc0e90002\"가 표시되고 MPFever가 작동할 수 없습니다.\n\nMPFever로 플레이하려면 끄세요: Windows 보안 > 앱 및 브라우저 컨트롤 > 스마트 앱 컨트롤 설정 > 끄기. Windows 바이러스 백신은 계속 켜져 있습니다.\n\n참고: 일부 Windows 버전에서는 끈 뒤 Windows를 다시 설치하지 않으면 다시 켤 수 없습니다.\n\n지금 Windows 보안을 여시겠습니까?",
+      "zh-CN": "Windows 的智能应用控制（Smart App Control）已开启。它会阻止 MPFever 的文件 winhttp.dll：游戏随后显示“损坏的映像 ... winhttp.dll ... 0xc0e90002”，MPFever 无法工作。\n\n要使用 MPFever，请将其关闭：Windows 安全中心 > 应用和浏览器控制 > 智能应用控制设置 > 关闭。Windows 的杀毒保护仍保持开启。\n\n注意：在某些 Windows 版本上，关闭后除非重装 Windows，否则无法再次开启。\n\n现在打开 Windows 安全中心？",
+      "zh-TW": "Windows 的智慧型應用程式控制（Smart App Control）已開啟。它會封鎖 MPFever 的檔案 winhttp.dll：遊戲隨後顯示「錯誤的映像 ... winhttp.dll ... 0xc0e90002」，MPFever 無法運作。\n\n要使用 MPFever，請將其關閉：Windows 安全性 > 應用程式與瀏覽器控制 > 智慧型應用程式控制設定 > 關閉。Windows 的防毒保護仍保持開啟。\n\n注意：在某些 Windows 版本上，關閉後除非重新安裝 Windows，否則無法再次開啟。\n\n現在開啟 Windows 安全性？"
+    },
+    "Windows' Smart App Control blocks MPFever (the game's error 0xc0e90002): turn it off in Windows Security > App & browser control.": {
+      "de": "Die intelligente App-Steuerung von Windows blockiert MPFever (Fehler 0xc0e90002 des Spiels): schalte sie aus unter Windows-Sicherheit > App- & Browsersteuerung.",
+      "es": "El Control inteligente de aplicaciones de Windows bloquea MPFever (error 0xc0e90002 del juego): desactívalo en Seguridad de Windows > Control de aplicaciones y navegador.",
+      "it": "Il Controllo intelligente delle app di Windows blocca MPFever (errore 0xc0e90002 del gioco): disattivalo in Sicurezza di Windows > Controllo app e browser.",
+      "nl": "Slim app-beheer van Windows blokkeert MPFever (fout 0xc0e90002 van het spel): zet het uit in Windows-beveiliging > App- en browserbeheer.",
+      "pl": "Inteligentna kontrola aplikacji systemu Windows blokuje MPFever (błąd gry 0xc0e90002): wyłącz ją w Zabezpieczenia Windows > Kontrola aplikacji i przeglądarki.",
+      "pt-BR": "O Controle Inteligente de Aplicativos do Windows bloqueia o MPFever (erro 0xc0e90002 do jogo): desative-o em Segurança do Windows > Controle de aplicativos e do navegador.",
+      "ru": "Интеллектуальное управление приложениями Windows блокирует MPFever (ошибка игры 0xc0e90002): отключите его в «Безопасность Windows» > «Управление приложениями/браузером».",
+      "ja": "Windows のスマート アプリ コントロールが MPFever をブロックしています（ゲームのエラー 0xc0e90002）：Windows セキュリティ > アプリとブラウザー コントロールでオフにしてください。",
+      "ko": "Windows 스마트 앱 컨트롤이 MPFever를 차단합니다(게임 오류 0xc0e90002): Windows 보안 > 앱 및 브라우저 컨트롤에서 끄세요.",
+      "zh-CN": "Windows 的智能应用控制阻止了 MPFever（游戏错误 0xc0e90002）：请在 Windows 安全中心 > 应用和浏览器控制中将其关闭。",
+      "zh-TW": "Windows 的智慧型應用程式控制封鎖了 MPFever（遊戲錯誤 0xc0e90002）：請在 Windows 安全性 > 應用程式與瀏覽器控制中將其關閉。"
     }
   }
 }

@@ -205,6 +205,6 @@ CREDITS
 
 See INSTALL.txt to get started and ROADMAP.txt for what comes next.
 
-Players, help and news: join the MPFever Discord: https://discord.gg/qhhKfUMSJx
+Players, help and news: join the MPFever Discord: https://discord.gg/DfMxFUQZCR
 Feedback and ideas: https://github.com/dkdknight/MPFever/discussions
 Enjoying MPFever? Support the project or thank its author on Ko-fi: https://ko-fi.com/knighthd

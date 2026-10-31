@@ -15,7 +15,7 @@ namespace MPFever
         public const string KofiUrl = "https://ko-fi.com/knighthd";
         public const string NexusUrl = "https://www.nexusmods.com/transportfever3/mods/4?tab=posts";
         public const string GitHubUrl = "https://github.com/dkdknight/MPFever";
-        public const string DiscordUrl = "https://discord.gg/qhhKfUMSJx";
+        public const string DiscordUrl = "https://discord.gg/DfMxFUQZCR";
 
         public ThanksDialog()
         {

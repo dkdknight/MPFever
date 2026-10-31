@@ -15,6 +15,11 @@ MPFever - Changelog
     does not lose money; the trains of a line that loses money with nothing to carry are sold and none is bought for it
     again (the track and the stations stay). The company's trains and lines of trains are kept apart from its buses and
     trucks. Test: tests/test_ai_rail.py. MPFEVER_AIRAIL=0: no railways, as before.
+  - NEW: Windows' Smart App Control blocks MPFever's winhttp.dll (it is not signed yet), and the game only showed "Bad
+    Image ... winhttp.dll ... error status 0xc0e90002". MPFever now tells it plainly before the game starts, with the way to
+    turn it off, and opens Windows Security on request (a dedicated server: in its log). Test: the launcher's self-test.
+    MPFEVER_SACWARN=0: never told, as before.
+  - The MPFever Discord has a new invite link: discord.gg/DfMxFUQZCR (the launcher, the in-game window, the docs).
   - FIX (issue #109): a depot or a station put on a street with stops reloaded the host's game for everybody ("2 edge
     object(s) of the construction (an airport's signs) not replayed"). The tool takes the street's stops away and puts them
     back on the new pieces of that street; the engine's conversion of the construction has no such stops. They are now taken
@@ -238,7 +243,7 @@ MPFever - Changelog
     single vehicles do: the raw ids named other vehicles on a game whose ids differ; such a sale is checked by the owner guard
     like a single one (one company could not sell another's vehicles). MPFEVER_REFLISTS=0: raw ids as before;
     MPFEVER_OWNERLISTS=0: lists not checked, as before.
-  - NEW: the MPFever Discord (discord.gg/qhhKfUMSJx): a "Discord" link in the launcher's status bar, a "Discord" button in
+  - NEW: the MPFever Discord (discord.gg/DfMxFUQZCR): a "Discord" link in the launcher's status bar, a "Discord" button in
     the window shown once the game is closed and in the Settings tab of the in-game MPFever window (MPFever.exe opens it in
     the browser), and a line in the launcher's log at the end of a session.
 

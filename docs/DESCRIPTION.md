@@ -77,7 +77,7 @@ The mod does nothing in normal solo games. It only activates when the game is st
 
 ## Community
 
-Find players, get help and follow the development on the [MPFever Discord](https://discord.gg/qhhKfUMSJx).
+Find players, get help and follow the development on the [MPFever Discord](https://discord.gg/DfMxFUQZCR).
 
 ## Feedback and bug reports
 

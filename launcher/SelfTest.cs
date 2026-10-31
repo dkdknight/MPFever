@@ -56,6 +56,7 @@ namespace MPFever
             ok &= RunPortMap();
             ok &= RunRedact();
             ok &= RunGameDir();
+            ok &= RunSmartAppControl();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -248,6 +249,37 @@ namespace MPFever
                 Environment.SetEnvironmentVariable("MPFEVER_GOG", null);
                 GameInstall.ChosenDir = keptChosen;
                 try { Directory.Delete(root, true); } catch { }
+            }
+            return ok;
+        }
+
+        /// <summary>(0.6.4) Windows' Smart App Control: told only when it is on (1), not off (0), in evaluation (2) or unknown
+        /// (-1); MPFEVER_SACWARN=0: never, as before. The state read from the registry here is whatever this PC has.</summary>
+        static bool RunSmartAppControl()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            try
+            {
+                foreach (var c in new[] { (1, true), (0, false), (2, false), (-1, false) })
+                {
+                    Environment.SetEnvironmentVariable("MPFEVER_SACSTATE", c.Item1.ToString());
+                    Check(GameInstall.SmartAppControlState() == c.Item1 && GameInstall.SmartAppControlBlocks() == c.Item2,
+                          "smart app control: state " + c.Item1 + (c.Item2 ? " told" : " not told"));
+                }
+                Environment.SetEnvironmentVariable("MPFEVER_SACSTATE", "1");
+                Environment.SetEnvironmentVariable("MPFEVER_SACWARN", "0");
+                Check(!GameInstall.SmartAppControlBlocks(), "smart app control: MPFEVER_SACWARN=0, never told");
+                Environment.SetEnvironmentVariable("MPFEVER_SACSTATE", null);
+                Environment.SetEnvironmentVariable("MPFEVER_SACWARN", null);
+                var here = GameInstall.SmartAppControlState();
+                Check(here >= -1 && here <= 2, "smart app control: this PC's state read (" + here + ")");
+            }
+            catch (Exception e) { Check(false, "smart app control: " + e.Message); }
+            finally
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_SACSTATE", null);
+                Environment.SetEnvironmentVariable("MPFEVER_SACWARN", null);
             }
             return ok;
         }

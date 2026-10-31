@@ -3726,7 +3726,7 @@ U.TABS.settings = function(K, st, ctx)
 	rows[#rows + 1] = K.muted(T("MPFever.exe rassemble les journaux dans un zip et ouvre un nouveau ticket GitHub.", "MPFever.exe gathers the logs into a zip and opens a new GitHub issue."), W)
 	-- (the Discord: MPFever.exe opens it in the browser)
 	rows[#rows + 1] = K.row { K.btn(T("Signaler un problème (journaux)", "Report a problem (logs)"), nil, requestReport), K.gap(8, 1),
-		K.btn("Discord", "discord.gg/qhhKfUMSJx", function() U.menuRequest("discord") end) }
+		K.btn("Discord", "discord.gg/DfMxFUQZCR", function() U.menuRequest("discord") end) }
 	if U.reportMsg and U.reportAsked and os.time() - U.reportAsked <= 120 then rows[#rows + 1] = K.muted(U.reportMsg, W) end
 	return rows
 end

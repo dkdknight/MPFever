@@ -978,6 +978,7 @@ namespace MPFever
                            "A copy of the game not installed by Steam (GOG?): experimental support. Joining through Steam is not possible there, use the host's address."));
             else try { GameInstall.EnsureSteamAppId(gameDir); } catch (Exception e) { Log.W("steam_appid.txt : " + e.Message); }
             try { GameInstall.InstallNative(gameDir); } catch (Exception e) { Log.W("winhttp.dll: " + e.Message); }
+            if (!autotest) WarnSmartAppControl();
             try { GameInstall.EnsureModActive(); } catch (Exception e) { Log.W("settings.lua: " + e.Message); }
             try { GameInstall.InstallMod(); } catch (Exception e) { Log.Warn(T("Installation du mod : ", "Mod installation: ") + e.Message); }
             if (!autotest && !ServerMode) WarnIncompatibleMods();
@@ -997,6 +998,22 @@ namespace MPFever
                 Guard(StartLocalTest);
                 new Thread(AutoTest) { IsBackground = true, Name = "Autotest" }.Start();
             }
+        }
+
+        /// <summary>(0.6.4) Windows' Smart App Control is on: it blocks MPFever's winhttp.dll and the game shows nothing but
+        /// "Bad Image ... 0xc0e90002" (a German player's screenshot, 2026-10-31). Said plainly before the game starts, with the
+        /// way to turn it off; Windows Security opens on its page when the player wants. A dedicated server: in its log only.</summary>
+        void WarnSmartAppControl()
+        {
+            if (!GameInstall.SmartAppControlBlocks()) return;
+            var text = T("Le contrôle intelligent des applications de Windows (Smart App Control) est activé. Il bloque le fichier winhttp.dll de MPFever : le jeu affiche alors « Image incorrecte ... winhttp.dll ... 0xc0e90002 » et MPFever ne peut pas fonctionner.\n\nPour jouer avec MPFever, désactivez-le : Sécurité Windows > Contrôle des applications et du navigateur > Paramètres du contrôle intelligent des applications > Désactivé. L'antivirus de Windows reste actif.\n\nAttention : sur certaines versions de Windows, il ne peut plus être réactivé ensuite sans réinstaller Windows.\n\nOuvrir la Sécurité Windows maintenant ?",
+                         "Windows' Smart App Control is on. It blocks MPFever's file winhttp.dll: the game then shows \"Bad Image ... winhttp.dll ... 0xc0e90002\" and MPFever cannot work.\n\nTo play with MPFever, turn it off: Windows Security > App & browser control > Smart App Control settings > Off. Windows' antivirus stays on.\n\nNote: on some versions of Windows, it cannot be turned back on afterwards without reinstalling Windows.\n\nOpen Windows Security now?");
+            Log.Err(T("Le contrôle intelligent des applications de Windows bloque MPFever (erreur 0xc0e90002 du jeu) : désactivez-le dans Sécurité Windows > Contrôle des applications et du navigateur.",
+                      "Windows' Smart App Control blocks MPFever (the game's error 0xc0e90002): turn it off in Windows Security > App & browser control."));
+            if (ServerMode) return;
+            if (MessageBox.Show(this, text, "MPFever", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            try { Process.Start(new ProcessStartInfo("windowsdefender://appbrowser") { UseShellExecute = true }); }
+            catch (Exception e) { Log.W("Windows Security: " + e.Message); }
         }
 
         /// <summary>(0.6.3) The game not found (a GOG copy, a folder of its own): the player shows MPFever the game's
@@ -1889,8 +1906,8 @@ namespace MPFever
             Log.W(why ?? T("=== Retour au menu principal : fin de la session ===", "=== Back to the main menu: the session ends ==="));
             Log.W(T("Ce mod vous plaît ? Soutenez le projet ou remerciez son auteur sur ko-fi.com/knighthd",
                 "Enjoying MPFever? Support the project or thank its author at ko-fi.com/knighthd"));
-            Log.W(T("Des joueurs, de l'aide et les nouveautés : rejoignez le Discord de MPFever sur discord.gg/qhhKfUMSJx",
-                "Players, help and news: join the MPFever Discord at discord.gg/qhhKfUMSJx"));
+            Log.W(T("Des joueurs, de l'aide et les nouveautés : rejoignez le Discord de MPFever sur discord.gg/DfMxFUQZCR",
+                "Players, help and news: join the MPFever Discord at discord.gg/DfMxFUQZCR"));
             sessionGen++;
             clientCancelled = true;
             Options.HostSession = null;
