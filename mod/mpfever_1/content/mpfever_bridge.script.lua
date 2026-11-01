@@ -303,6 +303,34 @@ end
 -- MPFEVER_NOREFUND=1 turns it off (on every game).
 -- (one table: the main chunk is close to Lua's 200 locals)
 local REFUND = { pending = {}, on = os.getenv("MPFEVER_NOREFUND") ~= "1" }
+-- (0.6.7) A mod that makes building free (the game's own "No costs", urbangames_no_costs): nothing is charged on any game,
+-- but the proposal data still say what the build would cost, and the differences booked moved the money at every build of the
+-- session of 2026-11-01 (corrected by the host at each check, never right). The savegame's mods are in host_mods.txt (the
+-- host's menu) or session_mods.txt (written by MPFever.exe on the other games): with such a mod nothing is booked.
+-- MPFEVER_NOCOSTREFUND=1: booked as before
+REFUND.NOCOST = { "no_costs", "nocosts", "no_cost", "free_build" }
+function REFUND.noCostMod(text)
+	if os.getenv("MPFEVER_NOCOSTREFUND") == "1" or type(text) ~= "string" then return nil end
+	for entry in (text .. ";;"):gmatch("(.-);;") do
+		local id = (entry:match("^%s*([^|]+)") or ""):lower()
+		for _, k in ipairs(REFUND.NOCOST) do if id:find(k, 1, true) then return id end end
+	end
+	return nil
+end
+function REFUND.freeBuilds()
+	if REFUND.free == nil then
+		REFUND.free = false
+		for _, name in ipairs({ "host_mods.txt", "session_mods.txt" }) do
+			local f = C.IO and C.DIR and C.IO.open(C.DIR .. BS .. name, "rb")
+			if f then
+				local id = REFUND.noCostMod(f:read("*a"))
+				f:close()
+				if id then REFUND.free = id; log("refund: the mod " .. id .. " makes building free: no difference booked"); break end
+			end
+		end
+	end
+	return REFUND.free ~= false
+end
 function REFUND.costOf(param)
 	local c = nil
 	pcall(function() c = tonumber(param[2].costs) end)
@@ -331,6 +359,7 @@ function REFUND.book(st, now)
 		REFUND.pending = live
 	end
 	if not st.rcost or #st.rcost == 0 then return false end
+	if REFUND.freeBuilds() then st.rcost = nil; return true end
 	local keep = {}
 	for _, rc in ipairs(st.rcost) do
 		if rc.at >= now then
@@ -4674,6 +4703,11 @@ end
 -- next checkpoints to notice the difference)
 local function replayFailed(a, why)
 	pcall(send, "replay_failed", { uid = tostring(a.uid), why = tostring(why):sub(1, 120) })
+	-- (0.6.7, issue #113) a player's game that could not reproduce a build differs from the host's for sure: the next builds of
+	-- the others are left out until the host's game reloads it (see G.brokenSkip)
+	if C.ROLE ~= "host" and os.getenv("MPFEVER_FAILHOLD") ~= "0" and G.replayBroken == nil then
+		G.replayBroken = { uid = tostring(a and a.uid), why = tostring(why):sub(1, 120), at = os.clock() }
+	end
 end
 G.replayFailedFn = replayFailed
 
@@ -5135,7 +5169,7 @@ local function replayNativeConstruction(a)
 				-- everybody at once (the airport as the host has it).
 				if nEO > 0 and not withObjects then
 					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: " .. nEO
-						.. " edge object(s) of the construction (an airport's signs) not replayed: resynchronisation")
+						.. " edge object(s) of the build not replayed (signals or stops on the construction's own tracks, an airport's signs): resynchronisation")
 					replayFailed(a, "construction edge objects (airport signs)")
 				end
 				pcall(function()
@@ -7374,6 +7408,26 @@ function G.lateSkip(a, now)
 	return true
 end
 
+-- (0.6.7, issue #113) Whether another game's build is left out because this game already failed to reproduce one: a player's game
+-- (never the host's, whose game is the one every game reloads) that sent replay_failed differs from the host's from then on, and
+-- the next build applied on that state can make the engine assert. HolderLord's game rebuilt a station extension without its two
+-- signals (2026-10-31 23:35:41), applied the host's next build (two more signals) a second later and crashed on one of the
+-- station's new nodes ('it != components.end()', UI::CSelector) before the resynchronisation could reload it. Left out, a build
+-- comes back with the host's game, as a late one does (G.lateSkip). Only for HOLD seconds: when no resynchronisation comes (the
+-- launcher waits 15 s between two), the builds are applied again, as before. MPFEVER_FAILHOLD=0: applied as before
+G.BROKEN_HOLD = 45
+function G.brokenSkip(a)
+	local b = G.replayBroken
+	if b == nil or a.fn == "mpfCoJoin" then return false end
+	if os.clock() - b.at > G.BROKEN_HOLD then
+		log("NATIVE REPLAY: no resynchronisation " .. G.BROKEN_HOLD .. " s after " .. b.uid .. " was not reproduced: the builds are applied again")
+		G.replayBroken = nil
+		return false
+	end
+	log("NATIVE REPLAY " .. tostring(a.uid) .. ": not built here, this game differs since " .. b.uid .. " (" .. b.why .. "): the host's game reloads it")
+	return true
+end
+
 -- Another game's terrain edit, in two phases so that a failure never reaches the engine: (1) the cells go to the DLL (a file and
 -- a control line, read when the next command enters the command list: a nop event is sent for that) and the DLL says "ready";
 -- (2) only then a command with an empty grid of the same size goes to the engine, and the DLL copies the cells into it as it
@@ -7990,7 +8044,7 @@ local function runNativeReplays()
 			-- see G.featNativeAct; nothing while no option is on)
 			if G.featOn then pcall(G.featNativeAct, a) end
 			local okr, errr
-			local skip = G.lateSkip(a, now)
+			local skip = G.brokenSkip(a) or G.lateSkip(a, now)
 			if skip then okr = true
 			elseif a.fn == "terrainEdit" then okr, errr = pcall(withActor, PL(a), replayTerrain, a)
 			elseif a.fn == "assetBuild" then okr, errr = pcall(withActor, PL(a), replayAssets, a)

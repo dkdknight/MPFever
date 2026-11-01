@@ -38,8 +38,17 @@ namespace MPFever
             ["auto_line_namer_1"] = () => new Verdict { Level = "fixed", Note = T("Les noms donnés par le jeu de l'hôte s'appliquent partout (0.4.0).", "The names given by the host's game apply everywhere (0.4.0).") },
             ["zhenya_auto_color_lines"] = () => new Verdict { Level = "fixed", Note = T("Les couleurs données par le jeu de l'hôte s'appliquent partout (0.4.0).", "The colours given by the host's game apply everywhere (0.4.0).") },
             ["zhenya_auto_assign_terminals"] = () => new Verdict { Level = "fixed", Note = T("Les quais choisis par le jeu de l'hôte s'appliquent partout (0.4.0).", "The platforms chosen by the host's game apply everywhere (0.4.0).") },
+            // (0.6.7) Real Track Cant builds its cant pieces by script on every game: each game ships them as a player's builds, the
+            // constructions then differ (393 against 469 in the session of 2026-11-01 02:20) and the host's game reloads (#96)
+            ["devers_1"] = () => new Verdict { Level = "bad", Note = T("Real Track Cant construit tout seul sur chaque jeu : la partie se recharge sans cesse. Désactivez-le.", "Real Track Cant builds by itself on every game: the game keeps reloading. Turn it off.") },
+            // (0.6.7) the game's own "No costs": nothing is charged, MPFever books no refund difference then (REFUND.freeBuilds)
+            ["urbangames_no_costs_1"] = () => new Verdict { Level = "fixed", Note = T("Constructions gratuites : MPFever ne corrige plus leur prix entre les jeux (0.6.7).", "Free building: MPFever no longer evens out its price between the games (0.6.7).") },
             ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Les signaux ajoutés ne sont construits qu'une fois, par le jeu qui a posé le signal (0.4.0).", "Added signals are built once, by the game where the signal was placed (0.4.0).") },
         };
+
+        /// <summary>(0.6.7) A mod of this PC only, published on no Mod Hub (the game's origins "StagingArea", "Local", "User"...):
+        /// only the host can send it.</summary>
+        public static bool LocalSource(string source) => Regex.IsMatch(source ?? "", "staging|local|user", RegexOptions.IgnoreCase);
 
         public static Verdict Judge(string id, string kind)
         {
@@ -67,6 +76,14 @@ namespace MPFever
         /// <summary>The installed mods are looked for again at the next question (a mod was just installed).</summary>
         public static void Rescan() { lock (Known) dirs = null; }
 
+        /// <summary>The folders of this player's own mods under the game's "local" folder: mods, and staging_area (0.6.7).</summary>
+        public static List<string> LocalRoots(string local)
+        {
+            var r = new List<string> { Path.Combine(local, "mods") };
+            if (Environment.GetEnvironmentVariable("MPFEVER_NOSTAGING") != "1") r.Add(Path.Combine(local, "staging_area"));
+            return r;
+        }
+
         static Dictionary<string, string> Scan()
         {
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -78,7 +95,10 @@ namespace MPFever
                 if (Directory.Exists(modio)) foreach (var g in Directory.GetDirectories(modio)) roots.Add(Path.Combine(g, "mods"));
             }
             catch { }
-            try { foreach (var s in GameInstall.SaveDirs()) roots.Add(Path.Combine(Path.GetDirectoryName(s), "mods")); } catch { }
+            // (0.6.7) and the mods being made there, not published (the game's "StagingArea" origin: local\staging_area): the host's
+            // own launcher did not find them, so it never offered them to a player who lacked them (session of 2026-11-01, three
+            // SNCB I11 mods; the player's game refused the host's savegame twice). MPFEVER_NOSTAGING=1: not searched, as before
+            try { foreach (var s in GameInstall.SaveDirs()) roots.AddRange(LocalRoots(Path.GetDirectoryName(s))); } catch { }
             try { foreach (var lib in GameInstall.SteamLibraries()) roots.Add(Path.Combine(lib, "steamapps", "workshop", "content", GameInstall.AppId)); } catch { }
             try { var g = GameInstall.FindGameDir(); if (g != null) { roots.Add(Path.Combine(g, "mods")); roots.Add(Path.Combine(g, "mods", "release")); } } catch { }
             foreach (var root in roots)

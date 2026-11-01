@@ -1114,6 +1114,7 @@ namespace MPFever
         {
             var p = first;           // the player this connection speaks for: another one once it resumes a player's link
             var tcp = first.Tcp;     // this connection
+            string endWhy = null;
             try
             {
                 var r = new NetReader(tcp.GetStream());
@@ -1164,7 +1165,12 @@ namespace MPFever
                     Received?.Invoke(p, m);
                 }
             }
-            catch (Exception e) { if (!stop && In(p)) Log.W($"{p.Name} : {e.Message}"); }
+            catch (Exception e) { if (!stop && In(p)) Log.W($"{p.Name} : {e.Message}"); endWhy = e.Message; }
+            // (0.6.7) a connection that ends before it joined said nothing: a join by Steam whose tunnel closed at once left only
+            // "incoming connection from 127.0.0.1" in the host's log (2026-11-01 00:49:30). MPFEVER_QUIETCLOSE=1: as before
+            if (!stop && p == first && !p.Admitted && !p.IsBulk && Environment.GetEnvironmentVariable("MPFEVER_QUIETCLOSE") != "1")
+                Log.Warn(L.F("Connexion {0} (id {1}) fermée avant de rejoindre la session ({2})", "Connection {0} (id {1}) closed before joining the session ({2})",
+                    p.Address, p.Id, endWhy ?? (p.SteamId == null ? L.T("rien reçu : pour Steam, voir native.log du jeu de l'hôte", "nothing received: for Steam, see the host game's native.log") : L.T("tunnel Steam ouvert, pas de demande de connexion", "Steam tunnel open, no join request"))));
             Ended(p, tcp);
         }
 
@@ -1577,7 +1583,21 @@ namespace MPFever
         /// relays) and dials a one-shot loopback listener here, whose first line carries the nonce given to it.</summary>
         TcpClient ConnectSteam(string sid, out string usedText)
         {
-            var c = ConnectSteamTunnel(sid, SteamNet.MainPort, "main", out var reader, out usedText, out string cid);
+            // (0.6.7) tried three times: a tunnel the host's game closed at once (its dial-back timed out, see Since in
+            // mpf_steamnet.cpp) failed the join, with no line in the log and no second try (2026-11-01). MPFEVER_STEAMTRIES=1: once
+            int tries = int.TryParse(Environment.GetEnvironmentVariable("MPFEVER_STEAMTRIES"), out var nt) && nt >= 1 ? nt : 3;
+            TcpClient c = null; NetReader reader = null; string cid = null;
+            // (only a tunnel that failed quickly is tried again: one that waited for an answer in vain would only wait again)
+            for (int a = 1; ; a++)
+            {
+                var t0 = DateTime.UtcNow;
+                try { c = ConnectSteamTunnel(sid, SteamNet.MainPort, "main", out reader, out usedText, out cid); break; }
+                catch (Exception e) when (a < tries && !stop && (DateTime.UtcNow - t0).TotalSeconds < 15)
+                {
+                    Log.Warn(L.F("Client : connexion par Steam, essai {0} sur {1} : {2}", "Client: connection through Steam, attempt {0} of {1}: {2}", a, tries, e.Message));
+                    Thread.Sleep(1000);
+                }
+            }
             steamReader = reader;
             steamCid = cid;
             steamSid = sid;

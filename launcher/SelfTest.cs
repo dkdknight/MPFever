@@ -59,6 +59,7 @@ namespace MPFever
             ok &= RunSmartAppControl();
             ok &= RunDiag();
             ok &= RunIssue111();
+            ok &= RunSession067();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -283,6 +284,21 @@ namespace MPFever
             return ok;
         }
 
+        /// <summary>(0.6.7) The session of 2026-11-01: a local mod (StagingArea) is the host's to send, found in staging_area; Real
+        /// Track Cant judged incompatible, the game's No costs made compatible.</summary>
+        static bool RunSession067()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            Check(Mods.LocalSource("StagingArea") && Mods.LocalSource("Local") && Mods.LocalSource("user"), "mods: StagingArea, Local, User are local origins");
+            Check(!Mods.LocalSource("Workshop") && !Mods.LocalSource("ModIo") && !Mods.LocalSource("BuiltIn") && !Mods.LocalSource(""), "mods: Workshop, mod.io, the game's are not");
+            Check(Mods.Judge("devers_1", Mods.Sim).Level == "bad", "mods: Real Track Cant (devers_1) incompatible");
+            Check(Mods.Judge("urbangames_no_costs_1", Mods.Load).Level == "fixed", "mods: the game's No costs made compatible");
+            var roots = Mods.LocalRoots(@"C:\x\local");
+            Check(roots.Contains(Path.Combine(@"C:\x\local", "mods")) && roots.Contains(Path.Combine(@"C:\x\local", "staging_area")), "mods: local\\mods and local\\staging_area searched");
+            return ok;
+        }
+
         /// <summary>(0.6.5, #111, #109) MPFever.exe copied alone: InstallNative says "missing" (then installs when the file is there,
         /// nothing when it is the same); a part a game does not measure ("off", "none", "absent") is no difference; a report's
         /// zip never takes the name of one that exists.</summary>
@@ -485,6 +501,69 @@ namespace MPFever
             Check(all.Contains("SOAPAction: \"urn:schemas-upnp-org:service:WANIPConnection:1#AddPortMapping\"") && all.Contains("<NewExternalPort>28190</NewExternalPort>")
                 && all.Contains("<NewInternalClient>192.168.1.20</NewInternalClient>") && all.Contains("<NewProtocol>TCP</NewProtocol>"), "upnp: AddPortMapping sent as a router expects it");
             Check(all.Contains("#DeletePortMapping\""), "upnp: the mapping removed");
+
+            // (0.6.7) every WAN service of a description, in its order
+            var two = "<root><device><serviceList>"
+                + "<service><serviceType>urn:schemas-upnp-org:service:WANPPPConnection:1</serviceType><controlURL>/ppp</controlURL></service>"
+                + "<service><serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType><controlURL>/ip</controlURL></service>"
+                + "</serviceList></device></root>";
+            var both = PortMap.FromDescriptionAll("http://192.168.1.1:49000/igd.xml", two);
+            Check(both.Count == 2 && both[0].ControlUrl.EndsWith("/ppp") && both[1].ControlUrl.EndsWith("/ip"), "upnp: every WAN service of a description, in order");
+            // (0.6.7) a router's 718 (the port mapped already): the mapping removed and asked again; its code read from the fault
+            var l2 = new TcpListener(IPAddress.Loopback, 0);
+            l2.Start();
+            int port2 = ((IPEndPoint)l2.LocalEndpoint).Port;
+            var asked2 = new List<string>();
+            var server2 = new Thread(() =>
+            {
+                try
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        using (var c = l2.AcceptTcpClient())
+                        using (var st = c.GetStream())
+                        {
+                            var buf = new byte[8192]; int n = 0; string text = "";
+                            st.ReadTimeout = 3000;
+                            while (true)
+                            {
+                                int k = st.Read(buf, n, buf.Length - n); if (k <= 0) break; n += k;
+                                text = Encoding.UTF8.GetString(buf, 0, n);
+                                int he = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                                if (he < 0) continue;
+                                var cl = System.Text.RegularExpressions.Regex.Match(text, @"Content-Length:\s*(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                                if (!cl.Success || n - he - 4 >= int.Parse(cl.Groups[1].Value)) break;
+                            }
+                            lock (asked2) asked2.Add(text);
+                            bool fault = i == 0;
+                            var body = fault ? "<s:Envelope><s:Body><s:Fault><detail><UPnPError><errorCode>718</errorCode><errorDescription>ConflictInMappingEntry</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>" : "<ok/>";
+                            var resp = (fault ? "HTTP/1.1 500 Internal Server Error" : "HTTP/1.1 200 OK") + "\r\nContent-Type: text/xml\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n" + body;
+                            var rb = Encoding.UTF8.GetBytes(resp);
+                            st.Write(rb, 0, rb.Length);
+                        }
+                    }
+                }
+                catch { }
+            }) { IsBackground = true };
+            server2.Start();
+            var fake2 = new PortMap.Igd { Host = "127.0.0.1", ControlUrl = "http://127.0.0.1:" + port2 + "/ctl/IPConn", ServiceType = "urn:schemas-upnp-org:service:WANIPConnection:1" };
+            int lease2 = -1;
+            try { lease2 = fake2.AddMapping(28190, "192.168.1.20"); } catch (Exception e) { Check(false, "upnp 718: " + e.Message); }
+            server2.Join(5000);
+            l2.Stop();
+            string all2; lock (asked2) all2 = string.Join("\n----\n", asked2);
+            Check(lease2 == 0 && asked2.Count == 3 && asked2[1].Contains("#DeletePortMapping\"") && asked2[2].Contains("#AddPortMapping\""), "upnp: 718 read from the fault, the old mapping removed, asked again (" + asked2.Count + " requests)");
+
+            // (0.6.7) PCP's MAP request and answer (RFC 6887)
+            var nonce = new byte[12]; for (int i = 0; i < 12; i++) nonce[i] = (byte)(i + 1);
+            var q = PortMap.Pcp.Request(IPAddress.Parse("192.168.1.20"), 28090, 7200, nonce);
+            Check(q.Length == 60 && q[0] == 2 && q[1] == 1 && q[36] == 6 && ((q[40] << 8) | q[41]) == 28090 && q[20] == 192 && q[23] == 20 && q[18] == 0xff && q[24] == 1, "pcp: MAP request (version, opcode, TCP, port, client ::ffff:a.b.c.d, nonce)");
+            var a = (byte[])q.Clone(); a[1] = 0x81; a[3] = 0; a[56] = 82; a[57] = 64; a[58] = 10; a[59] = 20;
+            Check(PortMap.Pcp.Parse(a, nonce, out int ep, out var ea, out int life, out _) && ep == 28090 && ea.ToString() == "82.64.10.20" && life == 7200, "pcp: MAP answer read (port, public address, lifetime)");
+            a[3] = 2;
+            Check(!PortMap.Pcp.Parse(a, nonce, out _, out _, out _, out var w2) && w2.Contains("2"), "pcp: a refusal read with its code");
+            var other = (byte[])nonce.Clone(); other[0] = 99; a[3] = 0;
+            Check(!PortMap.Pcp.Parse(a, other, out _, out _, out _, out _), "pcp: an answer to another request ignored");
             return ok;
         }
 

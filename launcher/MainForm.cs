@@ -74,7 +74,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.6";
+        public const string Version = "0.6.7";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -1325,7 +1325,12 @@ namespace MPFever
                 Log.Err(F("La partie de l'hôte contient des mods INCOMPATIBLES avec MPFever : {0}. Demandez à l'hôte de les désactiver, sinon la partie se désynchronisera sans cesse.", "The host's game has mods INCOMPATIBLE with MPFever: {0}. Ask the host to turn them off, or the game will keep desynchronising.", string.Join(", ", c.Bad)));
             // (the missing ones no Mod Hub has: the host may send them, see modAsks)
             var hubs = Mods.Parse(mods).ToDictionary(e => e.Id, e => e.Hub, StringComparer.OrdinalIgnoreCase);
-            var noHub = c.MissingIds.Where(id => !hubs.TryGetValue(id, out var hb) || hb == "").ToList();
+            // (0.6.7) a mod of the host's PC only (StagingArea...) is the host's to send even when the game gave it a Mod Hub number
+            // (a mod being prepared for upload), see Mods.LocalSource. MPFEVER_LOCALMODS=0: by the Mod Hub number only, as before
+            var srcs = Mods.Parse(mods).ToDictionary(e => e.Id, e => e.Source, StringComparer.OrdinalIgnoreCase);
+            bool localOn = Environment.GetEnvironmentVariable("MPFEVER_LOCALMODS") != "0";
+            var noHub = c.MissingIds.Where(id => !hubs.TryGetValue(id, out var hb) || hb == ""
+                || (localOn && srcs.TryGetValue(id, out var sv) && Mods.LocalSource(sv))).ToList();
             if (noHub.Count == 0) { modAskState = ""; modOffer = ""; }
             else if (modAskState == "") modAskState = "waiting";
             try { client?.Send(Msg.Make("modcheck", name, "{[\"differs\"]=" + LuaLit.Quote(string.Join(", ", c.Differs)) + ",[\"nohub\"]=" + LuaLit.Quote(string.Join(",", noHub)) + "}")); } catch { }
@@ -1356,11 +1361,18 @@ namespace MPFever
             if (!File.Exists(f) || new FileInfo(f).Length == 0) return;
             string[] lines;
             try { lines = File.ReadAllLines(f, System.Text.Encoding.UTF8); File.WriteAllText(f, ""); } catch { return; }
-            var names = lines.Select(l => l.Split('\t')).Where(x => x[0].Trim() != "")
-                .Select(x => (x.Length > 1 && x[1].Trim() != "" ? x[1].Trim() : x[0].Trim()) + (x.Length > 2 && x[2].Trim() != "" ? " (" + x[2].Trim() + ")" : "")).ToList();
+            var rows = lines.Select(l => l.Split('\t')).Where(x => x[0].Trim() != "").ToList();
+            var names = rows.Select(x => (x.Length > 1 && x[1].Trim() != "" ? x[1].Trim() : x[0].Trim()) + (x.Length > 2 && x[2].Trim() != "" ? " (" + x[2].Trim() + ")" : "")).ToList();
             if (names.Count == 0) return;
+            // (0.6.7) a mod of the host's PC only is on no Mod Hub: only the host can send it, from its Multiplayer page
+            bool anyLocal = rows.Any(x => x.Length > 2 && Mods.LocalSource(x[2]));
             var text = F("Mods manquants ({0}) : ", "Missing mods ({0}): ", names.Count) + string.Join(", ", names)
-                + T(". Installez-les (Steam Workshop ou mod.io), puis rejoignez à nouveau.", ". Install them (Steam Workshop or mod.io), then join again.");
+                + (anyLocal
+                    ? T(". Certains sont des mods locaux de l'hôte, publiés nulle part : l'hôte doit vous les envoyer (bouton Envoyer de sa page Multijoueur, avant de lancer la partie), les autres s'installent depuis le Steam Workshop ou mod.io. Puis rejoignez à nouveau.",
+                        ". Some are the host's local mods, published nowhere: the host must send them to you (Send button of its Multiplayer page, before it starts the game); install the others from the Steam Workshop or mod.io. Then join again.")
+                    : T(". Installez-les (Steam Workshop ou mod.io), puis rejoignez à nouveau.", ". Install them (Steam Workshop or mod.io), then join again."));
+            // (and the host hears why this player is gone)
+            try { clients.FirstOrDefault()?.Send(Msg.Make("modmissing", menuGame.Name, "{[\"mods\"]=" + LuaLit.Quote(string.Join(", ", names)) + "}")); } catch { }
             Log.Err(T("La partie de l'hôte n'a pas été chargée. ", "The host's game was not loaded. ") + text);
             EndSession(T("=== Mods manquants : fin de la session ===", "=== Missing mods: the session ends ==="));
             menuPhase = "error"; menuText = text; MenuStatus();
@@ -1691,6 +1703,8 @@ namespace MPFever
                     clients.Clear();
                     games.Remove(menuGame); games.Add(menuGame);
                     menuPhase = "error"; menuText = F("Connexion impossible à {0} : ", "Cannot connect to {0}: ", NetAddr.First(host, port)) + e.Message; MenuStatus();
+                    // (0.6.7: in the log too, the reports had only the menu's word for it)
+                    Log.Err(menuText);
                     return;
                 }
                 // (a host that refused this player already said why)
@@ -1966,6 +1980,8 @@ namespace MPFever
             hostGame = null;
             hostName = null;
             lock (sessionGate) { started = false; speed = 0; pauseAt = null; }
+            // (0.6.7) the answers about mods belong to this session: a player refused once was never asked again, in any later one
+            lock (modAsks) { modAsks.Clear(); modAskDone.Clear(); }
             lock (players) players.Clear();
             lock (clocks) clocks.Clear();
             lock (hashes) hashes.Clear();
@@ -2613,8 +2629,12 @@ namespace MPFever
             // the port opened on the router by itself (UPnP / NAT-PMP), not for a local test
             if (!autotest && !Dev) PortMap.OpenAsync(listenPort, r =>
             {
-                if (r.Method == null || !lobbyOpen) return;
-                menuText += " " + T("Le port a été ouvert automatiquement sur votre box (UPnP).", "The port was opened on your router by itself (UPnP).");
+                if (!lobbyOpen) return;
+                // (0.6.7: the method used, and no claim the Internet reaches this PC when the router's address says it cannot; a
+                // failure is told too, with what to forward)
+                if (r.Method == null) menuText += " " + T("Le port n'a pas pu être ouvert automatiquement : ", "The port could not be opened by itself: ") + (r.Error ?? "");
+                else if (r.Problem != null) menuText += " " + r.Problem;
+                else menuText += " " + F("Le port a été ouvert automatiquement sur votre box ({0}).", "The port was opened on your router by itself ({0}).", r.Method);
                 MenuStatus();
             });
 
@@ -3508,6 +3528,11 @@ namespace MPFever
                         {
                             // (only mods of this savegame installed here: nothing else is ever sent)
                             var ids = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && Mods.Dir(x) != null && Mods.Parse(lobbyMods).Any(e => e.Id.Equals(x, StringComparison.OrdinalIgnoreCase))).ToList();
+                            // (0.6.7) a missing mod this PC cannot send is said, never dropped silently (the host saw nothing on 2026-11-01)
+                            var unsendable = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && !ids.Contains(x)).ToList();
+                            if (unsendable.Count > 0)
+                                Log.Err(F("{0} n'a pas ces mods de la partie et ce PC ne les trouve pas pour les lui envoyer : {1} (cherchés dans les mods, staging_area, mod.io, Steam Workshop et le jeu). Ce joueur ne pourra pas charger la partie.",
+                                    "{0} lacks these mods of the game and this PC cannot find them to send them: {1} (looked for in mods, staging_area, mod.io, Steam Workshop and the game). That player cannot load the game.", BaseName(from.Name), string.Join(", ", unsendable)));
                             if (ids.Count > 0 && !modAskDone.ContainsKey(from.Name))
                             {
                                 modAsks[from.Name] = string.Join(",", ids);
@@ -3518,6 +3543,16 @@ namespace MPFever
                         if (differs != "") Log.Warn(F("{0} n'a pas la même version que vous de ces mods : {1}. Il ne pourra pas charger la partie tant qu'il ne les a pas mis à jour.", "{0} does not have your version of these mods: {1}. They cannot load the game until they update them.", BaseName(from.Name), differs));
                         BroadcastLobby();
                         MenuStatus();
+                    }
+                    break;
+
+                case "modmissing":
+                    {
+                        // (0.6.7) a player's game did not load the host's game: mods of it are missing there
+                        if (from == null) break;
+                        var h = LuaLit.Parse(m.Payload) as Dictionary<object, object> ?? new Dictionary<object, object>();
+                        var mm = h.TryGetValue("mods", out var mv) && mv is string ms2 ? ms2 : "";
+                        Log.Err(F("{0} n'a pas pu charger la partie, mods manquants chez lui : {1}", "{0} could not load the game, mods missing there: {1}", BaseName(from.Name), mm));
                     }
                     break;
 
@@ -4433,6 +4468,9 @@ namespace MPFever
                 {
                     var plan = Mods.LoadPlan(lobbyMods);
                     File.WriteAllText(Path.Combine(game.Dir, "load_mods.txt"), plan);
+                    // (0.6.7) the savegame's mods for the mod in this game (the host's has host_mods.txt): a "no costs" mod turns the
+                    // refund bookings off (see REFUND.freeBuilds in the bridge)
+                    File.WriteAllText(Path.Combine(game.Dir, "session_mods.txt"), lobbyMods ?? "");
                     if (plan != "") Log.W(F("[{0}] mods personnels : {1}", "[{0}] personal mods: {1}", game.Name, plan.Trim().Replace("\n", ", ").Replace("\t", " ")));
                 }
                 catch (Exception e) { Log.W("load_mods: " + e.Message); }

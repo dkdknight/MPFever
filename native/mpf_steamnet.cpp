@@ -277,6 +277,12 @@ static int g_auth = 0, g_relay = 0;
 
 static bool g_busy = false;          // bytes moved in this cycle (or wait to move): the loop turns again at once
 static u64 Now() { return GetTickCount64(); }
+// (0.6.7) the time since `at`, never negative: the loop reads `now` once at the top of a pass, and a state changed in that pass
+// (Connected's SetState, from the callbacks run after it) gets a LATER Now(). `now - stateAt` then wrapped round as a u64 and the
+// host's dial-back of a Steam connection failed at once, "the loopback port 28090 did not answer in 5 s": its launcher saw a
+// loopback connection open and close with nothing in it, the player's join by Steam failed (session of 2026-11-01 00:49:30) and
+// the port had to be forwarded by hand. Whenever a tick (15.6 ms) passed between the top of the pass and the callback
+static u64 Since(u64 now, u64 at) { return now > at ? now - at : 0; }
 
 static Tunnel* ByHandle(u32 h) { if (!h) return 0; for (auto& t : g_t) if (t.h == h && t.state != S_FREE && t.state != S_CLOSED) return &t; return 0; }
 static Tunnel* ById(const char* id) { for (auto& t : g_t) if (t.state != S_FREE && t.state != S_CLOSED && Same(t.id, id)) return &t; return 0; }
@@ -459,7 +465,7 @@ static void PumpSource(Tunnel* t, u64 now)
         t->bytesIn = t->recvd; t->lastProgress = now; g_busy = true;
     }
     if (t->recvd >= t->total) TestResult(t->recvd == t->total && t->hashRecv == t->hashSent, "the echo differs from what was sent", t);
-    else if (now - t->lastProgress > 30000) TestResult(false, "no progress for 30 s", t);
+    else if (Since(now, t->lastProgress) > 30000) TestResult(false, "no progress for 30 s", t);
 }
 
 static void PumpEcho(Tunnel* t)
@@ -565,7 +571,7 @@ static void DialCheck(Tunnel* t, u64 now)
     int err = 0;
     if (ev & (POLLERR_ | POLLHUP_ | POLLNVAL_)) err = -1;
     else if (ev & POLLWRNORM_) { int len = 4; if (W.getsockopt(t->s, SOL_SOCKET_, SO_ERROR_, (char*)&err, &len) != 0) err = -1; }
-    else if (now - t->stateAt > 5000) err = -2;
+    else if (Since(now, t->stateAt) > 5000) err = -2;
     else return;
     if (err) {
         F.close(g_sockets, t->h, 1002, "dial failed", false);
@@ -686,7 +692,7 @@ static void Pump(Tunnel* t, u64 now)
         // the rest Steam had received, then the loopback side closes (MPFever.exe sees the end of its stream)
         g_busy = true;
         if (!SteamToLoop(t)) break;
-        if ((t->drained && t->heldN == 0 && t->downLen == 0) || now - t->stateAt > 10000) {
+        if ((t->drained && t->heldN == 0 && t->downLen == 0) || Since(now, t->stateAt) > 10000) {
             if (t->s != INVALID_SOCKET_) W.shutdown(t->s, SD_SEND_);
             F.close(g_sockets, t->h, 0, 0, false);
             Finish(t, t->code, 0);
@@ -717,7 +723,7 @@ static void Aimd(Tunnel* t, const SnRealTime& rt, u64 now)
     F.setConnInt(g_utils, t->h, 11, (i32)r);
     bool down = r < t->rate;
     t->rate = (i32)r;
-    if (down || now - t->aimdLogAt >= 10000) {
+    if (down || Since(now, t->aimdLogAt) >= 10000) {
         t->aimdLogAt = now;
         Buf b; b.str("steam networking: ").str(t->id).str(" rate ").str(down ? "lowered" : "raised").str(" to ").dec(ReadBack(t->h, 11)).str(" bytes/s (quality ")
             .q2(q).str(", ").dec(rt.pendRel).str(" bytes waiting)");
@@ -1103,7 +1109,7 @@ static void Housekeeping(u64 now)
 {
     if (g_listenCloseAt && now >= g_listenCloseAt) { g_listenCloseAt = 0; if (!g_hosting) { CloseListen(&g_lMain); CloseListen(&g_lBulk); if (!g_ipEcho) { CloseListen(&g_lIpMain); CloseListen(&g_lIpBulk); } } }
     if (g_testListenCloseAt && now >= g_testListenCloseAt) { g_testListenCloseAt = 0; CloseListen(&g_lTest); }
-    for (auto& t : g_t) if (t.state == S_CLOSED && now - t.stateAt > 30000) t.state = S_FREE;
+    for (auto& t : g_t) if (t.state == S_CLOSED && Since(now, t.stateAt) > 30000) t.state = S_FREE;
 }
 
 static DWORD WINAPI SteamNetThread(void*)

@@ -1,6 +1,45 @@
 MPFever - Changelog
 ===================
 
+0.6.7 - the test session of 2026-11-01: joining by Steam, the router's port, the host's local mods, a crash after a station
+        extension, no-cost games (thanks to kingplay98 and theop for the tests)
+  - FIX (joining by Steam): a player's join by Steam failed now and then, and the host had to forward his port by hand. The
+    host's game module read the time once at the top of a pass; a Steam connection that came in during that pass got a later
+    time, the "time since" wrapped round as an unsigned number and the module gave up its link to MPFever at once ("did not
+    answer in 5 s"). Every elapsed time of a tunnel is now never negative (native/mpf_steamnet.cpp, Since). And: a join by
+    Steam that fails quickly is tried again, three times in all (MPFEVER_STEAMTRIES=1: once, as before); the host's log says
+    when a connection closes before it joined (MPFEVER_QUIETCLOSE=1: as before); the player's log says why a join failed (the
+    menu only did). Test: tests/test_steamwrap.py. Not verified in a game yet.
+  - FIX (opening the port on the router): the search for the router went out of one network adapter only (a VPN's or a
+    virtual machine's could take it), once, and stopped at the first silence after any answer (a TV or a NAS answering first
+    hid the router); only the router's first WAN service was tried; its error codes were not read. Now: the search goes out of
+    every adapter, twice, and every WAN service of every answering device is tried, those of the default gateway first
+    (MPFEVER_SSDPONE=1: one adapter, as before); the router's UPnP error code is read: 718 (the port mapped already, most often
+    MPFever's own mapping left by a crash) is removed and asked again, 606 says what to allow on a Fritz!Box; a limited lease is
+    renewed; no system proxy for the router; PCP (RFC 6887, many recent boxes) is tried before NAT-PMP, and NAT-PMP is asked
+    even when the router does not give its public address. Each step is in the log, and a failure says what to forward
+    (TCP port to this PC's address); the lobby says which method worked, or why none did. Test: the launcher's self-test.
+  - FIX (the host's mods): a mod of the host's own PC, not published (the game's "StagingArea" origin, local\staging_area), was
+    never offered to a player who lacked it: MPFever looked for the host's mods in local\mods only, and dropped those it did
+    not find without a word; the player's game refused the host's game twice and told him to install them from the Workshop
+    or mod.io, where they are not. staging_area is searched now (MPFEVER_NOSTAGING=1: as before); a mod of local origin is
+    always the host's to send (MPFEVER_LOCALMODS=0: as before); what the host cannot send is said in its log; the player is
+    told that a local mod comes from the host only, and the host's log says why that player could not load; the answers
+    about mods are forgotten at the end of a session (a refusal silenced every later join of that name). Test: the launcher's
+    self-test.
+  - FIX (issue #113): a player's game crashed a second after it rebuilt the host's station extension without its two
+    signals: it had asked for a resynchronisation, then applied the host's next build on its already different world, and the
+    engine asserted ('it != components.end()', UI::CSelector). A player's game that could not reproduce a build now leaves out
+    the next builds of the others until the host's game reloads it, at most 45 s (MPFEVER_FAILHOLD=0: as before). Test:
+    tests/test_failhold.py. (The signals of an extended station themselves, on the station's own tracks, are still not
+    rebuilt: the resynchronisation stays; remove the signals before extending a station, put them back after.)
+  - FIX: with the game's "No costs" mod, the other games' money moved at every build: the price difference MPFever books
+    after a replay was booked although nothing is charged. Nothing is booked when the savegame has such a mod (read from
+    host_mods.txt, or session_mods.txt that MPFever.exe now writes for the other games; MPFEVER_NOCOSTREFUND=1: as before).
+    Test: tests/test_nocostrefund.py.
+  - Mods: Real Track Cant (devers_1) is said incompatible (it builds by itself on every game: reloads, #96); the game's No
+    costs is said made compatible.
+
 0.6.6 - code signing (SignPath Foundation), privacy policy
   - NEW: MPFever.exe and winhttp.dll carry the release's version in their properties (winhttp.dll gets a version resource
     written by tools/mkres.py), and the published archives can be built and signed on GitHub by the "Release build"
