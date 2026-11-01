@@ -3,6 +3,11 @@ MPFever - Changelog
 
 0.6.7 - the test session of 2026-11-01: joining by Steam, the router's port, the host's local mods, a crash after a station
         extension, no-cost games (thanks to kingplay98 and theop for the tests)
+  - FIX (both modes): upgrading ONE segment of a town street, when the game takes town buildings away for it, reloaded the
+    host's game for everybody ("town stats differ"). The other games rebuilt it with the engine's own upgrade, which levels
+    the ground otherwise than the tool (an autotest on a players' world: 1055.9 against 1079.0). It is now replayed as the
+    tool's own build, as an upgrade of several segments already was (MPFEVER_TOWNONE=0: as before). Test:
+    tests/test_townone.py. Not verified in a game yet.
   - FIX (joining by Steam): a player's join by Steam failed now and then, and the host had to forward his port by hand. The
     host's game module read the time once at the top of a pass; a Steam connection that came in during that pass got a later
     time, the "time since" wrapped round as an unsigned number and the module gave up its link to MPFever at once ("did not

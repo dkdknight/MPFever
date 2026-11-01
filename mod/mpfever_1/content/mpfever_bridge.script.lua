@@ -4116,6 +4116,15 @@ G.stepOwner = function(a, step, seg)
 	return seg
 end
 
+-- (0.6.7) An upgrade of ONE town street segment that moves town buildings (a.townAuto): replaceSegment aligned the terrain
+-- otherwise than the tool (an autotest on #109's world, 2026-11-01: terrain aligned 1055.9 on the builder's game, 1079.0 here,
+-- 5 town buildings taken away and 1 put back; "town stats differ", a reload). The tool's own proposal is replayed instead, as
+-- for several segments. MPFEVER_TOWNONE=0: replaceSegment, as before
+G.townOneNative = function(a, plan)
+	if type(plan) ~= "table" or #plan ~= 1 or type(a) ~= "table" or a.townAuto ~= true then return false end
+	return os.getenv("MPFEVER_TOWNONE") ~= "0" and os.getenv("MPFEVER_TOWNNATIVE") ~= "0"
+end
+
 local function replayUpgrade(a, plan, i)
 	local step = plan[i]
 	if not step then return end
@@ -6189,6 +6198,10 @@ local function replayNative(a, formIndex)
 		end
 		if plan and #plan > 1 and a.townAuto and os.getenv("MPFEVER_UPGRADEMERGE") ~= "0" and os.getenv("MPFEVER_TOWNNATIVE") ~= "0" then
 			log("NATIVE REPLAY " .. tostring(a.uid) .. ": an upgrade of " .. #plan .. " town street segments at once: native street proposal")
+			return replayNativeStreet(a)
+		end
+		if G.townOneNative(a, plan) then
+			log("NATIVE REPLAY " .. tostring(a.uid) .. ": an upgrade of one town street segment that moves town buildings: native street proposal")
 			return replayNativeStreet(a)
 		end
 		if plan then return replayUpgrade(a, plan, 1) end
