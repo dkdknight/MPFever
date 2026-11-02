@@ -11,7 +11,8 @@ ends, still no object), run by the bridge's deferredSend just before the build g
     build cancelled as a refused one) and the company hears a refusal; a check that fails to run sends it; MPFEVER_AISTILL=0 sends it;
   - deferredSend calls stillOk before both of its sends (held and BUILDLEAD);
   - stopSegments: no stop on a segment that ends at a junction with traffic lights or a configuration (the crashes of test o2);
-    MPFEVER_AISTOPLIGHTS=1: as before.
+    MPFEVER_AISTOPLIGHTS=1: as before. 0.6.9: the stop puts the junctions' configurations back (test_keepnodecfg.py), every
+    segment taken again unless MPFEVER_KEEPNODECFG=0.
 Needs lupa (pip install lupa). Run: python tests/test_aistill.py
 """
 import os
@@ -50,12 +51,14 @@ check(isinstance(got, str) and "no longer exists" in got, "the segment gone: not
 print("the segments a stop may take")
 run('setComp(61, "BASE_EDGE", { node0 = 81, node1 = 82 }); setComp(62, "BASE_EDGE", { node0 = 82, node1 = 83 }); setComp(63, "BASE_EDGE", { node0 = 84, node1 = 85 })')
 run('setComp(83, "BASE_NODE_TRAFFIC_LIGHT", {}); setComp(84, "BASE_NODE_CONFIG", {}); setComp(64, "BASE_EDGE", { node0 = 86, node1 = 87 })')
+got = run('ENV = { MPFEVER_KEEPNODECFG = "0" }; local t = {} for _, s in ipairs(M.f.stopSegments(E, CO1, { { e = 61 }, { e = 62 }, { e = 63 }, { e = 64 } })) do t[#t + 1] = s.e end ENV = {}; return table.concat(t, ",")')
+check(got == "61,64", "MPFEVER_KEEPNODECFG=0: segments ending at a junction with traffic lights or a configuration left out (" + str(got) + ")")
 got = run('local t = {} for _, s in ipairs(M.f.stopSegments(E, CO1, { { e = 61 }, { e = 62 }, { e = 63 }, { e = 64 } })) do t[#t + 1] = s.e end return table.concat(t, ",")')
-check(got == "61,64", "segments ending at a junction with traffic lights or a configuration: left out (" + str(got) + ")")
+check(got == "61,62,63,64", "0.6.9: the junctions' configurations put back, every segment taken (" + str(got) + ")")
 got = run('ENV = { MPFEVER_AISTOPLIGHTS = "1" }; local n = #M.f.stopSegments(E, CO1, { { e = 62 } }); ENV = {}; return n')
 check(got == 1, "MPFEVER_AISTOPLIGHTS=1: taken, as before")
 src_ai = open(os.path.join(CONTENT, "mpfever_ai.lua"), encoding="utf-8").read()
-check(src_ai.count("stopSegments(E, co, streetSegmentsNear(") == 2, "both places that pick a stop's segment use it")
+check(src_ai.count("stopSegments(E, co, streetSegmentsNear(") + src_ai.count("stopSegments(E, co, near)") == 2, "both places that pick a stop's segment use it")
 
 print("the bridge")
 src = open(os.path.join(CONTENT, "mpfever_bridge.script.lua"), encoding="utf-8").read()

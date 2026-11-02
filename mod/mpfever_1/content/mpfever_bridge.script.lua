@@ -3112,6 +3112,20 @@ local function handleEvent(userParams, state, src, id, name, param)
 						elseif not offer then offer = loan end
 					end
 				end
+				-- (0.6.9) param.need (mpfever_ai.lua, MPFEVER_AILOANNEED): the smallest offer that covers it, the lowest monthly
+				-- payment between equal ones; none covers it: the largest. The lowest payment alone took the largest (59 million)
+				local need = M and tonumber(param.need)
+				if need then
+					local fit, big = nil, nil
+					for _, loan in ipairs(lt and lt.availableLoans or {}) do
+						if type(loan.amount) == "number" and not (loan.cooldownUntil and loan.cooldownUntil > now) then
+							local p = loan.amount / math.max(1, M.lu.getDurationInMonths(loan.duration or 0)) * (1 + (loan.percentage or 0))
+							if loan.amount >= need and (not fit or loan.amount < fit.amount or (loan.amount == fit.amount and p < fit.p)) then fit = { loan = loan, amount = loan.amount, p = p } end
+							if not big or loan.amount > big.amount or (loan.amount == big.amount and p < big.p) then big = { loan = loan, amount = loan.amount, p = p } end
+						end
+					end
+					offer = (fit or big or {}).loan or offer
+				end
 				if not offer then log("companies: no loan on offer to computer company " .. c.id); return end
 				coLoanEvent(st, c.id, "Obtain", { offer, offer })
 			end)
@@ -14838,7 +14852,8 @@ H.dstop = function(from, p)
 			ssp.edgesToRemove = { E }
 			ssp.edgesToAdd = { e }
 			ssp.edgeObjectsToAdd = { eo }
-			-- (the junctions' node configurations refer to the replaced segment: removed)
+			-- (the junctions' node configurations refer to the replaced segment: removed, and put back on the copy as the tool does,
+			-- 0.6.9: removed alone, a junction with traffic lights asserted on the building game. MPFEVER_KEEPNODECFG=0: removed only)
 			local ncr = {}
 			for _, nd in ipairs({ c.node0, c.node1 }) do
 				local okn, nc = pcall(function() return api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_CONFIG) end)
@@ -14853,14 +14868,22 @@ H.dstop = function(from, p)
 			ctx.gatherFields = true
 			ctx.player = api.engine.util.getPlayer()
 			local tool = os.getenv("MPFEVER_STOPTOOL") ~= "0" and os.getenv("MPFEVER_REPLACEFREE") ~= "0"
+			-- (doDust set: the native module turns that into the tool's terms)
+			local function make(q) return tool and api.cmd.makeWorldBuildProposalCmd(q, ctx, false, true, true) or api.cmd.makeWorldBuildProposalCmd(q, ctx, false, true) end
+			local cmd
+			if #ncr > 0 and os.getenv("MPFEVER_KEEPNODECFG") ~= "0" then
+				local tried
+				cmd, tried = C.stopWithNodeConfigs(sp, ssp, ncr, E, make)
+				say("stop " .. n .. ": " .. #ncr .. " junction configuration(s) " .. (cmd and "put back on the copy" or "NOT put back, stop left out") .. " (" .. tried .. ")")
+				if not cmd then G.waits[#G.waits + 1] = { at = G.frames + 60, fn = nextOne }; return end
+			end
 			local p0, p1 = nodePosition(c.node0), nodePosition(c.node1)
 			AUTO.points[#AUTO.points + 1] = p0
 			local off0, off1 = G.autoEndsOff(c)
 			say("stop " .. n .. " on segment " .. E .. " (" .. tostring(c.roadTemplate):match("[^/]+$") .. ", chord "
 				.. string.format("%.2f", math.sqrt((p0.x - p1.x) ^ 2 + (p0.y - p1.y) ^ 2 + (p0.z - p1.z) ^ 2)) .. (tool and ", priced like the tool's build" or ", priced as a script's")
 				.. (off0 and string.format(", ends off its nodes by %.5f/%.5f m", off0, off1) or "") .. ")")
-			-- (doDust set: the native module turns that into the tool's terms)
-			local cmd = tool and api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true, true) or api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true)
+			cmd = cmd or make(sp)
 			deferredSend(cmd, function(res, success)
 				local why, costs = "", "?"
 				if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end

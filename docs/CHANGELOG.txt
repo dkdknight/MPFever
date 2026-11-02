@@ -1,6 +1,26 @@
 MPFever - Changelog
 ===================
 
+0.6.9 - in progress (stress test of the 0.6.8 release, 2026-11-02)
+  - FIX (computer companies): a pair of towns or a town left (no street for a stop, no garage, a line given up there) stayed
+    left for the whole session. In the stress test (Test Headless, 3 computer companies, 45 min at x4) all three had left
+    every pair within 2 minutes and stayed idle to the end, paying for their stops and garages. It is now tried again two
+    years later: towns grow and build streets, another company opens a garage (MPFEVER_AIPAIRRETRY=0: left for good, as
+    before). When no street is found for a stop, the log now says how many town segments there were within 200 m and how
+    many were left out at a junction with a configuration of its own. Test: tests/test_ai_retry.py.
+  - FIX (computer companies): under its floor, a computer company took the loan of the lowest monthly payment, which is the
+    longest, so the largest: 59 million for a company with no line, 95 000 under its floor. It now asks for what it needs
+    (back to its reserve) and takes the smallest offer that covers it, the largest when none does (MPFEVER_AILOANNEED=0:
+    the lowest monthly payment, as before). Test: tests/test_ai_retry.py.
+  - FIX (computer companies, stop test): a stop put by a script on a town street next to a junction with traffic lights
+    removed the junction's configuration and did not put it back, as the stop tool does: the game that built it stopped
+    on an engine error ("it != components.end()", BaseNodeConfig), its error window open, every time (0.6.7 as well). The
+    computer companies therefore left every street next to a configured junction out, and often found no street for a
+    stop. The configuration now goes back onto the stop's copy of the segment (the first form the game takes: as it was,
+    without the traffic light phases, without the crosswalks, with neither; none taken: the stop is not built), and those
+    streets are used again (MPFEVER_KEEPNODECFG=0: removed only and those streets left out, as before). A player's stop,
+    made with the tool, was not concerned. Test: tests/test_keepnodecfg.py.
+
 0.6.8 - the night of 2026-11-02: reports of 2026-11-01 (thanks to kingplay98 and theop for the tests)
   - FIX (#109, both modes): the resyncs "for no reason". A vehicle bought or a line created took the first free entity id of
     the game, and for a few steps now and then the two games' lists of free ids were not the same (the game had freed another

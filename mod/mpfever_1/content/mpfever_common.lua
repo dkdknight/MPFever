@@ -803,10 +803,72 @@ function C.nodeConfigs(list)
 		pcall(function() cfg.trafficLightPreference = mc.trafficLightPreference end)
 		pcall(function() cfg.doubleSlipSwitch = mc.doubleSlipSwitch == true end)
 		pcall(function() cfg.userModifiedLaneConnections = mc.userModifiedLaneConnections == true end)
+		-- (0.6.9: a junction's traffic light phases, the engine's own object when the caller has it, see C.keptNodeConfigs)
+		if m.tlc ~= nil then pcall(function() cfg.trafficLightConfig = m.tlc end) end
+		if m.noCrosswalks then cfg.crosswalks = {} end
 		o.comp = cfg
 		cfgs[i] = o
 	end
 	return cfgs
+end
+
+-- (0.6.9) the node configurations of a segment's ends, for a script's build that replaces the segment by a copy (newId, the
+-- proposal's negative id): the lane connections of the old segment moved onto the copy, as the stop tool puts them back. Removing
+-- them alone left a junction with traffic lights but no configuration: the engine asserted (it != components.end(), stress test
+-- 2026-11-02 on Test Knight 14, node 58155). A list for C.nodeConfigs; get(node) reads a node's configuration (marshalled);
+-- newId may be a table, a node -> the copy's id at that node (a segment split in two). raw(node), if given: the engine's
+-- component, whose traffic light phases are put back as they are
+function C.keptNodeConfigs(nodes, oldSeg, newId, get, raw, opts)
+	local out = {}
+	for _, nd in ipairs(nodes or {}) do
+		local mc = get(nd)
+		local nid = type(newId) == "table" and newId[nd] or newId
+		if type(mc) == "table" and type(nid) == "number" then
+			local lcs = {}
+			for j, l in ipairs(mc.laneConnections or {}) do
+				local c = {}
+				for k, v in pairs(l) do c[k] = v end
+				if c.segment0 == oldSeg then c.segment0 = nid end
+				if c.segment1 == oldSeg then c.segment1 = nid end
+				lcs[j] = c
+			end
+			local comp = {}
+			for k, v in pairs(mc) do comp[k] = v end
+			comp.laneConnections = lcs
+			local o = { entity = nd, comp = comp }
+			-- (raw(node): the engine's component, its traffic light phases put as they are; opts.noCrosswalks: none)
+			if raw and not (opts and opts.noTlc) then
+				local okr, r = pcall(raw, nd)
+				if okr and r ~= nil then pcall(function() o.tlc = r.trafficLightConfig end) end
+			end
+			if opts and opts.noCrosswalks then o.noCrosswalks = true end
+			out[#out + 1] = o
+		end
+	end
+	return out
+end
+
+-- (0.6.9) a stop's copy of a segment with its junctions' configurations put back (C.keptNodeConfigs) on ssp, in the first form
+-- the command's factory takes (make(sp) makes the command): the full one, without the traffic light phases, without the
+-- crosswalks, with neither. Returns the command and what was tried, or nil when no form was taken (the stop is not built:
+-- removed alone, the configurations made the engine assert)
+function C.stopWithNodeConfigs(sp, ssp, ncr, seg, make)
+	local function rawCfg(nd) return api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_CONFIG) end
+	local function getCfg(nd) return C.marshal(rawCfg(nd)) end
+	local forms = { { "full", {} }, { "no phases", { noTlc = true } }, { "no crosswalks", { noCrosswalks = true } },
+		{ "neither", { noTlc = true, noCrosswalks = true } } }
+	local tried = {}
+	for _, f in ipairs(forms) do
+		local cmd
+		local ok, err = pcall(function()
+			ssp.nodeConfigsToAdd = C.nodeConfigs(C.keptNodeConfigs(ncr, seg, -1, getCfg, rawCfg, f[2]))
+			sp.streetProposal = ssp
+			cmd = make(sp)
+		end)
+		tried[#tried + 1] = f[1] .. " " .. (ok and "OK" or tostring(err):gsub("^%[string \"[^\"]*\"%]:%d+: ", ""):sub(1, 60))
+		if ok and cmd then return cmd, table.concat(tried, "; ") end
+	end
+	return nil, table.concat(tried, "; ")
 end
 
 -- What a build does, in short (counts of each kind of change, and the place and switch flag of each node configuration

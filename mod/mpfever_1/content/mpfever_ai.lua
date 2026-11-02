@@ -27,6 +27,29 @@ local BUS_COST = 180000    -- a bus, until the first purchase measures it
 local FLOOR_MIN = 100000
 local FLOOR = FLOOR_MIN
 
+-- (0.6.9) a pair or a town left (no street for a stop, no garage, a line given up there) is tried again two years later: towns
+-- grow and build streets, another company opens a garage. Before, it stayed left for the session: on Test Headless (stress test
+-- of 2026-11-02) the three computer companies had left every pair within 2 minutes and stayed idle for 45 minutes, paying for
+-- their stops and garages. A mark of before (true) counts from the first look. MPFEVER_AIPAIRRETRY=0: left for good, as before
+-- (0.6.9) the junctions' configurations put back on a stop's or a garage's copy of a street segment (C.keptNodeConfigs): the
+-- streets next to traffic lights can be used again. MPFEVER_KEEPNODECFG=0: removed only, and those streets left out
+local function keepNodeCfg() return os.getenv("MPFEVER_KEEPNODECFG") ~= "0" end
+
+local function isLeft(E, list, key)
+	local v = list and list[key]
+	if not v then return false end
+	if os.getenv("MPFEVER_AIPAIRRETRY") == "0" then return true end
+	if v == true then list[key] = E.gameTime(); return true end
+	local yearMs = 1461000
+	pcall(function() local y = E.api.util.getDefaultYearDuration(); if type(y) == "number" and y > 0 then yearMs = y end end)
+	if E.gameTime() - v < 2 * yearMs then return true end
+	list[key] = nil
+	return false
+end
+local function leave(E, list, key)
+	list[key] = os.getenv("MPFEVER_AIPAIRRETRY") == "0" and true or E.gameTime()
+end
+
 -- The levels (0.5.13), the host's choice for each company in its lobby: how often it looks at the world (frames), the money it
 -- keeps back, the vehicles a line may get, when a line gets one more (seats used, cargo waiting), how many of its lines carry
 -- freight, how far its freight goes, and whether it competes with the players (Hard: the industries and towns they serve are
@@ -550,8 +573,17 @@ local function buildStop(E, co, seg, n)
 		if okn and nc then ncr[#ncr + 1] = nd end
 	end
 	if #ncr > 0 then ssp.nodeConfigsToRemove = ncr end
+	-- (0.6.9: and put back on the copy, as the tool does: removed alone, a junction with traffic lights asserted, see
+	-- C.keptNodeConfigs. MPFEVER_KEEPNODECFG=0: removed only)
+	local function make(q) return api.cmd.makeWorldBuildProposalCmd(q, context(E, co.ent, CTX_STOP), false, true, true) end
+	local cmd
+	if #ncr > 0 and keepNodeCfg() then
+		local tried
+		cmd, tried = C.stopWithNodeConfigs(sp, ssp, ncr, seg, make)
+		if not cmd then L(E, "stop " .. tostring(n) .. " on segment " .. seg .. ": its junctions' configurations could not be put back (" .. tried .. "), not built"); return false end
+	end
 	sp.streetProposal = ssp
-	local cmd = api.cmd.makeWorldBuildProposalCmd(sp, context(E, co.ent, CTX_STOP), false, true, true)
+	cmd = cmd or make(sp)
 	local pa, pb = E.nodePosition(c.node0), E.nodePosition(c.node1)
 	-- (0.6.4.1: the segment as it was when this build was made: the same ends and still no stop, else not sent, see deferredSend.
 	-- A stop built on a segment another stop had just replaced stopped the host's game, test o2 of 2026-10-31)
@@ -1424,7 +1456,7 @@ local function manageLines(E, co, lines, vehicles, money)
 				for town, pts in pairs(A.targets or {}) do
 					for _, s in ipairs(myStops(E, co.ent)) do
 						for _, w in ipairs(pts) do
-							if A.deadGroups[s.group] and dist(s.pos, w.p) < 200 then A.skipTown = A.skipTown or {}; A.skipTown[town] = true end
+							if A.deadGroups[s.group] and dist(s.pos, w.p) < 200 then A.skipTown = A.skipTown or {}; leave(E, A.skipTown, town) end
 						end
 					end
 				end
@@ -1474,7 +1506,12 @@ local function manageLines(E, co, lines, vehicles, money)
 	if money < low and loanFree and G.frames - (A.loanAsked or -100000) > 7200 then
 		A.loanAsked = G.frames
 		A.loanAskMoney = money
-		act(E, co.id, "makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "ai_loan", [4] = pickLoan and { pick = 1, max = 1 } or {} })
+		-- (0.6.9) what it needs: back to its reserve. The offer of the lowest monthly payment was the longest, so the largest: 59
+		-- million for a company with no line and 95 000 under its floor (stress test of 2026-11-02). The bridge takes the smallest
+		-- offer that covers it. MPFEVER_AILOANNEED=0: the lowest monthly payment, as before
+		local loanArg = pickLoan and { pick = 1, max = 1 } or {}
+		if pickLoan and os.getenv("MPFEVER_AILOANNEED") ~= "0" then loanArg.need = math.floor(math.max(RESERVE, low) - money) end
+		act(E, co.id, "makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "ai_loan", [4] = loanArg })
 		A.busy = { what = "loan", since = G.frames, until_ = G.frames + 120 }
 		L(E, (money < 0 and "in debt (" or "under its floor (") .. math.floor(money) .. "): a loan asked")
 		return true
@@ -1713,7 +1750,7 @@ local function bestPair(E, co, lines, stops)
 			local a, b = towns[i], towns[j]
 			local d = dist(a.c, b.c)
 			local key = math.min(a.e, b.e) .. "/" .. math.max(a.e, b.e)
-			if d > 1200 and d < 6000 and not (A.pairDone or {})[key] and not (A.pairFailed or {})[key] then
+			if d > 1200 and d < 6000 and not (A.pairDone or {})[key] and not isLeft(E, A.pairFailed, key) then
 				local score = a.size * b.size / d
 				-- (0.5.14) a pair another computer company runs or builds shares its passengers with it: its score as the share left
 				-- (twice less for the levels that do not compete). The three companies of a test of 2026-10-30 all built the same
@@ -1741,7 +1778,7 @@ end
 -- three times in the tests of 2026-10-31 with the players' world of #109 (a junction with traffic lights twice, another one once).
 -- MPFEVER_AISTOPLIGHTS=1: as before
 local function stopSegments(E, co, segs)
-	if os.getenv("MPFEVER_AISTOPLIGHTS") == "1" then return segs end
+	if os.getenv("MPFEVER_AISTOPLIGHTS") == "1" or keepNodeCfg() then return segs end
 	local api = E.api
 	local out = {}
 	for _, s in ipairs(segs) do
@@ -1771,10 +1808,15 @@ local function stopNear(E, co, stops, p, key)
 	local avoid = {}
 	for _, s in ipairs(stops) do avoid[#avoid + 1] = s.pos end
 	-- (within the 200 m stopAt takes: a stop built farther was never found again, and another one was built, and another)
-	local segs = stopSegments(E, co, streetSegmentsNear(E, p, 200, avoid))
+	local near = streetSegmentsNear(E, p, 200, avoid)
+	local segs = stopSegments(E, co, near)
 	local tries = (A.failed and A.failed["stop " .. key]) or 0
 	local s = segs[1 + tries]
-	if not s or tries > 4 then return false end
+	if not s or tries > 4 then
+		-- (0.6.9) why: the free town segments within 200 m, and those left out for a junction with a configuration of its own
+		L(E, "stop " .. key .. ": " .. #near .. " free town segment(s) within 200 m, " .. (#near - #segs) .. " at a configured junction, " .. tries .. " refused")
+		return false
+	end
 	L(E, "stop " .. key .. " (" .. math.floor(s.d) .. " m from its point)")
 	-- (0.6: not built under the floor: the project waits, "wait" counts as acted for its callers, the place is not given up)
 	if buildStop(E, co, s.e, key) == false then return "wait" end
@@ -1826,7 +1868,7 @@ local function pairProject(E, co, stops, lines, vehicles, money, grow)
 	if not g and money < RESERVE + 650000 and os.getenv("MPFEVER_AIRETRY") ~= "0" then return "wait" end
 	if not g then
 		L(E, "no garage for " .. na .. " - " .. nb .. ": pair left")
-		A.pairFailed = A.pairFailed or {}; A.pairFailed[pair.key] = true
+		A.pairFailed = A.pairFailed or {}; leave(E, A.pairFailed, pair.key)
 		return false
 	end
 	-- the line's points: in each town its residential centre and, when another district stands 300 m away, the one nearer to
@@ -1851,7 +1893,7 @@ local function pairProject(E, co, stops, lines, vehicles, money, grow)
 			if stopNear(E, co, stops, w.p.p, w.town .. ":" .. w.p.use) then return true end
 			if w.p.use == "RESIDENTIAL" then
 				L(E, "no street for a stop in " .. townName(E, w.town) .. ": pair left")
-				A.pairFailed = A.pairFailed or {}; A.pairFailed[pair.key] = true
+				A.pairFailed = A.pairFailed or {}; leave(E, A.pairFailed, pair.key)
 				return false
 			end
 		else
@@ -1864,7 +1906,7 @@ local function pairProject(E, co, stops, lines, vehicles, money, grow)
 	local gkey = math.min(sa.group, sb.group) .. "-" .. math.max(sa.group, sb.group)
 	if not line and (A.badPair or {})[gkey] then
 		-- (a line given up there before: the pair is left)
-		A.pairFailed = A.pairFailed or {}; A.pairFailed[pair.key] = true
+		A.pairFailed = A.pairFailed or {}; leave(E, A.pairFailed, pair.key)
 		return false
 	end
 	if line and (A.emptyRuns or {})[line.e] and A.emptyRuns[line.e] > 0 then
@@ -4713,7 +4755,7 @@ local function step(E)
 	if pairsFirst and pairProject(E, co, stops, lines, vehicles, money, grow) == true then return end
 	for _, t in ipairs(townsForLines(E, co.ent)) do
 		local town = t.e
-		if (A.skipTown and A.skipTown[town]) or t.size < LV.townMin then goto continue end
+		if isLeft(E, A.skipTown, town) or t.size < LV.townMin then goto continue end
 		do
 			-- the garage of the town's buses (see garageFor)
 			local tc = centre(E, town, E.api.type.enum.LandUseType.RESIDENTIAL)
@@ -4756,7 +4798,7 @@ local function step(E)
 						return
 					end
 					L(E, "no street for a stop near the " .. w.use .. " centre of " .. townName(E, town) .. ": town skipped")
-					A.skipTown = A.skipTown or {}; A.skipTown[town] = true
+					A.skipTown = A.skipTown or {}; leave(E, A.skipTown, town)
 					goto continue
 				end
 				L(E, "stop near the " .. w.use .. " centre of " .. townName(E, town) .. " (" .. math.floor(s.d) .. " m from it)")
@@ -4836,7 +4878,7 @@ local function step(E)
 end
 
 -- (for the dev probes)
-M.f = { aiCompany = aiCompany, myStops = myStops, myDepots = myDepots, myLines = myLines, myVehicles = myVehicles, bestBus = bestBus,
+M.f = { isLeft = isLeft, leave = leave, aiCompany = aiCompany, myStops = myStops, myDepots = myDepots, myLines = myLines, myVehicles = myVehicles, bestBus = bestBus,
 	act = act, build = build, buildStop = buildStop, createLine = createLine, buyBus = buyBus, join = join, context = context,
 	findDepotPlace = findDepotPlace, townsBySize = townsBySize, currentYear = currentYear, garagePlaces = garagePlaces,
 	buildGarage = buildGarage, garagesNear = garagesNear, garageCapture = garageCapture, industries = industries, roadTerminals = roadTerminals,
