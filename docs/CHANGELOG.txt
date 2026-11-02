@@ -18,6 +18,10 @@ MPFever - Changelog
     other players' companies without a word ("my company is gone", its buildings locked: 50 minutes to find out why). The
     host is now told, in the log and in the lobby, to choose "One company per player" before the savegame
     (MPFEVER_SAVEMODE=0: not told). Test: tests/test_savemode.py.
+  - FIX (stock market, one company per player): no dividend was ever paid ("the stock dividend doesn't work", Discord). The
+    host measured each company's result from its lines, found by their owner component, which a line does not have: every
+    result was 0. A company's lines now come from the game's line system (MPFEVER_STOCKLINES=0: as before).
+    Test: tests/test_feat_stock.py. Not verified in a game yet.
 
 0.6.7 - the test session of 2026-11-01: joining by Steam, the router's port, the host's local mods, a crash after a station
         extension, no-cost games (thanks to kingplay98 and theop for the tests)

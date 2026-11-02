@@ -518,6 +518,17 @@ M.measure = function(c, scan, now, monthDur)
 	if type(cash) ~= "number" then return nil end
 	pcall(function() loan = api.engine.getComponent(c.ent, api.type.ComponentType.ACCOUNT).loan or 0 end)
 	local s = scan[c.ent] or { veh = 0, lines = {} }
+	-- (0.6.8) a line has no PLAYER_OWNED component: the scan found none, every company's result was 0 and no dividend was ever
+	-- paid ("the stock dividend doesn't work"). The line system knows a company's lines. MPFEVER_STOCKLINES=0: the scan's, as before
+	if os.getenv("MPFEVER_STOCKLINES") ~= "0" and #s.lines == 0 then
+		local okL, ls = pcall(function() return api.engine.system.lineSystem.getLinesForPlayer(c.ent) end)
+		if okL and type(ls) == "table" and #ls > 0 then
+			local list = {}
+			for _, l in ipairs(ls) do list[#list + 1] = l end
+			table.sort(list)
+			s = { veh = s.veh, lines = list }
+		end
+	end
 	if now and monthDur and monthDur > 0 and #s.lines > 0 then
 		local ok, b = pcall(api.engine.util.finance.calculateBalance, s.lines, now - monthDur, now, true)
 		if ok and type(b) == "number" then r = b end

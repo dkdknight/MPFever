@@ -535,6 +535,19 @@ ROWS = M2.rowsFor(st, { realTime = function() return 0 end }, 100)''')
 check(run(D, "return ROWS") == "1,700230,7000,1000000;2,50130,0,50000", "value = money - loan + resale of the vehicles, result of the lines over a month (%s)" % run(D, "return ROWS"))
 check(run(D, "return CB[2] == 3000000 - 120000 and CB[3] == 3000000 and CB[4] == true"), "the lines' result over the last month (maintenance and income only)")
 check(run(D, "return M2.age()") == 25, "the game's age in months")
+# (0.6.8) the game's lines have no PLAYER_OWNED component: the line system gives a company's lines ("the dividend doesn't work":
+# every result was 0, no dividend was ever paid)
+run(D, '''api.engine.system = { lineSystem = { getLinesForPlayer = function(e) return ({ [200] = { 32, 31 } })[e] or {} end } }
+M2.seenAt = { [100] = -10, [200] = -10, [300] = -10, [400] = -10 }
+ROWS2 = M2.rowsFor(st, { realTime = function() return 0 end }, 101)''')
+check(run(D, "return ROWS2") == "1,700230,7000,1000000;2,50130,14000,50000",
+      "0.6.8: a company whose lines have no owner component: their result from the line system (%s)" % run(D, "return ROWS2"))
+run(D, '''local g = os.getenv
+os.getenv = function(k) if k == "MPFEVER_STOCKLINES" then return "0" end return g(k) end
+M2.seenAt = { [100] = -10, [200] = -10, [300] = -10, [400] = -10 }
+ROWS3 = M2.rowsFor(st, { realTime = function() return 0 end }, 102)
+os.getenv = g''')
+check(run(D, "return ROWS3") == "1,700230,7000,1000000;2,50130,0,50000", "MPFEVER_STOCKLINES=0: the scan's lines only, as before (%s)" % run(D, "return ROWS3"))
 
 print("the texts")
 text = run(G2, "return M.newsText(st, genv, { kind = 'takeover', co = 4, by = 2, total = 625000, premium = 25 })")
