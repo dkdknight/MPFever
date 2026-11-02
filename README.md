@@ -254,10 +254,10 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
   - the in-game window and the chat.
 - **[Steelworm](https://github.com/Steelworm)**: build timing fixes, the builder lead, in-depth issue analyses.
 - **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures and the company rules (MIT).
-- **kingplay98 and theop**: many long test sessions, every log, and their savegames. They even kept the savegames from
-  just before each desync, so that it could be replayed and fixed. A good part of MPFever's stability comes from them.
+- **DubstepDude-hub, Kev1505in (keviK), AMD and hschi**: long sessions sent with the logs of every player, which showed
+  that players with different DLCs desynchronise (0.6.9).
 - **The testers** who sent reports, logs and savegames: most fixes came from them. Thank you to
-  simon21-la, Vogel, Alex, CrossCroissant, AZalshehri7, ArtemQa8, KatzenSupport, GreGNee, terpo,
+  kingplay98, theop, DrWolf03, kasa1990, Acki007, simon21-la, Vogel, Alex, CrossCroissant, AZalshehri7, ArtemQa8, KatzenSupport, GreGNee, terpo,
   seksi1227-wq, Manocornuto, dev-andrei-v, Nassachi, Zippo1578, Shog-SC, thedevouttrout, AlexXY2, MorganJones13
   and everyone who played and gave feedback on Nexus.
 
