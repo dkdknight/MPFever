@@ -5,14 +5,14 @@ ages in one group, and two new closures for every engine read. The reads now cal
 directly, the segments' readers are made once per check, and the segments are checked alone (their ages with the
 constructions and the nodes).
 
-mpfever_refs.lua of this tree and of the last release before the change (git) run through lupa with the same mocked world:
+mpfever_refs.lua of this tree and as it was before the change (tests/data/mpfever_refs_before_0.6.8.lua) run through lupa with the same mocked world:
   - the "edges" and "ages" parts give the same values as before (decorations both sides, tram lanes, a swapped segment,
     a segment whose decorations cannot be read, a node that does not exist);
   - comp() answers as before for a missing entity, a failing read, a component;
   - the rotation: three groups, the segments alone; MPFEVER_HASHGROUPS=0: the groups of before.
 Run: python tests/test_hashcost.py
 """
-import os, re, subprocess, sys
+import os, re, sys
 
 try:
     import lupa.lua52 as lupa
@@ -24,7 +24,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 REFS = os.path.join(ROOT, "mod", "mpfever_1", "content", "mpfever_refs.lua")
 BRIDGE = os.path.join(ROOT, "mod", "mpfever_1", "content", "mpfever_bridge.script.lua")
-BEFORE = "697835f"   # main before the change (0.6.8's first commit)
 
 MOCK = r'''
 ENV = { MPFEVER_HASHOFF = "constructions,vehicles,townBuildings,persons,stations,lines,names,vehicleState,nodeConfigs,conParams,edgeObjects,extended" }
@@ -82,11 +81,8 @@ def load(src):
 
 def main():
     now = open(REFS, encoding="utf-8").read()
-    try:
-        old = subprocess.run(["git", "show", BEFORE + ":mod/mpfever_1/content/mpfever_refs.lua"], cwd=ROOT, capture_output=True, check=True).stdout.decode("utf-8")
-    except Exception as e:
-        print("git show failed (%s): test skipped" % e)
-        return 0
+    # (the file as it was before the change, kept here: the CI's checkout has no history)
+    old = open(os.path.join(HERE, "data", "mpfever_refs_before_0.6.8.lua"), encoding="utf-8").read()
     A, B = load(old), load(now)
     ha = A.eval("(function() local p = R.contentHash(HS, tostring) return (p.edges or '?') .. ' ' .. (p.ages or '?') end)()")
     hb = B.eval("(function() local p = R.contentHash(HS, tostring) return (p.edges or '?') .. ' ' .. (p.ages or '?') end)()")
