@@ -18,6 +18,16 @@ MPFever - Changelog
     other players' companies without a word ("my company is gone", its buildings locked: 50 minutes to find out why). The
     host is now told, in the log and in the lobby, to choose "One company per player" before the savegame
     (MPFEVER_SAVEMODE=0: not told). Test: tests/test_savemode.py.
+  - FIX (#95, one company per player): achievements counted for player 1 only. The game's achievements script keeps one state
+    and reads the savegame's company: income, vehicles reaching a stop, builds, ranks and contracts of the other companies were
+    never counted, and each game unlocked its Steam achievements from player 1's figures. Every company now has its own
+    achievements state, kept by the game's own script for that company (the world's events, cargo, passengers, towns, count
+    for every company), and each game unlocks its own company's (MPFEVER_ACHIEVEMENTS=0: as before). It changes nothing the
+    simulation uses. Test: tests/test_achievements.py. Not verified in a game yet.
+  - IMPROVED (sync checks): the heaviest check of a big world held the simulation up to 0.26 s, a small hitch every 30 s. The
+    segments are now checked alone (their ages with the constructions and the nodes; MPFEVER_HASHGROUPS=0: as before), and the
+    checks' engine reads no longer make two new functions each (the same values). A check over 0.12 s is logged now and then
+    with what weighed. Test: tests/test_hashcost.py.
   - FIX (one company per player, a street of another company): a station or depot put on another company's street made the
     rebuilt pieces of that street the builder's (the game's own rule): "the street no longer belongs to me" (2026-11-01). A
     street of another company that is not shared (its road rule private) can no longer be built on: the tool says "This

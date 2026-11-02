@@ -477,7 +477,10 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	local rot = os.getenv("MPFEVER_HASHROT")
 	R.hashSkip = nil
 	if n and (rot == "1" or (rot ~= "0" and not os.getenv("MPFEVER_SAVE"))) then
-		local groups = { { "conParams" }, { "edges", "ages" }, { "constructions", "nodeConfigs" } }
+		-- (0.6.8: the segments alone, their ages with the constructions and the nodes: the heaviest check of a big world held
+		-- the simulation 0.26 s, a hitch every 30 s. MPFEVER_HASHGROUPS=0: the groups of before)
+		local groups = os.getenv("MPFEVER_HASHGROUPS") == "0" and { { "conParams" }, { "edges", "ages" }, { "constructions", "nodeConfigs" } }
+			or { { "conParams" }, { "edges" }, { "constructions", "nodeConfigs", "ages" } }
 		local keep = groups[(n % #groups) + 1]
 		R.hashSkip = {}
 		for _, g in ipairs(groups) do for _, p in ipairs(g) do R.hashSkip[p] = true end end
@@ -561,7 +564,9 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	local okx, errx = pcall(extendedParts, parts)
 	if not okx then parts.extended = "ERR " .. tostring(errx):sub(1, 80) end
 	costs.extended = os.clock() - tMark
-	if K.hashCostsShown < 3 then
+	-- (0.6.8: and later a check that held the simulation more than 0.12 s, one in 20 of them: which part weighs, on a big world)
+	K.hashHeavy = (K.hashHeavy or 0) + ((os.clock() - tStart > 0.12) and 1 or 0)
+	if K.hashCostsShown < 3 or (os.clock() - tStart > 0.12 and K.hashHeavy % 20 == 1) then
 		K.hashCostsShown = K.hashCostsShown + 1
 		local t = {}
 		for k, v in pairs(costs) do t[#t + 1] = string.format("%s=%.3f", k, v) end
@@ -2071,6 +2076,13 @@ local function update(userParams, state, dt)
 		if SIM.coRegistry and SIM.coRegistry.mode == "separate" and os.getenv("MPFEVER_NOCOACTIONS") ~= "1" then
 			SIM.coActEnv = SIM.coActEnv or { log = log, registry = function() return SIM.coRegistry end }
 			CO.installCompanyActions(SIM.coActEnv)
+		end
+		-- (0.6.8, #95: the achievements per company, see mpfever_co.lua's CO.installAchievements; at every step as the companies
+		-- script. MPFEVER_ACHIEVEMENTS=0: never)
+		SIM.prog = st0 and st0.prog or nil
+		if SIM.coRegistry and SIM.coRegistry.mode == "separate" and CO.installAchievements then
+			SIM.achEnv = SIM.achEnv or { log = log, registry = function() return SIM.coRegistry end, prog = function() return SIM.prog end }
+			CO.installAchievements(SIM.achEnv)
 		end
 	end)
 	if os.getenv("MPFEVER_CPROBE") then local okp, errp = pcall(contractProbe) if not okp then log("PROBE failed: " .. tostring(errp)) end end
@@ -11651,6 +11663,66 @@ end
 -- Several purchases at once (issue #35): four copies of a vehicle requested in the same frame, so stamped at the same step;
 -- MPFEVER_BUYBUILD=1: with a held road build at the same time, so that the games stand still around the purchases' step.
 -- Every game must create them at the same steps (one per step) and with the same ids
+-- Purchases all the time (MPFEVER_SCENARIO=buystorm, tests of #109, best with MPFEVER_TOGETHER=1 and x4): a copy of a vehicle
+-- with a depot bought every MPFEVER_STORM_FRAMES frames (90) for MPFEVER_STORM_SECONDS (600), the oldest of this game's purchases
+-- sold when more than MPFEVER_STORM_KEEP (6) wait. Every purchase's result ("action ... result after ...: entity E") must be
+-- the same entity on every game (compare with idcmp.py)
+H.buystorm = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local ok, err = pcall(function()
+		local me = api.engine.util.getPlayer()
+		local pick = nil
+		for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
+			local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+			if not pick and tv and type(tv.depot) == "number" and tv.depot >= 0 and api.engine.entityExists(tv.depot)
+				and (G.cmode ~= "separate" or R.ownerOf(v) == me) then pick = { v = v, tv = tv } end
+		end
+		if not pick then AUTO.results[#AUTO.results + 1] = "buystorm: no vehicle with a depot"; return autoFinish() end
+		local had = {}
+		for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do had[v] = true end
+		local every = tonumber(os.getenv("MPFEVER_STORM_FRAMES") or "") or 90
+		local keep = tonumber(os.getenv("MPFEVER_STORM_KEEP") or "") or 6
+		local stop = G.frames + 60 * (tonumber(os.getenv("MPFEVER_STORM_SECONDS") or "") or 600)
+		local st = { bought = 0, sold = 0, mine = {} }
+		log("AUTOTEST buystorm: a copy of vehicle " .. pick.v .. " every " .. every .. " frames")
+		local function tick()
+			if G.frames >= stop then
+				local line = "buystorm: " .. st.bought .. " purchases, " .. st.sold .. " sales"
+				log("AUTOTEST " .. line)
+				AUTO.results[#AUTO.results + 1] = line
+				return autoFinish()
+			end
+			pcall(function()
+				-- (this game's purchases so far, oldest first: new vehicles of this company, in id order of their arrival)
+				for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
+					if not had[v] then
+						had[v] = true
+						if G.cmode ~= "separate" or R.ownerOf(v) == me then st.mine[#st.mine + 1] = v end
+					end
+				end
+				-- (one company for everybody: the host alone sells, the oldest new vehicles of anyone)
+				if #st.mine > keep and (G.cmode == "separate" or C.ROLE == "host") then
+					local v = table.remove(st.mine, 1)
+					if api.engine.entityExists(v) then uiRequest("makeVehicleSellCmd", { n = 1, [1] = { v } }); st.sold = st.sold + 1 end
+				else
+					uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = pick.tv.depot, [3] = C.marshal(pick.tv.transportVehicleConfig) })
+					st.bought = st.bought + 1
+				end
+			end)
+			G.waits[#G.waits + 1] = { at = G.frames + every, fn = tick }
+		end
+		tick()
+	end)
+	if not ok then
+		log("AUTOTEST buystorm failed: " .. tostring(err))
+		AUTO.results[#AUTO.results + 1] = "buystorm error " .. tostring(err)
+		autoFinish()
+	end
+end
+
 H.buymany = function(from, p)
 	if p.role ~= C.ROLE or AUTO.running then return end
 	AUTO.running = true
@@ -15530,6 +15602,11 @@ local function coGui(st)
 	if G.cmode ~= "separate" then return end
 	R.CO = st.co
 	G.prog = st.prog
+	-- (0.6.8, #95: this game's interface unlocks its own company's achievements, see mpfever_co.lua's CO.installAchievements)
+	if CO.installAchievements then
+		G.achEnv = G.achEnv or { log = log, registry = function() return R.CO end }
+		pcall(CO.installAchievements, G.achEnv)
+	end
 	if not G.gpWrapped then
 		G.gpWrapped = true
 		local real = api.engine.util.getPlayer

@@ -634,4 +634,140 @@ function CO.installCompanyActions(env)
 	return true
 end
 
+-- ------------------------------------------------------------------------------------------------ achievements per company
+-- (0.6.8, #95) The game's achievements script keeps one state for the game: what concerns a company (income, the vehicles that
+-- reach a stop, the builds, the ranks, the contracts) was read for getPlayer() only, the savegame's company in the simulation,
+-- and each game unlocks its player's Steam achievements from that state: "achievements only count for player 1". The other
+-- companies now have a state of their own (in the savegame company's, field mpfOthers, by player entity), kept by the game's own
+-- script with getPlayer() swapped, the same on every game; the world's events (cargo, passengers, towns, landmarks) count for
+-- every company; and each game's interface unlocks its own company's. MPFEVER_ACHIEVEMENTS=0: as before
+local ACHIEVEMENTS = "::/game_mechanics/achievements/achievements.script"
+CO.ACH_ON = os.getenv("MPFEVER_ACHIEVEMENTS") ~= "0"
+
+-- a state object of the game's script for one company's achievements (kept in store[key])
+local function achState(store, key)
+	return {
+		get = function(_) return store[key] end,
+		set = function(_, v) store[key] = v end,
+		hasEventSubscriptions = function(_) return true end,
+		subscribeToEvent = function(_) end,
+	}
+end
+
+-- the engine's players but the savegame's company, sorted (every game the same)
+local function achOthers(reg)
+	local players = {}
+	pcall(function()
+		api.engine.forEachEntityWithComponent(function(e) if e ~= reg.canon then players[#players + 1] = e end end, api.type.ComponentType.PLAYER)
+	end)
+	table.sort(players)
+	return players
+end
+
+-- runs fn (one call of the game's script) as company `pe` (getPlayer() answers it), on its own state
+local function achAs(state, pe, fn)
+	local s = state:get()
+	if type(s) ~= "table" then return end
+	s.mpfOthers = s.mpfOthers or {}
+	local util = api.engine.util
+	local prev = util.getPlayer
+	util.getPlayer = function() return pe end
+	local ok, err = pcall(fn, achState(s.mpfOthers, tostring(pe)))
+	util.getPlayer = prev
+	state:set(s)
+	-- (never the game's script's failure: a company's achievements are only skipped, said once)
+	if not ok and not CO.achFailed then CO.achFailed = true; print("[MPFEVER] companies: achievements of company " .. tostring(pe) .. " skipped: " .. tostring(err)) end
+end
+
+-- the company an event of the achievements concerns: a player entity, false for every company, nil for the savegame's
+CO.achTarget = function(env, id, name, param)
+	if id == "TransportVehicleSystem" and name == "OnArriveAtStop" then
+		local v = type(param) == "table" and param.vehicleEntity or nil
+		local ok, po = pcall(api.engine.getComponent, v, api.type.ComponentType.PLAYER_OWNED)
+		return (ok and po and type(po.player) == "number" and po.player >= 0) and po.player or nil
+	end
+	if id == "apply_command" then
+		-- (the company that builds: getPlayer() answers it during a build, see the bridge's replays)
+		local ok, pe = pcall(api.engine.util.getPlayer)
+		return ok and pe or nil
+	end
+	if id == "Companies" and name == "OnLevelUp" then
+		return type(param) == "table" and param.mpfPlayer or nil
+	end
+	if id == "Subvention" then
+		local uid = type(param) == "table" and param.uid or nil
+		local info = uid ~= nil and contractIndex()[uid] or nil
+		return info and ownerEntity(env, info.owner or 1) or nil
+	end
+	return false
+end
+
+function CO.installAchievements(env)
+	if not CO.ACH_ON or type(game) ~= "table" then return false end
+	local as = game[ACHIEVEMENTS]
+	if type(as) ~= "table" or as.__mpfCo then return as ~= nil end
+	as.__mpfCo = true
+	local ou, oh, og = as.update, as.handleEvent, as.guiUpdate
+	if type(ou) == "function" then
+		as.update = function(u, state, dt, ...)
+			local r = ou(u, state, dt, ...)
+			local reg = activeReg(env)
+			if reg and reg.canon then
+				local prog = env.prog and env.prog() or nil
+				for _, pe in ipairs(achOthers(reg)) do
+					achAs(state, pe, function(ps)
+						ou(u, ps, dt)
+						-- (its ranks, taken in MPFever's own progression: the game's company growth tells the achievements of
+						-- the savegame's company only; the first look takes the rank as it is)
+						local mine = ps:get()
+						local co = CO.idOfEntity(reg, pe)
+						local level = nil
+						for _, rec in ipairs((type(prog) == "table" and prog.records) or {}) do if rec.company == co then level = tonumber(rec.level) end end
+						if type(mine) == "table" and level then
+							local seen = tonumber(mine.mpfRank)
+							mine.mpfRank = level
+							if seen and level > seen and type(oh) == "function" then
+								for l = seen + 1, level do oh(u, ps, "", "Companies", "OnLevelUp", { rank = l }) end
+							end
+						end
+					end)
+				end
+			end
+			return r
+		end
+	end
+	if type(oh) == "function" then
+		as.handleEvent = function(u, state, src, id, name, param, ...)
+			local reg = activeReg(env)
+			if not (reg and reg.canon) then return oh(u, state, src, id, name, param, ...) end
+			local t = CO.achTarget(env, id, name, param)
+			if t == nil or t == reg.canon then return oh(u, state, src, id, name, param, ...) end
+			if t == false then
+				local r = oh(u, state, src, id, name, param, ...)
+				for _, pe in ipairs(achOthers(reg)) do achAs(state, pe, function(ps) oh(u, ps, src, id, name, param) end) end
+				return r
+			end
+			achAs(state, t, function(ps) oh(u, ps, src, id, name, param) end)
+			return nil
+		end
+	end
+	if type(og) == "function" then
+		-- (this game's interface: its own company's achievements; its own state of what it last saw, per company)
+		local gui = {}
+		as.guiUpdate = function(u, state, guiState, ...)
+			local reg = activeReg(env)
+			local me = nil
+			pcall(function() me = api.engine.util.getPlayer() end)
+			if not (reg and reg.canon) or me == nil or me == reg.canon then return og(u, state, guiState, ...) end
+			local s = state:get()
+			local mine = type(s) == "table" and type(s.mpfOthers) == "table" and s.mpfOthers[tostring(me)] or nil
+			if type(mine) ~= "table" then return nil end
+			gui[me] = gui[me] or {}
+			return og(u, { get = function(_) return mine end }, achState(gui[me], "v"), ...)
+		end
+	end
+	if env.log then env.log("companies: the achievements count for every company") end
+	return true
+end
+
 return CO

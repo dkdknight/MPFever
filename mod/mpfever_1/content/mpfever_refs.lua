@@ -13,25 +13,30 @@ local R = {}
 
 local CT = function(name) return api.type.ComponentType[name] end
 
+-- (0.6.8: the engine's functions are called through pcall directly, without a new closure at every call: the checks read every
+-- segment, node and construction, and made two closures for each read; the same reads and the same answers)
 local function comp(e, name)
 	if type(e) ~= "number" or e < 0 then return nil end
-	local ok, exists = pcall(function() return api.engine.entityExists(e) end)
+	local eng = api.engine
+	local ok, exists = pcall(eng.entityExists, e)
 	if not ok or not exists then return nil end
-	local okc, c = pcall(function() return api.engine.getComponent(e, CT(name)) end)
+	local okc, c = pcall(eng.getComponent, e, CT(name))
 	if okc then return c end
 	return nil
 end
 
+local function pos3of(v) return { x = v.x, y = v.y, z = v.z } end
 local function pos3(v)
 	if v == nil then return nil end
-	local ok, p = pcall(function() return { x = v.x, y = v.y, z = v.z } end)
+	local ok, p = pcall(pos3of, v)
 	if ok and type(p.x) == "number" then return p end
 	return nil
 end
 
+local function matPosOf(m) return { x = m[13], y = m[14], z = m[15] } end
 local function matPos(m)
 	if m == nil then return nil end
-	local ok, p = pcall(function() return { x = m[13], y = m[14], z = m[15] } end)
+	local ok, p = pcall(matPosOf, m)
 	if ok and type(p.x) == "number" then return p end
 	return nil
 end
@@ -1074,6 +1079,35 @@ function R.contentHash(hashStr, dumpFn)
 		return n .. "/" .. acc
 	end
 	local function r1(v) return v and string.format("%.0f", v) or "?" end
+	-- (the edges' readers, once per check: the decorations' list and its text, the lanes' modes)
+	local function edgeDecoList(c)
+		local decos = c.edgeDecorations
+		return decos, #decos
+	end
+	local function edgeDecoText(decos, nd, swapped)
+		local t = {}
+		for k = 1, nd do
+			local dk = decos[k]
+			-- (the side is relative to the segment's direction, which may differ between games: the canonical one is used)
+			local left = dk[2] and true or false
+			if swapped then left = not left end
+			t[#t + 1] = tostring(dk[1]) .. (left and "l" or "r")
+		end
+		table.sort(t)
+		return table.concat(t, ",")
+	end
+	local function edgeLaneSig(c)
+		local t = {}
+		local lanes = c.laneConfigs
+		for k = 1, #lanes do
+			local tm = lanes[k].transportModes
+			local m = 0
+			for j = 0, 15 do if tm[j] then m = m + 2 ^ j end end
+			t[#t + 1] = m
+		end
+		table.sort(t)
+		return table.concat(t, ",")
+	end
 	-- (trees, plants and rocks of the brush are left out: see isAssetFile)
 	part("constructions", function() return count("CONSTRUCTION", function(e)
 		local c = comp(e, "CONSTRUCTION")
@@ -1091,36 +1125,16 @@ function R.contentHash(hashStr, dumpFn)
 		local swapped = false
 		if s1 > s2 then s1, s2 = s2, s1; swapped = true end
 		-- what the road carries beyond its template: decorations (side and model) and which vehicles each lane takes (tram)
+		-- (a component's members are copies: each list is read once; the readers are made once per check, see edgeDecos)
+		local okD, decos, nd = pcall(edgeDecoList, c)
+		if not okD then decos, nd = nil, 0 end
 		local deco, lanesig = "", ""
-		-- (a component's members are copies: each list is read once)
-		local decos, nd = nil, 0
-		pcall(function() decos = c.edgeDecorations; nd = #decos end)
 		if nd > 0 then
-			pcall(function()
-				local t = {}
-				for k = 1, nd do
-					local dk = decos[k]
-					-- (the side is relative to the segment's direction, which may differ between games: the canonical one is used)
-					local left = dk[2] and true or false
-					if swapped then left = not left end
-					t[#t + 1] = tostring(dk[1]) .. (left and "l" or "r")
-				end
-				table.sort(t)
-				deco = table.concat(t, ",")
-			end)
+			local okS, d = pcall(edgeDecoText, decos, nd, swapped)
+			if okS then deco = d end
 		end
-		pcall(function()
-			local t = {}
-			local lanes = c.laneConfigs
-			for k = 1, #lanes do
-				local tm = lanes[k].transportModes
-				local m = 0
-				for j = 0, 15 do if tm[j] then m = m + 2 ^ j end end
-				t[#t + 1] = m
-			end
-			table.sort(t)
-			lanesig = table.concat(t, ",")
-		end)
+		local okL, ls = pcall(edgeLaneSig, c)
+		if okL then lanesig = ls end
 		local okd = true
 		return s1 .. "-" .. s2 .. tostring(c.roadTemplate) .. "/" .. tostring(okd and nd or 0) .. "/" .. tostring(c.roadStyle)
 			.. "/" .. tostring(c.roadType) .. "/" .. tostring(c.type) .. "/" .. tostring(c.typeIndex) .. "/" .. deco .. "/" .. lanesig .. "/d" .. tostring(c.distance)
