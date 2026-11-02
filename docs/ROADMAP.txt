@@ -27,8 +27,8 @@ it is stable enough.
   [x] Vehicles queuing on a road kept in the same order on every game (0.5.14)
   [x] One-way road upgrades rebuilt the same way round on every game; an incomplete install (MPFever.exe copied
       alone) told plainly instead of reloading every two minutes (0.6.5)
-  [ ] Games that number new objects differently without any action (3-player sessions, #109): diagnostic build
-      with the players, cause still searched
+  [x] Vehicles and lines a player creates get the same number on every game: the cause of the resyncs "for no
+      reason" (#109, 0.6.8); to confirm in sessions between two PCs
   [ ] Tests and fixes for 3 to 8 players
   [ ] Feedback from the first testers
 
@@ -60,7 +60,7 @@ it is stable enough.
   [x] Ranking, game goal, yearly report; tenders; territories and handicaps; trade between companies; stock market
       (game options, 0.6.0)
   [x] Each company's own rank, never the host's notification on another player's game (0.6.3 to 0.6.5)
-  [ ] The game's achievements counted per company (#95)
+  [x] The game's achievements counted per company (#95, 0.6.8)
 
 0.5 - Mixed modes
   [x] Shared companies and separate companies in the same game (0.5.0)
