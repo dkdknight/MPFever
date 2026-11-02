@@ -31,8 +31,9 @@ local FLOOR = FLOOR_MIN
 -- grow and build streets, another company opens a garage. Before, it stayed left for the session: on Test Headless (stress test
 -- of 2026-11-02) the three computer companies had left every pair within 2 minutes and stayed idle for 45 minutes, paying for
 -- their stops and garages. A mark of before (true) counts from the first look. MPFEVER_AIPAIRRETRY=0: left for good, as before
--- (0.6.9) the junctions' configurations put back on a stop's or a garage's copy of a street segment (C.keptNodeConfigs): the
--- streets next to traffic lights can be used again. MPFEVER_KEEPNODECFG=0: removed only, and those streets left out
+-- (0.6.9) the junctions' configurations put back on a stop's copy of a street segment (C.keptNodeConfigs): the streets next to
+-- traffic lights can be used again for stops. MPFEVER_KEEPNODECFG=0: removed only, and those streets left out. A garage is never
+-- put next to such a junction (garagePlaces)
 local function keepNodeCfg() return os.getenv("MPFEVER_KEEPNODECFG") ~= "0" end
 
 local function isLeft(E, list, key)
@@ -736,6 +737,15 @@ local function garagePlaces(E, co, p, maxD)
 	local tried = 0
 	-- (0.6, F5: the garage itself out of a player's territory too, 42 m from its street)
 	local terr = territoryCheck(E)
+	-- (0.6.9) never on a segment next to a junction with a configuration of its own (traffic lights, crosswalks, lane connections):
+	-- the garage's build removes the configuration of the segment's ends and the native replay cannot put the traffic light
+	-- phases back, the engine then asserts (it != components.end(), as the stops did, stress test 2026-11-02). MPFEVER_AIGARAGECFG=0:
+	-- those segments taken too, as before
+	local skipCfg = os.getenv("MPFEVER_AIGARAGECFG") ~= "0"
+	local function configured(nd)
+		local okn, nc = pcall(function() return api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_CONFIG) end)
+		return okn and nc ~= nil
+	end
 	for _, s in ipairs(streetSegmentsNear(E, p, maxD, {})) do
 		if tried > 60 or #out >= 1 then break end
 		local c = api.engine.getComponent(s.e, api.type.ComponentType.BASE_EDGE)
@@ -743,6 +753,7 @@ local function garagePlaces(E, co, p, maxD)
 		local t0 = c.tangent0
 		local tl = math.sqrt(t0.x ^ 2 + t0.y ^ 2)
 		local straight = tl > 0 and math.abs((t0.x * (s.b.x - s.a.x) + t0.y * (s.b.y - s.a.y)) / (tl * len)) > 0.995
+		if straight and len > 50 and skipCfg and (configured(c.node0) or configured(c.node1)) then straight = false end
 		if straight and len > 50 then
 			local dx, dy = (s.b.x - s.a.x) / len, (s.b.y - s.a.y) / len
 			for _, side in ipairs({ 1, -1 }) do

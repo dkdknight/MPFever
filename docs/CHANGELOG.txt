@@ -20,6 +20,17 @@ MPFever - Changelog
     without the traffic light phases, without the crosswalks, with neither; none taken: the stop is not built), and those
     streets are used again (MPFEVER_KEEPNODECFG=0: removed only and those streets left out, as before). A player's stop,
     made with the tool, was not concerned. Test: tests/test_keepnodecfg.py.
+  - FIX (one company per player): the other companies' vehicles never wore. Their buses, trucks, trains, ships and planes
+    stayed at 100 % for years and never needed a maintenance station; only the savegame's company paid for wear (a Discord
+    report; stress test: 156 vehicles of the other company at 100 %, the savegame company's trains and trams wearing). The
+    game's maintenance update wears a vehicle only when its owner is the game's own player. The native module now lets it
+    wear every company's vehicles, the same way on every game, the computer companies' included (MPFEVER_ALLWEAR=0: the
+    savegame's company only, as before). Test: tests/test_vehiclewear.py.
+  - FIX (computer companies): a garage put on a town street segment next to a junction with a configuration of its own
+    (traffic lights, crosswalks, lane connections) removed that configuration as the stops did, and the native replay of the
+    garage cannot put the traffic light phases back: the same engine error was possible. A garage is no longer put on such
+    a segment; the next street is taken (MPFEVER_AIGARAGECFG=0: those segments taken too, as before). Test:
+    tests/test_aigaragecfg.py.
   - FIX (towns, difficulty): "on Very Hard my towns have no problem with fog and noise". MPFever set every town's
     sensitivity to pollution, noise and traffic congestion to 0, because these ratings once came out otherwise on each game.
     They are now the same on every game (stress test: 40 min at x4 in shared mode, 40 min in separate mode with a computer

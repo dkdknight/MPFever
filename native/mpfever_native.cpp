@@ -4155,6 +4155,33 @@ static void InstallOpenNet()
     LogLine(b);
 }
 
+// (0.6.9) the vehicles' wear. The engine's maintenance update (TransportVehicleSystem, build 40425 at 0xb837f0) wears a
+// vehicle's parts only when its PlayerOwned owner is the system's player ([system+0x2c], the savegame's company): with one
+// company per player, the other companies' vehicles never wore (156 of them at 100 % for years, stress test of 2026-11-02 on
+// Test Gameplay, probe m3: the savegame company's trains and trams wore, the other company's buses, trucks, trains, ships and
+// planes never did; their maintenance stations repaired them all the same). The owner comparison's jne is taken out: every
+// vehicle with an owner wears, the same way on every game (a simulation rule; MPFEVER_ALLWEAR=0: as before)
+static void InstallVehicleWear()
+{
+    { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_ALLWEAR", v, 3) > 0 && v[0] == '0') { Buf b; b.str("vehicle wear: the savegame's company only (MPFEVER_ALLWEAR=0)"); LogLine(b); return; } }
+    // call getComponent(PlayerOwned); mov r14,[rsp+40h]; test rax,rax; je no; mov ecx,[r14+2Ch]; cmp [rax],ecx; jne no; mov byte [rsp+32h],1
+    u32 at = FindSigRva("E8 ?? ?? ?? ?? 4C 8B 74 24 40 48 85 C0 74 14 41 8B 4E 2C 39 08 75 0C C6 44 24 32 01 EB 0A");
+    bool ok = false;
+    if (at) {
+        u8* site = (u8*)(g_base + at + 21);
+        DWORD old;
+        if (site[0] == 0x75 && site[1] == 0x0C && VirtualProtect(site, 2, PAGE_EXECUTE_READWRITE, &old)) {
+            site[0] = 0x90; site[1] = 0x90;
+            VirtualProtect(site, 2, old, &old);
+            FlushInstructionCache(GetCurrentProcess(), site, 2);
+            ok = true;
+        }
+    }
+    Buf b; b.str("vehicle wear: ").str(ok ? "every company's vehicles (owner filter taken out at " : "the savegame's company only (the owner filter was not found)");
+    if (ok) b.hex(at + 21).str(")");
+    LogLine(b);
+}
+
 static void InstallToolCompany()
 {
     if (GetEnvironmentVariableA("MPFEVER_NOTOOLCO", 0, 0) > 0) { Buf b; b.str("tools' company: off (MPFEVER_NOTOOLCO)"); LogLine(b); return; }
@@ -4850,6 +4877,7 @@ static DWORD WINAPI Init(void*)
     if (g_layout) InstallHudShare();
     if (g_layout) InstallStopSnap();
     if (g_layout) InstallOpenNet();
+    InstallVehicleWear();
     { Buf b; b.str(g_luaSeedFixed ? "Lua string hash seed: fixed (same table order on every game)" : "Lua string hash seed: NOT fixed"); LogLine(b); }
     if (g_layout && RVA_MONEYCHECK) InstallDetour(RVA_MONEYCHECK, P_MONEYCHECK, sizeof(P_MONEYCHECK), (void*)&MoneyCheckDetour, (void**)&g_moneyOrig);
     if (g_layout && RVA_LINES) InstallDetour(RVA_LINES, P_LINES, sizeof(P_LINES), (void*)&LinesDetour, (void**)&g_linesOrig);
