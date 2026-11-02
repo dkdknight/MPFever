@@ -18,6 +18,11 @@ MPFever - Changelog
     other players' companies without a word ("my company is gone", its buildings locked: 50 minutes to find out why). The
     host is now told, in the log and in the lobby, to choose "One company per player" before the savegame
     (MPFEVER_SAVEMODE=0: not told). Test: tests/test_savemode.py.
+  - FIX (one company per player, a street of another company): a station or depot put on another company's street made the
+    rebuilt pieces of that street the builder's (the game's own rule): "the street no longer belongs to me" (2026-11-01). A
+    street of another company that is not shared (its road rule private) can no longer be built on: the tool says "This
+    street belongs to ... and is not shared" and does not build (MPFEVER_STREETVETO=0: as before). Test:
+    tests/test_streetveto.py. Not verified in a game yet.
   - FIX (#115, tolls, one company per player): a player could not tell that a toll was paid, nor to whom: the company window
     showed totals only. What a company pays to each other one is now kept by kind (station fees, track tolls, depot tolls),
     listed in the MPFever window (Company, Earnings and fees: "Paid to ..."), and the chat says it once, the first time in a

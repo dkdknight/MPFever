@@ -19123,6 +19123,19 @@
       "ko": "%s에 지불: 역 %s, 선로 %s, 차고 %s",
       "zh-CN": "支付给 %s：车站 %s，轨道 %s，车库 %s",
       "zh-TW": "支付給 %s：車站 %s，軌道 %s，車庫 %s"
+    },
+    "This street belongs to %s and is not shared: you cannot build on it.": {
+      "de": "Diese Straße gehört %s und ist nicht freigegeben: Du kannst nicht darauf bauen.",
+      "es": "Esta calle pertenece a %s y no está compartida: no puedes construir en ella.",
+      "it": "Questa strada appartiene a %s e non è condivisa: non puoi costruirci sopra.",
+      "nl": "Deze straat is van %s en wordt niet gedeeld: je kunt er niet op bouwen.",
+      "pl": "Ta ulica należy do %s i nie jest udostępniona: nie możesz na niej budować.",
+      "pt-BR": "Esta rua pertence a %s e não é compartilhada: você não pode construir nela.",
+      "ru": "Эта улица принадлежит %s и не открыта для других: строить на ней нельзя.",
+      "ja": "この道路は %s のもので共有されていません：ここには建設できません。",
+      "ko": "이 도로는 %s의 소유이며 공유되지 않습니다: 그 위에 건설할 수 없습니다.",
+      "zh-CN": "这条街道属于 %s 且未共享：你不能在上面建造。",
+      "zh-TW": "這條街道屬於 %s 且未共享：你不能在上面建造。"
     }
   }
 }

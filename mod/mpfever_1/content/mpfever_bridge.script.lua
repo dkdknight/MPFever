@@ -17423,6 +17423,46 @@ local function guiUpdate(userParams, state, guiState)
 	end
 end
 
+-- (0.6.8) One company per player: a tool's build that takes away a street of another company whose roads are not shared (its
+-- road rule private, see mpfever_eco.lua's E.roadRule) is turned down before the click, with the reason in the tool, as the game's
+-- permits do: a station or depot put on it made its pieces the builder's (the game's own rule; "the street no longer belongs to
+-- me", 2026-11-01). A shared street is built on, see G.keepStreetOwner. Only this player's interface: nothing is sent.
+-- MPFEVER_STREETVETO=0: no answer, as before
+G.streetVeto = function(id, name, param)
+	if os.getenv("MPFEVER_STREETVETO") == "0" or name ~= "builder.proposalCreate" then return nil end
+	local reg = R.CO
+	if type(reg) ~= "table" or reg.mode ~= "separate" or G.myCo == nil then return nil end
+	local E = C.eco()
+	if not (E and E.roadRule) then return nil end
+	local p = param and param[1]
+	local crit = false
+	pcall(function() crit = param[2].errorState.critical == true end)
+	if p == nil or crit then return nil end
+	local removed = nil
+	pcall(function() removed = p.proposal.removedSegments end)
+	if removed == nil then return nil end
+	local CT = api.type.ComponentType
+	for i = 1, #removed do
+		local e = nil
+		pcall(function() e = removed[i].entity end)
+		if type(e) == "number" and e >= 0 then
+			local street = false
+			pcall(function() street = api.engine.getComponent(e, CT.BASE_EDGE_STREET) ~= nil end)
+			local owner = street and R.ownerOf(e) or nil
+			local co = type(owner) == "number" and CO.idOfEntity(reg, owner) or nil
+			local c = co and co ~= G.myCo and CO.find(reg, co) or nil
+			if c and E.roadRule(reg, c).rule ~= "open" then
+				local why = (C.Tf("Cette rue appartient à %s et n'est pas partagée : vous ne pouvez pas construire dessus.",
+					"This street belongs to %s and is not shared: you cannot build on it.", tostring(c.name or ("#" .. tostring(c.id)))))
+				G.streetVetoN = (G.streetVetoN or 0) + 1
+				if G.streetVetoN <= 3 or G.streetVetoN % 100 == 0 then log("companies: the " .. tostring(id) .. " tool's proposal turned down here: street " .. e .. " of company " .. c.id .. " not shared") end
+				return { errorMessages = { [why] = true }, skipRender = false }
+			end
+		end
+	end
+	return nil
+end
+
 local function guiHandleEvent(userParams, state, guiState, src, id, name, param)
 	if not C.ACTIVE then return end
 	-- (a map signal armed in the MPFever window: the next click on the map places it, see G.pingArm)
@@ -17445,6 +17485,10 @@ local function guiHandleEvent(userParams, state, guiState, src, id, name, param)
 	-- click, a station, stop or depot in another company's territory, the vehicle store's buy button off, a line kept), returned
 	-- as the game's own scripts return theirs. Only while a module on answers (G.featVeto); nothing while no option is on: no
 	-- answer, as before. MPFEVER_FEATVETO=0 (K.FEATVETO false) or MPFEVER_FEAT=0: never
+	do
+		local okS, rs = pcall(G.streetVeto, id, name, param)
+		if okS and rs ~= nil then return rs end
+	end
 	if K.FEATVETO ~= false and G.featVeto and G.featOn then
 		local okv, r = pcall(G.featGuiVeto, id, name, param)
 		if okv and r ~= nil then return r end
