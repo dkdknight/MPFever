@@ -5097,19 +5097,6 @@
       "zh-CN": "正在更新 MPFever",
       "zh-TW": "正在更新 MPFever"
     },
-    "Preparing the report…": {
-      "de": "Bericht wird vorbereitet…",
-      "es": "Preparando el informe…",
-      "it": "Preparazione della segnalazione…",
-      "nl": "Rapport wordt voorbereid…",
-      "pl": "Przygotowywanie zgłoszenia…",
-      "pt-BR": "Preparando o relatório…",
-      "ru": "Готовится отчёт…",
-      "ja": "レポートを準備中…",
-      "ko": "보고서 준비 중…",
-      "zh-CN": "正在准备报告…",
-      "zh-TW": "正在準備回報…"
-    },
     "Report a problem (logs)": {
       "de": "Problem melden (Protokolle)",
       "es": "Informar de un problema (registros)",
@@ -9789,19 +9776,6 @@
       "ko": "클라이언트: 호스트가 더 이상 이 플레이어를 기다리지 않음: 새 플레이어로 세션에 참가합니다",
       "zh-CN": "客户端：主机已不再等待此玩家：以新玩家身份加入会话",
       "zh-TW": "用戶端：主機已不再等待此玩家：以新玩家身分加入工作階段"
-    },
-    "Client: nothing received from the host for 15 s, connection cut": {
-      "de": "Client: seit 15 s nichts vom Host empfangen, Verbindung getrennt",
-      "es": "Cliente: nada recibido del anfitrión en 15 s, conexión cortada",
-      "it": "Client: nulla ricevuto dall'host da 15 s, connessione interrotta",
-      "nl": "Client: 15 s niets van de host ontvangen, verbinding verbroken",
-      "pl": "Klient: nic nie odebrano od hosta od 15 s, połączenie zerwane",
-      "pt-BR": "Cliente: nada recebido do anfitrião há 15 s, conexão cortada",
-      "ru": "Клиент: от хоста ничего не получено за 15 с, соединение разорвано",
-      "ja": "クライアント：15 秒間ホストから何も受信していないため接続を切断しました",
-      "ko": "클라이언트: 15초 동안 호스트에서 아무것도 받지 못해 연결을 끊음",
-      "zh-CN": "客户端：15 秒内未收到主机的任何内容，连接已断开",
-      "zh-TW": "用戶端：15 秒內未收到主機的任何內容，連線已中斷"
     },
     "Client: connection cut for the test (MPFEVER_TEST_CUT={0})": {
       "de": "Client: Verbindung für den Test getrennt (MPFEVER_TEST_CUT={0})",
@@ -19006,6 +18980,84 @@
       "ko": "공유기가 NAT-PMP만 지원합니다",
       "zh-CN": "路由器仅支持 NAT-PMP",
       "zh-TW": "路由器僅支援 NAT-PMP"
+    },
+    "Client: nothing received from the host for {0} s, connection cut": {
+      "de": "Client: seit {0} s nichts vom Host empfangen, Verbindung getrennt",
+      "es": "Cliente: nada recibido del anfitrión en {0} s, conexión cortada",
+      "it": "Client: nulla ricevuto dall'host da {0} s, connessione interrotta",
+      "nl": "Client: {0} s niets van de host ontvangen, verbinding verbroken",
+      "pl": "Klient: nic nie odebrano od hosta od {0} s, połączenie zerwane",
+      "pt-BR": "Cliente: nada recebido do anfitrião há {0} s, conexão cortada",
+      "ru": "Клиент: от хоста ничего не получено за {0} с, соединение разорвано",
+      "ja": "クライアント：{0} 秒間ホストから何も受信していないため接続を切断しました",
+      "ko": "클라이언트: {0}초 동안 호스트에서 아무것도 받지 못해 연결을 끊음",
+      "zh-CN": "客户端：{0} 秒内未收到主机的任何内容，连接已断开",
+      "zh-TW": "用戶端：{0} 秒內未收到主機的任何內容，連線已中斷"
+    },
+    "Making the report…": {
+      "de": "Bericht wird erstellt…",
+      "es": "Creando el informe…",
+      "it": "Creazione del rapporto…",
+      "nl": "Rapport wordt gemaakt…",
+      "pl": "Tworzenie raportu…",
+      "pt-BR": "Criando o relatório…",
+      "ru": "Создание отчёта…",
+      "ja": "レポートを作成中…",
+      "ko": "보고서 만드는 중…",
+      "zh-CN": "正在生成报告…",
+      "zh-TW": "正在產生報告…"
+    },
+    "Making the report (about 20 s)…": {
+      "de": "Bericht wird erstellt (etwa 20 s)…",
+      "es": "Creando el informe (unos 20 s)…",
+      "it": "Creazione del rapporto (circa 20 s)…",
+      "nl": "Rapport wordt gemaakt (ongeveer 20 s)…",
+      "pl": "Tworzenie raportu (około 20 s)…",
+      "pt-BR": "Criando o relatório (cerca de 20 s)…",
+      "ru": "Создание отчёта (около 20 с)…",
+      "ja": "レポートを作成中（約 20 秒）…",
+      "ko": "보고서 만드는 중(약 20초)…",
+      "zh-CN": "正在生成报告（约 20 秒）…",
+      "zh-TW": "正在產生報告（約 20 秒）…"
+    },
+    "A report is already being made: request ignored.": {
+      "de": "Ein Bericht wird bereits erstellt: Anfrage ignoriert.",
+      "es": "Ya se está creando un informe: solicitud ignorada.",
+      "it": "Un rapporto è già in creazione: richiesta ignorata.",
+      "nl": "Er wordt al een rapport gemaakt: verzoek genegeerd.",
+      "pl": "Raport jest już tworzony: żądanie zignorowane.",
+      "pt-BR": "Um relatório já está sendo criado: pedido ignorado.",
+      "ru": "Отчёт уже создаётся: запрос пропущен.",
+      "ja": "レポートはすでに作成中です：要求を無視しました。",
+      "ko": "이미 보고서를 만드는 중입니다: 요청을 무시했습니다.",
+      "zh-CN": "已在生成报告：已忽略此请求。",
+      "zh-TW": "已在產生報告：已忽略此請求。"
+    },
+    "This savegame was played with one company per player: with one company for everybody, the other players' companies are not used. Choose \"One company per player\" before the savegame to get them back.": {
+      "de": "Dieser Spielstand wurde mit einer Firma pro Spieler gespielt: mit einer Firma für alle werden die Firmen der anderen Spieler nicht genutzt. Wähle „Eine Firma pro Spieler“ vor dem Spielstand, um sie zurückzubekommen.",
+      "es": "Esta partida se jugó con una empresa por jugador: con una empresa para todos, las empresas de los demás jugadores no se usan. Elige «Una empresa por jugador» antes de la partida para recuperarlas.",
+      "it": "Questo salvataggio è stato giocato con una compagnia per giocatore: con una compagnia per tutti, le compagnie degli altri giocatori non vengono usate. Scegli «Una compagnia per giocatore» prima del salvataggio per ritrovarle.",
+      "nl": "Dit spel werd gespeeld met één bedrijf per speler: met één bedrijf voor iedereen worden de bedrijven van de andere spelers niet gebruikt. Kies \"Eén bedrijf per speler\" vóór het spel om ze terug te krijgen.",
+      "pl": "Ten zapis był grany z jedną firmą na gracza: z jedną firmą dla wszystkich firmy pozostałych graczy nie są używane. Wybierz „Jedna firma na gracza” przed zapisem, aby je odzyskać.",
+      "pt-BR": "Este jogo salvo foi jogado com uma empresa por jogador: com uma empresa para todos, as empresas dos outros jogadores não são usadas. Escolha \"Uma empresa por jogador\" antes do jogo salvo para recuperá-las.",
+      "ru": "Это сохранение игралось с одной компанией на игрока: с одной компанией на всех компании других игроков не используются. Выберите «Одна компания на игрока» перед сохранением, чтобы вернуть их.",
+      "ja": "このセーブはプレイヤーごとに1社でプレイされました：全員で1社にすると、他のプレイヤーの会社は使われません。取り戻すには、セーブを選ぶ前に「プレイヤーごとに1社」を選んでください。",
+      "ko": "이 저장 게임은 플레이어마다 회사 하나로 플레이되었습니다: 모두에게 회사 하나로 하면 다른 플레이어의 회사는 사용되지 않습니다. 되찾으려면 저장 게임 전에 \"플레이어마다 회사 하나\"를 선택하세요.",
+      "zh-CN": "此存档是以“每位玩家一家公司”模式进行的：使用“所有人一家公司”时，其他玩家的公司不会被使用。请在选择存档前选择“每位玩家一家公司”以找回它们。",
+      "zh-TW": "此存檔是以「每位玩家一家公司」模式進行的：使用「所有人一家公司」時，其他玩家的公司不會被使用。請在選擇存檔前選擇「每位玩家一家公司」以找回它們。"
+    },
+    "This savegame was played with one company per player: here the other players' companies are not used. To get them back, cancel and choose 'One company per player' before the savegame.": {
+      "de": "Dieser Spielstand wurde mit einer Firma pro Spieler gespielt: hier werden die Firmen der anderen Spieler nicht genutzt. Um sie zurückzubekommen, brich ab und wähle „Eine Firma pro Spieler“ vor dem Spielstand.",
+      "es": "Esta partida se jugó con una empresa por jugador: aquí las empresas de los demás jugadores no se usan. Para recuperarlas, cancela y elige «Una empresa por jugador» antes de la partida.",
+      "it": "Questo salvataggio è stato giocato con una compagnia per giocatore: qui le compagnie degli altri giocatori non vengono usate. Per ritrovarle, annulla e scegli «Una compagnia per giocatore» prima del salvataggio.",
+      "nl": "Dit spel werd gespeeld met één bedrijf per speler: hier worden de bedrijven van de andere spelers niet gebruikt. Annuleer en kies \"Eén bedrijf per speler\" vóór het spel om ze terug te krijgen.",
+      "pl": "Ten zapis był grany z jedną firmą na gracza: tutaj firmy pozostałych graczy nie są używane. Aby je odzyskać, anuluj i wybierz „Jedna firma na gracza” przed zapisem.",
+      "pt-BR": "Este jogo salvo foi jogado com uma empresa por jogador: aqui as empresas dos outros jogadores não são usadas. Para recuperá-las, cancele e escolha \"Uma empresa por jogador\" antes do jogo salvo.",
+      "ru": "Это сохранение игралось с одной компанией на игрока: здесь компании других игроков не используются. Чтобы вернуть их, отмените и выберите «Одна компания на игрока» перед сохранением.",
+      "ja": "このセーブはプレイヤーごとに1社でプレイされました：ここでは他のプレイヤーの会社は使われません。取り戻すには、キャンセルしてセーブを選ぶ前に「プレイヤーごとに1社」を選んでください。",
+      "ko": "이 저장 게임은 플레이어마다 회사 하나로 플레이되었습니다: 여기서는 다른 플레이어의 회사가 사용되지 않습니다. 되찾으려면 취소하고 저장 게임 전에 \"플레이어마다 회사 하나\"를 선택하세요.",
+      "zh-CN": "此存档是以“每位玩家一家公司”模式进行的：此处不会使用其他玩家的公司。要找回它们，请取消并在选择存档前选择“每位玩家一家公司”。",
+      "zh-TW": "此存檔是以「每位玩家一家公司」模式進行的：此處不會使用其他玩家的公司。要找回它們，請取消並在選擇存檔前選擇「每位玩家一家公司」。"
     }
   }
 }

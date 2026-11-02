@@ -1377,6 +1377,14 @@ local function setup()
 			if st.text and st.text ~= "" then right[#right + 1] = text(st.text, "font-scale-title-4", PAGE_W - SIDE_W - 60) end
 			-- the host's lobby: the addresses to give to the other players (public: looked up by MPFever.exe, "..." meanwhile,
 			-- "?" when unknown)
+			-- (0.6.8, #115) a savegame played with one company per player, hosted with one company for everybody
+			if isHost and st.saveSeparate == "1" then
+				right[#right + 1] = gap(1, 10)
+				right[#right + 1] = box(V, {
+					text(T("Cette sauvegarde a été jouée avec une entreprise par joueur : ici, les entreprises des autres joueurs ne servent pas. Pour les retrouver, annulez et choisissez « Une entreprise par joueur » avant la sauvegarde.",
+						"This savegame was played with one company per player: here the other players' companies are not used. To get them back, cancel and choose 'One company per player' before the savegame."), "font-scale-body, warning", PAGE_W - SIDE_W - 84),
+				}, nil, { padding = { 8, 12, 8, 12 }, background = { 0.6, 0.45, 0.1, 0.25 }, size = { PAGE_W - SIDE_W - 60, -1 } })
+			end
 			if isHost and st.publicAddr and st.publicAddr ~= "" then
 				local w = PAGE_W - SIDE_W - 60
 				local pub = st.publicAddr

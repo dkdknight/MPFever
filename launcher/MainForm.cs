@@ -74,7 +74,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.7";
+        public const string Version = "0.6.8";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -94,6 +94,7 @@ namespace MPFever
         // everybody at once (each game loads the host's savegame at the same time); a player may still join a running game
         volatile bool lobbyOpen, lobbyStarting;
         string lobbySave = "", lobbyPlayers = "";
+        volatile bool lobbySaveSeparate;   // (0.6.8) the lobby's savegame was played with one company per player (SaveInfo.SeparateOf)
         // one company per player: the colour each player of the lobby picked (palette index, by name without its number), kept by
         // the host and sent with the lobby; a player who joins sees them as lobbyColors ("name:index,...") and the host's mode
         readonly Dictionary<string, int> lobbyColorOf = new Dictionary<string, int>();
@@ -924,6 +925,18 @@ namespace MPFever
 
         /// <summary>A problem report: the logs in a zip (reports\), shown in the Explorer, and a new GitHub issue opened in
         /// the browser with what the session was (see Reporter). The in-game window is told where the zip is.</summary>
+        int reportBusy;
+
+        /// <summary>The answer to "Report a problem" in report.txt of every game of this MPFever (the window of the game
+        /// whose button was clicked, which may not be the menu's game, shows it under the button).</summary>
+        void ReportAnswer(string text)
+        {
+            var dirs = games.Select(g => g.Dir).ToList();
+            if (menuGame != null) dirs.Add(menuGame.Dir);
+            foreach (var d in dirs.Where(x => x != null).Distinct())
+                try { File.WriteAllText(Path.Combine(d, "report.txt"), DateTime.Now.Ticks + "\t" + text + "\n"); } catch { }
+        }
+
         void Report(bool crashed)
         {
             try
@@ -948,13 +961,12 @@ namespace MPFever
                 try { BeginInvoke((Action)(() => { try { Clipboard.SetText(body); } catch { } })); } catch { }
                 Reporter.ShowInExplorer(zip);
                 Reporter.OpenIssue(title, body);
-                if (menuGame != null)
-                    try { File.WriteAllText(Path.Combine(menuGame.Dir, "report.txt"), DateTime.Now.Ticks + "\t" + F("Rapport prêt : {0}. La page de l'issue GitHub est ouverte dans le navigateur : glissez-y ce fichier.", "Report ready: {0}. The GitHub issue page is open in your browser: drag that file into it.", Path.GetFileName(zip)) + "\n"); } catch { }
+                ReportAnswer(F("Rapport prêt : {0}. La page de l'issue GitHub est ouverte dans le navigateur : glissez-y ce fichier.", "Report ready: {0}. The GitHub issue page is open in your browser: drag that file into it.", Path.GetFileName(zip)));
             }
             catch (Exception e)
             {
                 Log.Err(F("Rapport de problème impossible : {0}", "Could not make the problem report: {0}", e.Message));
-                if (menuGame != null) try { File.WriteAllText(Path.Combine(menuGame.Dir, "report.txt"), DateTime.Now.Ticks + "\t" + F("Rapport impossible : {0}", "Could not make the report: {0}", e.Message) + "\n"); } catch { }
+                ReportAnswer(F("Rapport impossible : {0}", "Could not make the report: {0}", e.Message));
             }
         }
 
@@ -1415,6 +1427,7 @@ namespace MPFever
                     ["lang"] = L.Code,
                     ["colors"] = lobbyOpen ? LobbyColors() : lobbyColors,
                     ["cmode"] = lobbyOpen ? companyMode : lobbyMode,
+                    ["saveSeparate"] = lobbyOpen && lobbySaveSeparate && companyMode != "separate" ? "1" : "",
                     ["bankrupt"] = lobbyOpen ? BankruptMonths() : "",
                     ["ai"] = lobbyOpen ? (companyMode == "separate" ? LobbyAiView() : "") : lobbyAiText,
                     ["rules"] = lobbyOpen ? (companyMode == "separate" ? LobbyRulesView() : "") : lobbyRulesText,
@@ -1617,7 +1630,7 @@ namespace MPFever
                 // (0.6: a new lobby for the savegame's game options, see ApplySaveOpts)
                 int optsGen;
                 lock (saveOptsLock) { optsGen = ++lobbyGen; lobbyOptsAtOpen = GameOptions(); }
-                lobbySave = arg; lobbyOpen = true; lobbyStarting = false;
+                lobbySave = arg; lobbyOpen = true; lobbyStarting = false; lobbySaveSeparate = false;
                 // (one company per player: the savegame's computer companies, in the lobby from the start; its rules and its game
                 // options from the same reading)
                 lock (lobbyAi) lobbyAi.Clear();
@@ -1639,8 +1652,23 @@ namespace MPFever
                         BroadcastLobby();
                         // (0.6: the game options the savegame was played with; one company per player: read with its computer
                         // companies, see LoadLobbyAi. MPFEVER_SAVEOPTS=0: never, the savegame is not decompressed here, as in 0.5.14)
-                        if (optsHere && !SaveOptsOff)
-                            try { var mk = SaveInfo.Read(f, false); ApplySaveOpts(optsGen, mk?.Opts); } catch (Exception e) { Log.W("savegame options: " + e.Message); }
+                        // (0.6.8, #115: the same reading tells a savegame played with one company per player, hosted here with
+                        // one company for everybody: the host is told, in the log and in the lobby. MPFEVER_SAVEMODE=0: not told)
+                        bool modeCheck = Environment.GetEnvironmentVariable("MPFEVER_SAVEMODE") != "0";
+                        if (optsHere && (!SaveOptsOff || modeCheck))
+                            try
+                            {
+                                var mk = SaveInfo.Read(f, false);
+                                if (!SaveOptsOff) ApplySaveOpts(optsGen, mk?.Opts);
+                                if (modeCheck && mk != null && mk.Separate && lobbySave == fpSave)
+                                {
+                                    lobbySaveSeparate = true;
+                                    Log.Warn(F("Cette sauvegarde a été jouée avec une entreprise par joueur : en « une entreprise pour tous », les entreprises des autres joueurs ne servent pas. Choisissez « Une entreprise par joueur » avant la sauvegarde pour les retrouver.",
+                                        "This savegame was played with one company per player: with one company for everybody, the other players' companies are not used. Choose \"One company per player\" before the savegame to get them back."));
+                                    MenuStatus();
+                                }
+                            }
+                            catch (Exception e) { Log.W("savegame options: " + e.Message); }
                     }
                     catch (Exception e) { Log.W("savegame fingerprint: " + e.Message); }
                 }) { IsBackground = true, Name = "Savegame fingerprint" }.Start();
@@ -1869,7 +1897,12 @@ namespace MPFever
             else if (cmd == "report")
             {
                 // "Report a problem" in the in-game MPFever window
-                new Thread(() => Report(false)) { IsBackground = true, Name = "Report" }.Start();
+                // (0.6.8) one report at a time: a click while one is being made (some 20 s) makes no other zip.
+                // MPFEVER_REPORTBUSY=0: a report per click, as before
+                if (System.Threading.Interlocked.CompareExchange(ref reportBusy, 1, 0) != 0 && Environment.GetEnvironmentVariable("MPFEVER_REPORTBUSY") != "0")
+                    Log.W(F("Rapport déjà en cours de création : demande ignorée.", "A report is already being made: request ignored."));
+                else
+                    new Thread(() => { try { Report(false); } finally { System.Threading.Interlocked.Exchange(ref reportBusy, 0); } }) { IsBackground = true, Name = "Report" }.Start();
             }
             else if (cmd == "discord")
             {

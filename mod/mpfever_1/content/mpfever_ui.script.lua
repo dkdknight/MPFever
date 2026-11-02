@@ -1148,23 +1148,44 @@ end
 
 -- "Report a problem": MPFever.exe puts the logs into a zip and opens a new GitHub issue (see Reporter.cs); it says where
 -- the zip is in report.txt, shown under the button
+-- (0.6.8) a report takes some 20 s: while it is being made, the button says so and another click asks nothing (three
+-- zips in 20 s, 2026-11-01), and only an answer written after the click is shown (the last report's "ready" line came back
+-- at once). MPFEVER_REPORTBUSY=0: every click asks a report, as before
+function U.reportLine()
+	local f = C.IO.open(C.DIR .. C.BS .. "report.txt", "rb")
+	if not f then return nil end
+	local line = f:read("*l")
+	f:close()
+	return line
+end
+function U.reportBusy()
+	return os.getenv("MPFEVER_REPORTBUSY") ~= "0" and U.reportWaiting == true and U.reportAsked ~= nil and os.time() - U.reportAsked <= 120
+end
+function U.reportLabel()
+	return U.reportBusy() and T("Rapport en cours de création…", "Making the report…") or T("Signaler un problème (journaux)", "Report a problem (logs)")
+end
 local function requestReport()
+	if U.reportBusy() then return end
+	U.reportOld = U.reportLine()
 	if not U.menuRequest("report") then return end
 	U.reportAsked = os.time()
-	U.reportMsg = T("Rapport en préparation…", "Preparing the report…")
+	U.reportWaiting = true
+	U.reportMsg = T("Rapport en cours de création (environ 20 s)…", "Making the report (about 20 s)…")
 	U.statusVersion = (U.statusVersion or 0) + 1
 end
 
 -- the answer of MPFever.exe to the last report asked (report.txt: "<ticks> TAB <text>")
 local function pollReport()
-	if not U.reportAsked or os.time() - U.reportAsked > 120 then return end
-	local f = C.IO.open(C.DIR .. C.BS .. "report.txt", "rb")
-	if not f then return end
-	local line = f:read("*l")
-	f:close()
+	if not U.reportAsked or os.time() - U.reportAsked > 120 then
+		if U.reportWaiting then U.reportWaiting = false U.statusVersion = (U.statusVersion or 0) + 1 end
+		return
+	end
+	local line = U.reportLine()
+	if os.getenv("MPFEVER_REPORTBUSY") ~= "0" and line == U.reportOld then return end
 	local text = line and line:match("^%d+\t(.*)$")
 	if text and text ~= U.reportMsg then
 		U.reportMsg = text
+		U.reportWaiting = false
 		U.statusVersion = (U.statusVersion or 0) + 1
 	end
 end
@@ -1858,6 +1879,13 @@ U.makeKit = function(builtin)
 	end
 	function K.row(children) return builtin.BoxLayout { orientation = K.H, children = children } end
 	function K.col(children) return builtin.BoxLayout { orientation = K.V, children = children } end
+	-- (0.6.8, #114) the windows' content with an inner margin on the left and at the bottom (the text touched the border).
+	-- MPFEVER_WINPAD=0: no margin, as before
+	function K.padded(content)
+		if os.getenv("MPFEVER_WINPAD") == "0" or content == nil then return content end
+		K.padStyle = K.padStyle or K.style { padding = { 0, 0, 10, 12 } }
+		return builtin.Component { meta = { styleSheet = K.padStyle }, layout = K.col { content } }
+	end
 	function K.gap(w, h)
 		return builtin.Component { meta = { styleSheet = cached("gap/" .. w .. "x" .. h, function() return K.style { size = { w, h } } end) } }
 	end
@@ -2513,7 +2541,7 @@ U.TABS.session = function(K, st, ctx)
 	local reportBtn = os.getenv("MPFEVER_SESSIONREPORT") ~= "0" and requestReport or nil
 	rows[#rows + 1] = K.row { K.btn(T("Réduire", "Reduce"), T("Une petite carte : la synchronisation, les joueurs et la discussion", "A small card: the sync, the players and the chat"),
 		function() U.setCompact(true) end), reportBtn and K.gap(8, 1) or nil,
-		reportBtn and K.btn(T("Signaler un problème (journaux)", "Report a problem (logs)"), T("MPFever.exe rassemble les journaux dans un zip et ouvre un nouveau ticket GitHub.", "MPFever.exe gathers the logs into a zip and opens a new GitHub issue."), reportBtn) or nil }
+		reportBtn and K.btn(U.reportLabel(), T("MPFever.exe rassemble les journaux dans un zip et ouvre un nouveau ticket GitHub.", "MPFever.exe gathers the logs into a zip and opens a new GitHub issue."), reportBtn) or nil }
 	if reportBtn and U.reportMsg and U.reportAsked and os.time() - U.reportAsked <= 120 then rows[#rows + 1] = K.muted(U.reportMsg, W) end
 	return rows
 end
@@ -3725,7 +3753,7 @@ U.TABS.settings = function(K, st, ctx)
 	rows[#rows + 1] = K.section(K.ICON_ALERT, T("Un problème ?", "A problem?"))
 	rows[#rows + 1] = K.muted(T("MPFever.exe rassemble les journaux dans un zip et ouvre un nouveau ticket GitHub.", "MPFever.exe gathers the logs into a zip and opens a new GitHub issue."), W)
 	-- (the Discord: MPFever.exe opens it in the browser)
-	rows[#rows + 1] = K.row { K.btn(T("Signaler un problème (journaux)", "Report a problem (logs)"), nil, requestReport), K.gap(8, 1),
+	rows[#rows + 1] = K.row { K.btn(U.reportLabel(), nil, requestReport), K.gap(8, 1),
 		K.btn("Discord", "discord.gg/DfMxFUQZCR", function() U.menuRequest("discord") end) }
 	if U.reportMsg and U.reportAsked and os.time() - U.reportAsked <= 120 then rows[#rows + 1] = K.muted(U.reportMsg, W) end
 	return rows
@@ -3975,7 +4003,7 @@ U.installNewWindow = function(react, builtin)
 			-- (it opens by itself: it must not take the keyboard from the game)
 			autoFocusOnBecomingVisible = false,
 			onClose = wp.onClose,
-			content = content,
+			content = K.padded(content),
 		}
 	end)
 end
@@ -4021,7 +4049,7 @@ U.installHub = function(react, builtin)
 			closable = true,
 			pinnable = false,
 			onClose = wp.onClose,
-			content = content,
+			content = K.padded(content),
 		}
 	end)
 end
@@ -4225,7 +4253,7 @@ local function installSession(react, builtin)
 		rows[#rows + 1] = builtin.Button { meta = { class = "secondary" }, content = row { icon(ICON_CHAT, 22), text("  " .. T("Ouvrir la discussion", "Open the chat")) },
 			onClick = function() if U.openChat then U.openChat() end end }
 		rows[#rows + 1] = text(" ")
-		rows[#rows + 1] = builtin.Button { meta = { class = "secondary" }, content = text(T("Signaler un problème (journaux)", "Report a problem (logs)")), onClick = requestReport }
+		rows[#rows + 1] = builtin.Button { meta = { class = "secondary" }, content = text(U.reportLabel()), onClick = requestReport }
 		if U.reportMsg and U.reportAsked and os.time() - U.reportAsked <= 120 then rows[#rows + 1] = muted(U.reportMsg) end
 		return builtin.Window {
 			title = "MPFever – " .. T("Multijoueur", "Multiplayer"),
@@ -4320,7 +4348,7 @@ local function installSession(react, builtin)
 			movable = true,
 			closable = true,
 			onClose = wp.onClose,
-			content = builtin.Component { meta = { styleSheet = style { size = { 560, -1 } } }, layout = builtin.BoxLayout { orientation = V, children = rows } },
+			content = (U.kit and U.kit.padded or function(c) return c end)(builtin.Component { meta = { styleSheet = style { size = { 560, -1 } } }, layout = builtin.BoxLayout { orientation = V, children = rows } }),
 		}
 	end)
 

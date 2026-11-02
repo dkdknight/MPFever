@@ -1,6 +1,24 @@
 MPFever - Changelog
 ===================
 
+0.6.8 - the night of 2026-11-02: reports of 2026-11-01 (thanks to kingplay98 and theop for the tests)
+  - FIX (problem report): a report takes some 20 s and nothing said it was being made: a player clicked three times and got
+    three zips, and the answer of the last report came back at once as if the new one were ready. The button now says
+    "Making the report…" until it is ready, another click asks nothing, only an answer written after the click is shown, and
+    MPFever.exe makes one report at a time and writes its answer to every game's window (MPFEVER_REPORTBUSY=0: as before).
+    Test: tests/test_reportbusy.py.
+  - FIX (#114): the in-game windows (Session, Hub, Chat) have an inner margin on the left and at the bottom
+    (MPFEVER_WINPAD=0: none, as before). Test: tests/test_reportbusy.py.
+  - FIX (#115, joining by Steam a big world): a player was cut again and again ("nothing received from the host for 15 s")
+    while the host's world of 300 MB and more came down and a few minutes after each reload: 30 minutes to join. The Steam
+    tunnel lives in the host's game, which can stay busy longer than that: through Steam a client now waits 40 s for a silent
+    host, a direct connection still 15 s (MPFEVER_STEAMSILENT=0: 15 s, as before; MPFEVER_SILENTCUT=s: s seconds).
+    Test: tests/test_silentcut.py.
+  - FIX (#115, the lobby): a savegame played with one company per player, hosted with one company for everybody, lost the
+    other players' companies without a word ("my company is gone", its buildings locked: 50 minutes to find out why). The
+    host is now told, in the log and in the lobby, to choose "One company per player" before the savegame
+    (MPFEVER_SAVEMODE=0: not told). Test: tests/test_savemode.py.
+
 0.6.7 - the test session of 2026-11-01: joining by Steam, the router's port, the host's local mods, a crash after a station
         extension, no-cost games (thanks to kingplay98 and theop for the tests)
   - FIX (both modes): upgrading ONE segment of a town street, when the game takes town buildings away for it, reloaded the

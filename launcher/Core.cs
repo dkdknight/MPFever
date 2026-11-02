@@ -1493,6 +1493,7 @@ namespace MPFever
                 + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + "}"));
             new Thread(ReadLoop) { IsBackground = true, Name = "Client read" }.Start();
             new Thread(LinkLoop) { IsBackground = true, Name = "Client link" }.Start();
+            viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             Log.Ok(L.F("Client : connecté à {0}", "Client: connected to {0}", used));
         }
 
@@ -1724,6 +1725,17 @@ namespace MPFever
         }
 
         static int connections;
+        bool viaSteam;
+
+        /// <summary>(0.6.8, #115) How long the host may stay silent before the connection is cut: 15 s, 40 s through Steam.
+        /// The Steam tunnel lives in the host's game, which can stay busy longer than 15 s with a world of 300 MB and more
+        /// (saving it, sending it): a player was cut again and again while the host's game came down and after each reload.
+        /// MPFEVER_SILENTCUT=s: s seconds; MPFEVER_STEAMSILENT=0: 15 s through Steam too, as before.</summary>
+        internal static int SilentLimit(bool steam)
+        {
+            if (int.TryParse(Environment.GetEnvironmentVariable("MPFEVER_SILENTCUT"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int s) && s > 0) return s;
+            return steam && Environment.GetEnvironmentVariable("MPFEVER_STEAMSILENT") != "0" ? 40 : 15;
+        }
 
         /// <summary>Twice a second the host is told what this player has received (at least every 2 s: the link is alive);
         /// a host silent for 15 s is cut. MPFEVER_TEST_CUT=s (tests): every connection is cut s seconds after it was made, the
@@ -1747,9 +1759,10 @@ namespace MPFever
                     told = rx; toldAt = now;
                     try { lock (gate) SessionLink.AckMsg(rx).WriteTo(writer); } catch { }
                 }
-                if (hostAcks && (now.Ticks - Interlocked.Read(ref lastRecvTicks)) / TimeSpan.TicksPerSecond > 15)
+                int silent = SilentLimit(viaSteam);
+                if (hostAcks && (now.Ticks - Interlocked.Read(ref lastRecvTicks)) / TimeSpan.TicksPerSecond > silent)
                 {
-                    Log.Warn(L.T("Client : plus rien reçu de l'hôte depuis 15 s, connexion coupée", "Client: nothing received from the host for 15 s, connection cut"));
+                    Log.Warn(L.F("Client : plus rien reçu de l'hôte depuis {0} s, connexion coupée", "Client: nothing received from the host for {0} s, connection cut", silent));
                     NetAddr.Cut(tcp);
                     break;
                 }

@@ -42,6 +42,7 @@ namespace MPFever
             public List<Company> Ai;
             public Dictionary<string, string> Rules;
             public string Opts;
+            public bool Separate;   // (0.6.8) played with one company per player (see SeparateOf)
         }
 
         public static Marks Read(string savePath, bool ai)
@@ -49,7 +50,7 @@ namespace MPFever
             byte[] d;
             try { d = Zstd.DecompressFile(savePath); }
             catch (Exception e) { Log.W("savegame: " + e.Message); return null; }
-            return new Marks { Ai = ai ? AiCompaniesOf(d) : null, Rules = RulesOf(d), Opts = OptsOf(d) };
+            return new Marks { Ai = ai ? AiCompaniesOf(d) : null, Rules = RulesOf(d), Opts = OptsOf(d), Separate = SeparateOf(d) };
         }
 
         static List<Company> AiCompaniesOf(byte[] d)
@@ -89,6 +90,15 @@ namespace MPFever
             }
             return new List<Company>(found.Values);
         }
+
+        // the registry's mode = "separate" entry (mpfever_co.lua: reg = { ..., mode = "separate", ... })
+        static readonly byte[] SeparateEntry = { 3, 0, 0, 0, 4, 0, 0, 0, (byte)'m', (byte)'o', (byte)'d', (byte)'e', 3, 0, 0, 0, 8, 0, 0, 0,
+            (byte)'s', (byte)'e', (byte)'p', (byte)'a', (byte)'r', (byte)'a', (byte)'t', (byte)'e' };
+
+        /// <summary>(0.6.8, #115) Whether a decompressed savegame was played with one company per player: its companies'
+        /// registry is in it. Hosted with one company for everybody, the other players' companies are not used (a player
+        /// found "my company is gone" and its buildings locked, 50 minutes to find out why).</summary>
+        public static bool SeparateOf(byte[] d) => d != null && IndexOf(d, SeparateEntry, 0) >= 0;
 
         static readonly byte[] RulesMark = Encoding.ASCII.GetBytes("mpfrules:");
 
