@@ -46,6 +46,12 @@ MPFever - Changelog
     past that the railway is left (MPFEVER_AIRAILBUDGET: the seconds, 0: no limit, as before). Test: tests/test_airailbudget.py.
   - FIX (diagnostic MPFEVER_ENTWATCH, tests only): during a resynchronisation's load it read the game state the load had
     freed, and the host's game stopped. It now reads it only while it is there. Test: tests/test_vehiclewear.py.
+  - FIX (desync, computer companies): their stops next to traffic lights put the junction's traffic light phases back on the
+    host's game, while the other games, replaying the stop from its capture, got the engine's own phases: the traffic, then
+    the towns and the vehicles went apart (one company per player with two computer companies: 6 runs of 6 out of sync a
+    minute or two after a resync, 0.6.8 3 of 3 in sync, its companies left those streets out; without computer companies in
+    sync). The phases are never put back now, every game makes the same (MPFEVER_STOPTLC=1: put back first, as the first
+    0.6.9 build did). With it: 2 runs of 2 in sync, 25 and 23 stops of the companies. Test: tests/test_keepnodecfg.py.
   - FIX (computer companies): a garage put on a town street segment next to a junction with a configuration of its own
     (traffic lights, crosswalks, lane connections) removed that configuration as the stops did, and the native replay of the
     garage cannot put the traffic light phases back: the same engine error was possible. A garage is no longer put on such

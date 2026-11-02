@@ -865,14 +865,21 @@ function C.keptNodeConfigs(nodes, oldSeg, newId, get, raw, opts)
 end
 
 -- (0.6.9) a stop's copy of a segment with its junctions' configurations put back (C.keptNodeConfigs) on ssp, in the first form
--- the command's factory takes (make(sp) makes the command): the full one, without the traffic light phases, without the
--- crosswalks, with neither. Returns the command and what was tried, or nil when no form was taken (the stop is not built:
--- removed alone, the configurations made the engine assert)
+-- the command's factory takes (make(sp) makes the command): without the traffic light phases, then without the phases nor the
+-- crosswalks. Returns the command and what was tried, or nil when no form was taken (the stop is not built: removed alone, the
+-- configurations made the engine assert). The phases are never put back: the other games replay the stop from its capture,
+-- which cannot carry them, and a junction with the builder's phases on one game and the engine's on the others made the
+-- traffic, then the towns and the vehicles, go apart (one company per player with two computer companies: 6 runs of 6 out of
+-- sync after their stops, 0.6.8 in sync: its companies left those streets out). MPFEVER_STOPTLC=1: the phases tried first, as
+-- the first 0.6.9 build did (the full form, without the phases, without the crosswalks, with neither)
 function C.stopWithNodeConfigs(sp, ssp, ncr, seg, make)
 	local function rawCfg(nd) return api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_CONFIG) end
 	local function getCfg(nd) return C.marshal(rawCfg(nd)) end
-	local forms = { { "full", {} }, { "no phases", { noTlc = true } }, { "no crosswalks", { noCrosswalks = true } },
-		{ "neither", { noTlc = true, noCrosswalks = true } } }
+	local forms = { { "no phases", { noTlc = true } }, { "neither", { noTlc = true, noCrosswalks = true } } }
+	if os.getenv("MPFEVER_STOPTLC") == "1" then
+		forms = { { "full", {} }, { "no phases", { noTlc = true } }, { "no crosswalks", { noCrosswalks = true } },
+			{ "neither", { noTlc = true, noCrosswalks = true } } }
+	end
 	local tried = {}
 	for _, f in ipairs(forms) do
 		local cmd

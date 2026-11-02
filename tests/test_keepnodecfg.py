@@ -76,12 +76,16 @@ FAKE_UD = { phases = 3 }
 RAW = { [58155] = { trafficLightConfig = FAKE_UD, crosswalks = { 900 }, laneConnections = { { segment0 = 44079, lane0 = 1, segment1 = 500, lane1 = 2 } } } }
 C.marshal = function(c) return { crosswalks = c.crosswalks, laneConnections = c.laneConnections, trafficLightPreference = 2 } end
 ''' + m.group(0) + m2.group(0) + m3.group(0))
-cmd, tried = F.eval('C.stopWithNodeConfigs({}, {}, { 58155 }, 44079, function(sp) if #sp.streetProposal.nodeConfigsToAdd[1].comp.crosswalks > 0 and sp.streetProposal.nodeConfigsToAdd[1].comp.trafficLightConfig then error("Unknown exception") end return "CMD" end)')
-check(cmd == "CMD" and tried.startswith("full ") and "Unknown exception; no phases OK" in tried, "the full form refused: the next one taken (" + str(tried) + ")")
-cmd, tried = F.eval('C.stopWithNodeConfigs({}, {}, { 58155 }, 44079, function(sp) return sp.streetProposal.nodeConfigsToAdd[1].comp.trafficLightConfig == FAKE_UD and sp.streetProposal.nodeConfigsToAdd[1].comp.laneConnections[1].segment0 == -1 and "CMD" or nil end)')
-check(cmd == "CMD" and tried == "full OK", "the full form: the engine's phases put as they are, the copy's id in the connections")
+# (0.6.9 final: the phases never put back, the other games' replays cannot carry them)
+cmd, tried = F.eval('C.stopWithNodeConfigs({}, {}, { 58155 }, 44079, function(sp) if sp.streetProposal.nodeConfigsToAdd[1].comp.trafficLightConfig then error("phases") end if #sp.streetProposal.nodeConfigsToAdd[1].comp.crosswalks > 0 then error("Unknown exception") end return "CMD" end)')
+check(cmd == "CMD" and tried.startswith("no phases ") and "Unknown exception; neither OK" in tried, "without the phases first, then without the crosswalks too (" + str(tried) + ")")
+cmd, tried = F.eval('C.stopWithNodeConfigs({}, {}, { 58155 }, 44079, function(sp) return sp.streetProposal.nodeConfigsToAdd[1].comp.trafficLightConfig == nil and sp.streetProposal.nodeConfigsToAdd[1].comp.laneConnections[1].segment0 == -1 and "CMD" or nil end)')
+check(cmd == "CMD" and tried == "no phases OK", "no phases put back, the copy's id in the connections")
 cmd, tried = F.eval('C.stopWithNodeConfigs({}, {}, { 58155 }, 44079, function(sp) error("Unknown exception") end)')
-check(cmd is None and tried.count("Unknown exception") == 4, "no form taken: nothing (the stop is not built)")
+check(cmd is None and tried.count("Unknown exception") == 2, "no form taken: nothing (the stop is not built)")
+F.execute('os.getenv = function(k) if k == "MPFEVER_STOPTLC" then return "1" end end')
+cmd, tried = F.eval('C.stopWithNodeConfigs({}, {}, { 58155 }, 44079, function(sp) return sp.streetProposal.nodeConfigsToAdd[1].comp.trafficLightConfig == FAKE_UD and "CMD" or nil end)')
+check(cmd == "CMD" and tried == "full OK", "MPFEVER_STOPTLC=1: the full form first, the engine's phases put as they are")
 
 bridge = open(os.path.join(CONTENT, "mpfever_bridge.script.lua"), encoding="utf-8").read()
 i = bridge.find("H.dstop = function")
