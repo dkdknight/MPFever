@@ -20,6 +20,12 @@ MPFever - Changelog
     without the traffic light phases, without the crosswalks, with neither; none taken: the stop is not built), and those
     streets are used again (MPFEVER_KEEPNODECFG=0: removed only and those streets left out, as before). A player's stop,
     made with the tool, was not concerned. Test: tests/test_keepnodecfg.py.
+  - FIX (towns, difficulty): "on Very Hard my towns have no problem with fog and noise". MPFever set every town's
+    sensitivity to pollution, noise and traffic congestion to 0, because these ratings once came out otherwise on each game.
+    They are now the same on every game (stress test: 40 min at x4 in shared mode, 40 min in separate mode with a computer
+    company, 0 desyncs, the ratings identical on both games), so the towns take the game's sensitivities again, the
+    difficulty's, also in a savegame an earlier MPFever had set to 0 (MPFEVER_TOWNEMISSIONS=0: set to 0, as before). Test:
+    tests/test_townemissions.py.
 
 0.6.8 - the night of 2026-11-02: reports of 2026-11-01 (thanks to kingplay98 and theop for the tests)
   - FIX (#109, both modes): the resyncs "for no reason". A vehicle bought or a line created took the first free entity id of

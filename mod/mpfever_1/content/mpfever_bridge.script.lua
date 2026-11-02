@@ -15442,8 +15442,20 @@ H.area_dump = function(from, p)
 end
 
 local function neutraliseEmissions()
-	-- town pollution/noise and traffic come from engine computations made in parallel (not the same on every game): their effect
-	-- on the growth of the towns is removed
+	-- (0.6.9) the towns' sensitivities to pollution, noise and traffic are the game's (the difficulty's: "on Very Hard my towns have
+	-- no problem with fog and noise"), also in a savegame where an earlier MPFever had set them to 0: these ratings are now the
+	-- same on every game (2 x 40 min at x4, shared and separate modes, ratings from 0.72 to 0.97, identical)
+	-- MPFEVER_TOWNEMISSIONS=0: their effect on the growth of the towns removed, as before (they came from engine computations
+	-- made in parallel, not the same on every game then)
+	if os.getenv("MPFEVER_TOWNEMISSIONS") ~= "0" then
+		local m = 0
+		api.engine.forEachEntityWithComponent(function(town)
+			m = m + 1
+			O.sendCommand(O.event("", "Towns", "resetTownRatingSensitivity", { townEntity = town }))
+		end, api.type.ComponentType.TOWN)
+		log("pollution, noise and traffic sensitivity: the game's (difficulty) for " .. m .. " towns")
+		return
+	end
 	local n = 0
 	api.engine.forEachEntityWithComponent(function(town)
 		n = n + 1
