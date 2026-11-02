@@ -26,6 +26,17 @@ MPFever - Changelog
     game's maintenance update wears a vehicle only when its owner is the game's own player. The native module now lets it
     wear every company's vehicles, the same way on every game, the computer companies' included (MPFEVER_ALLWEAR=0: the
     savegame's company only, as before). Test: tests/test_vehiclewear.py.
+  - FIX (desync, both modes): a game waited for a build another game had announced for 1800 frames only: 30 s at 60 frames
+    a second, 12 s at 150 (a fast screen, small windows). When the builder took longer (the host busy with a build the game
+    refused shipped its next one 18 s after announcing it, test fz1), the other game went on and applied the build 6 steps
+    late: the segment's age, the towns and the vehicles apart, a reload. The wait now lasts at least 60 s of real time too; a
+    build that is not made still frees the others at once (MPFEVER_NATWAITSECONDS: those seconds, 0: the frames only, as
+    before). Test: tests/test_natwait.py.
+  - FIX (computer companies): the plan of a long railway on a big map held the host's game for 17 s, every game waiting
+    (0.6.8 too; with the short wait above, the other games then applied the host's builds late). A plan now takes 2 s at most;
+    past that the railway is left (MPFEVER_AIRAILBUDGET: the seconds, 0: no limit, as before). Test: tests/test_airailbudget.py.
+  - FIX (diagnostic MPFEVER_ENTWATCH, tests only): during a resynchronisation's load it read the game state the load had
+    freed, and the host's game stopped. It now reads it only while it is there. Test: tests/test_vehiclewear.py.
   - FIX (computer companies): a garage put on a town street segment next to a junction with a configuration of its own
     (traffic lights, crosswalks, lane connections) removed that configuration as the stops did, and the native replay of the
     garage cannot put the traffic light phases back: the same engine error was possible. A garage is no longer put on such

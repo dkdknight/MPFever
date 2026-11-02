@@ -59,6 +59,17 @@ local function gameSpeed()
 	return gs and gs.speedup or 0
 end
 
+-- (diagnostic) MPFEVER_EDGEDUMP=1: the text of every segment at each check (the "edges" measure), in edges_<game time>.txt, to
+-- find the segment two games see otherwise
+if os.getenv("MPFEVER_EDGEDUMP") == "1" then
+	R.edgeDump = function() return {} end
+	R.edgeDumpDone = function(d)
+		table.sort(d)
+		local f = C.IO.open(C.DIR .. C.BS .. "edges_" .. string.format("%012d", gameTime()) .. ".txt", "wb")
+		if f then f:write(table.concat(d, "\n")); f:close() end
+	end
+end
+
 -- order-independent hash of a plain Lua value (game script states): tables are hashed as a sum over their entries,
 -- so that the iteration order (which differs between Lua states) does not matter
 -- (noName: the texts kept under "name" left out. The subsidies' script keeps the title of each one in the language of the
@@ -6877,7 +6888,7 @@ H.nat_pending = function(from, p)
 	if p.paused then G.ptIssue(p.origin, p.id) end
 	pcall(G.noteOthers, { origin = p.origin, at = p.at, native = true })
 	logMargin("nat_pending", p.at, p.origin, p.lead)
-	G.natWait[#G.natWait + 1] = { origin = p.origin, id = p.id, at = p.at, since = G.frames, lead = p.lead }
+	G.natWait[#G.natWait + 1] = { origin = p.origin, id = p.id, at = p.at, since = G.frames, sinceT = os.clock(), lead = p.lead }
 	if p.lead then
 		-- BUILDLEAD: the builder released it at once; the time is only the earliest the build can land at (its game's time when it
 		-- was released), the real one comes with the build (nativeReceived). Holding there keeps this game from passing it.
@@ -7392,10 +7403,16 @@ G.updateLeadCap = function()
 	if ref then G.leadCapAt = ref + G.leadWindow() end
 end
 
+-- (0.6.9) an announced build is waited for 1800 frames and at least 60 s of real time: with small windows the frames ran
+-- fast, 1800 of them were 12 s in the test fz1 of 2026-11-02, while the host, busy with a refused build, shipped its next one
+-- 18 s after announcing it; the client had gone on and applied it 6 steps late (towns and vehicles apart, a reload). A build
+-- that is not made still frees the others at once (nat_cancel). MPFEVER_NATWAITSECONDS: the seconds (60; 0: the frames only, as
+-- before)
 local function expireNativeWaits()
 	local keep = {}
+	local secs = tonumber(os.getenv("MPFEVER_NATWAITSECONDS") or "60") or 60
 	for _, w in ipairs(G.natWait) do
-		if not w.arrived and G.frames - w.since > 1800 then
+		if not w.arrived and G.frames - w.since > 1800 and (secs <= 0 or not w.sinceT or os.clock() - w.sinceT > secs) then
 			log("NATIVE build of " .. tostring(w.origin) .. " for t=" .. tostring(w.at) .. " never arrived: no longer holding (desync risk)")
 		else
 			keep[#keep + 1] = w
@@ -14828,6 +14845,7 @@ H.dstop = function(from, p)
 			else
 				cc.laneConfigs = c.laneConfigs
 			end
+			C.keepSegmentLook(cc, c, rev)
 			local left = n % 2 == 0
 			cc.objects = { { -400000000, left and 0 or 1 } }
 			e.comp = cc

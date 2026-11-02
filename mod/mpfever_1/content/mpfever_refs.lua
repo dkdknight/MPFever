@@ -1115,7 +1115,9 @@ function R.contentHash(hashStr, dumpFn)
 		local p = c and matPos(c.transf)
 		return c and (tostring(c.fileName) .. "@" .. r1(p and p.x) .. "," .. r1(p and p.y)) or nil
 	end) end)
-	part("edges", function() return count("BASE_EDGE", function(e)
+	-- (diagnostic: R.edgeDump, set by the bridge with MPFEVER_EDGEDUMP, gets every segment's text of one check)
+	part("edges", function() local dump = R.edgeDump and R.edgeDump() or nil; local r = count("BASE_EDGE", function(e)
+		local t = (function()
 		local c = comp(e, "BASE_EDGE")
 		if not c then return nil end
 		local a, b = nodePos(c.node0), nodePos(c.node1)
@@ -1138,7 +1140,10 @@ function R.contentHash(hashStr, dumpFn)
 		local okd = true
 		return s1 .. "-" .. s2 .. tostring(c.roadTemplate) .. "/" .. tostring(okd and nd or 0) .. "/" .. tostring(c.roadStyle)
 			.. "/" .. tostring(c.roadType) .. "/" .. tostring(c.type) .. "/" .. tostring(c.typeIndex) .. "/" .. deco .. "/" .. lanesig .. "/d" .. tostring(c.distance)
-	end) end)
+		end)()
+		if dump and t then dump[#dump + 1] = e .. "	" .. t end
+		return t
+	end); if dump and R.edgeDumpDone then pcall(R.edgeDumpDone, dump) end; return r end)
 	-- the segments' ages (TICK_EPOCH: the step each was added at, which the towns' parcels compare; the street tool used to give
 	-- its own on the builder's game only), as a set
 	part("ages", function()

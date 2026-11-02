@@ -2868,8 +2868,10 @@ static void EntSeq(char op, int entity, void* ret, int engine, long kind)
 
 static int EntEngine(void* engine)
 {
+    // (0.6.9: the game state read only while it is there: a resynchronisation's load frees it while the load's threads make
+    // entities, and the diagnostic stopped the host's game there, test fin1 of 2026-11-02, winhttp.dll+0x1ad2b)
     void* gs = g_slot;
-    return (gs && engine == *(void**)((u8*)gs + 0x18)) ? 0 : 1;
+    return (gs && Readable((u8*)gs + 0x18, 8) && engine == *(void**)((u8*)gs + 0x18)) ? 0 : 1;
 }
 
 static void EntOff(const char* what, int entity, void* ret)

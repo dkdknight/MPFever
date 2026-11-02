@@ -45,6 +45,9 @@ def main():
           and body.index("MPFEVER_ALLWEAR") < body.index("FindSigRva"))
     check("the install is called with the other fixes", "    InstallVehicleWear();\n" in src)
     check("its result is logged", '"vehicle wear: "' in body)
+    # (the diagnostic MPFEVER_ENTWATCH read the game state a resynchronisation's load had freed: the host's game stopped)
+    ee = re.search(r"^static int EntEngine\(void\* engine\)\n\{\n.*?^\}\n", src, re.S | re.M)
+    check("ENTWATCH reads the game state only while it is there", ee is not None and "Readable((u8*)gs + 0x18, 8)" in ee.group(0))
 
     if not os.path.exists(GAME):
         print("(the game is not installed here: its bytes not checked)")

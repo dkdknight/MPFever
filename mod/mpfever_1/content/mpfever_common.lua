@@ -812,6 +812,22 @@ function C.nodeConfigs(list)
 	return cfgs
 end
 
+-- (0.6.9) what a script's copy of a segment keeps of it, as the stop tool and the replays of its stops keep it (replayStop): its
+-- decorations (a town street's trees: the copy had none on the builder's game, both rows on the replaying games: "edges" apart,
+-- then the towns, test fe3 of 2026-11-02) and a track's distance. rev: the copy runs the other way round (a decoration's side
+-- counts from the first node). MPFEVER_STOPDECOR=0: none kept, as before
+function C.keepSegmentLook(cc, c, rev)
+	if os.getenv("MPFEVER_STOPDECOR") == "0" then return end
+	pcall(function() if type(c.distance) == "number" and c.distance ~= 0 then cc.distance = c.distance end end)
+	pcall(function()
+		if #c.edgeDecorations == 0 then return end
+		if not rev then cc.edgeDecorations = c.edgeDecorations; return end
+		local deco = {}
+		for k = 1, #c.edgeDecorations do local d = c.edgeDecorations[k]; deco[k] = { d[1], not d[2] } end
+		cc.edgeDecorations = deco
+	end)
+end
+
 -- (0.6.9) the node configurations of a segment's ends, for a script's build that replaces the segment by a copy (newId, the
 -- proposal's negative id): the lane connections of the old segment moved onto the copy, as the stop tool puts them back. Removing
 -- them alone left a junction with traffic lights but no configuration: the engine asserted (it != components.end(), stress test

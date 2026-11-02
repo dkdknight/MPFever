@@ -73,6 +73,14 @@ local RL = { MIN = 2500, MAX = 15000, LEN = 3, STEP = 60, GRADE = 0.03, STATION 
 	DEPOT = "::/depots/rail/rail_depot.con", DEPOT_EXIT = { x = -12.2, y = -90 }, POWER = 400, WAGONS = 6,
 	OFFSETS = { 0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4 }, CELL = 100, CROSS = 300, ALONG = 150, LEG = 600, LEAD = 500, RADIUS = 80, TRIES = 3, SPAN = 50, CLEAR = 7, WATER = 300, WET = 400, IDLE_TRIES = 20,
 	RAMP = 0.07, LOOK = 7200, MAXTRAINS = 3, NEAR = 8, NEARCELL = 20, MINPROD = tonumber(os.getenv("MPFEVER_AIRAILMIN") or "") or 300, LOSSLOOKS = 5 }
+-- (0.6.9) the time a railway's plan may take on the host's game, see RL.corridor (MPFEVER_AIRAILBUDGET seconds, 2; 0: no limit,
+-- as before)
+RL.BUDGET = tonumber(os.getenv("MPFEVER_AIRAILBUDGET") or "") or 2
+function RL.inTime()
+	if RL.deadline and os.clock() > RL.deadline then
+		error(string.format("the plan took longer than %g s, the games waiting meanwhile: left", RL.BUDGET), 0)
+	end
+end
 
 local function L(E, s) E.log("AI" .. (AINUM ~= 1 and tostring(AINUM) or "") .. " " .. s) end
 
@@ -550,6 +558,7 @@ local function buildStop(E, co, seg, n)
 	cc.type = c.type; cc.typeIndex = c.typeIndex
 	cc.roadTemplate = c.roadTemplate; cc.roadStyle = c.roadStyle; cc.roadType = c.roadType
 	cc.laneConfigs = c.laneConfigs
+	C.keepSegmentLook(cc, c, false)
 	cc.objects = { { -400000000, 1 } }
 	e.comp = cc
 	local owner = ownerOf(E, seg)
@@ -3583,7 +3592,8 @@ function RL.world(E, co, box)
 		end
 		return open[k]
 	end
-	for _, e in ipairs(E.R.allEdges()) do
+	for k, e in ipairs(E.R.allEdges()) do
+		if k % 64 == 0 then RL.inTime() end
 		pcall(function()
 			local c = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
 			local m = E.C.marshal(c)
@@ -3707,6 +3717,7 @@ function RL.plan(E, p0, d0, p1, d1, W)
 		if k == gk then found = true break end
 		visits = visits + 1
 		if visits > 60000 then return nil, "the search took too long" end
+		if visits % 1000 == 0 then RL.inTime() end
 		local i, j = k % nx, math.floor(k / nx)
 		for di = -1, 1 do for dj = -1, 1 do
 			if di ~= 0 or dj ~= 0 then
@@ -4029,6 +4040,15 @@ end
 -- way between those ends clear of what is in its way (RL.trackProposal: towns, slopes, bridges) that the engine's dry run lets
 -- through too. True, or false and why
 function RL.corridor(E, co, from, to, a)
+	-- (0.6.9) within RL.BUDGET s: the plan of a long railway on a big map held the host's game 17 s (the others stopped waiting
+	-- for its builds and applied them late, test fz1 of 2026-11-02; 0.6.8's st2 too); a plan that takes longer is left
+	RL.deadline = RL.BUDGET > 0 and os.clock() + RL.BUDGET or nil
+	local okC, r1, r2 = pcall(RL.corridorIn, E, co, from, to, a)
+	RL.deadline = nil
+	if not okC then error(r1, 0) end
+	return r1, r2
+end
+function RL.corridorIn(E, co, from, to, a)
 	local pa = RL.stationPlace(E, co, from, a)
 	if not pa then return false, "no place for a station near industry " .. from.e end
 	local pb = RL.stationPlace(E, co, to, a + math.pi)
@@ -4043,6 +4063,7 @@ function RL.corridor(E, co, from, to, a)
 	local bits = keepBuildings() and withoutBuildings(CTX_ROAD) or CTX_ROAD
 	local ctx = context(E, co.ent, bits)
 	for _, w in ipairs(RL.ways(E, p0, u, p1, back, W)) do
+		RL.inTime()
 		local sp, _, refused = RL.trackProposal(E, co, -9001, p0, u, -9002, p1, back, currentYear(E), w.way, W)
 		if sp then
 			-- (0.6.4: and the engine's dry run of that track, its two ends new nodes where the stations' ends will be: what the
