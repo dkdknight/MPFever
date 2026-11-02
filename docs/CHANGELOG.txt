@@ -18,6 +18,11 @@ MPFever - Changelog
     other players' companies without a word ("my company is gone", its buildings locked: 50 minutes to find out why). The
     host is now told, in the log and in the lobby, to choose "One company per player" before the savegame
     (MPFEVER_SAVEMODE=0: not told). Test: tests/test_savemode.py.
+  - FIX (#115, tolls, one company per player): a player could not tell that a toll was paid, nor to whom: the company window
+    showed totals only. What a company pays to each other one is now kept by kind (station fees, track tolls, depot tolls),
+    listed in the MPFever window (Company, Earnings and fees: "Paid to ..."), and the chat says it once, the first time in a
+    session a company pays another one (MPFEVER_PAIDTO=0: not kept; MPFEVER_PAIDNOTICE=0: no chat line).
+    Test: tests/test_paidto.py. Not verified in a game yet.
   - FIX (stock market, one company per player): no dividend was ever paid ("the stock dividend doesn't work", Discord). The
     host measured each company's result from its lines, found by their owner component, which a line does not have: every
     result was 0. A company's lines now come from the game's line system (MPFEVER_STOCKLINES=0: as before).

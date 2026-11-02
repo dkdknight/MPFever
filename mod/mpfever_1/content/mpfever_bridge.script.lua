@@ -847,6 +847,8 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 					api.cmd.sendCommand(api.cmd.makeJournalBookAssetCmd(from, entry(-toll.fee, false), api.type.Vec3f.new(0, 0, 0)))
 					api.cmd.sendCommand(api.cmd.makeJournalBookAssetCmd(to, entry(toll.fee, true), api.type.Vec3f.new(0, 0, 0)))
 				end
+				local eco = C.eco()
+				if from and to and eco and eco.notePaid then eco.notePaid(R.CO, a.co, toll.to, "d", toll.fee) end
 				log("companies: company " .. tostring(a.co) .. " uses a depot of company " .. toll.to .. " for " .. toll.fee)
 			end)
 		end
@@ -1795,6 +1797,7 @@ local function chargeShares(st, dt)
 		add(o.to, "earn", o.carrier, o.fee)
 		reg.shareIncome[tostring(o.to)] = (reg.shareIncome[tostring(o.to)] or 0) + o.fee
 		reg.shareExpense[tostring(o.from)] = (reg.shareExpense[tostring(o.from)] or 0) + o.fee
+		if eco.notePaid then eco.notePaid(reg, o.from, o.to, "s", o.fee) end
 	end
 	table.sort(order)
 	for _, k in ipairs(order) do
@@ -15718,6 +15721,11 @@ G.coEco = function(st, reg, c)
 		local d = E.depotCoRule(reg, co)
 		L[#L + 1] = "depotco\t" .. co.id .. "\t" .. tostring(d.rule) .. "\t" .. math.floor(tonumber(d.toll) or 0)
 		L[#L + 1] = "fees\t" .. co.id .. "\t" .. num(reg.shareIncome, co.id) .. "\t" .. num(reg.shareExpense, co.id) .. "\t" .. num(reg.tollIncome, co.id) .. "\t" .. num(reg.tollExpense, co.id)
+		-- (0.6.8, #115) what this company paid to each other company, by kind (see mpfever_eco.lua's E.notePaid)
+		for k, v in pairs(reg.paidTo or {}) do
+			local f, t, kind = tostring(k):match("^(%d+)>(%d+):(%a)$")
+			if f and tonumber(f) == co.id then L[#L + 1] = "paid\t" .. f .. "\t" .. t .. "\t" .. kind .. "\t" .. math.floor(tonumber(v) or 0) end
+		end
 	end
 	-- (a company's rule for its stations changed: the map's icons and the line tool follow at once, see G.hudShare)
 	local rs = table.concat(rulesSig, " ")

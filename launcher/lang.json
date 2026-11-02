@@ -19058,6 +19058,71 @@
       "ko": "이 저장 게임은 플레이어마다 회사 하나로 플레이되었습니다: 여기서는 다른 플레이어의 회사가 사용되지 않습니다. 되찾으려면 취소하고 저장 게임 전에 \"플레이어마다 회사 하나\"를 선택하세요.",
       "zh-CN": "此存档是以“每位玩家一家公司”模式进行的：此处不会使用其他玩家的公司。要找回它们，请取消并在选择存档前选择“每位玩家一家公司”。",
       "zh-TW": "此存檔是以「每位玩家一家公司」模式進行的：此處不會使用其他玩家的公司。要找回它們，請取消並在選擇存檔前選擇「每位玩家一家公司」。"
+    },
+    "its stations": {
+      "de": "seine Bahnhöfe",
+      "es": "sus estaciones",
+      "it": "le sue stazioni",
+      "nl": "zijn stations",
+      "pl": "jej stacji",
+      "pt-BR": "suas estações",
+      "ru": "её станции",
+      "ja": "その駅",
+      "ko": "그 역",
+      "zh-CN": "其车站",
+      "zh-TW": "其車站"
+    },
+    "its tracks": {
+      "de": "seine Gleise",
+      "es": "sus vías",
+      "it": "i suoi binari",
+      "nl": "zijn sporen",
+      "pl": "jej torów",
+      "pt-BR": "seus trilhos",
+      "ru": "её пути",
+      "ja": "その線路",
+      "ko": "그 선로",
+      "zh-CN": "其轨道",
+      "zh-TW": "其軌道"
+    },
+    "its depots": {
+      "de": "seine Depots",
+      "es": "sus depósitos",
+      "it": "i suoi depositi",
+      "nl": "zijn depots",
+      "pl": "jej zajezdni",
+      "pt-BR": "seus depósitos",
+      "ru": "её депо",
+      "ja": "その車庫",
+      "ko": "그 차고",
+      "zh-CN": "其车库",
+      "zh-TW": "其車庫"
+    },
+    "Your company pays %s to use %s (the details: MPFever window, Company, Earnings and fees).": {
+      "de": "Deine Firma zahlt %s für die Nutzung von %s (Details: MPFever-Fenster, Firma, Einnahmen und Gebühren).",
+      "es": "Tu empresa paga a %s por usar %s (detalle: ventana de MPFever, Empresa, Ingresos y tasas).",
+      "it": "La tua compagnia paga %s per usare %s (dettagli: finestra MPFever, Compagnia, Guadagni e tariffe).",
+      "nl": "Je bedrijf betaalt %s voor het gebruik van %s (details: MPFever-venster, Bedrijf, Inkomsten en kosten).",
+      "pl": "Twoja firma płaci %s za korzystanie z %s (szczegóły: okno MPFever, Firma, Zarobki i opłaty).",
+      "pt-BR": "Sua empresa paga %s para usar %s (detalhes: janela do MPFever, Empresa, Ganhos e taxas).",
+      "ru": "Ваша компания платит %s за использование: %s (подробности: окно MPFever, Компания, Доходы и сборы).",
+      "ja": "あなたの会社は %s に %s の利用料を支払っています（詳細：MPFever ウィンドウ、会社、収入と料金）。",
+      "ko": "회사가 %s에 %s 사용료를 내고 있습니다(자세히: MPFever 창, 회사, 수입과 요금).",
+      "zh-CN": "你的公司向 %s 支付费用以使用%s（详情：MPFever 窗口，公司，收入与费用）。",
+      "zh-TW": "你的公司向 %s 支付費用以使用%s（詳情：MPFever 視窗，公司，收入與費用）。"
+    },
+    "Paid to %s: stations %s, tracks %s, depots %s": {
+      "de": "An %s gezahlt: Bahnhöfe %s, Gleise %s, Depots %s",
+      "es": "Pagado a %s: estaciones %s, vías %s, depósitos %s",
+      "it": "Pagato a %s: stazioni %s, binari %s, depositi %s",
+      "nl": "Betaald aan %s: stations %s, sporen %s, depots %s",
+      "pl": "Zapłacono %s: stacje %s, tory %s, zajezdnie %s",
+      "pt-BR": "Pago a %s: estações %s, trilhos %s, depósitos %s",
+      "ru": "Оплачено %s: станции %s, пути %s, депо %s",
+      "ja": "%s への支払い：駅 %s、線路 %s、車庫 %s",
+      "ko": "%s에 지불: 역 %s, 선로 %s, 차고 %s",
+      "zh-CN": "支付给 %s：车站 %s，轨道 %s，车库 %s",
+      "zh-TW": "支付給 %s：車站 %s，軌道 %s，車庫 %s"
     }
   }
 }

@@ -737,6 +737,16 @@ function E.stationFees(st, env, holder)
 	return owed, true
 end
 
+-- (0.6.8, #115) what a company paid to another, by kind: "s" its stations' fees, "t" its tracks' tolls, "d" its depots' tolls
+-- (reg.paidTo["<from>><to>:<kind>"] = amount; kept in the game's state like the totals, the same on every game). A player saw
+-- only totals and could not tell that, nor to whom, a toll was paid. MPFEVER_PAIDTO=0: not kept
+function E.notePaid(reg, from, to, kind, fee)
+	if os.getenv("MPFEVER_PAIDTO") == "0" or type(reg) ~= "table" or from == nil or to == nil or not (tonumber(fee) and tonumber(fee) > 0) then return end
+	reg.paidTo = reg.paidTo or {}
+	local k = tostring(from) .. ">" .. tostring(to) .. ":" .. kind
+	reg.paidTo[k] = (reg.paidTo[k] or 0) + math.floor(tonumber(fee))
+end
+
 -- Tolls: a train of a company that enters the tracks of a company whose rule is "toll" pays that company the toll, once each time it
 -- enters them (every 5 steps: each line vehicle's present segment). Booked as for the shared stations: track upkeep of the
 -- carrier for the train's company, revenue for the tracks' company.
@@ -827,6 +837,7 @@ function E.tolls(st, env)
 			end)
 			reg.tollIncome[tostring(o.to)] = (reg.tollIncome[tostring(o.to)] or 0) + o.fee
 			reg.tollExpense[tostring(o.from.id)] = (reg.tollExpense[tostring(o.from.id)] or 0) + o.fee
+			E.notePaid(reg, o.from.id, o.to, "t", o.fee)
 		end
 	end
 	E.tollLogged = (E.tollLogged or 0) + 1

@@ -244,7 +244,7 @@ U.pollEco = function()
 	if txt == U.ecoTxt then return end
 	U.ecoTxt = txt
 	-- (stops, depotco: each company's rule for its stops and stations, and for its depots, shown in the window's Rules tab)
-	local e = { members = {}, chief = {}, gone = {}, debt = {}, track = {}, fees = {}, requests = {}, merges = {}, depots = {}, stops = {}, depotco = {}, ai = {}, road = {} }
+	local e = { members = {}, chief = {}, gone = {}, debt = {}, track = {}, fees = {}, requests = {}, merges = {}, depots = {}, stops = {}, depotco = {}, ai = {}, road = {}, paid = {} }
 	local TAB = C.TAB
 	for line in txt:gmatch("[^" .. C.NL .. "]+") do
 		local f1 = {}
@@ -270,10 +270,54 @@ U.pollEco = function()
 		elseif k == "depot" then e.depots[f1[2]] = { rule = f1[3], toll = tonumber(f1[4]) or 0, co = tonumber(f1[5]) }
 		elseif k == "stops" then e.stops[tonumber(f1[2])] = { rule = f1[3], fee = tonumber(f1[4]) or 0, own = tonumber(f1[5]) or 0 }
 		elseif k == "depotco" then e.depotco[tonumber(f1[2])] = { rule = f1[3], toll = tonumber(f1[4]) or 0 }
+		elseif k == "paid" then e.paid[#e.paid + 1] = { from = tonumber(f1[2]), to = tonumber(f1[3]), kind = f1[4], amount = tonumber(f1[5]) or 0 }
 		end
 	end
 	U.eco = e
 	U.ecoVersion = (U.ecoVersion or 0) + 1
+	pcall(U.paidNotice, e)
+end
+
+-- (0.6.8, #115) what this company paid to each other company: { [to] = { s = stations' fees, t = tracks' tolls, d = depots' tolls } }
+U.paidBy = function(eco, my)
+	local out = {}
+	for _, p in ipairs((eco and eco.paid) or {}) do
+		if p.from == my and p.to and p.to ~= my then
+			local t = out[p.to] or { s = 0, t = 0, d = 0 }
+			t[p.kind] = (t[p.kind] or 0) + p.amount
+			out[p.to] = t
+		end
+	end
+	return out
+end
+-- a line in the chat the first time this session this company pays another one (what it had paid at the load is not told):
+-- a player could not tell that a toll was paid, nor to whom. MPFEVER_PAIDNOTICE=0: no line
+U.paidNotice = function(eco)
+	if os.getenv("MPFEVER_PAIDNOTICE") == "0" or not U.myCo then return end
+	local by = U.paidBy(eco, U.myCo)
+	local first = U.paidSeen == nil
+	U.paidSeen = U.paidSeen or {}
+	local told = {}
+	for to, t in pairs(by) do
+		local sum = t.s + t.t + t.d
+		local was = U.paidSeen[to]
+		U.paidSeen[to] = sum
+		if not first and sum > (was or 0) and not (U.paidTold or {})[to] then
+			U.paidTold = U.paidTold or {}
+			U.paidTold[to] = true
+			local what = {}
+			if t.s > 0 then what[#what + 1] = T("ses gares", "its stations") end
+			if t.t > 0 then what[#what + 1] = T("ses voies", "its tracks") end
+			if t.d > 0 then what[#what + 1] = T("ses dépôts", "its depots") end
+			told[#told + 1] = C.Tf("Votre entreprise paie %s pour utiliser %s (le détail : fenêtre MPFever, Entreprise, Gains et frais).",
+				"Your company pays %s to use %s (the details: MPFever window, Company, Earnings and fees).", U.aiCoName(to), table.concat(what, ", "))
+		end
+	end
+	if #told == 0 then return end
+	U.chat = U.chat or {}
+	for _, x in ipairs(told) do U.chat[#U.chat + 1] = { id = 0, t = os.time(), kind = "ai", name = "MPFever", text = x } end
+	while #U.chat > 100 do table.remove(U.chat, 1) end
+	U.chatVersion = (U.chatVersion or 0) + 1
 end
 
 -- The companies' rules for their stations and depots (0.5.2: the "stops", "depotco" and "gone" lines of eco.txt, see the bridge's
@@ -3077,6 +3121,16 @@ U.TABS.rules = function(K, st, ctx)
 		rows[#rows + 1] = K.section(K.ICON_MONEY, T("Gains et frais", "Earnings and fees"))
 		rows[#rows + 1] = K.muted(C.Tf("Gares partagées : reçu %s, payé %s", "Shared stations: earned %s, paid %s", money(fe.si), money(fe.se)), W)
 		rows[#rows + 1] = K.muted(C.Tf("Péages : reçu %s, payé %s", "Tolls: earned %s, paid %s", money(fe.ti), money(fe.te)), W)
+		-- (0.6.8, #115) to whom
+		local by = U.paidBy(eco, my)
+		local tos = {}
+		for to in pairs(by) do tos[#tos + 1] = to end
+		table.sort(tos)
+		for _, to in ipairs(tos) do
+			local t = by[to]
+			rows[#rows + 1] = K.muted(C.Tf("Payé à %s : gares %s, voies %s, dépôts %s", "Paid to %s: stations %s, tracks %s, depots %s",
+				U.aiCoName(to), money(t.s), money(t.t), money(t.d)), W)
+		end
 	end
 	local lim = eco.bankrupt or 12
 	rows[#rows + 1] = K.gap(1, 12)
