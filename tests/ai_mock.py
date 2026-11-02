@@ -220,6 +220,12 @@ function logHas(s) for _, l in ipairs(LOG) do if tostring(l):find(s, 1, true) th
 def load():
     L = lua52.LuaRuntime(unpack_returned_tuples=True)
     L.execute(MOCK)
+    # (the common module's helpers the module calls, the real ones: C.keepSegmentLook, 0.6.9)
+    common = open(os.path.join(CONTENT, "mpfever_common.lua"), encoding="utf-8").read()
+    import re
+    m = re.search(r"^function C\.keepSegmentLook\(cc, c, rev\)\n.*?^end\n", common, re.S | re.M)
+    if m:
+        L.execute("do local C = E.C\n" + m.group(0) + "end")
     src = open(os.path.join(CONTENT, "mpfever_ai.lua"), encoding="utf-8").read()
     M = L.execute(src)
     L.globals().M = M
