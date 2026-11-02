@@ -11687,6 +11687,9 @@ H.buystorm = function(from, p)
 		local keep = tonumber(os.getenv("MPFEVER_STORM_KEEP") or "") or 6
 		local stop = G.frames + 60 * (tonumber(os.getenv("MPFEVER_STORM_SECONDS") or "") or 600)
 		local st = { bought = 0, sold = 0, mine = {} }
+		-- (the vehicle's configuration marshalled once: the component read at the start is not to be read again later, a copy
+		-- of a stale one was a vehicle without carriers, "Invalid number of carriers", and the notifications' script stopped)
+		local cfg, depot = C.marshal(pick.tv.transportVehicleConfig), pick.tv.depot
 		log("AUTOTEST buystorm: a copy of vehicle " .. pick.v .. " every " .. every .. " frames")
 		local function tick()
 			if G.frames >= stop then
@@ -11708,7 +11711,7 @@ H.buystorm = function(from, p)
 					local v = table.remove(st.mine, 1)
 					if api.engine.entityExists(v) then uiRequest("makeVehicleSellCmd", { n = 1, [1] = { v } }); st.sold = st.sold + 1 end
 				else
-					uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = pick.tv.depot, [3] = C.marshal(pick.tv.transportVehicleConfig) })
+					uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = depot, [3] = cfg })
 					st.bought = st.bought + 1
 				end
 			end)

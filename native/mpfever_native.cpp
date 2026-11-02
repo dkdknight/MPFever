@@ -427,6 +427,11 @@ static DWORD g_applyTls = 0xFFFFFFFFu;
 static inline u8* ApplyingState() { return g_applyTls == 0xFFFFFFFFu ? 0 : (u8*)TlsGetValue(g_applyTls); }
 static inline void SetApplyingState(u8* gs) { if (g_applyTls != 0xFFFFFFFFu) TlsSetValue(g_applyTls, gs); }
 static long g_iter = 0;
+static volatile long g_cmdTid = 0;   // the simulation thread while it applies the loop's commands (see "fresh ids")
+static long g_cmdKind = 0;           // (what it applies then: 1 the loop's commands or the iteration's builds)
+static volatile long g_scriptTid = 0;   // the simulation thread while it applies a script's command (counted only, see "fresh ids")
+static u32 RVA_SCRIPT_APPLY_RET = 0, RVA_SINK_APPLY_RET = 0;   // where Apply returns to in the scripts' and CGame's command sinks
+static volatile long g_applySite[4][2];   // the commands applied: [loop, script, CGame's sink, other][simulation thread, other]
 static long g_iterlogDone = 0;
 static volatile long g_setPlayer = 0;
 static volatile long g_localPlayer = 0;
@@ -1005,6 +1010,7 @@ static void WatchArm(u8* gs)
 }
 
 static int g_freeqLog = -1;       // (MPFEVER_FREEQLOG, see FreeqLine)
+static bool g_freeqExact = false; // (its lines written before the steps that are multiples of 50, see InstallStepSnap)
 static void FreeqLine(u8* gs);
 // Diagnostic (MPFEVER_BATCHLOG=1, tests): which batch handed by CGame::Sync each command added by the main thread lands in, and
 // at which step: "bl sync" (a batch handed, the step the simulation stands at), "bl iter" (an iteration of the simulation loop
@@ -1038,7 +1044,10 @@ extern "C" u64 PreIterDetour(void* a)
         if (g_timing) TimingLine("deferred-apply", (u64)g_iter, (u64)(g_iter - d.queued));
         u8* prevState = ApplyingState();
         SetApplyingState((u8*)g_slot);
+        long prevCmd = g_cmdTid, prevKind = g_cmdKind;
+        g_cmdTid = g_simTid; g_cmdKind = 1;
         g_applyOrig(g_slot, c);
+        g_cmdTid = prevCmd; g_cmdKind = prevKind;
         SetApplyingState(prevState);
         ((Dtor0)(g_base + RVA_CMD_DTOR))(c);
         HeapFree(GetProcessHeap(), 0, c);
@@ -1554,6 +1563,8 @@ static void ApplyLocalPlayer(const char* why)
     Buf b; b.str("local player ").dec(cur).str(" -> ").dec(want).str(" (").str(why).str(", state ").hex((u64)g_slot).str(")"); LogLine(b);
 }
 
+static void DecisionCopy(void* src, void* dst);
+static bool g_replOn = false;
 extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
 {
     u32 before = dst ? *(u32*)((u8*)dst + 0x20c) : 0;
@@ -1571,6 +1582,8 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
     if (dst && before == 0xFFFFFFFFu && (u32)((uptr)_ReturnAddress() - g_base) != RVA_REPL_LOOP) g_uiWord = 0;
     u64 r = g_replOrig(src, dst, flag);
     if (dst && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) g_uiWord = (long)*(u32*)((u8*)dst + 0x20c);
+    // (the platform-decision flags of the state just simulated, into the one about to be)
+    if ((u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) DecisionCopy(src, dst);
     static long n = 0;
     if (n < 80) {
         n++;
@@ -1589,7 +1602,23 @@ extern "C" u64 ApplyDetour(void* a, void* b)
     bool inLoop = (u32)((uptr)_ReturnAddress() - g_base) == RVA_LOOP_RET;
     u8* prev = ApplyingState();
     SetApplyingState((u8*)a);
+    // (the loop's commands, applied alike on every game: their new entities take fresh ids, see "fresh ids". The commands the
+    // simulation's scripts send, MPFever's actions among them, are only counted: given fresh ids, their copies in the other
+    // game state did not get the same ids, the engine stopped the game ("entity == c.entity", test n4 of 2026-11-02). The other
+    // commands applied at once, through CGame's own sink or on another thread, a preview of this machine's tools among them, not)
+    u32 ret = (u32)((uptr)_ReturnAddress() - g_base);
+    bool sim = (long)GetCurrentThreadId() == g_simTid;
+    bool script = ret && ret == RVA_SCRIPT_APPLY_RET;
+    _InterlockedIncrement(&g_applySite[inLoop ? 0 : script ? 1 : (ret && ret == RVA_SINK_APPLY_RET) ? 2 : 3][sim ? 0 : 1]);
+    long prevCmd = g_cmdTid, prevKind = g_cmdKind, prevScript = g_scriptTid;
+    // (MPFEVER_FRESHSCRIPT=0: the loop's commands only)
+    static int freshScript = -1;
+    if (freshScript < 0) { char v[4] = {}; freshScript = GetEnvironmentVariableA("MPFEVER_FRESHSCRIPT", v, 3) > 0 && v[0] == '0' ? 0 : 1; }
+    g_cmdTid = sim && (inLoop || (script && freshScript)) ? g_simTid : 0;
+    g_cmdKind = 1;
+    g_scriptTid = sim && script ? g_simTid : 0;
     u64 r = ApplyBody(a, b, inLoop);
+    g_cmdTid = prevCmd; g_cmdKind = prevKind; g_scriptTid = prevScript;
     SetApplyingState(prev);
     return r;
 }
@@ -2852,9 +2881,14 @@ static void EntOff(const char* what, int entity, void* ret)
     LogLine(l);
 }
 
+static volatile long g_addCallerTid = 0;   // (the thread and the caller of AddEntity seen through this detour, see FreshAdd)
+static volatile u32 g_addCaller = 0;
 extern "C" int* AddEntityDetour(void* engine, int* out)
 {
+    g_addCaller = (u32)((uptr)_ReturnAddress() - g_base);
+    g_addCallerTid = (long)GetCurrentThreadId();
     int* r = g_addEntOrig(engine, out);
+    g_addCallerTid = 0;
     int e = EntEngine(engine);
     long k = EntKind();
     _InterlockedIncrement(&g_entAdd[e][k]);
@@ -3319,9 +3353,10 @@ static u32 StepOf(u8* gs)
     if (!time || !Readable((void*)time, 0x18)) return 0xFFFFFFFFu;
     return ((u32(*)(u64))(g_base + g_getUpdRva))(time);
 }
+static void FreeqWrite(u8* eng, u32 step);
 static void FreeqLine(u8* gs)
 {
-    if (!gs || !g_getUpdRva || !Readable(gs + 0x18, 0x18)) return;
+    if (g_freeqExact || !gs || !g_getUpdRva || !Readable(gs + 0x18, 0x18)) return;
     u64 time = *(u64*)(gs + 0x28);
     u8* eng = *(u8**)(gs + 0x18);
     if (!time || !eng || !Readable((void*)time, 0x18)) return;
@@ -3330,11 +3365,28 @@ static void FreeqLine(u8* gs)
     // is the real one, the comparison takes the steps both games wrote)
     if (g_freeqLast != 0xFFFFFFFFu && step / 50 == g_freeqLast / 50) return;
     g_freeqLast = step;
+    FreeqWrite(eng, step);
+}
+// (0.6.8) before every step that is a multiple of 50, from the steps' wrapper (InstallStepSnap): every game writes the same steps
+static void FreeqStep(void* engine)
+{
+    u8* gs = (u8*)g_slot;
+    if (!gs || !g_getUpdRva || !Readable(gs + 0x18, 0x18) || *(void**)(gs + 0x18) != engine) return;
+    u32 step = StepOf(gs);
+    if (step == 0xFFFFFFFFu || step % 50 || step == g_freeqLast) return;
+    g_freeqLast = step;
+    FreeqWrite((u8*)engine, step);
+}
+// "freeq step <s> size <n> sum <sum> head <id> hash <ids' hash> count <entities ever made>": the queue's ids in its order (sorted,
+// see "free id queue") and the size of the engine's entity table, the id a new entity gets when the queue is empty
+static void FreeqWrite(u8* eng, u32 step)
+{
     u8* q = eng + 0xd8;
     if (!Readable(q, 0x28)) return;
     AcquireSRWLockExclusive(&g_fqLock);
     u64 map = *(u64*)(q + 8), ms = *(u64*)(q + 0x10), off = *(u64*)(q + 0x18), n = *(u64*)(q + 0x20);
     u64 sum = 0; i32 head = -1; bool ok = true;
+    u32 hash = 2166136261u;
     if (n && (!map || !ms || (ms & (ms - 1)) || n > ms * 4 || n > (32u << 20) || !Readable((void*)map, ms * 8))) ok = false;
     for (u64 i = 0; ok && i < n; i++) {
         u64 j = off + i;
@@ -3343,10 +3395,14 @@ static void FreeqLine(u8* gs)
         i32 v = blk[j & 3];
         if (i == 0) head = v;
         sum += (u32)v;
+        hash = (hash ^ (u32)v) * 16777619u;
     }
     ReleaseSRWLockExclusive(&g_fqLock);
+    u64 eb = Readable(eng + 0x90, 16) ? *(u64*)(eng + 0x90) : 0, ee = eb ? *(u64*)(eng + 0x98) : 0;
     Buf b; b.str("freeq step ").dec((long)step);
-    if (ok) b.str(" size ").dec((long)n).str(" sum ").dec((long)(sum & 0x7fffffff)).str(" head ").dec(head); else b.str(" unreadable");
+    if (ok) b.str(" size ").dec((long)n).str(" sum ").dec((long)(sum & 0x7fffffff)).str(" head ").dec(head).str(" hash ").hex(hash)
+        .str(" count ").dec(ee >= eb ? (long)((ee - eb) / 24) : -1);
+    else b.str(" unreadable");
     LogLine(b);
 }
 
@@ -3711,6 +3767,272 @@ static void InstallIndustryDemand()
     LogLine(b);
 }
 
+// ---------------------------------------------------------------- the platform-decision flag (0.6.8, after TPF3-MP)
+// After TPF3-MP's "The platform-decision flag" (Juliansgith/Transport-Fever-3-Multiplayer-Mod, MIT: docs/HOOKS.md, branch
+// fix/decision-flag-desync of 2026-10-01; the idea only, made again here for build 40425). ecs::TransportVehicleSystem::Update2
+// asks FindNextFreeTerminal for an en-route land vehicle only while byte +0x70 of its MovePath is set (40425: the read at
+// 0xb91843, right after the call of MovePath's getter 0x52be40 with the engine and the vehicle). The engine keeps two game
+// states and runs each iteration on the other one; the simulation loop copies the state just simulated into the next
+// (GameState::Replicate), but that byte does not come across: a vehicle's flag is set and cleared in the state that ran the
+// step where it changed, and the other state reads its old value until it writes its own. Which state runs a given step
+// follows how each game's batches were cut, so a bus asked for a platform on one game and drove on on the other, with no
+// action (TPF3-MP's save split at step 3300 on every run, and not with the copy). Right after the loop's Replicate(source,
+// destination), each transport vehicle's flag is copied from the source's MovePath into the destination's where they differ:
+// the state about to run holds what the last step left, whichever state ran it. The vehicles are the system's node list
+// ({entity, index} records at [[system+8]], as many as the loop's count at [rbp+0x5b0]), taken at the decision read once per
+// iteration on the simulation thread. Each MovePath comes from the game's own getter, checked to be the call before the read
+// and to name MovePath's type descriptor, called only for an entity inside the engine's per-entity table (+0xc0, 16 bytes
+// each: the getter does not check). The engine the system is given must be the game state's +0x18 (else nothing is copied).
+// When Replicate copies the byte itself (another build), nothing differs and nothing is written. MPFEVER_DECISIONSYNC=1 on
+// every game: the copy (off by default since 0.6.8, see InstallDecisionSync). The counters are in the "order fixes:" line, "decision flags
+// <copies>/<flags copied>/<lists taken>/<refused>/<reads off the simulation thread>".
+#include "decision_flags.h"
+static MovePathF g_dsGet = 0;
+static bool g_dsOn = false;
+static i32* g_dsEnt = 0;
+static u64 g_dsN = 0, g_dsCap = 0;
+static long g_dsIter = -1;
+static volatile long g_dsSyncs = 0, g_dsCopied = 0, g_dsNotes = 0, g_dsRefused = 0, g_dsOther = 0;
+
+// the decision read (r13 the system, rbp the loop's frame, [rsp+0x70] the engine): the vehicles, once per iteration
+static void DecisionNote(SavedRegs* r)
+{
+    if (!g_dsOn) return;
+    if (GetCurrentThreadId() != (DWORD)g_simTid) { _InterlockedIncrement(&g_dsOther); return; }
+    if (g_dsIter == g_iter) return;
+    g_dsIter = g_iter;
+    u64 sp = OrigRsp(r), sys = r->r13;
+    u8* gs = (u8*)g_slot;
+    if (!gs || !Readable(gs + 0x18, 8) || !Readable((void*)(sp + 0x70), 8) || !Readable((void*)(r->rbp + 0x5b0), 4) || !Readable((void*)(sys + 8), 8)) { _InterlockedIncrement(&g_dsRefused); return; }
+    if (*(u64*)(sp + 0x70) != *(u64*)(gs + 0x18)) {
+        if (_InterlockedIncrement(&g_dsRefused) == 1) { Buf b; b.str("decision flags: the system's engine ").hex(*(u64*)(sp + 0x70)).str(" is not the game state's ").hex(*(u64*)(gs + 0x18)).str(": not copied"); LogLine(b); }
+        return;
+    }
+    u64 holder = *(u64*)(sys + 8);
+    if (!holder || !Readable((void*)holder, 16)) { _InterlockedIncrement(&g_dsRefused); return; }
+    u64 b = *(u64*)holder, e = *(u64*)(holder + 8);
+    i32 cnt = *(i32*)(r->rbp + 0x5b0);
+    if (e < b || ((e - b) & 7) || cnt < 0 || cnt > (1 << 20) || (u64)cnt != (e - b) / 8 || (cnt && !Readable((void*)b, e - b))) { _InterlockedIncrement(&g_dsRefused); return; }
+    u64 n = (u64)cnt;
+    if (n > g_dsCap) {
+        u64 cap = n + n / 2 + 64;
+        i32* p = (i32*)HeapAlloc(GetProcessHeap(), 0, cap * 4);
+        if (!p) { _InterlockedIncrement(&g_dsRefused); return; }
+        if (g_dsEnt) HeapFree(GetProcessHeap(), 0, g_dsEnt);
+        g_dsEnt = p; g_dsCap = cap;
+    }
+    for (u64 i = 0; i < n; i++) g_dsEnt[i] = (i32)(u32)((const u64*)b)[i];
+    g_dsN = n;
+    _InterlockedIncrement(&g_dsNotes);
+}
+
+// right after the simulation loop's Replicate(source, destination): the flags of the source's vehicles into the destination's
+static void DecisionCopy(void* src, void* dst)
+{
+    if (!g_dsOn || !src || !dst || src == dst || !g_dsN) return;
+    if (GetCurrentThreadId() != (DWORD)g_simTid) return;
+    if (!Readable((u8*)src + 0x18, 8) || !Readable((u8*)dst + 0x18, 8)) { _InterlockedIncrement(&g_dsRefused); return; }
+    u64 a = *(u64*)((u8*)src + 0x18), z = *(u64*)((u8*)dst + 0x18);
+    if (!a || !z || a == z || !Readable((void*)(a + 0xc0), 16) || !Readable((void*)(z + 0xc0), 16)) { _InterlockedIncrement(&g_dsRefused); return; }
+    long copied = DsCopyFlags(a, z, g_dsEnt, g_dsN, g_dsGet);
+    _InterlockedIncrement(&g_dsSyncs);
+    long before = g_dsCopied;     // (the simulation thread alone writes it)
+    g_dsCopied = before + copied;
+    if (copied && before == 0) {
+        Buf b; b.str("decision flags: first copy, ").dec(copied).str(" of ").dec((long)g_dsN).str(" vehicles' flags differed between the two game states (iteration ").dec(g_iter).str(")");
+        LogLine(b);
+    }
+}
+
+static void InstallDecisionSync()
+{
+    char v[4] = {};
+    // (0.6.8: off unless asked: on build 40425 the engine's Replicate copies the byte itself, 0 differences in every test; kept
+    // for a game build where it does not. MPFEVER_DECISIONSYNC=1 on every game: on)
+    if (!(GetEnvironmentVariableA("MPFEVER_DECISIONSYNC", v, 3) > 0 && v[0] == '1')) { Buf b; b.str("decision flags: each game state keeps its own (MPFEVER_DECISIONSYNC=1 copies them)"); LogLine(b); return; }
+    const char* miss = (!g_replOn || !RVA_REPL_LOOP) ? "the simulation loop's Replicate not hooked" : (!g_preIterOn ? "the iterations not hooked" : 0);
+    // the read, "movzx eax, byte [rax+70h] / test al,al / jmp", after "mov rcx,[rsp+70h] / je / call getter / test rax,rax / je"
+    u32 at = miss ? 0 : FindSigRva("48 8B 4C 24 70 74 ?? E8 ?? ?? ?? ?? 48 85 C0 0F 84 ?? ?? ?? ?? 0F B6 40 70 84 C0 EB ?? E8");
+    if (!miss && !at) miss = "the decision read not found";
+    u64 getter = 0;
+    if (!miss) {
+        const u8* call = (const u8*)(g_base + at + 7);
+        getter = (u64)(call + 5 + *(const i32*)(call + 1));
+        // the getter: "mov [rsp+10h],rbx / mov [rsp+18h],rsi / push rdi / sub rsp,30h / movsxd rbx,edx / lea rax,[type descriptor]"
+        static const u8 head[] = { 0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x63, 0xDA, 0x48, 0x8D, 0x05 };
+        static const char name[] = ".?AUMovePath@component@ecs@@";
+        if (getter < g_textStart || getter + 32 > g_textEnd || memcmp((void*)getter, head, sizeof(head)) != 0) miss = "the MovePath getter is not the shape expected";
+        else {
+            u64 desc = getter + sizeof(head) + 4 + *(const i32*)(getter + sizeof(head));
+            if (!Readable((void*)(desc + 0x10), sizeof(name)) || memcmp((void*)(desc + 0x10), name, sizeof(name)) != 0) miss = "the getter is not MovePath's";
+        }
+    }
+    u8* mem = miss ? 0 : AllocNear(0x100);
+    if (!miss && !mem) miss = "no memory near the game's code";
+    // (the movzx and the test stolen: the short jmp after them stays where it is)
+    if (!miss && !Splice(mem, at + 21, 6, DecisionNote)) miss = "the decision read not hooked";
+    Buf b;
+    if (miss) { b.str("decision flags: OFF (").str(miss).str("), each game state keeps its own"); LogLine(b); return; }
+    g_dsGet = (MovePathF)getter;
+    g_dsOn = true;
+    b.str("decision flags (after TPF3-MP): each vehicle's platform-decision flag copied after the simulation loop's Replicate, read at ").hex(at + 21)
+        .str(", MovePath's getter at ").hex((u32)(getter - g_base));
+    LogLine(b);
+}
+
+// ---------------------------------------------------------------- fresh ids for the commands' new entities (0.6.8)
+// ecs::Engine::AddEntity (40425: 0x2bc0260) gives a new entity the head of the engine's free-id queue (the std::deque<int> at
+// +0xd8, kept in id order by "free id queue" above) and, while the queue is empty, the count of entities the engine ever had
+// (+0x90, 24 bytes each). The ids join the queue when a modification ends (Engine::EndModification 0x2bc8a50 -> 0x2bc17c0,
+// site 0 above). Two games of a session sometimes have, for some 50 to 150 steps, one other id in their queue (same size, same
+// head otherwise: 11 of 981 windows in the 0.6.4.1 reports): an entity of the simulation, a person or a piece of cargo, freed a
+// few steps apart. A command applied in that window took another id on each game (a vehicle bought: 84704 on the host, 62904 on
+// the client, 2026-11-01 23:54; the ids of the 37 other results of that session alike), and the games parted from there: the
+// order fixes sort the vehicles by id, the towns followed. The commands of the simulation loop (the native builds), applied at
+// the same step on every game, now make their entities with a fresh id, the count, whatever the queue holds: the queue's
+// size at AddEntity's test (r8, "mov r8,[rdi+0F8h]" just before) is read as 0 for them. Every game makes the same commands at
+// the same step, with the same count, so their entities get the same ids. The other entities (the simulation's own) still
+// take the queue's ids, and an id freed by a command goes back to the queue as before. A copy of a state (Engine::Replicate
+// replays the source's records, 0x2bc0ee0, and checks every id it gets again: "cmp [rsp+50h],[rbx+4]") passes the queue over
+// in the same way when the id recorded is its count (fresh_ids.h). The commands the simulation's scripts send (MPFever's actions:
+// the bridge applies the players' purchases and lines with sendCommand from the simulation's game script, which CGame's
+// scripts' sink applies at once, Apply returning to 0x120514 on 40425) are NOT given fresh ids: given them (0.6.8 test build
+// dist068c), the other state's replay took other ids and the engine stopped both games ("entity == c.entity",
+// ecs::Replicator::Apply, Engine.cpp:138); their entities are counted and the first ones logged ("script command entity: ...").
+// The other commands applied at once (CGame's own sink, or another thread: a preview of this machine's tools) are left alone;
+// where each command came from is counted. A loaded game starts from the save's count and queue on every game (a resynchronisation reloads the
+// host too). MPFEVER_FRESHIDS=0 on every game: the queue's ids for the commands too, as before. Counters in the "order fixes:"
+// line, "fresh ids <loop's commands' entities>/<copies>/<refused>, script entities <n>" and "applied <loop>
+// <scripts> <CGame's sink> <other>", each "<on the simulation thread>/<on another>"; the first few in native.log.
+#include "fresh_ids.h"
+static bool g_freshOn = false;
+static volatile long g_freshReplayTid = 0;
+static volatile long g_freshCmd = 0, g_freshReplay = 0, g_freshOther = 0, g_freshScript = 0, g_freshSkip = 0;
+static u32 g_freshSite[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu };   // AddEntity's returns in CustomEntityCreate and LineCreate
+
+// Engine::Replicate's replay of an "entity added" record (rdi the copy's engine, rbx the record: the id at +4)
+static void FreshReplay(SavedRegs* r)
+{
+    if (!g_freshOn) return;
+    // (no Readable here, once per entity a copy makes: the game reads the record and the engine right after)
+    if (FiReplayFresh((const u8*)r->rdi, *(i32*)(r->rbx + 4))) g_freshReplayTid = (long)GetCurrentThreadId();
+}
+
+// AddEntity's test of the queue's size (rdi the engine, r8 the size): 0 for a command's entity, or a copy's fresh one
+static void FreshAdd(SavedRegs* r)
+{
+    if (!g_freshOn) return;
+    long tid = (long)GetCurrentThreadId();
+    if (g_freshReplayTid == tid) {
+        g_freshReplayTid = 0;
+        if (r->r8) { r->r8 = 0; _InterlockedIncrement(&g_freshReplay); }
+        return;
+    }
+    if (g_scriptTid == tid && g_cmdTid != tid) {
+        // (a script's command: its entities keep the queue's ids, counted; the first ones in native.log, with whether the state
+        // it is applied on is the one the simulation runs)
+        long k = _InterlockedIncrement(&g_freshScript);
+        if (k <= 16) {
+            u8* as = ApplyingState();
+            Buf b; b.str("script command entity: AddEntity on ").str(as && Readable(as + 0x18, 8) && *(u64*)(as + 0x18) == r->rdi ? "its state's engine" : "another engine")
+                .str(", the state ").str(as == (u8*)g_slot ? "the simulation's" : "NOT the simulation's").str(", count ").dec((long)FiCount((const u8*)r->rdi))
+                .str(", ").dec((long)r->r8).str(" waiting, step ").dec((long)StepOf(as ? as : (u8*)g_slot));
+            LogLine(b);
+        }
+        return;
+    }
+    if (g_cmdTid != tid || !r->r8) return;
+    // (the entity the command makes itself, AddEntity called from the command's code: a vehicle (CustomEntityCreate) or a line
+    // (LineCreate); the return address is above AddEntity's three pushes and its 0x40 bytes. The entities the engine's systems
+    // make for it meanwhile (the octree's nodes, the vehicle's parts, through the generic wrapper) keep the queue's ids: a copy of
+    // the state makes those itself again, not from the records, with the queue's head (test x2 of 2026-11-02: a command that
+    // gave them fresh ids left the copy one entity short, then "entity == c.entity")
+    u32 ret = (u32)(*(u64*)(OrigRsp(r) + 0x58) - g_base);
+    // (called through the entity watch's detour, MPFEVER_ENTWATCH: its caller)
+    if (g_addCallerTid == tid && (*(u64*)(OrigRsp(r) + 0x58) < g_textStart || *(u64*)(OrigRsp(r) + 0x58) >= g_textEnd)) ret = g_addCaller;
+    if (ret != g_freshSite[0] && ret != g_freshSite[1]) { _InterlockedIncrement(&g_freshSkip); return; }
+    u8* gs = ApplyingState();
+    if (!gs || !Readable(gs + 0x18, 8) || *(u64*)(gs + 0x18) != r->rdi) { _InterlockedIncrement(&g_freshOther); return; }
+    long n = _InterlockedIncrement(&g_freshCmd);
+    if (n <= 12) {
+        const u8* eng = (const u8*)r->rdi;
+        u64 map = *(const u64*)(eng + 0xe0), ms = *(const u64*)(eng + 0xe8), off = *(const u64*)(eng + 0xf0);
+        i32 head = -1;
+        if (map && ms && !(ms & (ms - 1)) && Readable((void*)map, ms * 8)) {
+            i32* blk = *(i32**)(map + ((off >> 2) & (ms - 1)) * 8);
+            if (blk && Readable(blk, 16)) head = blk[off & 3];
+        }
+        Buf b; b.str("fresh id: a command's new entity gets ").dec((long)FiCount(eng)).str(" (the queue's head ").dec(head).str(", ").dec((long)r->r8)
+            .str(" waiting) at step ").dec((long)StepOf(gs));
+        LogLine(b);
+    }
+    r->r8 = 0;
+}
+
+static void InstallFreshIds()
+{
+    char v[4] = {};
+    if (GetEnvironmentVariableA("MPFEVER_FRESHIDS", v, 3) > 0 && v[0] == '0') { Buf b; b.str("fresh ids: the commands' entities take the queue's ids (MPFEVER_FRESHIDS=0)"); LogLine(b); return; }
+    const char* miss = !RVA_ADDENTITY ? "AddEntity not found" : (g_applyTls == 0xFFFFFFFFu ? "the applying state unknown (no order fixes)" : 0);
+    u32 rep = 0;
+    if (!miss) {
+        // AddEntity: "mov rdi,rcx" (+0x1b), "mov r8,[rdi+0F8h] / xor ebx,ebx / test r8,r8 / jne" (+0x4e), "lea r10,[rdi+90h]" (+0x60)
+        const u8* ae = (const u8*)(g_base + RVA_ADDENTITY);
+        static const u8 mov[] = { 0x48, 0x8B, 0xF9 };
+        static const u8 test[] = { 0x4C, 0x8B, 0x87, 0xF8, 0x00, 0x00, 0x00, 0x33, 0xDB, 0x4D, 0x85, 0xC0, 0x0F, 0x85 };
+        static const u8 lea[] = { 0x4C, 0x8D, 0x97, 0x90, 0x00, 0x00, 0x00 };
+        if (memcmp(ae + 0x1b, mov, 3) || memcmp(ae + 0x4e, test, sizeof(test)) || memcmp(ae + 0x60, lea, sizeof(lea))) miss = "AddEntity's layout differs";
+    }
+    if (!miss) {
+        // the replay: "lea rdx,[rsp+50h] / mov rcx,rdi / call AddEntity / mov eax,[rbx+4] / cmp [rsp+50h],eax / jne"
+        rep = FindSigRva("48 8D 54 24 50 48 8B CF E8 ?? ?? ?? ?? 8B 43 04 39 44 24 50 0F 85");
+        if (!rep) miss = "the copy's replay not found";
+        else {
+            const u8* c = (const u8*)(g_base + rep + 8);
+            if ((u64)(c + 5 + *(const i32*)(c + 1)) != g_base + RVA_ADDENTITY) miss = "the copy's replay calls another function";
+        }
+    }
+    if (!miss) {
+        // the commands the scripts send (lua::State's sendCommand, a lambda of CGame's constructor): with no list of the thread to
+        // put them in, applied at once on the game's current state, "mov rax,[rbp+8] / mov rcx,[rax+1F0h] / movsxd rax,[rcx+98h] /
+        // mov rdx,rbx / mov rcx,[rcx+rax*8+78h] / call Apply / mov rcx,[rsi+38h]"; CGame's own sink, the same with other registers
+        // (counted only). The return of the scripts' call, and the list test before it (the thread's list at gs:[58h] +10h)
+        u32 sc = FindSigRva("48 8B 45 08 48 8B 88 F0 01 00 00 48 63 81 98 00 00 00 48 8B D3 48 8B 4C C1 78 E8 ?? ?? ?? ?? 48 8B 4E 38");
+        u32 sk = FindSigRva("48 8B 4B 08 48 8B 91 F0 01 00 00 48 63 8A 98 00 00 00 48 8B 4C CA 78 48 8B D0 E8 ?? ?? ?? ?? 48 8B 4F 38");
+        static const u8 tls[] = { 0x65, 0x48, 0x8B, 0x0C, 0x25, 0x58, 0x00, 0x00, 0x00, 0xBF, 0x10, 0x00, 0x00, 0x00 };
+        const u8* c = sc ? (const u8*)(g_base + sc + 26) : 0;
+        // (counted only: not found, they count as "other")
+        if (sc && (u64)(c + 5 + *(const i32*)(c + 1)) == g_base + RVA_APPLY && memcmp((void*)(g_base + sc - 0x47), tls, sizeof(tls)) == 0)
+            RVA_SCRIPT_APPLY_RET = sc + 31;
+        const u8* k = sk ? (const u8*)(g_base + sk + 26) : 0;
+        if (k && (u64)(k + 5 + *(const i32*)(k + 1)) == g_base + RVA_APPLY) RVA_SINK_APPLY_RET = sk + 31;
+    }
+    if (!miss) {
+        // the commands' own AddEntity calls: CustomEntityCreate's (a vehicle bought) "mov [rsp+30h],rbx / lea rdx,[rsp+38h] /
+        // mov rcx,rbx / call AddEntity / mov ebx,[rsp+38h]", LineCreate's "mov [rbp-39h],rbx / lea rdx,[rbp-31h] / mov rcx,rbx /
+        // call AddEntity / mov ebx,[rbp-31h]"
+        u32 v = FindSigRva("48 89 5C 24 30 48 8D 54 24 38 48 8B CB E8 ?? ?? ?? ?? 8B 5C 24 38 89 5C 24");
+        u32 l = FindSigRva("48 89 5D C7 48 8D 55 CF 48 8B CB E8 ?? ?? ?? ?? 8B 5D CF 4D 8D 47 28");
+        const u8* cv = v ? (const u8*)(g_base + v + 13) : 0;
+        const u8* cl = l ? (const u8*)(g_base + l + 11) : 0;
+        if (!cv || !cl || (u64)(cv + 5 + *(const i32*)(cv + 1)) != g_base + RVA_ADDENTITY || (u64)(cl + 5 + *(const i32*)(cl + 1)) != g_base + RVA_ADDENTITY)
+            miss = "the vehicles' and lines' AddEntity calls not found";
+        else { g_freshSite[0] = v + 18; g_freshSite[1] = l + 16; }
+    }
+    u8* mem = miss ? 0 : AllocNear(0x200);
+    if (!miss && !mem) miss = "no memory near the game's code";
+    // (the replay first: an AddEntity hooked without it would give a copy other ids than its source, which the engine refuses)
+    if (!miss && !Splice(mem, rep, 8, FreshReplay)) miss = "the copy's replay not hooked";
+    if (!miss && !Splice(mem, RVA_ADDENTITY + 0x55, 5, FreshAdd)) miss = "AddEntity not hooked";
+    Buf b;
+    if (miss) { b.str("fresh ids: OFF (").str(miss).str("), the commands' entities take the queue's ids"); LogLine(b); return; }
+    g_freshOn = true;
+    b.str("fresh ids: the vehicles and lines that commands make (AddEntity returning to ").hex(g_freshSite[0]).str(" or ").hex(g_freshSite[1])
+        .str(", the loop's commands and the scripts', Apply returning to ").hex(RVA_SCRIPT_APPLY_RET).str(") get fresh ids, AddEntity at ").hex(RVA_ADDENTITY)
+        .str(", the copy's replay at ").hex(rep);
+    LogLine(b);
+}
+
 // ---------------------------------------------------------------- the tools' company (ported from TPF3-MP, MIT)
 // Ported from TPF3-MP's "The tools' player" (docs/HOOKS.md, crates/tpf3mp-hook/src/toolplayer.rs, signatures of
 // profiles/tf3_build40420_steam_windows/hooks.toml). UI::CGameUI's constructor reads the save's player once and hands each
@@ -3878,6 +4200,17 @@ static void LogOrderCounts()
     // world (left alone) / refused; histories kept and let go)
     b.str("; industry demand ").dec(g_ind.shared).str("/").dec(g_ind.own).str("/").dec(g_ind.other).str("/").dec(g_ind.refused)
         .str(", kept ").dec(g_ind.kept_n).str(", let go ").dec(g_ind.released);
+    // (the platform-decision flags: copies after the loop's Replicate / flags that differed and were copied / vehicle lists
+    // taken / refused / decision reads off the simulation thread)
+    b.str("; decision flags ").dec(g_dsSyncs).str("/").dec(g_dsCopied).str("/").dec(g_dsNotes).str("/").dec(g_dsRefused).str("/").dec(g_dsOther);
+    // (the commands' new entities given a fresh id / the same in a copy of the state / refused, another engine)
+    // (the scripts' commands' entities: counted, the queue's ids)
+    b.str("; fresh ids ").dec(g_freshCmd).str("/").dec(g_freshReplay).str("/").dec(g_freshOther).str(", left to the queue ").dec(g_freshSkip)
+        .str(", script entities ").dec(g_freshScript);
+    // (the commands applied, by where from: the loop, the scripts' sink, CGame's sink, another place; on the simulation thread
+    // and on another)
+    b.str("; applied ");
+    for (int i = 0; i < 4; i++) b.str(i ? " " : "").dec(g_applySite[i][0]).str("/").dec(g_applySite[i][1]);
     LogLine(b);
 }
 
@@ -4314,11 +4647,15 @@ static volatile long g_snapExtra = 0;
 extern "C" u64 StepWithSnap(void* engine, u32 world, u64 dt)
 {
     if (g_stepInBatch++ > 0 && g_snap) { g_snap(engine); _InterlockedIncrement(&g_snapExtra); }
+    if (g_freeqExact) FreeqStep(engine);
     return g_engStep(engine, world, dt);
 }
 static void InstallStepSnap()
 {
-    if (GetEnvironmentVariableA("MPFEVER_STEPSNAP", 0, 0) == 0) return;
+    // (also with MPFEVER_FREEQLOG, 0.6.8: the free-id queue written before each step that is a multiple of 50, the same steps on
+    // every game whatever their batches)
+    bool snapTest = GetEnvironmentVariableA("MPFEVER_STEPSNAP", 0, 0) > 0, freeq = GetEnvironmentVariableA("MPFEVER_FREEQLOG", 0, 0) > 0;
+    if (!snapTest && !freeq) return;
     // the steps function's prologue: "... mov rcx,[rcx+18h] / call snapshot"; its loop: "mov rcx,[rbp+8] / mov r8,r14 /
     // mov edx,[rcx+208h] / mov rcx,[rcx+18h] / call step"
     u32 a = FindSigRva("48 8B 49 08 48 89 5C 24 60 4C 89 64 24 40 4C 89 6C 24 38 48 8B 49 18 E8");
@@ -4326,7 +4663,7 @@ static void InstallStepSnap()
     if (!a || !b) { Buf l; l.str("step snapshot: off (not found)"); LogLine(l); return; }
     u8* snapCall = (u8*)(g_base + a + 23);
     u8* site = (u8*)(g_base + b + 17);
-    g_snap = (StepSnapF)(snapCall + 5 + *(i32*)(snapCall + 1));
+    if (snapTest) g_snap = (StepSnapF)(snapCall + 5 + *(i32*)(snapCall + 1));
     u8* target = site + 5 + *(i32*)(site + 1);
     u8* thunk = AllocNear(64);
     if (!thunk) return;
@@ -4338,7 +4675,11 @@ static void InstallStepSnap()
     *(i32*)(site + 1) = (i32)(thunk - (site + 5));
     VirtualProtect(site, 5, old, &old);
     FlushInstructionCache(GetCurrentProcess(), site, 5);
-    Buf l; l.str("step snapshot: TEST the batch's copy of previous values made before every step (MPFEVER_STEPSNAP)"); LogLine(l);
+    g_freeqExact = freeq;
+    Buf l;
+    if (snapTest) l.str("step snapshot: TEST the batch's copy of previous values made before every step (MPFEVER_STEPSNAP)");
+    if (freeq) l.str(snapTest ? "; " : "").str("free-id queue logged before every step that is a multiple of 50 (MPFEVER_FREEQLOG)");
+    LogLine(l);
 }
 
 // ---------------------------------------------------------------- dedicated server without display (MPFEVER_HEADLESS=1)
@@ -4493,7 +4834,7 @@ static DWORD WINAPI Init(void*)
             Buf t; t.str("ClearPositions found at ").hex((u64)g_clearPos - g_base); LogLine(t);
         }
         if (InstallDetour(RVA_PREITER, P_PREITER, sizeof(P_PREITER), (void*)&PreIterDetour, (void**)&g_preIterOrig)) g_preIterOn = true;
-        if (RVA_REPL) InstallDetour(RVA_REPL, P_REPL, sizeof(P_REPL), (void*)&ReplDetour, (void**)&g_replOrig);
+        if (RVA_REPL) g_replOn = InstallDetour(RVA_REPL, P_REPL, sizeof(P_REPL), (void*)&ReplDetour, (void**)&g_replOrig);
     }
     InstallSmoothPacing();
     InstallNativeStop();
@@ -4502,6 +4843,8 @@ static DWORD WINAPI Init(void*)
     // (found by their own signatures, on any build where those match exactly once)
     InstallOrderFixes();
     InstallIndustryDemand();
+    InstallDecisionSync();
+    InstallFreshIds();
     PatchSaveCleanup();
     if (g_layout) InstallToolCompany();
     if (g_layout) InstallHudShare();
