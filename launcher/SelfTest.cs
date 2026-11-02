@@ -60,6 +60,7 @@ namespace MPFever
             ok &= RunDiag();
             ok &= RunIssue111();
             ok &= RunSession067();
+            ok &= RunDlcs();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -258,6 +259,33 @@ namespace MPFever
 
         /// <summary>(0.6.4.1) The diagnostic build: its logs on in every game it starts (MPFEVER_DIAG=1 here, diag.txt for the
         /// players), a test's own values kept, nothing without it.</summary>
+        /// <summary>(0.6.9) The game's DLCs compared between the host and a player (AMD and keviK, 2026-11-02: keviK with the
+        /// Deluxe and pre-order packs, AMD with none, 7 reloads): the list of this PC, what differs, the warnings of both sides,
+        /// nothing when one side is an older MPFever.</summary>
+        static bool RunDlcs()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_DLCS");
+            try
+            {
+                const string D = "urbangames_deluxe_upgrade_pack", P = "urbangames_preorder_pack";
+                Environment.SetEnvironmentVariable("MPFEVER_DLCS", P + "," + D);
+                Check(Mods.InstalledDlcs() == D + "," + P, "dlcs: this PC's list, sorted");
+                Environment.SetEnvironmentVariable("MPFEVER_DLCS", " ");
+                Check(Mods.InstalledDlcs() == "none", "dlcs: none said so");
+                var (a, b) = Mods.DlcDiff("none", D + "," + P);
+                Check(a.Count == 0 && b.Count == 2 && b[0] == Mods.DlcName(D), "dlcs: the player has two packs the host has not");
+                Check(Mods.DlcWarning("keviK", "none", D + "," + P).Contains("keviK") && Mods.DlcWarning("keviK", "none", D).Contains(Mods.DlcName(D)), "dlcs: the host's warning names the player and the pack");
+                Check(Mods.DlcWarning("AMD", D, "none").Contains(Mods.DlcName(D)), "dlcs: a pack of the host's only is said too");
+                Check(Mods.DlcWarning("x", D + "," + P, P + "," + D) == "", "dlcs: the same packs: no warning");
+                Check(Mods.DlcWarning("x", "", D) == "" && Mods.DlcWarning("x", D, "") == "", "dlcs: an older MPFever (no list): nothing said");
+            }
+            catch (Exception e) { Check(false, "dlcs: " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_DLCS", kept); }
+            return ok;
+        }
+
         static bool RunDiag()
         {
             bool ok = true;

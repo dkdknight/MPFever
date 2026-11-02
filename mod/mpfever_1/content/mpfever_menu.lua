@@ -1385,6 +1385,13 @@ local function setup()
 						"This savegame was played with one company per player: here the other players' companies are not used. To get them back, cancel and choose 'One company per player' before the savegame."), "font-scale-body, warning", PAGE_W - SIDE_W - 84),
 				}, nil, { padding = { 8, 12, 8, 12 }, background = { 0.6, 0.45, 0.1, 0.25 }, size = { PAGE_W - SIDE_W - 60, -1 } })
 			end
+			-- (0.6.9) players whose DLCs are not the host's (the Deluxe pack's animals, people and vehicles are in one world only)
+			if st.dlcWarn and st.dlcWarn ~= "" then
+				right[#right + 1] = gap(1, 10)
+				right[#right + 1] = box(V, {
+					text(st.dlcWarn, "font-scale-body, warning", PAGE_W - SIDE_W - 84),
+				}, nil, { padding = { 8, 12, 8, 12 }, background = { 0.6, 0.15, 0.1, 0.3 }, size = { PAGE_W - SIDE_W - 60, -1 } })
+			end
 			if isHost and st.publicAddr and st.publicAddr ~= "" then
 				local w = PAGE_W - SIDE_W - 60
 				local pub = st.publicAddr

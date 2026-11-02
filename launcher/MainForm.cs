@@ -117,6 +117,10 @@ namespace MPFever
         Mods.Check modCheck;
         // (the host) the players whose mods are not the host's version, and which ones
         readonly Dictionary<string, string> modIssues = new Dictionary<string, string>();
+        // (0.6.9) the players whose DLCs are not the host's: the warning for each (see Mods.DlcWarning); this player's own warning
+        // when it is in another host's lobby or session
+        readonly Dictionary<string, string> dlcIssues = new Dictionary<string, string>();
+        string dlcWarn = "";
         // Mods a player lacks that no Mod Hub has (the host's own local mods, see Mods): the host is asked whether to send them
         // from its PC (with their size), the player whether to take them (they hold code its game will run).
         // (the host) the players' missing ones: player -> ids; its answer given: player -> "sent" / "refused"
@@ -948,6 +952,8 @@ namespace MPFever
                 sb.AppendLine("Settings changed: " + Options.Changed() + (GameInstall.DiagOn() ? "; DIAGNOSTIC BUILD (free-id log, state dumps)" : ""));
                 sb.AppendLine("Sync: " + syncText + "; desyncs " + desyncs + ", resynchronisations " + resyncId + ", actions relayed " + actsRelayed + ", refused " + actRefused);
                 sb.AppendLine("Processor: " + Reporter.Processor() + "; " + Reporter.WindowsVersion());
+                // (0.6.9: the game's DLCs here, and what differs from the host's or a player's)
+                sb.AppendLine("DLCs: " + Mods.InstalledDlcs() + (dlcWarn != "" ? " | " + dlcWarn : "") + (HostDlcWarn() != "" ? " | " + HostDlcWarn() : ""));
                 sb.AppendLine("Report made " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + (crashed ? " after a crash of the game" : ""));
                 var summary = sb.ToString();
                 List<string> left;
@@ -1349,6 +1355,28 @@ namespace MPFever
             MenuStatus();
         }
 
+        string lastHostDlcs = null;
+        /// <summary>(0.6.9) This player's DLCs against the host's (in its lobby and its welcome; "" from an older MPFever: nothing
+        /// said): a warning here and in the lobby, and this player's list sent to the host (dlccheck), which shows it in its own.</summary>
+        void CheckHostDlcs(string hostList, Client client, string name)
+        {
+            if (hostList == lastHostDlcs) return;
+            lastHostDlcs = hostList;
+            var mine = Mods.InstalledDlcs();
+            var (hostOnly, mineOnly) = Mods.DlcDiff(hostList, mine);
+            var parts = new List<string>();
+            if (mineOnly.Count > 0) parts.Add(F("vous avez {0}, pas l'hôte", "you have the {0}, the host does not", string.Join(", ", mineOnly)));
+            if (hostOnly.Count > 0) parts.Add(F("l'hôte a {0}, pas vous", "the host has the {0}, you do not", string.Join(", ", hostOnly)));
+            dlcWarn = parts.Count == 0 ? "" : T("DLC différents : ", "Different DLCs: ") + string.Join(T(" ; ", "; "), parts)
+                + T(". La partie va se désynchroniser : tous les joueurs doivent avoir les mêmes DLC.", ". The game will desynchronise: every player needs the same DLCs.");
+            if (dlcWarn != "") Log.Err(dlcWarn);
+            try { client?.Send(Msg.Make("dlccheck", name, "{[\"dlcs\"]=" + LuaLit.Quote(mine) + "}")); } catch { }
+            MenuStatus();
+        }
+
+        /// <summary>(0.6.9, the host) The DLC warnings of the players whose DLCs are not the host's, for the lobby.</summary>
+        string HostDlcWarn() { lock (dlcIssues) return string.Join(" ", dlcIssues.Values); }
+
         /// <summary>(the host) What MPFever knows of each mod of the savegame, in the log.</summary>
         void LogModVerdicts(string described, double seconds)
         {
@@ -1437,6 +1465,8 @@ namespace MPFever
                     ["autoMods"] = st.TryGetValue("automods", out var am) && am == "0" ? "0" : "1",
                     ["modAsk"] = lobbyOpen ? ModAskView() : "",
                     ["modSend"] = lobbyOpen ? modSendText : "",
+                    // (0.6.9) players whose DLCs are not the host's (the host's lobby), or this player's own difference
+                    ["dlcWarn"] = (lobbyOpen || hostGame != null) ? HostDlcWarn() : dlcWarn,
                     ["modOffer"] = lobbyOpen ? "" : modOffer,
                     ["modAskState"] = lobbyOpen ? "" : modAskState,
                     ["modRecv"] = lobbyOpen ? "" : modRecvText,
@@ -1539,7 +1569,7 @@ namespace MPFever
                 Mods.Rescan();
                 modRecvText = F("Mod {0} reçu de l'hôte et installé. S'il reste « manquant », redémarrez le jeu.", "Mod {0} received from the host and installed. If it stays « missing », restart the game.", id);
                 Log.Ok(F("Mod {0} reçu de l'hôte : installé dans {1}", "Mod {0} received from the host: installed in {1}", id, target));
-                var hm = lobbyMods; lobbyMods = ""; modCheck = null;
+                var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = "";
                 SetHostMods(hm, clients.FirstOrDefault(), menuGame?.Name ?? "");
             }
             catch (Exception e) { modRecvText = F("Mod {0} : installation impossible ({1})", "Mod {0}: cannot be installed ({1})", id, e.Message); Log.Warn(modRecvText); }
@@ -1889,7 +1919,7 @@ namespace MPFever
                 }
                 else if (lobbyMods != "")
                 {
-                    var hm = lobbyMods; lobbyMods = ""; modCheck = null;
+                    var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = "";
                     SetHostMods(hm, clients.FirstOrDefault(), name);
                 }
                 MenuStatus();
@@ -2028,8 +2058,9 @@ namespace MPFever
             lobbyColors = ""; lobbyMode = "";
             lock (lobbyAi) lobbyAi.Clear();
             lobbyAiText = ""; lobbyRulesText = ""; lobbyOptsText = "";
-            lobbyOpen = lobbyStarting = false; lobbySave = ""; lobbyPlayers = ""; lobbyPublic = ""; lobbyLocal = ""; lobbyMods = ""; modCheck = null;
+            lobbyOpen = lobbyStarting = false; lobbySave = ""; lobbyPlayers = ""; lobbyPublic = ""; lobbyLocal = ""; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = "";
             lock (modIssues) modIssues.Clear();
+            lock (dlcIssues) dlcIssues.Clear();
             joinedAddr = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
             if (menuGame != null)
@@ -2052,7 +2083,9 @@ namespace MPFever
             {
                 bool bad;
                 lock (modIssues) bad = modIssues.ContainsKey(BaseName(n));
-                names.Add(BaseName(n) + (bad ? T(" (mods différents)", " (different mods)") : ""));
+                bool dlc;
+                lock (dlcIssues) dlc = dlcIssues.ContainsKey(BaseName(n));
+                names.Add(BaseName(n) + (bad ? T(" (mods différents)", " (different mods)") : "") + (dlc ? T(" (DLC différents)", " (different DLCs)") : ""));
             }
             return string.Join(", ", names.Where(x => x != ""));
         }
@@ -2222,7 +2255,7 @@ namespace MPFever
             if (!lobbyOpen || relay == null) return;
             relay.Broadcast(Msg.Make("lobby", hostName, "{[\"players\"]=" + LuaLit.Quote(LobbyList()) + ",[\"save\"]=" + LuaLit.Quote(lobbySave)
                 + (lobbySaveSha != "" ? ",[\"sha\"]=" + LuaLit.Quote(lobbySaveSha) + ",[\"size\"]=" + lobbySaveSize : "")
-                + ",[\"host\"]=" + LuaLit.Quote(BaseName(hostName ?? "")) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods)
+                + ",[\"host\"]=" + LuaLit.Quote(BaseName(hostName ?? "")) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(Mods.InstalledDlcs())
                 + ",[\"colors\"]=" + LuaLit.Quote(LobbyColors()) + ",[\"cmode\"]=" + LuaLit.Quote(companyMode)
                 + ",[\"ai\"]=" + LuaLit.Quote(companyMode == "separate" ? LobbyAiView() : "")
                 // (0.5.14: the game's rules, shown to the players of the lobby)
@@ -2615,7 +2648,7 @@ namespace MPFever
                 Log.Ok(F("{0} a rejoint la session", "{0} joined the session", p.Name));
                 lock (leftAt) leftAt.Remove(BaseName(p.Name));
                 relay.DropOlder(p);
-                relay.Send(p, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods)
+                relay.Send(p, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(Mods.InstalledDlcs())
                     + ",[\"rtok\"]=" + LuaLit.Quote(p.Link?.Token ?? "") + (hostSteamId != null ? ",[\"sid\"]=" + LuaLit.Quote(hostSteamId) : "") + "}"));
                 Msg[] history; lock (chatLog) history = chatLog.ToArray();
                 foreach (var c in history) relay.Send(p, c);   // the chat so far (a reconnecting player skips what it has)
@@ -2869,6 +2902,7 @@ namespace MPFever
                             if (lo != lobbyOptsText && lo != "") Log.W(F("Options de partie choisies par l'hôte : {0}", "Game options chosen by the host: {0}", lo));
                             lobbyOptsText = lo;
                             SetHostMods(S("mods"), client, name);
+                            CheckHostDlcs(S("dlcs"), client, name);
                             // the host's savegame: maybe on this PC already (copied by hand): then nothing to download
                             if (S("sha") != "" && long.TryParse(S("size"), NumberStyles.Integer, CultureInfo.InvariantCulture, out long hsz)) CheckHostSave(S("sha"), hsz, S("save"), client, name);
                             menuPhase = "lobby";
@@ -2929,6 +2963,7 @@ namespace MPFever
                             if (!haveSent) Log.W(F("Réglages de la partie choisis par l'hôte : {0}", "Game settings chosen by the host: {0}", Options.Changed()));
                         }
                         if (w.TryGetValue("mods", out var mv0) && mv0 is string ms0) SetHostMods(ms0, client, name);
+                        if (w.TryGetValue("dlcs", out var dv0) && dv0 is string ds0) CheckHostDlcs(ds0, client, name);
                         if (w.TryGetValue("sid", out var sv) && sv is string ss && SteamNet.IsSteamId("steam:" + ss, out _)) hostSid = ss;
                         var run = w.TryGetValue("run", out var rv) && rv is string rs ? rs : "";
                         string have = "{[\"id\"]=0}";
@@ -3542,7 +3577,7 @@ namespace MPFever
                     WarnUnknownBuild(m.Payload);
                     WarnOtherBuild(m.From, m.Payload);
                     // a game started again (resynchronisation): it needs its identity again
-                    if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods)
+                    if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(Mods.InstalledDlcs())
                         + ",[\"rtok\"]=" + LuaLit.Quote(from.Link?.Token ?? "") + (hostSteamId != null ? ",[\"sid\"]=" + LuaLit.Quote(hostSteamId) : "") + "}"));
                     // (a player who reconnected during the resynchronisation answers under its new name: Philippe#2 for Philippe#1)
                     lock (resyncWaiting) resyncWaiting.RemoveWhere(w => w == m.From || BaseName(w) == BaseName(m.From));
@@ -3576,6 +3611,26 @@ namespace MPFever
                         if (differs != "") Log.Warn(F("{0} n'a pas la même version que vous de ces mods : {1}. Il ne pourra pas charger la partie tant qu'il ne les a pas mis à jour.", "{0} does not have your version of these mods: {1}. They cannot load the game until they update them.", BaseName(from.Name), differs));
                         BroadcastLobby();
                         MenuStatus();
+                    }
+                    break;
+
+                case "dlccheck":
+                    {
+                        // (0.6.9) a player's DLCs compared with the host's (see CheckHostDlcs): said in the log and in the lobby
+                        if (from == null) break;
+                        var h = LuaLit.Parse(m.Payload) as Dictionary<object, object> ?? new Dictionary<object, object>();
+                        var theirs = h.TryGetValue("dlcs", out var dv) && dv is string dls ? dls : "";
+                        var who = BaseName(from.Name);
+                        var warn = Mods.DlcWarning(who, Mods.InstalledDlcs(), theirs);
+                        bool changed;
+                        lock (dlcIssues)
+                        {
+                            dlcIssues.TryGetValue(who, out var was);
+                            changed = (was ?? "") != warn;
+                            if (warn != "") dlcIssues[who] = warn; else dlcIssues.Remove(who);
+                        }
+                        if (changed && warn != "") Log.Err(warn);
+                        if (changed) { BroadcastLobby(); MenuStatus(); }
                     }
                     break;
 

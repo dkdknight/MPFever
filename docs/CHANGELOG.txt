@@ -1,7 +1,16 @@
 MPFever - Changelog
 ===================
 
-0.6.9 - in progress (stress test of the 0.6.8 release, 2026-11-02)
+0.6.9 - 2026-11-02: the stress test of 0.6.8 and the players' reports of the day
+  - NEW (desync, both modes): the game's DLCs are compared between the players. The Deluxe edition's upgrade pack and the
+    pre-order pack activate themselves on the PC that owns them: their animals, people, vehicles and landmarks are in that
+    game's world only, the games make other entities, then the vehicles' and lines' ids, the vehicles and the towns go apart
+    (the reports of AMD and keviK: keviK with both packs, AMD with none, 7 reloads in 2 h 45). The host sends its DLCs in its
+    lobby and when a player joins; each player compares them and sends its own; the in-game lobby shows a red warning
+    ("keviK has the Deluxe pack, the host does not: the game will desynchronise. Every player needs the same DLCs."), the
+    host's player list says "(different DLCs)", both logs say it, the problem report has a "DLCs:" line, the launcher logs
+    the PC's DLCs when it starts. The host can still start the game. Tests: MPFever.exe --selftest (RunDlcs),
+    tests/test_dlcs.py.
   - FIX (computer companies): a pair of towns or a town left (no street for a stop, no garage, a line given up there) stayed
     left for the whole session. In the stress test (Test Headless, 3 computer companies, 45 min at x4) all three had left
     every pair within 2 minutes and stayed idle to the end, paying for their stops and garages. It is now tried again two

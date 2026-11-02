@@ -2317,6 +2317,8 @@ namespace MPFever
                 n++;
                 Log.Ok(L.T("Mod installé dans ", "Mod installed in ") + dst);
             }
+            // (0.6.9: the game's DLCs on this PC, which every player of a session needs alike, see Mods.InstalledDlcs)
+            try { Log.W(L.T("DLC du jeu sur ce PC : ", "The game's DLCs on this PC: ") + Mods.InstalledDlcs()); } catch { }
             return n;
         }
 

@@ -50,6 +50,64 @@ namespace MPFever
         /// only the host can send it.</summary>
         public static bool LocalSource(string source) => Regex.IsMatch(source ?? "", "staging|local|user", RegexOptions.IgnoreCase);
 
+        // ---- (0.6.9) the game's DLCs
+        // The DLCs (the Deluxe edition's upgrade pack, the pre-order pack) activate themselves in every game of the PC that owns
+        // them: their animals, people, vehicles and landmarks are in its world and not in the world of a player without them, so
+        // the two games make other entities, then the vehicles' and the lines' ids, the vehicles and the towns go apart (the
+        // reports of AMD and keviK, 2026-11-02: keviK with both packs, AMD with none, 7 reloads). The lobby says so.
+
+        /// <summary>The DLCs installed with the game on this PC (the folders of the game's "dlcs" with a mod.json), sorted, comma
+        /// separated; "none" when there is none, "" when the game's folder is not found. MPFEVER_DLCS: a list given instead (tests).</summary>
+        public static string InstalledDlcs()
+        {
+            var forced = Environment.GetEnvironmentVariable("MPFEVER_DLCS");
+            if (forced != null) return forced.Trim() == "" ? "none" : string.Join(",", forced.Split(',').Select(x => x.Trim()).Where(x => x != "").OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+            try
+            {
+                var g = GameInstall.FindGameDir();
+                if (g == null) return "";
+                var d = Path.Combine(g, "dlcs");
+                if (!Directory.Exists(d)) return "none";
+                var ids = Directory.GetDirectories(d).Where(x => File.Exists(Path.Combine(x, "mod.json"))).Select(x => Path.GetFileName(x))
+                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+                return ids.Count == 0 ? "none" : string.Join(",", ids);
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>A DLC's name for the players.</summary>
+        public static string DlcName(string id)
+        {
+            if (id.IndexOf("deluxe", StringComparison.OrdinalIgnoreCase) >= 0) return T("pack Deluxe", "Deluxe pack");
+            if (id.IndexOf("preorder", StringComparison.OrdinalIgnoreCase) >= 0) return T("bonus de précommande", "pre-order pack");
+            return id;
+        }
+
+        /// <summary>What differs between two DLC lists (InstalledDlcs): the names of those only in the first, those only in the
+        /// second. Nothing when either list is unknown ("": an older MPFever, or no game folder).</summary>
+        public static (List<string> OnlyA, List<string> OnlyB) DlcDiff(string a, string b)
+        {
+            var none = (new List<string>(), new List<string>());
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return none;
+            List<string> Of(string s) => s == "none" ? new List<string>() : s.Split(',').Select(x => x.Trim()).Where(x => x != "").ToList();
+            var la = Of(a); var lb = Of(b);
+            return (la.Where(x => !lb.Contains(x, StringComparer.OrdinalIgnoreCase)).Select(DlcName).ToList(),
+                    lb.Where(x => !la.Contains(x, StringComparer.OrdinalIgnoreCase)).Select(DlcName).ToList());
+        }
+
+        /// <summary>The warning for a player whose DLCs are not the host's (DlcDiff of the host's list and the player's), "" when
+        /// they are the same.</summary>
+        public static string DlcWarning(string player, string hostList, string playerList)
+        {
+            var (hostOnly, playerOnly) = DlcDiff(hostList, playerList);
+            if (hostOnly.Count == 0 && playerOnly.Count == 0) return "";
+            var parts = new List<string>();
+            if (playerOnly.Count > 0) parts.Add(F("{0} a {1}, pas l'hôte", "{0} has the {1}, the host does not", player, string.Join(", ", playerOnly)));
+            if (hostOnly.Count > 0) parts.Add(F("l'hôte a {1}, pas {0}", "the host has the {1}, {0} does not", player, string.Join(", ", hostOnly)));
+            return string.Join(T(" ; ", "; "), parts) + T(" : la partie va se désynchroniser. Tous les joueurs doivent avoir les mêmes DLC.",
+                ": the game will desynchronise. Every player needs the same DLCs.");
+        }
+
         public static Verdict Judge(string id, string kind)
         {
             if (id != null && Known.TryGetValue(id, out var k)) return k();
