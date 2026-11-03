@@ -29,6 +29,10 @@ it is stable enough.
       alone) told plainly instead of reloading every two minutes (0.6.5)
   [x] Vehicles and lines a player creates get the same number on every game: the cause of the resyncs "for no
       reason" (#109, 0.6.8); to confirm in sessions between two PCs
+  [x] The players' DLCs compared: different DLCs make different worlds, warned in the lobby (0.6.9)
+  [x] A savegame loaded again right after a resynchronisation no longer applies the last builds twice; a computer
+      company's build made at the same moment as the host's sent for the right company (0.6.10)
+  [x] A shorter freeze when an industry appears and is connected to the roads (0.6.10)
   [ ] Tests and fixes for 3 to 8 players
   [ ] Feedback from the first testers
 
@@ -61,6 +65,10 @@ it is stable enough.
       (game options, 0.6.0)
   [x] Each company's own rank, never the host's notification on another player's game (0.6.3 to 0.6.5)
   [x] The game's achievements counted per company (#95, 0.6.8)
+  [x] Every company's vehicles wear and get repaired, not only the savegame company's (0.6.9)
+  [x] A dot of their company's colour over the other companies' vehicles (0.6.10; smoother dots planned)
+  [x] A shared street stays its company's when another builds a station on it; another company's station edited by a
+      player stays its owner's (0.6.10)
 
 0.5 - Mixed modes
   [x] Shared companies and separate companies in the same game (0.5.0)
