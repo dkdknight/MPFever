@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.6.11 - in progress (not released): smoother dots, the names checks, #121's street upgrades
+0.6.11 - 2026-11-03: smoother dots, computer companies on a new map and depot tolls (#122), the names checks (#121)
   - NEW (one company per player): the colour dots over the other companies' vehicles follow them. The game's HUD image stays
     where it is put, and one given the vehicle without a place shows nowhere (autotests dm1 to dm3, whatever its revision):
     0.6.10 put the dots again 4 times a second, and they jumped behind their vehicles (the user's test of 2026-11-03). The
