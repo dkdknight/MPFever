@@ -129,11 +129,11 @@ NAMES = { [10] = "Halle", [20] = "Linie 1", [30] = "Bus 1" }
     got = changes('NAMES[30] = "Autobus 1"')
     check("the first check sends the name given since the load", got == "30:TRANSPORT_VEHICLE:Autobus 1", got)
     check("and nothing more", changes() == "nil")
-    # the bridge calls R.nameSeed at the load, on the host's game (K.nameSyncOn)
+    # the bridge calls R.nameSeed at the load (on the other games, 0.6.11: only the names its first check counts)
     check("the bridge sets the baseline at the simulation's first step after a load",
-          re.search(r"if not SIM\.loadChecked then\n\s*SIM\.loadChecked = true\n(\s*--[^\n]*\n)*\s*if K\.nameSyncOn\(\) then pcall\(R\.nameSeed\) end", bridge) is not None)
+          re.search(r"if not SIM\.loadChecked then\n\s*SIM\.loadChecked = true\n(\s*--[^\n]*\n)*\s*pcall\(R\.nameSeed, not K\.nameSyncOn\(\)\)", bridge) is not None)
     check("and in the interface's resumeAfterLoad",
-          re.search(r"^local function resumeAfterLoad\(state\)\n(\t--[^\n]*\n)*\tif K\.nameSyncOn\(\) then pcall\(R\.nameSeed\) end", bridge, re.M) is not None)
+          re.search(r"^local function resumeAfterLoad\(state\)\n(\t--[^\n]*\n)*\tpcall\(R\.nameSeed, not K\.nameSyncOn\(\)\)", bridge, re.M) is not None)
 
     print("R.contentHash: the names part fills R.nameCollect")
     got = run(r'''

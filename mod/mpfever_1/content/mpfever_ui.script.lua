@@ -794,20 +794,20 @@ end
 -- The other companies' vehicles get a dot of their company's colour floating over them (0.6.10, a Discord suggestion of 2026-11-01:
 -- in a game with one company per player, whose bus is this?). Their stations, depots and buildings have their colour already
 -- (the square beside their icon, installHudColors). Every U.DOTS_EVERY seconds, the vehicles of another company within
--- U.DOTS_RANGE metres of the camera's centre, the U.DOTS_MAX nearest, get the game's short-lived HUD image
--- (api.gui.spawnEphemeralHudImage, as the towns' happy faces): mpfever_dot.tga, a white disc tinted with that company's colour,
--- U.DOTS_LIFT metres above the vehicle, lasting until the next round. The image stays where it was put (the autotest ko4's
--- screenshots: a dot left behind a moving truck), hence the short rounds. The game's own grey icons are opaque (their corners
--- black): they showed as dark squares. Nothing while there is one company, nor with the camera higher than U.DOTS_HEIGHT (the
--- map's icons then). The Settings tab turns them off ("dots" in the ui_prefs.txt kept across launches). An owner is read once
--- per vehicle. MPFEVER_DOTS=0: never.
-U.DOTS_EVERY, U.DOTS_RANGE, U.DOTS_MAX, U.DOTS_HEIGHT, U.DOTS_LIFT = 0.25, 2000, 80, 2500, 6
+-- U.DOTS_RANGE metres of the camera's centre, the U.DOTS_MAX nearest, are listed; at every frame each gets the game's short-lived
+-- HUD image (api.gui.spawnEphemeralHudImage, as the towns' happy faces): mpfever_dot.tga, a white disc tinted with that company's
+-- colour, U.DOTS_LIFT metres above where the vehicle is now, lasting a little more than that frame. The image stays where it was
+-- put (the autotest ko4's screenshots: a dot left behind a moving truck), and one given the vehicle without a place shows nowhere
+-- (autotests dm1 to dm3, 0.6.11, whatever its revision): 0.6.10 put them again 4 times a second, and they jumped behind their
+-- vehicles (the user's test of 2026-11-03), hence every frame now. The game's own grey icons are opaque (their corners black):
+-- they showed as dark squares. Nothing while there is one company, nor with the camera higher than U.DOTS_HEIGHT (the map's icons
+-- then). The Settings tab turns them off ("dots" in the ui_prefs.txt kept across launches). An owner is read once per vehicle.
+-- MPFEVER_DOTS=0: never; MPFEVER_DOTSSMOOTH=0: put again with the list only, 80 at most, as in 0.6.10.
+U.DOTS_EVERY, U.DOTS_RANGE, U.DOTS_MAX, U.DOTS_HEIGHT, U.DOTS_LIFT = 0.25, 2000, 30, 2500, 6
 U.DOTS_ICON = "mpfever_1::/mpfever_dot.tga"
-U.dotsTick = function()
-	if os.getenv("MPFEVER_DOTS") == "0" or not U.coMap or not U.myCo or U.loadPrefs().dots == "0" then return end
-	local now = os.clock()
-	if now - (U.dotsAt or -10) < U.DOTS_EVERY then return end
-	U.dotsAt = now
+-- (the list of the dots to draw, rebuilt every U.DOTS_EVERY seconds: { vehicle, colour, company } each, nil while none are shown)
+U.dotsList = function(now, smooth)
+	U.dotsNear = nil
 	local n = 0
 	for _ in pairs(U.coMap) do n = n + 1 end
 	if n < 2 then return end
@@ -839,32 +839,63 @@ U.dotsTick = function()
 		if not (okP and pos) then return end
 		local dx, dy = pos.x - cx, pos.y - cy
 		local d2 = dx * dx + dy * dy
-		if d2 <= r2 then near[#near + 1] = { v, d2, id, pos } end
+		if d2 <= r2 then near[#near + 1] = { v, d2, id } end
 	end, api.type.ComponentType.TRANSPORT_VEHICLE)
 	table.sort(near, function(a, b) return a[2] < b[2] end)
-	local shown = 0
-	for i = 1, math.min(#near, U.DOTS_MAX) do
-		local v, id, pos = near[i][1], near[i][3], near[i][4]
+	local list, max = {}, smooth and U.DOTS_MAX or 80
+	for i = 1, math.min(#near, max) do
+		local id = near[i][3]
 		local ix = U.coColors and U.coColors[id] or id
-		local ok = pcall(function()
-			local r, g, b = U.dotsCO.rgb(ix)
-			local at = api.type.Vec3f.new(pos.x, pos.y, pos.z + U.DOTS_LIFT)
-			api.gui.spawnEphemeralHudImage(U.DOTS_ICON, v, api.type.Vec4f.new(r, g, b, 1), at, U.DOTS_EVERY * 1.05, false, false)
-		end)
-		if ok then shown = shown + 1 end
+		local ok, r, g, b = pcall(U.dotsCO.rgb, ix)
+		if ok then list[#list + 1] = { near[i][1], api.type.Vec4f.new(r, g, b, 1), id } end
 	end
-	if not U.dotsLogged and shown > 0 then U.dotsLogged = true; log("companies: dots of their company's colour over " .. shown .. " vehicle(s) of the other companies near the camera") end
+	if #list > 0 then U.dotsNear = list end
 	-- (MPFEVER_DOTSCAM=1, the autotests: with none near, the camera goes to another company's vehicle first; then it follows the
 	-- nearest one once, for a screenshot of its dot)
-	if cam and shown == 0 and U.dotsAny and not U.dotsMoved then
+	if cam and #list == 0 and U.dotsAny and not U.dotsMoved then
 		U.dotsMoved = true
 		local okF = pcall(api.gui.camera.followEntity, U.dotsAny, true)
 		log("companies: dots test: no vehicle of another company near the camera, it goes to vehicle " .. tostring(U.dotsAny) .. (okF and "" or " (refused)"))
 	end
-	if shown > 0 and not U.dotsCam and cam then
+	if #list > 0 and not U.dotsCam and cam then
 		U.dotsCam = true
-		local okF = pcall(api.gui.camera.followEntity, near[1][1], true)
-		log("companies: dots test: the camera follows vehicle " .. tostring(near[1][1]) .. " of company " .. tostring(near[1][3]) .. (okF and "" or " (refused)"))
+		local okF = pcall(api.gui.camera.followEntity, list[1][1], true)
+		log("companies: dots test: the camera follows vehicle " .. tostring(list[1][1]) .. " of company " .. tostring(list[1][3]) .. (okF and "" or " (refused)"))
+	end
+end
+U.dotsTick = function()
+	if os.getenv("MPFEVER_DOTS") == "0" or not U.coMap or not U.myCo or U.loadPrefs().dots == "0" then U.dotsNear = nil; return end
+	local smooth = os.getenv("MPFEVER_DOTSSMOOTH") ~= "0"
+	local now = os.clock()
+	local listed = false
+	if now - (U.dotsAt or -10) >= U.DOTS_EVERY then
+		U.dotsAt = now
+		listed = true
+		U.dotsList(now, smooth)
+	end
+	local list = U.dotsNear
+	if not list or not (smooth or listed) then return end
+	-- (once a frame: the tick also runs on a timer)
+	local dt = now - (U.dotsDrawAt or -10)
+	if smooth and dt < 0.004 then return end
+	U.dotsDrawAt = now
+	local life = smooth and math.min(math.max(dt * 1.3, 0.02), 0.3) or U.DOTS_EVERY * 1.05
+	local shown = 0
+	for i = 1, #list do
+		local d = list[i]
+		local ok, err = pcall(function()
+			local pos = api.engine.util.vehicle.getPosition(d[1])
+			api.gui.spawnEphemeralHudImage(U.DOTS_ICON, d[1], d[2], api.type.Vec3f.new(pos.x, pos.y, pos.z + U.DOTS_LIFT), life, false, false)
+		end)
+		if ok then shown = shown + 1 elseif not U.dotsErrLogged then U.dotsErrLogged = true; log("companies: a dot refused: " .. tostring(err)) end
+	end
+	if not U.dotsLogged and shown > 0 then U.dotsLogged = true; log("companies: dots of their company's colour over " .. shown .. " vehicle(s) of the other companies near the camera") end
+	-- (how often they are drawn, once, 10 s after the first: the frames of this PC)
+	U.dotsDraws = (U.dotsDraws or 0) + 1
+	U.dotsFirst = U.dotsFirst or now
+	if not U.dotsRateLogged and now - U.dotsFirst >= 10 then
+		U.dotsRateLogged = true
+		log(string.format("companies: dots drawn %d times in %.1f s", U.dotsDraws, now - U.dotsFirst))
 	end
 end
 

@@ -1308,8 +1308,9 @@ local function simApplyDue(state)
 	-- actions. Purchases waiting for their step (one per step, a.spread) are kept. MPFEVER_KEEPSTALE=1: as before
 	if not SIM.loadChecked then
 		SIM.loadChecked = true
-		-- (the names of the savegame as every game loaded it: the first check sends what changed since, see R.nameSeed)
-		if K.nameSyncOn() then pcall(R.nameSeed) end
+		-- (the names of the savegame as every game loaded it: the first check sends what changed since, see R.nameSeed; on
+		-- every game, the names its first check counts)
+		pcall(R.nameSeed, not K.nameSyncOn())
 		if os.getenv("MPFEVER_KEEPSTALE") ~= "1" then
 			local kept, gone = {}, {}
 			for _, a in ipairs(q) do
@@ -15618,6 +15619,91 @@ H.upgowner = function(from, p)
 	end
 end
 
+-- A burst of street upgrades (MPFEVER_SCENARIO=upgburst, issue #121: the host upgraded some 20 town streets in a pause, every one
+-- at the same paused time, then 20 more at x2, and "script:towns" was apart 10 s later): this game upgrades MPFEVER_UPGBURST_N
+-- town street segments (12 by default) to a wider town street one after the other, a build every MPFEVER_UPGBURST_GAP frames
+-- (40), as the upgrade tool does: the engine's proposal in the tool's context (terrain aligned, street graph cleaned up, the
+-- town buildings in the way taken away; with the scripts' context instead, terrain aligned otherwise and "town stats differ" at
+-- the 3rd build: autotest ub1). Segments picked by id from the role's offset, neighbours possible (#121 upgraded along streets).
+-- (several connected segments at once, as Balle's upgrades of 3 and 8 segments, cannot be made so: the engine's proposals of the
+-- segments put together lack the tool's junctions, "Unknown exception", autotest ub6)
+H.upgburst = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	local ok, err = pcall(function()
+		AUTO.running = true
+		AUTO.results = {}
+		AUTO.points = {}
+		local n = tonumber(os.getenv("MPFEVER_UPGBURST_N") or "") or 12
+		local gap = tonumber(os.getenv("MPFEVER_UPGBURST_GAP") or "") or 40
+		local list, templates = {}, {}
+		for _, e in ipairs(R.allEdges()) do
+			local c = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
+			local t = c and c.type == 0 and tostring(c.roadTemplate or "") or ""
+			if c and #c.objects == 0 and t:find("town", 1, true) and not t:find("entrance", 1, true) then
+				list[#list + 1] = { e = e, c = c, t = t }
+				templates[t] = true
+			end
+		end
+		local names = {}
+		for t in pairs(templates) do names[#names + 1] = t end
+		table.sort(names)
+		log("AUTOTEST upgburst (" .. C.ROLE .. "): " .. #list .. " town street segments, types: " .. table.concat(names, ", "))
+		-- (the wider type: a "large" one for a small or medium street, else none)
+		local function wider(t)
+			if t:find("large", 1, true) then return nil end
+			for _, u in ipairs(names) do if u ~= t and u:find("large", 1, true) and not u:find("x_large", 1, true) then return u end end
+			return nil
+		end
+		local built, tried, used = 0, 0, {}
+		local function nextOne()
+			if built >= n or tried >= n * 4 or #list == 0 then
+				AUTO.results[#AUTO.results + 1] = "upgburst: " .. built .. " upgrades built, " .. (tried - built) .. " refused or skipped"
+				return autoFinish()
+			end
+			tried = tried + 1
+			local pick = list[((p.offset or 0) * 131 + tried * 211) % #list + 1]
+			local target = wider(pick.t)
+			if used[pick.e] or not target or not api.engine.entityExists(pick.e) then
+				G.waits[#G.waits + 1] = { at = G.frames + 1, fn = nextOne }
+				return
+			end
+			used[pick.e] = true
+			local okp, P = pcall(function() return api.engine.util.proposal.replaceSegment(pick.e, target) end)
+			if not okp or not P then
+				log("AUTOTEST upgburst replaceSegment(" .. pick.e .. ") failed: " .. tostring(P))
+				G.waits[#G.waits + 1] = { at = G.frames + 1, fn = nextOne }
+				return
+			end
+			local a = nodePosition(pick.c.node0)
+			local ctx = playerContext()
+			if os.getenv("MPFEVER_UPGBURST_CTX") ~= "script" then
+				ctx.checkTerrainAlignment = true
+				ctx.cleanupStreetGraph = true
+			end
+			ctx.gatherBuildings = true
+			local okc, errc = pcall(function()
+				deferredSend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res, success)
+					local why = ""
+					if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)):sub(1, 200) end) end
+					log("AUTOTEST upgburst segment " .. pick.e .. " " .. pick.t:match("[^/]+$") .. " -> " .. target:match("[^/]+$") .. ": " .. (success and "built" or ("refused " .. why)) .. " [frame " .. G.frames .. "]")
+					if success then built = built + 1; AUTO.points[#AUTO.points + 1] = a end
+					G.waits[#G.waits + 1] = { at = G.frames + gap, fn = nextOne }
+				end)
+			end)
+			if not okc then
+				log("AUTOTEST upgburst command failed: " .. shortErr(errc))
+				G.waits[#G.waits + 1] = { at = G.frames + 1, fn = nextOne }
+			end
+		end
+		nextOne()
+	end)
+	if not ok then
+		log("AUTOTEST upgburst failed: " .. tostring(err))
+		AUTO.results[#AUTO.results + 1] = "upgburst error " .. tostring(err)
+		autoFinish()
+	end
+end
+
 H.autotest_done = function(from, p)
 	G.autoPoints = G.autoPoints or {}
 	for _, q in ipairs(p.points or {}) do G.autoPoints[#G.autoPoints + 1] = q end
@@ -15760,7 +15846,7 @@ end
 -- files already hold belongs to the previous game state, and the savegame's script state holds the host's records.
 local function resumeAfterLoad(state)
 	-- (the names of the savegame as every game loaded it, for the checks made in a pause, see R.nameSeed)
-	if K.nameSyncOn() then pcall(R.nameSeed) end
+	pcall(R.nameSeed, not K.nameSyncOn())
 	-- the game time of the savegame loaded now (the session's start, or the host's game of a resynchronisation): the acts stamped
 	-- later cannot be in it (see G.alreadyBuilt)
 	pcall(function() G.loadT = gameTime() end)

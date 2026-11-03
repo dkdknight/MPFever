@@ -1018,12 +1018,17 @@ end
 
 -- the names of the savegame as every game loaded it, the baseline of the next R.nameChanges: a station, line or vehicle named
 -- between the load and the first check went unsent before, the first check only set the baseline
-function R.nameSeed()
+-- (seenOnly: only the names the names part's first check counts, on a game that sends no names)
+function R.nameSeed(seenOnly)
 	local col = {}
 	for _, cname in ipairs({ "STATION_GROUP", "LINE", "TRANSPORT_VEHICLE" }) do
 		for _, e in ipairs(R.entitiesWith(cname)) do col[e] = { k = cname, nm = nameOf(e) } end
 	end
-	R.namesPrev = col
+	if not seenOnly then R.namesPrev = col end
+	-- (the names part's first check counts the savegame's names, see part "names")
+	local seen = {}
+	for e in pairs(col) do seen[e] = true end
+	R.namesSeen = seen
 end
 
 function R.lineText(e)
@@ -1168,18 +1173,28 @@ function R.contentHash(hashStr, dumpFn)
 	-- and waiting times (the ids of the stations differ between games, their names do not)
 	part("lines", function() return count("LINE", R.lineText) end)
 	-- the names of stations, lines and vehicles
+	-- (0.6.11: only those already there at this game's previous check, or at its load. A new one has the default name of its
+	-- game's language until the host's names of that check arrive ("Strassenfahrzeug 1" here, "Road Vehicle 225" on the host,
+	-- issue #121): every purchase in a game of two languages made the part differ for one check, "slight simulation drift
+	-- (names)", and the lines and vehicles were not compared meanwhile. MPFEVER_NAMEFRESH=0: every one, as before)
 	part("names", function()
 		local n, acc = 0, 0
 		-- (R.nameCollect, on the host's game: every name read here, for the games of the other languages, see R.nameChanges)
 		local col = R.nameCollect
+		local prev = os.getenv("MPFEVER_NAMEFRESH") ~= "0" and R.namesSeen or nil
+		local seen = {}
 		for _, cname in ipairs({ "STATION_GROUP", "LINE", "TRANSPORT_VEHICLE" }) do
 			for _, e in ipairs(R.entitiesWith(cname)) do
-				n = n + 1
+				seen[e] = true
 				local nm = nameOf(e)
-				acc = (acc + hashStr(0, cname .. ":" .. nm)) % 4294967296
+				if not prev or prev[e] then
+					n = n + 1
+					acc = (acc + hashStr(0, cname .. ":" .. nm)) % 4294967296
+				end
 				if col then col[e] = { k = cname, nm = nm } end
 			end
 		end
+		R.namesSeen = seen
 		return n .. "/" .. acc
 	end)
 	-- what the player sets on a vehicle: its line, stopped by the player, to be sold

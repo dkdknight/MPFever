@@ -1,6 +1,27 @@
 MPFever - Changelog
 ===================
 
+0.6.11 - in progress (not released): smoother dots, the names checks, #121's street upgrades
+  - NEW (one company per player): the colour dots over the other companies' vehicles follow them. The game's HUD image stays
+    where it is put, and one given the vehicle without a place shows nowhere (autotests dm1 to dm3, whatever its revision):
+    0.6.10 put the dots again 4 times a second, and they jumped behind their vehicles (the user's test of 2026-11-03). The
+    nearest vehicles are still listed 4 times a second, 30 at most (80 before), and their dots are drawn again at every frame
+    where the vehicles are (autotest dm4: drawn 55 to 60 times a second, the dot stays over the truck the camera follows, in
+    sync). MPFEVER_DOTSSMOOTH=0: as 0.6.10. Test: tests/test_dots.py.
+  - FIX (checks, players of two languages): the "names" part counts a station, line or vehicle once it was there at the game's
+    previous check (or at its load). A new one has its game's default name ("Strassenfahrzeug 1" on one game, "Road Vehicle
+    225" on the host's, issue #121) until the host's names of that check arrive: every purchase gave "slight simulation drift
+    (names)" for one check, and the lines and vehicles were not compared meanwhile. The subsidies' titles were left out of the
+    checks already (0.6.2, #102). MPFEVER_NAMEFRESH=0: every name counted, as before. Test: tests/test_namefresh.py.
+  - Autotest: MPFEVER_SCENARIO=upgburst, a series of town street upgrades to a wider street, one after the other, the town
+    buildings in the way taken away (issue #121; MPFEVER_UPGBURST_N, MPFEVER_UPGBURST_GAP); with MPFEVER_PAUSED=1, all at the
+    same paused time. #121's resync after the host's upgrades in a pause did not come back: 24 upgrades in a pause (up to 8
+    town buildings taken away and 4 put back for one), then 4 min at x2, in sync with one company for all (ub3) and one per
+    player (ub4); 24 at x2, in sync (ub5); every replay's town statistics the builder's. Made in the scripts' context instead
+    (terrain not aligned as by the tool), the replay aligned the terrain otherwise ("town stats differ" at the 3rd build, ub1):
+    a mod that upgrades streets by script in such a context desynchronises. Upgrades of several segments at once could not be
+    made by a script (no tool junctions): still to test with the tool.
+
 0.6.10 - 2026-11-03: the reports of #121 and of AMD and keviK
   - FIX (desync, both modes): a game that loaded its savegame again by itself (AMD's quick save and load, a minute after
     resynchronisation 4 of 2026-11-02) took it for that resynchronisation's load and read every message since: keviK's join
