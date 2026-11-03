@@ -863,8 +863,21 @@ U.dotsList = function(now, smooth)
 		log("companies: dots test: the camera follows vehicle " .. tostring(list[1][1]) .. " of company " .. tostring(list[1][3]) .. (okF and "" or " (refused)"))
 	end
 end
+-- Shown or not (0.6.12): off by default (the user's choice, 2026-11-04: their look is not good enough yet), on once the player
+-- ticks them in the Settings tab ("vdots=1" in the ui_prefs.txt kept across launches). The "dots" key of 0.6.10 and 0.6.11 was
+-- written "1" for everybody who changed any setting, so it says nothing about a choice and is left aside. MPFEVER_DOTS=0 or 1
+-- (autotests) decides alone; MPFEVER_DOTSON=1: on by default as in 0.6.11 ("dots=0" still off).
+U.dotsOn = function()
+	local e = os.getenv("MPFEVER_DOTS")
+	if e == "0" then return false end
+	if e == "1" then return true end
+	local p = U.loadPrefs()
+	if p.vdots ~= nil then return p.vdots == "1" end
+	if os.getenv("MPFEVER_DOTSON") == "1" then return p.dots ~= "0" end
+	return false
+end
 U.dotsTick = function()
-	if os.getenv("MPFEVER_DOTS") == "0" or not U.coMap or not U.myCo or U.loadPrefs().dots == "0" then U.dotsNear = nil; return end
+	if not U.dotsOn() or not U.coMap or not U.myCo then U.dotsNear = nil; return end
 	local smooth = os.getenv("MPFEVER_DOTSSMOOTH") ~= "0"
 	local now = os.clock()
 	local listed = false
@@ -2093,7 +2106,7 @@ U.loadPrefs = function()
 		end
 	end
 	read(C.DIR .. C.BS .. "ui_prefs.txt", { open = true, tab = true, compact = true, pinned = true, hubpage = true, hubsize = true })
-	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true })
+	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true, vdots = true })
 	U.prefs = p
 	U.tab = U.tab or p.tab or "session"
 	U.compact = p.compact == "1"
@@ -2112,7 +2125,8 @@ end
 U.saveGlobalPrefs = function()
 	local p = U.loadPrefs()
 	local f = C.IO.open(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", "wb")
-	if f then f:write("autoopen=" .. tostring(p.autoopen or "1") .. C.NL .. "aichat=" .. tostring(p.aichat or "1") .. C.NL .. "dots=" .. tostring(p.dots or "1") .. C.NL); f:close() end
+	if f then f:write("autoopen=" .. tostring(p.autoopen or "1") .. C.NL .. "aichat=" .. tostring(p.aichat or "1") .. C.NL .. "dots=" .. tostring(p.dots or "1") .. C.NL
+		.. (p.vdots ~= nil and ("vdots=" .. tostring(p.vdots) .. C.NL) or "")); f:close() end
 end
 U.saveAutoOpen = function(on)
 	local p = U.loadPrefs()
@@ -3910,9 +3924,9 @@ U.TABS.settings = function(K, st, ctx)
 		} }
 		-- (the dots over the other companies' vehicles, see U.dotsTick)
 		rows[#rows + 1] = K.row { builtin.CheckBox {
-			value = p.dots == "0" and 0 or 1,
+			value = U.dotsOn() and 1 or 0,
 			label = T("Un point de leur couleur sur les véhicules des autres entreprises", "A dot of their colour over the other companies' vehicles"),
-			onValueChange = function(v) p.dots = v == 1 and "1" or "0"; U.saveGlobalPrefs(); U.winChanged() end,
+			onValueChange = function(v) p.vdots = v == 1 and "1" or "0"; U.saveGlobalPrefs(); U.winChanged() end,
 		} }
 	end
 	-- (the bankruptcy rule is in the Game tab since 0.5.14, with the game's other rules)

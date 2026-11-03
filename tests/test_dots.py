@@ -12,6 +12,8 @@ taken from the real interface script and run through lupa (Lua 5.2) with a mocke
     one frame (the tick runs on a timer too); the list made again every U.DOTS_EVERY seconds (a vehicle come near gets one);
   - MPFEVER_DOTSSMOOTH=0: as 0.6.10, one round per U.DOTS_EVERY seconds lasting until the next, 80 at most;
   - nothing with one company, with the camera high above the ground, with "dots=0" in the preferences or MPFEVER_DOTS=0;
+  - (0.6.12) off by default: none without "vdots=1" in the preferences (the old "dots=1" is no choice), on with it or with
+    MPFEVER_DOTS=1; MPFEVER_DOTSON=1: on by default as in 0.6.11;
   - the Settings tab has the switch, kept in the preferences across launches.
 Run: python tests/test_dots.py
 """
@@ -48,7 +50,7 @@ NOW = 100
 os.clock = function() return NOW end
 LOG = {}
 log = function(s) LOG[#LOG + 1] = s end
-PREFS = {}
+PREFS = { vdots = '1' }
 U = { loadPrefs = function() return PREFS end, myCo = 1, coMap = { [500] = 1, [600] = 2 }, coColors = { [1] = 3, [2] = 7 } }
 ug_require = function(n) return { rgb = function(ix) return ix / 10, 0, 0 end } end
 -- vehicles: id -> { owner player, x, y }
@@ -102,17 +104,27 @@ api = {
 
     run("VEH = { [11] = { 600, 100, 0 } }; SPAWNS = {}; NOW = 120; CAM.h = 5000; U.dotsTick()")
     check("camera high above the ground: none", run("return #SPAWNS") == 0)
-    run("CAM.h = 300; SPAWNS = {}; NOW = 130; PREFS.dots = '0'; U.dotsTick()")
-    check("dots=0 in the preferences: none", run("return #SPAWNS") == 0)
-    run("PREFS.dots = nil; SPAWNS = {}; NOW = 140; ENV.MPFEVER_DOTS = '0'; U.dotsTick()")
+    run("CAM.h = 300; SPAWNS = {}; NOW = 130; PREFS.vdots = '0'; U.dotsTick()")
+    check("vdots=0 in the preferences: none", run("return #SPAWNS") == 0)
+    run("PREFS.vdots = nil; SPAWNS = {}; NOW = 131; U.dotsTick()")
+    check("0.6.12: off by default (no vdots in the preferences)", run("return #SPAWNS") == 0)
+    run("PREFS.dots = '1'; SPAWNS = {}; NOW = 132; U.dotsTick()")
+    check("0.6.12: the old dots=1 written for everybody is no choice: none", run("return #SPAWNS") == 0)
+    run("SPAWNS = {}; NOW = 133; ENV.MPFEVER_DOTS = '1'; U.dotsTick()")
+    check("MPFEVER_DOTS=1 (autotests): shown", run("return #SPAWNS") == 1)
+    run("ENV.MPFEVER_DOTS = nil; ENV.MPFEVER_DOTSON = '1'; SPAWNS = {}; NOW = 134; U.dotsTick()")
+    check("MPFEVER_DOTSON=1: on by default as in 0.6.11", run("return #SPAWNS") == 1)
+    run("PREFS.dots = '0'; SPAWNS = {}; NOW = 135; U.dotsTick()")
+    check("MPFEVER_DOTSON=1 and dots=0: none", run("return #SPAWNS") == 0)
+    run("ENV.MPFEVER_DOTSON = nil; PREFS.dots = nil; PREFS.vdots = '1'; SPAWNS = {}; NOW = 140; ENV.MPFEVER_DOTS = '0'; U.dotsTick()")
     check("MPFEVER_DOTS=0: none", run("return #SPAWNS") == 0)
     run("ENV.MPFEVER_DOTS = nil; SPAWNS = {}; NOW = 150; U.coMap = { [500] = 1 }; U.dotOwner = nil; U.dotsTick()")
     check("one company: none", run("return #SPAWNS") == 0)
     run("U.coMap = { [500] = 1, [600] = 2 }; SPAWNS = {}; NOW = 160; U.dotsTick()")
     check("(two again: the dot is back)", run("return #SPAWNS") == 1)
 
-    check("the Settings tab has the switch", "A dot of their colour over the other companies' vehicles" in src and "p.dots = v == 1 and \"1\" or \"0\"; U.saveGlobalPrefs()" in src)
-    check("kept across launches", 'aichat = true, dots = true' in src and '"dots=" .. tostring(p.dots or "1")' in src)
+    check("the Settings tab has the switch", "A dot of their colour over the other companies' vehicles" in src and "p.vdots = v == 1 and \"1\" or \"0\"; U.saveGlobalPrefs()" in src and "value = U.dotsOn() and 1 or 0" in src)
+    check("kept across launches", 'dots = true, vdots = true' in src and '"vdots=" .. tostring(p.vdots)' in src)
     check("called from the interface's tick", "pcall(U.dotsTick)" in src)
 
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")

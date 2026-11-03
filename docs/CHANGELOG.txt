@@ -1,6 +1,12 @@
 MPFever - Changelog
 ===================
 
+0.6.12 - (in progress) the night of 2026-11-04
+  - CHANGE (one company per player): the colour dots over the other companies' vehicles are off by default (their look is
+    not good enough yet). The Settings tab turns them on ("vdots=1" in ui_prefs.txt, kept across launches); the "dots=1" that
+    0.6.10 and 0.6.11 wrote for everybody who changed any setting is no choice and is left aside. MPFEVER_DOTSON=1: on by
+    default as in 0.6.11; MPFEVER_DOTS=0/1 decides alone (autotests). Test: tests/test_dots.py.
+
 0.6.11 - 2026-11-03: smoother dots, computer companies on a new map and depot tolls (#122), the names checks (#121)
   - NEW (one company per player): the colour dots over the other companies' vehicles follow them. The game's HUD image stays
     where it is put, and one given the vehicle without a place shows nowhere (autotests dm1 to dm3, whatever its revision):
