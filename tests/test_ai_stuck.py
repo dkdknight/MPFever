@@ -5,8 +5,9 @@ companies bought their buses in the host's garage, 3 km away. None of them ever 
 line", sent again and again), and as a line's fleet counts the vehicles on it, each look bought one more: 8 buses each in
 7 minutes, the companies' money spent on buses standing in a depot. Now:
   - no bus or truck is bought while one of the company's vehicles waits for its line in a depot that reaches the streets;
-  - a vehicle sent to its line 3 times that never took it is sold, and its depot is left for the company's purchases
-    (garagesNear leaves it out);
+  - a vehicle sent to its line 3 times that never took it is sold, and that depot is no longer used for that line's purchases
+    (in the test on #122's map, a company's own garage could not reach one of its lines, between two other towns: its other
+    lines still get their vehicles there);
   - MPFEVER_AISTUCK=0: as before.
 mpfever_ai.lua through lupa with the mocked game of ai_mock.py.
 Run: python tests/test_ai_stuck.py
@@ -61,24 +62,30 @@ def main():
     check(r is True and L.eval("acts('makeVehicleBuyCmd')") == 3, "MPFEVER_AISTUCK=0: bought while a vehicle waits, as before")
     run("ENV.MPFEVER_AISTUCK = nil")
 
-    # garagesNear leaves out a depot whose vehicles never took their line
+    # a depot whose vehicle never took a line: no purchase there for that line, the others still bought there
+    run("G.AI = { badDepot = { ['900:77'] = true }, forLine = 77 }; VLINE[51] = 66; LOG = {}")
+    n0 = L.eval("acts('makeVehicleBuyCmd')")
+    r = M.f.buyBus(L.eval("E"), co, 900)
+    check(r is False and L.eval("acts('makeVehicleBuyCmd')") == n0, "no bus bought at that depot for that line")
+    check(L.eval("logHas('no bus bought at depot 900 for line 77')"), "and it says so")
+    run("G.AI.forLine = 66")
+    r = M.f.buyBus(L.eval("E"), co, 900)
+    check(r is True and L.eval("acts('makeVehicleBuyCmd')") == n0 + 1, "bought there for another line")
+    run("G.AI = { badDepot = { ['900:77'] = true }, forLine = 77 }; ENV.MPFEVER_AISTUCK = '0'")
+    r = M.f.buyBus(L.eval("E"), co, 900)
+    check(r is True and L.eval("acts('makeVehicleBuyCmd')") == n0 + 2, "MPFEVER_AISTUCK=0: bought there, as before")
+    run("ENV.MPFEVER_AISTUCK = nil")
     run("G.AI = {}; G.AIT = {}")
     got = L.eval("#M.f.garagesNear(E, CO1.ent, { x = 10, y = 10 }, 5000)")
-    check(got == 1, f"the garage near is found ({got})")
-    run("G.AI = { badDepot = { [900] = true } }; G.AIT = {}")
-    got = L.eval("#M.f.garagesNear(E, CO1.ent, { x = 10, y = 10 }, 5000)")
-    check(got == 0, f"a depot left for the purchases is not offered ({got})")
-    run("ENV.MPFEVER_AISTUCK = '0'; G.AIT = {}")
-    got = L.eval("#M.f.garagesNear(E, CO1.ent, { x = 10, y = 10 }, 5000)")
-    check(got == 1, f"MPFEVER_AISTUCK=0: offered, as before ({got})")
-    run("ENV.MPFEVER_AISTUCK = nil")
+    check(got == 1, f"the garage near is still offered ({got})")
 
     # the vehicles' loop of step: sold after 3 sends, its depot left
     src = open(os.path.join(HERE, "..", "mod", "mpfever_1", "content", "mpfever_ai.lua"), encoding="utf-8").read()
     m = re.search(r'if os\.getenv\("MPFEVER_AISTUCK"\) ~= "0" and \(A\.lineTries\[v\.e\] or 0\) >= 3 then\n(.*?)\n\t+end\n\t+A\.lineTries\[v\.e\] = \(A\.lineTries\[v\.e\] or 0\) \+ 1', src, re.S)
     check(m is not None, "the vehicles' loop counts each send to the line")
     body = m.group(1) if m else ""
-    check("A.badDepot[vdepot] = true" in body and "sellVehicle(E, co, v.e," in body, "after 3 sends: sold, its depot left")
+    check('A.badDepot[tostring(vdepot) .. ":" .. tostring(tl)] = true' in body and "sellVehicle(E, co, v.e," in body, "after 3 sends: sold, that depot left for that line")
+    check("A.lineTarget[v.e] = target" in src, "each send remembers its line")
     check("getFailedPathReason" in body, "and the engine's reason logged")
     check("if type(A.lineTries) == \"table\" then for k in pairs(A.lineTries) do if not liveV[k] then A.lineTries[k] = nil end end end" in src,
           "the count of a vehicle gone is dropped (a new vehicle may take its id)")

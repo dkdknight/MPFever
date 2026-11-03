@@ -22,8 +22,15 @@ MPFever - Changelog
     host's garage 3 km away; none ever took its line ("still without a line", sent again and again) and, a line's fleet
     counting its vehicles on it, each look bought one more: 8 buses each in 7 minutes, standing in the depot. No vehicle is
     bought now while one of the company's waits for its line; one sent to its line 3 times that never took it is sold (the
-    engine's reason logged) and its depot is left for the company's purchases (MPFEVER_AISTUCK=0: as before).
-    Test: tests/test_ai_stuck.py. Why the companies found no place for their own garage on that map is not known yet.
+    engine's reason logged) and that depot is no longer used for that line (on #122's map, a company's own garage could not
+    reach its third line, between two other towns; its two other lines ran). MPFEVER_AISTUCK=0: as before.
+    Test: tests/test_ai_stuck.py.
+  - FIX (#122, computer companies, a new map): no company ever built its own garage ("no free place for a garage near ..."
+    for every town) and they only started when a player built a depot. 0.6.9 left out every street segment next to a
+    junction with a configuration of its own, for the traffic lights a garage's replay cannot put back; on a new map every
+    town junction has one, the game's own lane connections and crosswalks, no light (david's map: 223 junctions out of 223).
+    Only the junctions with traffic lights or a player's own lane connections are left out now (MPFEVER_AIGARAGECFG=all:
+    every configured junction, as 0.6.9; =0: none). Test: tests/test_aigaragecfg.py.
   - Autotest: MPFEVER_SCENARIO=upgburst, a series of town street upgrades to a wider street, one after the other, the town
     buildings in the way taken away (issue #121; MPFEVER_UPGBURST_N, MPFEVER_UPGBURST_GAP); with MPFEVER_PAUSED=1, all at the
     same paused time. #121's resync after the host's upgrades in a pause did not come back: 24 upgrades in a pause (up to 8

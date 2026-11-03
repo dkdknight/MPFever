@@ -307,11 +307,8 @@ local function garagesNear(E, ent, p, maxD)
 	local eco = os.getenv("MPFEVER_AICACHE") ~= "0" and E.C.eco and E.C.eco() or nil
 	local myId = eco and E.G.co and E.CO.idOfEntity(E.G.co, ent) or nil
 	local T = E.G.AIT or {}
-	-- (0.6.11, #122: a depot whose vehicles never took their line is left, see the vehicles' loop in step)
-	local bad = os.getenv("MPFEVER_AISTUCK") ~= "0" and E.G.AI and E.G.AI.badDepot or {}
 	for _, g in ipairs(roadGarages(E)) do
 		local d = dist(g.pos, p)
-		if bad[g.depot] then d = maxD end
 		-- (a garage near enough read again: its depot id may name another depot since, freed by a bulldozer and taken by a new one)
 		if d < maxD and os.getenv("MPFEVER_AICACHE") ~= "0" then
 			local still = false
@@ -753,10 +750,23 @@ local function garagePlaces(E, co, p, maxD)
 	-- the garage's build removes the configuration of the segment's ends and the native replay cannot put the traffic light
 	-- phases back, the engine then asserts (it != components.end(), as the stops did, stress test 2026-11-02). MPFEVER_AIGARAGECFG=0:
 	-- those segments taken too, as before
+	-- (0.6.11, #122) only a junction with traffic lights or a player's own lane connections: on a new map every town junction has a
+	-- configuration of the game's own, its lane connections and crosswalks, no light (david's map: 223 junctions out of 223), and
+	-- no company ever found a place for its garage. The engine makes those again; the assert of 2026-11-02 was at a junction with
+	-- traffic lights. MPFEVER_AIGARAGECFG=all: every configured junction left, as 0.6.9
 	local skipCfg = os.getenv("MPFEVER_AIGARAGECFG") ~= "0"
+	local anyCfg = os.getenv("MPFEVER_AIGARAGECFG") == "all"
 	local function configured(nd)
-		local okn, nc = pcall(function() return api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_CONFIG) end)
-		return okn and nc ~= nil
+		local risky = false
+		pcall(function()
+			if api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_TRAFFIC_LIGHT) then risky = true return end
+			local nc = api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_CONFIG)
+			if not nc then return end
+			if anyCfg or nc.userModifiedLaneConnections or nc.userModifiedTrafficLightStates then risky = true return end
+			local tl = nc.trafficLightConfig
+			if tl and tl.states and #tl.states > 0 then risky = true end
+		end)
+		return risky
 	end
 	for _, s in ipairs(streetSegmentsNear(E, p, maxD, {})) do
 		if tried > 60 or #out >= 1 then break end
@@ -1062,6 +1072,17 @@ local function linelessWaiting(E, co)
 	return nil
 end
 
+-- (0.6.11, #122) a depot whose vehicle never took the line it is bought for (see the vehicles' loop in step): no purchase there for
+-- that line. MPFEVER_AISTUCK=0: bought
+local function depotBad(E, depot, what)
+	local A = E.G.AI
+	if os.getenv("MPFEVER_AISTUCK") == "0" or not A.badDepot then return false end
+	local k = tostring(depot) .. ":" .. tostring(A.forLine)
+	if not A.badDepot[k] then return false end
+	if A.badSaid ~= k then A.badSaid = k; L(E, "no " .. what .. " bought at depot " .. tostring(depot) .. " for line " .. tostring(A.forLine) .. ": its vehicle never took that line") end
+	return true
+end
+
 local function noBuyWhileWaiting(E, co, what)
 	local w = linelessWaiting(E, co)
 	if not w then return false end
@@ -1071,7 +1092,7 @@ local function noBuyWhileWaiting(E, co, what)
 end
 
 local function buyBus(E, co, depot)
-	if noBuyWhileWaiting(E, co, "bus") then return false end
+	if noBuyWhileWaiting(E, co, "bus") or depotBad(E, depot, "bus") then return false end
 	local bus, year = bestBus(E)
 	if not bus then L(E, "no bus on sale in " .. year); return false end
 	-- (0.6: never under the floor, see spendOk; the price the last purchase measured, or the model's when higher)
@@ -1392,6 +1413,7 @@ local function manageLines(E, co, lines, vehicles, money)
 		end
 		if type(A.lineSent) == "table" then for k in pairs(A.lineSent) do if not liveV[k] then A.lineSent[k] = nil end end end
 		if type(A.lineTries) == "table" then for k in pairs(A.lineTries) do if not liveV[k] then A.lineTries[k] = nil end end end
+		if type(A.lineTarget) == "table" then for k in pairs(A.lineTarget) do if not liveV[k] then A.lineTarget[k] = nil end end end
 	end
 	local nowG = E.gameTime()
 	A.born = A.born or {}
@@ -2215,7 +2237,7 @@ end
 
 -- a vehicle more for a line: a truck for its cargo on a freight line, else a bus
 local function buyTruck(E, co, depot, cargo)
-	if noBuyWhileWaiting(E, co, "truck") then return false end
+	if noBuyWhileWaiting(E, co, "truck") or depotBad(E, depot, "truck") then return false end
 	local truck, year = bestTruck(E, cargo)
 	if not truck then L(E, "no truck for " .. cargoName(E, cargo) .. " on sale in " .. year); return false end
 	-- (0.6: never under the floor, see spendOk)
@@ -4725,16 +4747,20 @@ local function step(E)
 		if (v.line == nil or v.line < 0) and #lines > 0 and not A.noAssign and linked then
 			if G.frames - (A.lineSent[v.e] or -100000) > 3600 then
 				-- (0.6.11, #122) a vehicle sent to its line 3 times that never took it (the host's garage of #122, 3 km away: 16 buses
-				-- bought there, none ever left): sold, and its depot left for this company's purchases. MPFEVER_AISTUCK=0: sent again
-				-- and again, as before
+				-- bought there, none ever left; in the test on that map, a company's own garage and a line between two other towns):
+				-- sold, and that depot is no longer used for that line's purchases (see depotBad). MPFEVER_AISTUCK=0: sent again and
+				-- again, as before
 				A.lineTries = A.lineTries or {}
+				A.lineTarget = A.lineTarget or {}
 				if os.getenv("MPFEVER_AISTUCK") ~= "0" and (A.lineTries[v.e] or 0) >= 3 then
+					local tl = A.lineTarget[v.e] or A.forLine or lines[#lines].e
 					local why = ""
-					pcall(function() why = E.C.ser(E.C.marshal(E.api.engine.util.line.getFailedPathReason(v.e, A.forLine or lines[#lines].e))):sub(1, 300) end)
+					pcall(function() why = E.C.ser(E.C.marshal(E.api.engine.util.line.getFailedPathReason(v.e, tl))):sub(1, 300) end)
 					A.badDepot = A.badDepot or {}
-					A.badDepot[vdepot] = true
+					A.badDepot[tostring(vdepot) .. ":" .. tostring(tl)] = true
 					A.lineTries[v.e] = nil
-					sellVehicle(E, co, v.e, "it never took its line from depot " .. tostring(vdepot) .. ", left for the purchases" .. (why ~= "" and (": " .. why) or ""))
+					A.lineTarget[v.e] = nil
+					sellVehicle(E, co, v.e, "it never took line " .. tostring(tl) .. " from depot " .. tostring(vdepot) .. ", that depot left for that line" .. (why ~= "" and (": " .. why) or ""))
 					return
 				end
 				A.lineTries[v.e] = (A.lineTries[v.e] or 0) + 1
@@ -4752,6 +4778,7 @@ local function step(E)
 					end
 					target = own
 				end
+				A.lineTarget[v.e] = target
 				act(E, co.id, "makeVehicleSetLineCmd", { n = 3, [1] = v.e, [2] = target, [3] = 0 })
 				A.busy = { what = "vehicle " .. v.e .. " to line " .. target, since = G.frames, until_ = G.frames + 120 }
 				L(E, "vehicle " .. v.e .. " sent to line " .. target)
