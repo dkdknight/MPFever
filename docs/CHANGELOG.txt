@@ -13,6 +13,17 @@ MPFever - Changelog
     225" on the host's, issue #121) until the host's names of that check arrive: every purchase gave "slight simulation drift
     (names)" for one check, and the lines and vehicles were not compared meanwhile. The subsidies' titles were left out of the
     checks already (0.6.2, #102). MPFEVER_NAMEFRESH=0: every name counted, as before. Test: tests/test_namefresh.py.
+  - FIX (#122, one company per player, depot tolls): a toll paid to buy a vehicle in another company's depot was booked, but
+    the MPFever window never showed it ("I put the toll for my depot ... it doesn't count"): it was noted in a copy of the
+    companies' registry that the simulation dropped right after the action, and the window's "Tolls: earned, paid" counted
+    the track tolls only. It is now kept in the registry that is saved, in a pause too, and counted in both companies' tolls
+    and in the payer's "Paid to ..." (MPFEVER_DEPOTTOLLNOTE=0: as before). Test: tests/test_depottoll.py.
+  - FIX (#122, computer companies): the two companies of a new map, with no garage of their own, bought their buses in the
+    host's garage 3 km away; none ever took its line ("still without a line", sent again and again) and, a line's fleet
+    counting its vehicles on it, each look bought one more: 8 buses each in 7 minutes, standing in the depot. No vehicle is
+    bought now while one of the company's waits for its line; one sent to its line 3 times that never took it is sold (the
+    engine's reason logged) and its depot is left for the company's purchases (MPFEVER_AISTUCK=0: as before).
+    Test: tests/test_ai_stuck.py. Why the companies found no place for their own garage on that map is not known yet.
   - Autotest: MPFEVER_SCENARIO=upgburst, a series of town street upgrades to a wider street, one after the other, the town
     buildings in the way taken away (issue #121; MPFEVER_UPGBURST_N, MPFEVER_UPGBURST_GAP); with MPFEVER_PAUSED=1, all at the
     same paused time. #121's resync after the host's upgrades in a pause did not come back: 24 upgrades in a pause (up to 8

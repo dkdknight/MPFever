@@ -863,8 +863,12 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 					api.cmd.sendCommand(api.cmd.makeJournalBookAssetCmd(from, entry(-toll.fee, false), api.type.Vec3f.new(0, 0, 0)))
 					api.cmd.sendCommand(api.cmd.makeJournalBookAssetCmd(to, entry(toll.fee, true), api.type.Vec3f.new(0, 0, 0)))
 				end
+				-- (0.6.11, #122: kept by the caller in the state it saves, see SIM.noteDepotToll; noted here it went into a copy of the
+				-- registry that the simulation dropped right after, the window showed no depot toll. MPFEVER_DEPOTTOLLNOTE=0: as before)
 				local eco = C.eco()
-				if from and to and eco and eco.notePaid then eco.notePaid(R.CO, a.co, toll.to, "d", toll.fee) end
+				if os.getenv("MPFEVER_DEPOTTOLLNOTE") ~= "0" then
+					if from and to then result.toll = { from = a.co, to = toll.to, fee = toll.fee } end
+				elseif from and to and eco and eco.notePaid then eco.notePaid(R.CO, a.co, toll.to, "d", toll.fee) end
 				log("companies: company " .. tostring(a.co) .. " uses a depot of company " .. toll.to .. " for " .. toll.fee)
 			end)
 		end
@@ -1283,6 +1287,21 @@ local function doneKey(a)
 	return nil
 end
 
+-- (0.6.11, #122) a depot toll an action paid (its result's toll, see the owner guard of executeActionOnce), kept in the registry
+-- the caller saves: what this company paid to the depot's (the window's "Paid to ..."), and both companies' toll totals (the
+-- window's "Tolls: earned, paid", the track tolls' only before)
+SIM.noteDepotToll = function(reg, t)
+	if type(reg) ~= "table" or type(t) ~= "table" or not (tonumber(t.fee) and tonumber(t.fee) > 0) then return false end
+	local fee = math.floor(tonumber(t.fee))
+	local eco = C.eco()
+	if eco and eco.notePaid then eco.notePaid(reg, t.from, t.to, "d", fee) end
+	reg.tollIncome = reg.tollIncome or {}
+	reg.tollExpense = reg.tollExpense or {}
+	reg.tollIncome[tostring(t.to)] = (reg.tollIncome[tostring(t.to)] or 0) + fee
+	reg.tollExpense[tostring(t.from)] = (reg.tollExpense[tostring(t.from)] or 0) + fee
+	return true
+end
+
 local function simApplyDue(state)
 	local st = state:get() or {}
 	R.CO = st.co
@@ -1428,6 +1447,7 @@ local function simApplyDue(state)
 					SIM.actor = nil
 					if not okx then error(r) end
 					st = state:get() or st
+					if r.toll and SIM.noteDepotToll(st.co, r.toll) then changed = true end
 					-- (not replayable here: no build of it comes, the count above is taken back. Else the player's own next
 					-- build in this step was taken as this replay and never shipped)
 					if C.makesProposal(a.fn) and not r.success and st.replay and st.replay.at == now and st.replay.n > 0 then
@@ -3175,6 +3195,8 @@ local function handleEvent(userParams, state, src, id, name, param)
 		elseif name == "bind" then
 			st.bind = st.bind or {}
 			st.bind[param.key] = param.e
+		elseif name == "depot_toll" then
+			SIM.noteDepotToll(st.co, param)
 		elseif name == "co_apply" then
 			-- (an error is told: the interface waits for this join's company until its time runs out, see pumpCompanies)
 			local okc, errc = pcall(coApply, st, param)
@@ -9017,6 +9039,8 @@ local function runPausedActions()
 					-- actions in the same turns, at the same game time; nothing while no option is on)
 					if G.featOn then pcall(G.featPausedAct, a, r, featDg) end
 					if r.created then G.rebind(r.created.key, r.created.e); toSim("bind", r.created) end
+					-- (0.6.11, #122: a depot toll paid in a pause, kept by the simulation, see SIM.noteDepotToll)
+					if r.toll then toSim("depot_toll", r.toll) end
 					G.resultsSeen[tostring(r.uid) .. "@" .. tostring(r.at)] = true
 					C.appendFile(C.DIR .. BS .. "results.log", C.line("result", r))
 					if r.created then C.appendFile(C.DIR .. BS .. "bindings.log", r.created.key .. " " .. tostring(r.created.e) .. NL) end
