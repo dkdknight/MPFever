@@ -4163,6 +4163,34 @@ static void InstallOpenNet()
 // Test Gameplay, probe m3: the savegame company's trains and trams wore, the other company's buses, trucks, trains, ships and
 // planes never did; their maintenance stations repaired them all the same). The owner comparison's jne is taken out: every
 // vehicle with an owner wears, the same way on every game (a simulation rule; MPFEVER_ALLWEAR=0: as before)
+// ---------------------------------------------------------------- the faster bitmap span (0.6.10, after TPF3-MP, MIT)
+// After TPF3-MP's "fast-bitmap-span" (Juliansgith/Transport-Fever-3-Multiplayer-Mod, MIT: crates/tpf3mp-hook/src/fastbitmap.rs,
+// commit add4a87 of 2026-10-29; the idea and its signature, made again here). When an industry appears, the game connects it to
+// the roads ("Connect industry", 0.9 to 1.1 s on a big world, every game frozen meanwhile); 61 % of it went into one 78-byte
+// function, the span fill of a BitmapRasterizable (40425: 0x91a560, slot 1 of its vtable), which sets a span's bits one at a time
+// with bts. fast_span.h sets the same bits a whole word at a time (TPF3-MP: 0.4 s): the bitmap ends exactly as the game's loop
+// leaves it, so a game with it and one without build the same roads. A span starting below bit 0 is handed to the game's loop.
+// The signature is the whole function, entry to ret: another build's leaves the game's own. MPFEVER_FASTSPAN=0: the game's own.
+#include "fast_span.h"
+static FsOrigF g_spanOrig = 0;
+static volatile long g_spanFast = 0, g_spanHanded = 0;
+static u8 SpanFill(u64 self, i32 x, i32 y, i32 count) { return FsFill(self, x, y, count, g_spanOrig, &g_spanFast, &g_spanHanded); }
+
+static void InstallFastSpan()
+{
+    { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_FASTSPAN", v, 3) > 0 && v[0] == '0') { Buf b; b.str("bitmap span: the game's own (MPFEVER_FASTSPAN=0)"); LogLine(b); return; } }
+    u32 at = FindSigRva("44 0F AF 41 10 4C 8B D9 44 03 C2 43 8D 04 08 44 3B C0 7D 37 49 63 C0 45 8B D1 66 0F 1F 44 00 00 49 8B 4B 08 4C 8B C0 49 C1 E8 05 48 8B 11 42 8B 0C 82 4E 8D 0C 82 48 8B D0 83 E2 1F 48 FF C0 0F AB D1 41 89 09 49 83 EA 01 75 D5 32 C0 C3");
+    // (imul r8d,[rcx+10h] / mov r11,rcx / add r8d,edx / lea eax,[r8+r9]: 15 bytes that run anywhere, copied into the trampoline)
+    static const u8 pro[] = { 0x44, 0x0F, 0xAF, 0x41, 0x10, 0x4C, 0x8B, 0xD9, 0x44, 0x03, 0xC2, 0x43, 0x8D, 0x04, 0x08 };
+    u8* mem = at ? AllocNear(0x100) : 0;
+    void* t = mem ? DetourWhole(mem, at, pro, (int)sizeof(pro), (void*)SpanFill) : 0;
+    Buf b;
+    if (!t) { b.str("bitmap span: the game's own (").str(at ? "not hooked" : "not found").str(")"); LogLine(b); return; }
+    g_spanOrig = (FsOrigF)t;
+    b.str("bitmap span (from TPF3-MP): filled a word at a time, at ").hex(at);
+    LogLine(b);
+}
+
 static void InstallVehicleWear()
 {
     { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_ALLWEAR", v, 3) > 0 && v[0] == '0') { Buf b; b.str("vehicle wear: the savegame's company only (MPFEVER_ALLWEAR=0)"); LogLine(b); return; } }
@@ -4880,6 +4908,7 @@ static DWORD WINAPI Init(void*)
     if (g_layout) InstallStopSnap();
     if (g_layout) InstallOpenNet();
     InstallVehicleWear();
+    InstallFastSpan();
     { Buf b; b.str(g_luaSeedFixed ? "Lua string hash seed: fixed (same table order on every game)" : "Lua string hash seed: NOT fixed"); LogLine(b); }
     if (g_layout && RVA_MONEYCHECK) InstallDetour(RVA_MONEYCHECK, P_MONEYCHECK, sizeof(P_MONEYCHECK), (void*)&MoneyCheckDetour, (void**)&g_moneyOrig);
     if (g_layout && RVA_LINES) InstallDetour(RVA_LINES, P_LINES, sizeof(P_LINES), (void*)&LinesDetour, (void**)&g_linesOrig);

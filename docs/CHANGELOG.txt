@@ -1,6 +1,41 @@
 MPFever - Changelog
 ===================
 
+0.6.10 - in progress (not released): the reports of #121 and of AMD and keviK
+  - FIX (desync, both modes): a game that loaded its savegame again by itself (AMD's quick save and load, a minute after
+    resynchronisation 4 of 2026-11-02) took it for that resynchronisation's load and read every message since: keviK's join
+    and 3 roads, already in the savegame, were applied a second time, late ("LATE native build keviK#1:2 for t=7544000
+    applied at 7561600", "every form refused"), and the host's game was reloaded once more. After a load over a session, the
+    builds and actions stamped before the time of the savegame loaded are now left out: it has them already. A normal
+    resynchronisation's messages are stamped at that time or later and are kept (MPFEVER_STALEDROP=0: applied again, as
+    before). Test: tests/test_staledrop.py.
+  - FIX (desync, one company per player, computer companies): a build of the host's player and a build of a computer
+    company released for the same game time (test dt1: the host's road, refused by the engine, and a computer company's
+    stop) were paired with their captures in release order: the stop was shipped as the host's company's build, and the
+    other game booked its cost and refund on that company (money apart, 30 000). The capture now names the company the
+    build is for, and the build of that company is the one shipped; the other builds of that time wait for their own
+    capture (MPFEVER_SHIPCO=0: the first one, as before). Test: tests/test_shipco.py.
+  - FIX (one company per player): a station, stop or depot put on another company's shared street made the street's new
+    pieces the builder's (the game's own rule; "the street no longer belongs to me", 2026-11-01). As decided: a street that
+    is not shared cannot be built on (0.6.8), and a shared one now stays its company's. Right after the build, on every game
+    at the same step, the new street pieces that start or end where the old street did and are not part of the station are
+    given back to the street's company (MPFEVER_KEEPSTREETOWNER=0: the builder's, as before). Tests:
+    tests/test_keepstreetowner.py; autotest ko7: the client cut a shared street of company 2, both pieces went back to it on
+    both games at the same time, in sync.
+  - NEW (one company per player): a dot of their company's colour floats over the other companies' vehicles near the
+    camera (a Discord suggestion: whose bus is this?), refreshed 4 times a second (the game's HUD image stays where it is put). Their stations, depots and buildings already had a square of that
+    colour beside their icon. The Settings tab of MPFever's window turns the dots off, kept across launches (MPFEVER_DOTS=0:
+    never). Test: tests/test_dots.py.
+  - PERF (both modes, after TPF3-MP, MIT): when an industry appears, the game connects it to the roads ("Connect industry",
+    0.9 to 1.1 s on a big world, every game frozen meanwhile); most of it went into the span fill of a rasterized bitmap,
+    which set its bits one at a time. The native module now sets them a whole word at a time (TPF3-MP measured 0.4 s): the
+    bitmap ends exactly as the game's loop leaves it, so the roads are the same on a game with it and one without
+    (MPFEVER_FASTSPAN=0: the game's own). Test: tests/test_fastspan.py, the game's own 78 bytes run beside it on 4000 spans.
+  - Diagnostics: MPFEVER_EDGENAMES=1 adds the street names of a build's segments to its "build ids" line (issue #121's
+    "Stop #1" stops: the game names a stop "Stop #<n>" when its street has no name; the roads a script builds have none,
+    on the builder's game as on the others); MPFEVER_STREETCON_FILES takes a construction's file too (e.g.
+    landmarks/white_heron_castle/white_heron_castle, the landmark built just before #121's ids split: replayed alike).
+
 0.6.9 - 2026-11-02: the stress test of 0.6.8 and the players' reports of the day
   - NEW (desync, both modes): the game's DLCs are compared between the players. The Deluxe edition's upgrade pack and the
     pre-order pack activate themselves on the PC that owns them: their animals, people, vehicles and landmarks are in that

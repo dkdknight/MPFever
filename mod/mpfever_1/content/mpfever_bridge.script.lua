@@ -2068,6 +2068,10 @@ end
 
 local function update(userParams, state, dt)
 	if not C.ACTIVE then return end
+	if SIM.ksoQueue then
+		local okK, errK = pcall(SIM.keepStreetFlush)
+		if not okK then log("companies: street owners: " .. tostring(errK)) end
+	end
 	pcall(function()
 		local st0 = state:get()
 		SIM.coRegistry = st0 and st0.co or nil
@@ -2505,7 +2509,14 @@ SIM.idResolve = function(state, force)
 					if okc and nc then cfg = cfg + 1 end
 				end
 			end
-			log("build ids t=" .. ck.at .. ": segments " .. table.concat(si, ",") .. " nodes " .. table.concat(ni, ",") .. " (node configurations " .. cfg .. ")")
+			-- (MPFEVER_EDGENAMES=1, diagnostic: the street names of its segments too, issue #121's "Stop #1" stops)
+			local nms = ""
+			if os.getenv("MPFEVER_EDGENAMES") == "1" then
+				local t = {}
+				for _, s in ipairs(si) do t[#t + 1] = (type(s) == "number" and s >= 0) and ("'" .. R.nameOf(s) .. "'") or "-" end
+				nms = " names " .. table.concat(t, ",")
+			end
+			log("build ids t=" .. ck.at .. ": segments " .. table.concat(si, ",") .. " nodes " .. table.concat(ni, ",") .. " (node configurations " .. cfg .. ")" .. nms)
 			-- (and summed for the checks, part "buildIds": every game gives a build the same ids, or the games went apart
 			-- right there - an entity one game made and not the other, 2026-10-25 11:03 - long before it shows elsewhere. In
 			-- the simulation's state: the script runs in more than one Lua state, and the interface's checks read it too)
@@ -2851,6 +2862,7 @@ local function captureNativeBuild(state, param)
 			log("capture: build " .. sig .. " differs from the action(s) applied at this time (" .. table.concat(st.replaySigs.list or {}, " ; ") .. ")")
 		end
 	end
+	local ownerCo = nil
 	if R.CO and R.CO.mode == "separate" then
 		-- who the captured build says it is for (companies mode): a company number per owner reference
 		local tally, seen = {}, 0
@@ -2865,6 +2877,8 @@ local function captureNativeBuild(state, param)
 		for co, n in pairs(tally) do parts[#parts + 1] = "company " .. co .. " x" .. n end
 		table.sort(parts)
 		log("capture: owner references: " .. (#parts > 0 and table.concat(parts, ", ") or "none"))
+		-- (0.6.10: one company named: the build is for it, see the shipping of G.natShipIds)
+		if #parts == 1 then ownerCo = next(tally) end
 	end
 	-- self-check: can this build be rebuilt from what is shipped? (factories only, nothing is applied)
 	st.selfChecks = (st.selfChecks or 0) + 1
@@ -2898,7 +2912,7 @@ local function captureNativeBuild(state, param)
 	-- (ts: its town statistics, which the replaying games compare with their replay's, see SIM.townStats)
 	st.out[#st.out + 1] = { n = st.outSeq, at = now, paused = (st.pauseAt ~= nil and now >= st.pauseAt) or nil,
 		fn = "makeWorldBuildProposalCmd", args = args, captured = now, ready = not hasObjects, cost = REFUND.on and REFUND.costOf(param) or nil,
-		ts = tstats }
+		ts = tstats, oco = ownerCo }
 	if st.leadOut and #st.leadOut > 0 then table.remove(st.leadOut, 1) end   -- (BUILDLEAD: the released build, captured)
 	st.lastCapture = hasObjects and { n = st.outSeq, at = now } or nil
 	while #st.out > 50 do table.remove(st.out, 1) end
@@ -2955,11 +2969,134 @@ local function enrichAfterBuild(state, param)
 	state:set(st)
 end
 
+-- (0.6.10) One company per player: a station, stop or depot put on another company's shared street (its road rule open; one not
+-- shared is turned down in the tool, see G.streetVeto) made the street's new pieces the builder's, the game's own rule ("the
+-- street no longer belongs to me", 2026-11-01). The user's rule: a shared street stays its company's. Before the build is
+-- applied ("pre"), the street segments it takes away that belong to a company whose roads are open are noted by their end
+-- nodes; right after ("post", the same step), each new street segment of the build that starts or ends at one of those nodes,
+-- belongs to another company and is not part of a construction (a station's own segments stay the station's) is given back to
+-- the old owner (makeEntitySetPlayerCmd). Every game applies the build at the same step, the builder's tool build as the others'
+-- replays, and does the same. MPFEVER_KEEPSTREETOWNER=0: the builder's, as before
+SIM.keepStreetOwner = function(phase, param)
+	if os.getenv("MPFEVER_KEEPSTREETOWNER") == "0" then return end
+	if phase == "pre" then
+		SIM.ksoEnds = nil
+		local reg = R.CO
+		if type(reg) ~= "table" or reg.mode ~= "separate" then return end
+		local E = C.eco()
+		if not (E and E.roadRule) then return end
+		local removed = nil
+		pcall(function() removed = param[1].proposal.removedSegments end)
+		if removed == nil then return end
+		if #removed > 0 and (SIM.ksoPre or 0) < 5 then
+			SIM.ksoPre = (SIM.ksoPre or 0) + 1
+			local e1, o1 = nil, nil
+			pcall(function() e1 = removed[1].entity; o1 = R.ownerOf(e1) end)
+			log("companies: street owners: a build takes away " .. #removed .. " segment(s), the first " .. tostring(e1) .. " of " .. tostring(o1) .. " (company " .. tostring(o1 and CO.idOfEntity(reg, o1)) .. ")")
+		end
+		local CT = api.type.ComponentType
+		local ends, n = {}, 0
+		for i = 1, #removed do
+			local e = nil
+			pcall(function() e = removed[i].entity end)
+			if type(e) == "number" and e >= 0 then
+				local okS, street = pcall(api.engine.getComponent, e, CT.BASE_EDGE_STREET)
+				local owner = (okS and street) and R.ownerOf(e) or nil
+				local co = type(owner) == "number" and CO.idOfEntity(reg, owner) or nil
+				local c = co and CO.find(reg, co) or nil
+				-- (the first few streets of a company taken away, in the log: what was seen)
+				if c and (SIM.ksoSeen or 0) < 5 then
+					SIM.ksoSeen = (SIM.ksoSeen or 0) + 1
+					log("companies: street owners: the build takes away street " .. e .. " of company " .. tostring(co) .. " (roads " .. tostring(E.roadRule(reg, c).rule) .. ")")
+				end
+				if c and E.roadRule(reg, c).rule == "open" then
+					local okB, be = pcall(api.engine.getComponent, e, CT.BASE_EDGE)
+					if okB and be then
+						ends[be.node0] = owner
+						ends[be.node1] = owner
+						n = n + 1
+					end
+				end
+			end
+		end
+		if n > 0 then
+			-- (the build's new segments by their places: the engine gives no list of what it made, see the "build ids")
+			local segs = {}
+			pcall(function()
+				local added = param[1].proposal.addedSegments
+				for i = 1, #added do
+					local c = added[i].comp
+					segs[#segs + 1] = { { x = c.position0.x, y = c.position0.y, z = c.position0.z }, { x = c.position1.x, y = c.position1.y, z = c.position1.z } }
+				end
+			end)
+			local okT, t = pcall(gameTime)
+			SIM.ksoEnds = { at = okT and t or nil, ends = ends, segs = segs }
+		end
+		return
+	end
+	local k = SIM.ksoEnds
+	SIM.ksoEnds = nil
+	if not k then return end
+	local okT, t = pcall(gameTime)
+	if not okT or t ~= k.at then log("companies: street owners: the build applied at t=" .. tostring(t) .. ", not " .. tostring(k.at)); return end
+	local res = R.idsAt(k.segs or {}, {})
+	local CT = api.type.ComponentType
+	local given, why = 0, {}
+	for i = 1, #res do
+		local e = res[i]
+		if type(e) == "number" and e >= 0 then
+			local okS, street = pcall(api.engine.getComponent, e, CT.BASE_EDGE_STREET)
+			local okB, be = pcall(api.engine.getComponent, e, CT.BASE_EDGE)
+			local to = (okS and street and okB and be) and (k.ends[be.node0] or k.ends[be.node1]) or nil
+			local now = to and R.ownerOf(e) or nil
+			local w = e .. ":" .. ((okS and street) and "s" or "-") .. "/" .. tostring(okB and be and be.node0) .. "-" .. tostring(okB and be and be.node1) .. "/" .. tostring(to) .. "/" .. tostring(now)
+			if to and type(now) == "number" and now >= 0 and now ~= to then
+				local okC, con = pcall(api.engine.system.streetConnectorSystem.getConstructionEntityForEdge, e)
+				w = w .. "/con " .. tostring(con)
+				-- (sent at the simulation's next update, SIM.keepStreetFlush: the engine refuses a command sent from this event,
+				-- "Unknown exception" in the autotest ko6)
+				if not (okC and type(con) == "number" and con >= 0) then
+					SIM.ksoQueue = SIM.ksoQueue or {}
+					SIM.ksoQueue[#SIM.ksoQueue + 1] = { e = e, to = to }
+					given = given + 1
+				end
+			end
+			why[#why + 1] = w
+		end
+	end
+	local ends = {}
+	for nd, o in pairs(k.ends) do ends[#ends + 1] = tostring(nd) .. ">" .. tostring(o) end
+	if given > 0 then log("companies: " .. given .. " new piece(s) of a shared street to give back to its company (t=" .. tostring(t) .. ")")
+	elseif (SIM.ksoNone or 0) < 5 then SIM.ksoNone = (SIM.ksoNone or 0) + 1; log("companies: street owners: none of the build's " .. #res .. " new segment(s) given back (" .. table.concat(why, ", ") .. "; ends " .. table.concat(ends, ",") .. ")") end
+end
+
+-- the pieces SIM.keepStreetOwner noted, given back at the simulation's update (every game at the same step), when their owner is
+-- still the builder's
+SIM.keepStreetFlush = function()
+	local q = SIM.ksoQueue
+	if not q then return end
+	SIM.ksoQueue = nil
+	local n = 0
+	for _, x in ipairs(q) do
+		local now = R.ownerOf(x.e)
+		if type(now) == "number" and now >= 0 and now ~= x.to then
+			local ok, err = pcall(function() api.cmd.sendCommand(api.cmd.makeEntitySetPlayerCmd(x.e, x.to)) end)
+			if ok then n = n + 1 else log("companies: street owners: segment " .. x.e .. " not given back (" .. tostring(err):sub(1, 120) .. ")") end
+		end
+	end
+	local okT, t = pcall(gameTime)
+	if n > 0 then log("companies: " .. n .. " new piece(s) of a shared street given back to its company (t=" .. tostring(okT and t) .. ")") end
+end
+
 local function handleEvent(userParams, state, src, id, name, param)
 	if not C.ACTIVE then return end
 	SIM.evN = (SIM.evN or 0) + 1
 	if id == "apply_command" and name == "onPostBuildProposal" then
 		log("engine: post build t=" .. tostring(gameTime()))
+		do
+			local okK, errK = pcall(SIM.keepStreetOwner, "post", param)
+			if not okK and not SIM.ksoFailed then SIM.ksoFailed = true; log("companies: street owners: " .. tostring(errK)) end
+		end
 		if os.getenv("MPFEVER_CONDUMP") then
 			pcall(function()
 				local lines = {}
@@ -2997,6 +3134,9 @@ local function handleEvent(userParams, state, src, id, name, param)
 		return
 	end
 	if id == "apply_command" and name == "onPreBuildProposal" then
+		-- (0.6.10: the shared streets of another company this build takes away, see SIM.keepStreetOwner)
+		local okK, errK = pcall(SIM.keepStreetOwner, "pre", param)
+		if not okK and not SIM.ksoFailed then SIM.ksoFailed = true; log("companies: street owners: " .. tostring(errK)) end
 		-- (0.6: this game's captures so far, to tell its own build shipped to the others, see SIM.featNative)
 		local seq0 = SIM.featOn and SIM.featSeq(state) or nil
 		local ok, err = pcall(captureNativeBuild, state, param)
@@ -3924,6 +4064,18 @@ G.uiEdit = function(p)
 	if type(m) ~= "table" or type(m.toAdd) ~= "table" or type(m.toRemove) ~= "table" or #m.toAdd ~= 1 or #m.toRemove ~= 1 then return false end
 	local ce = m.toAdd[1]
 	return type(ce) == "table" and type(ce.params) == "table" and ce.params.upgrade == true
+end
+
+-- The first read of in.log after a load over an existing session (G.staleBefore, set there): a build or an action stamped before
+-- the time of the savegame loaded is in that savegame already, and is not applied again (MPFEVER_STALEDROP=0: it was, late)
+G.staleDrop = function(kind, p, before)
+	if (kind ~= "act" and kind ~= "nat_pending") or type(p) ~= "table" then return false end
+	local at = tonumber(p.at)
+	if not at or at >= before then return false end
+	G.staleDropped = (G.staleDropped or 0) + 1
+	log("after the load: " .. kind .. " " .. tostring(p.uid or p.id) .. " of " .. tostring(p.origin) .. " for t=" .. at
+		.. " left out, the savegame loaded (t=" .. before .. ") has it already")
+	return true
 end
 
 H.act = function(from, p)
@@ -8676,15 +8828,30 @@ local function shipNativeBuilds(st)
 				-- (BUILDLEAD: a build released at once lands at some step at or after the time it was released at, the first of
 				-- those released and not shipped is the one, builds are applied in the order they were released in)
 				local k = nil
+				-- (0.6.10) several released for this time, as a road of the host's player and a stop of a computer company in test
+				-- dt1: the one of the company the captured build is for (o.oco). The first was taken: the player's road, refused
+				-- by the engine, and the computer company's stop was shipped as the player's company's (its cost and refund
+				-- booked there on the other games, money apart). The others of this time wait for their own capture.
+				-- MPFEVER_SHIPCO=0: the first, as before
+				local byCo = o.oco ~= nil and os.getenv("MPFEVER_SHIPCO") ~= "0"
 				for i, e in ipairs(G.natShipIds) do
-					if e.at == o.at or (e.lead and e.at <= o.at) then k = i; break end
+					if e.at == o.at or (e.lead and e.at <= o.at) then
+						k = k or i
+						if not byCo then break end
+						if ((G.aiNatCo and G.aiNatCo[e.id]) or G.myCo) == o.oco then k = i; break end
+					end
 				end
 				k = k or 1
 				local ek = G.natShipIds[k]
 				if ek.at ~= o.at and not (ek.lead and ek.at <= o.at) then
 					log("WARNING: a native build landed at t=" .. tostring(o.at) .. " instead of t=" .. tostring(G.natShipIds[k].at) .. " (desync risk)")
 				end
-				for i = 1, k - 1 do cancelNativeBuild(G.natShipIds[i], "refused before a later build") end
+				local keep = {}
+				for i = 1, k - 1 do
+					local e = G.natShipIds[i]
+					if byCo and (e.at == o.at or (e.lead and e.at <= o.at)) then keep[#keep + 1] = e
+					else cancelNativeBuild(e, "refused before a later build") end
+				end
 				a.natId = G.natShipIds[k].id
 				if a.paused then a.pseq = G.pt.of[G.ptKey(G.me, a.natId)] end
 				if ek.lead then
@@ -8697,7 +8864,7 @@ local function shipNativeBuilds(st)
 			if G.natRefund and G.natRefund[a.natId] then a.refund = G.natRefund[a.natId]; G.natRefund[a.natId] = nil end
 			-- (a build of a game company, see mpfever_ai.lua: the other games build it for that company)
 			if G.aiNatCo and G.aiNatCo[a.natId] then a.co = G.aiNatCo[a.natId]; G.aiNatCo[a.natId] = nil end
-				local rest = {}
+				local rest = keep
 				for i = k + 1, #G.natShipIds do rest[#rest + 1] = G.natShipIds[i] end
 				G.natShipIds = rest
 			end
@@ -13880,10 +14047,20 @@ local function runSplit(p)
 		local c = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
 		if c and c.type == 0 and c.roadTemplate and #c.objects == 0 then
 			local a, b = nodePosition(c.node0), nodePosition(c.node1)
-			if a and b and math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) > 60 then list[#list + 1] = e end
+			-- (p.otherCo, the keepowner scenario: a street of another company only)
+			local other = true
+			if p.otherCo then
+				local o = R.ownerOf(e)
+				local okS, st = pcall(api.engine.getComponent, e, api.type.ComponentType.BASE_EDGE_STREET)
+				other = type(o) == "number" and o >= 0 and o ~= api.engine.util.getPlayer() and okS and st ~= nil
+					and tostring(c.roadTemplate):find("/street/", 1, true) ~= nil
+			end
+			if other and a and b and math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) > 60 then list[#list + 1] = e end
 		end
 	end
+	if #list == 0 then AUTO.results[#AUTO.results + 1] = "split: no segment to split"; return autoFinish() end
 	local E = list[((p.offset or 0) * 31 + 11) % #list + 1]
+	AUTO.splitSeg = { node0 = api.engine.getComponent(E, api.type.ComponentType.BASE_EDGE).node0, node1 = api.engine.getComponent(E, api.type.ComponentType.BASE_EDGE).node1, owner = R.ownerOf(E) }
 	local c = api.engine.getComponent(E, api.type.ComponentType.BASE_EDGE)
 	local A, B = nodePosition(c.node0), nodePosition(c.node1)
 	local M = { x = (A.x + B.x) / 2, y = (A.y + B.y) / 2, z = (A.z + B.z) / 2 }
@@ -13919,7 +14096,8 @@ local function runSplit(p)
 	local sp = api.type.SimpleProposal.new()
 	local ssp = sp.streetProposal
 	ssp.nodesToAdd = { node(-1, M), node(-2, P) }
-	ssp.edgesToAdd = { seg(-3, c.node0, -1, A, M, false), seg(-4, -1, c.node1, M, B, false), seg(-5, -1, -2, M, P, true) }
+	-- (p.otherCo: the pieces the builder's, as a station put on the street makes them; see SIM.keepStreetOwner)
+	ssp.edgesToAdd = { seg(-3, c.node0, -1, A, M, p.otherCo == true), seg(-4, -1, c.node1, M, B, p.otherCo == true), seg(-5, -1, -2, M, P, true) }
 	ssp.edgesToRemove = { E }
 	-- lane connections of the nodes touching the removed segment refer to it: remove those node configurations
 	local ncr = {}
@@ -13947,7 +14125,9 @@ local function runSplit(p)
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 		log("SPLIT build: " .. (success and "BUILT" or ("refused " .. why)))
 		AUTO.results[#AUTO.results + 1] = "split build " .. (success and "BUILT" or ("refused " .. why))
-		G.waits[#G.waits + 1] = { at = G.frames + 60, fn = autoFinish }
+		-- (keepowner: the owners a few seconds later, the build landed on every game)
+		if p.otherCo then G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function() G.keepOwnerLog(); autoFinish() end }
+		else G.waits[#G.waits + 1] = { at = G.frames + 60, fn = autoFinish } end
 	end)
 end
 
@@ -13960,6 +14140,54 @@ H.split = function(from, p)
 		AUTO.results[#AUTO.results + 1] = "split error " .. tostring(err)
 		autoFinish()
 	end
+end
+
+-- A shared street of another company cut by this company's build (MPFEVER_SCENARIO=keepowner, one company per player, the
+-- client): the split of dsplit on a street of the host's company, its two pieces made the builder's as a station's are. Each game
+-- logs who owns the pieces a few seconds later ("AUTOTEST keepowner"): the host's company on both with SIM.keepStreetOwner,
+-- the client's without (MPFEVER_KEEPSTREETOWNER=0)
+H.keepowner = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	if C.ROLE == "host" then
+		AUTO.running = true
+		AUTO.results = { "keepowner: the client builds" }
+		AUTO.points = {}
+		G.waits[#G.waits + 1] = { at = G.frames + 900, fn = function()
+			G.keepOwnerLog()
+			autoFinish()
+		end }
+		return
+	end
+	p.nodeConfigs = true
+	p.defer = true
+	p.otherCo = true
+	local ok, err = pcall(runSplit, p)
+	if not ok then
+		log("SPLIT failed: " .. tostring(err))
+		AUTO.results[#AUTO.results + 1] = "keepowner error " .. tostring(err)
+		autoFinish()
+	end
+end
+-- (the owners of the street segments at the split segment's two end nodes, on this game)
+G.keepOwnerLog = function()
+	local k = AUTO.splitSeg or G.keepOwnerSeg
+	-- (every game: the segments of each owner, which the sync check compares too)
+	local per = {}
+	for _, e in ipairs(R.allEdges()) do local o = tostring(R.ownerOf(e)); per[o] = (per[o] or 0) + 1 end
+	local pl = {}
+	for o, n in pairs(per) do pl[#pl + 1] = o .. "=" .. n end
+	table.sort(pl)
+	log("AUTOTEST keepowner: segments per owner " .. table.concat(pl, " "))
+	AUTO.results[#AUTO.results + 1] = "keepowner: segments per owner " .. table.concat(pl, " ")
+	if not k then return end
+	local out = {}
+	for _, e in ipairs(R.allEdges()) do
+		local b = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
+		if b and (b.node0 == k.node0 or b.node1 == k.node0 or b.node0 == k.node1 or b.node1 == k.node1) then out[#out + 1] = e .. ":" .. tostring(R.ownerOf(e)) end
+	end
+	local line = "keepowner: owners at the split street's ends (its owner " .. tostring(k.owner) .. "): " .. table.concat(out, ",")
+	log("AUTOTEST " .. line)
+	AUTO.results[#AUTO.results + 1] = line
 end
 
 -- the same split sent like a tool's build (native: the other games rebuild it from what is shipped)
@@ -14574,7 +14802,10 @@ H.streetcon = function(from, p)
 		if i > #names then G.waits[#G.waits + 1] = { at = G.frames + 180, fn = autoFinish }; return end
 		local ok, err = pcall(function()
 			local file, id = nil, -1
-			for _, f in ipairs({ "::/infrastructure/street_construction/" .. names[i] .. ".con", "infrastructure/street_construction/" .. names[i] .. ".con" }) do
+			-- (a name with a "/" is the file itself, e.g. landmarks/white_heron_castle/white_heron_castle: issue #121's landmark)
+			local tries = names[i]:find("/") and { "::/" .. names[i] .. ".con", names[i] .. ".con" }
+				or { "::/infrastructure/street_construction/" .. names[i] .. ".con", "infrastructure/street_construction/" .. names[i] .. ".con" }
+			for _, f in ipairs(tries) do
 				local okf, r = pcall(api.res.constructionRep.find, f)
 				if okf and type(r) == "number" and r >= 0 then file, id = f, r break end
 			end
@@ -15563,6 +15794,14 @@ local function resumeAfterLoad(state)
 		if last and last < #s then
 			log("resynchronisation: " .. (#s - last) .. " bytes of messages received during the load are read")
 			G.inOff = last
+			-- (but not the builds and actions stamped before the time of the savegame loaded: they are in it. A game that loads
+			-- again by itself, as AMD's quick save and load a minute after resynchronisation 4 on 2026-11-02, read everything
+			-- since that resynchronisation's load and built keviK's 3 roads a second time, late: "every form refused", one more
+			-- resynchronisation. The first read after the load drops them, see the reading of in.log. MPFEVER_STALEDROP=0: as before)
+			if os.getenv("MPFEVER_STALEDROP") ~= "0" then
+				local okT, tL = pcall(gameTime)
+				if okT and type(tL) == "number" then G.staleBefore = tL end
+			end
 		end
 		-- (loaded by a resynchronisation, which may still be under way for the others: builds refused until the launcher's
 		-- session says it is over, see H.session)
@@ -17353,16 +17592,22 @@ local function guiUpdate(userParams, state, guiState)
 		local hb = C.IO.open(C.DIR .. BS .. "bridge_alive.txt", "wb")
 		if hb then hb:write(tostring(G.aliveN)); hb:close() end
 	end
+	G.staleNow, G.staleBefore = G.staleBefore, nil
 	for _, line in ipairs(readLines("in.log", "inOff")) do
 		local kind, from, payload = parseLine(line)
 		if kind then
 			local h = H[kind]
 			if h then
-				local ok, err = pcall(h, from, C.deser(payload) or {})
-				if not ok then log("handler " .. kind .. " failed: " .. tostring(err)) end
+				payload = C.deser(payload) or {}
+				if G.staleNow and G.staleDrop(kind, payload, G.staleNow) then h = nil end
+				if h then
+					local ok, err = pcall(h, from, payload)
+					if not ok then log("handler " .. kind .. " failed: " .. tostring(err)) end
+				end
 			end
 		end
 	end
+	G.staleNow = nil
 
 	do
 		local okT, tNow = pcall(gameTime)

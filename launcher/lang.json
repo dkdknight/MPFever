@@ -19292,6 +19292,19 @@
       "ko": ": 게임이 비동기화됩니다. 모든 플레이어가 같은 DLC를 가져야 합니다.",
       "zh-CN": "：游戏将会不同步。所有玩家需要相同的 DLC。",
       "zh-TW": "：遊戲將會不同步。所有玩家需要相同的 DLC。"
+    },
+    "A dot of their colour over the other companies' vehicles": {
+      "de": "Ein Punkt in ihrer Farbe über den Fahrzeugen der anderen Firmen",
+      "es": "Un punto de su color sobre los vehículos de las otras empresas",
+      "it": "Un punto del loro colore sopra i veicoli delle altre aziende",
+      "nl": "Een stip in hun kleur boven de voertuigen van de andere bedrijven",
+      "pl": "Kropka w ich kolorze nad pojazdami innych firm",
+      "pt-BR": "Um ponto da cor delas sobre os veículos das outras empresas",
+      "ru": "Точка их цвета над транспортом других компаний",
+      "ja": "他の会社の車両の上にその会社の色の点",
+      "ko": "다른 회사의 차량 위에 그 회사 색의 점",
+      "zh-CN": "在其他公司的车辆上方显示其颜色的圆点",
+      "zh-TW": "在其他公司的車輛上方顯示其顏色的圓點"
     }
   }
 }

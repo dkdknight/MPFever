@@ -791,6 +791,83 @@ local function installHudColors(builtin)
 	log("companies: the map's icons show their company's colour")
 end
 
+-- The other companies' vehicles get a dot of their company's colour floating over them (0.6.10, a Discord suggestion of 2026-11-01:
+-- in a game with one company per player, whose bus is this?). Their stations, depots and buildings have their colour already
+-- (the square beside their icon, installHudColors). Every U.DOTS_EVERY seconds, the vehicles of another company within
+-- U.DOTS_RANGE metres of the camera's centre, the U.DOTS_MAX nearest, get the game's short-lived HUD image
+-- (api.gui.spawnEphemeralHudImage, as the towns' happy faces): mpfever_dot.tga, a white disc tinted with that company's colour,
+-- U.DOTS_LIFT metres above the vehicle, lasting until the next round. The image stays where it was put (the autotest ko4's
+-- screenshots: a dot left behind a moving truck), hence the short rounds. The game's own grey icons are opaque (their corners
+-- black): they showed as dark squares. Nothing while there is one company, nor with the camera higher than U.DOTS_HEIGHT (the
+-- map's icons then). The Settings tab turns them off ("dots" in the ui_prefs.txt kept across launches). An owner is read once
+-- per vehicle. MPFEVER_DOTS=0: never.
+U.DOTS_EVERY, U.DOTS_RANGE, U.DOTS_MAX, U.DOTS_HEIGHT, U.DOTS_LIFT = 0.25, 2000, 80, 2500, 6
+U.DOTS_ICON = "mpfever_1::/mpfever_dot.tga"
+U.dotsTick = function()
+	if os.getenv("MPFEVER_DOTS") == "0" or not U.coMap or not U.myCo or U.loadPrefs().dots == "0" then return end
+	local now = os.clock()
+	if now - (U.dotsAt or -10) < U.DOTS_EVERY then return end
+	U.dotsAt = now
+	local n = 0
+	for _ in pairs(U.coMap) do n = n + 1 end
+	if n < 2 then return end
+	if U.dotsCO == nil then
+		local ok, m = pcall(ug_require, "mpfever_co.lua")
+		if not ok then ok, m = pcall(ug_require, "mpfever_1::/mpfever_co.lua") end
+		U.dotsCO = (ok and type(m) == "table" and m.rgb) and m or false
+		if not U.dotsCO then log("companies: vehicle dots not shown (mpfever_co.lua)") end
+	end
+	if not U.dotsCO then return end
+	local okC, c = pcall(api.gui.camera.getCenter)
+	local okH, h = pcall(api.gui.camera.getHeightAboveTerrain)
+	local cam = os.getenv("MPFEVER_DOTSCAM") == "1"
+	if not (okC and c) or (not cam and okH and type(h) == "number" and h > U.DOTS_HEIGHT) then return end
+	-- (the owners read again every minute: a sold vehicle's id goes to the next one bought, maybe another company's)
+	if not U.dotOwner or now - (U.dotOwnerAt or 0) > 60 then U.dotOwner, U.dotOwnerAt = {}, now end
+	local own, near, r2 = U.dotOwner, {}, U.DOTS_RANGE * U.DOTS_RANGE
+	local cx, cy = c.x, c.y
+	pcall(api.engine.forEachEntityWithComponent, function(v)
+		local id = own[v]
+		if id == nil then
+			local p = ownerOf(v)
+			id = p and U.coMap[p] or false
+			own[v] = id
+		end
+		if not id or id == U.myCo then return end
+		if cam and not U.dotsAny then U.dotsAny = v end
+		local okP, pos = pcall(api.engine.util.vehicle.getPosition, v)
+		if not (okP and pos) then return end
+		local dx, dy = pos.x - cx, pos.y - cy
+		local d2 = dx * dx + dy * dy
+		if d2 <= r2 then near[#near + 1] = { v, d2, id, pos } end
+	end, api.type.ComponentType.TRANSPORT_VEHICLE)
+	table.sort(near, function(a, b) return a[2] < b[2] end)
+	local shown = 0
+	for i = 1, math.min(#near, U.DOTS_MAX) do
+		local v, id, pos = near[i][1], near[i][3], near[i][4]
+		local ix = U.coColors and U.coColors[id] or id
+		local ok = pcall(function()
+			local r, g, b = U.dotsCO.rgb(ix)
+			local at = api.type.Vec3f.new(pos.x, pos.y, pos.z + U.DOTS_LIFT)
+			api.gui.spawnEphemeralHudImage(U.DOTS_ICON, v, api.type.Vec4f.new(r, g, b, 1), at, U.DOTS_EVERY * 1.05, false, false)
+		end)
+		if ok then shown = shown + 1 end
+	end
+	if not U.dotsLogged and shown > 0 then U.dotsLogged = true; log("companies: dots of their company's colour over " .. shown .. " vehicle(s) of the other companies near the camera") end
+	-- (MPFEVER_DOTSCAM=1, the autotests: with none near, the camera goes to another company's vehicle first; then it follows the
+	-- nearest one once, for a screenshot of its dot)
+	if cam and shown == 0 and U.dotsAny and not U.dotsMoved then
+		U.dotsMoved = true
+		local okF = pcall(api.gui.camera.followEntity, U.dotsAny, true)
+		log("companies: dots test: no vehicle of another company near the camera, it goes to vehicle " .. tostring(U.dotsAny) .. (okF and "" or " (refused)"))
+	end
+	if shown > 0 and not U.dotsCam and cam then
+		U.dotsCam = true
+		local okF = pcall(api.gui.camera.followEntity, near[1][1], true)
+		log("companies: dots test: the camera follows vehicle " .. tostring(near[1][1]) .. " of company " .. tostring(near[1][3]) .. (okF and "" or " (refused)"))
+	end
+end
+
 -- (0.6, the game option "builtby" of mpfever_feat_journal.lua) the line « Built by X » (« ..., changed by Y ») of an entity's
 -- window: a station or another construction from the registry the journal's interface half writes (feat_journal_builtby.txt, read
 -- again at most every 2 s), a vehicle or a line made in a session from its creation key (bindings.log, U.rev). nil while the
@@ -1985,7 +2062,7 @@ U.loadPrefs = function()
 		end
 	end
 	read(C.DIR .. C.BS .. "ui_prefs.txt", { open = true, tab = true, compact = true, pinned = true, hubpage = true, hubsize = true })
-	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true })
+	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true })
 	U.prefs = p
 	U.tab = U.tab or p.tab or "session"
 	U.compact = p.compact == "1"
@@ -2004,7 +2081,7 @@ end
 U.saveGlobalPrefs = function()
 	local p = U.loadPrefs()
 	local f = C.IO.open(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", "wb")
-	if f then f:write("autoopen=" .. tostring(p.autoopen or "1") .. C.NL .. "aichat=" .. tostring(p.aichat or "1") .. C.NL); f:close() end
+	if f then f:write("autoopen=" .. tostring(p.autoopen or "1") .. C.NL .. "aichat=" .. tostring(p.aichat or "1") .. C.NL .. "dots=" .. tostring(p.dots or "1") .. C.NL); f:close() end
 end
 U.saveAutoOpen = function(on)
 	local p = U.loadPrefs()
@@ -3800,6 +3877,12 @@ U.TABS.settings = function(K, st, ctx)
 			label = T("Annoncer dans le chat ce que font les entreprises de l'ordinateur", "Tell in the chat what the computer companies do"),
 			onValueChange = function(v) p.aichat = v == 1 and "1" or "0"; U.saveGlobalPrefs(); U.winChanged() end,
 		} }
+		-- (the dots over the other companies' vehicles, see U.dotsTick)
+		rows[#rows + 1] = K.row { builtin.CheckBox {
+			value = p.dots == "0" and 0 or 1,
+			label = T("Un point de leur couleur sur les véhicules des autres entreprises", "A dot of their colour over the other companies' vehicles"),
+			onValueChange = function(v) p.dots = v == 1 and "1" or "0"; U.saveGlobalPrefs(); U.winChanged() end,
+		} }
 	end
 	-- (the bankruptcy rule is in the Game tab since 0.5.14, with the game's other rules)
 	U.settingsRows(K, rows)
@@ -5163,6 +5246,8 @@ local function tick(pendingState)
 	if not okch then log("chat poll failed: " .. tostring(errch)) end
 	local okaj, erraj = pcall(U.pollAiJournal)
 	pcall(U.pollPings)
+	local okd, errd = pcall(U.dotsTick)
+	if not okd and not U.dotsFailed then U.dotsFailed = true; log("companies: vehicle dots failed: " .. tostring(errd)) end
 	if not okaj and not U.aiJFailed then U.aiJFailed = true; log("AI journal poll failed: " .. tostring(erraj)) end
 	if not U.sessionInstalled and U.react and U.builtin then
 		local oks, errs = pcall(installSession, U.react, U.builtin)

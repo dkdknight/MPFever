@@ -28,6 +28,7 @@
         "mpfever_feat_public.lua",
         "mpfever_asset.con.lua",
         "mpfever_asset.script.lua",
-        "mpfever_chat@2x.tga"
+        "mpfever_chat@2x.tga",
+        "mpfever_dot@2x.tga"
     ]
 }
