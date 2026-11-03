@@ -66,7 +66,7 @@ Players can also join a game already running, and a lost connection reconnects b
 
 - **One company for everybody** (co-op): shared money, vehicles and lines.
 - **One company per player**: each player has their own money, network, vehicles, lines, loans, contracts and Company window.
-  - Each player picks their company's colour in the lobby; the map's icons show who owns what.
+  - Each player picks their company's colour in the lobby; the map's icons show who owns what, and a dot of their colour floats over the other companies' vehicles (it can be turned off in the Settings tab).
   - What belongs to another company can't be sold, edited or used.
   - Tracks, stations and depots are open to the other companies by default. Each company sets its rules in the Rules tab of the MPFever window: private, open, or with a toll (per passage, per stop, per vehicle). A station's or depot's own setting comes first.
   - Several players can run one company together: ask to join another company (its chief accepts), leave yours, or merge two companies.
@@ -253,11 +253,11 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
   - the translations into 13 languages;
   - the in-game window and the chat.
 - **[Steelworm](https://github.com/Steelworm)**: build timing fixes, the builder lead, in-depth issue analyses.
-- **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures and the company rules (MIT).
+- **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures, the company rules and the faster industry connection (MIT).
 - **DubstepDude-hub, Kev1505in (keviK), AMD and hschi**: long sessions sent with the logs of every player, which showed
   that players with different DLCs desynchronise (0.6.9).
 - **The testers** who sent reports, logs and savegames: most fixes came from them. Thank you to
-  kingplay98, theop, DrWolf03, kasa1990, Acki007, simon21-la, Vogel, Alex, CrossCroissant, AZalshehri7, ArtemQa8, KatzenSupport, GreGNee, terpo,
+  kingplay98, theop, edith-piffpaff, DrWolf03, kasa1990, Acki007, simon21-la, Vogel, Alex, CrossCroissant, AZalshehri7, ArtemQa8, KatzenSupport, GreGNee, terpo,
   seksi1227-wq, Manocornuto, dev-andrei-v, Nassachi, Zippo1578, Shog-SC, thedevouttrout, AlexXY2, MorganJones13
   and everyone who played and gave feedback on Nexus.
 

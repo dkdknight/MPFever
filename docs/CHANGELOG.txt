@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.6.10 - in progress (not released): the reports of #121 and of AMD and keviK
+0.6.10 - 2026-11-03: the reports of #121 and of AMD and keviK
   - FIX (desync, both modes): a game that loaded its savegame again by itself (AMD's quick save and load, a minute after
     resynchronisation 4 of 2026-11-02) took it for that resynchronisation's load and read every message since: keviK's join
     and 3 roads, already in the savegame, were applied a second time, late ("LATE native build keviK#1:2 for t=7544000

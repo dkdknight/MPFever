@@ -16,7 +16,7 @@ Third-party code
 
 Parts of MPFever were ported from TPF3-MP (Transport Fever 3 Multiplayer Mod, github.com/Juliansgith/
 Transport-Fever-3-Multiplayer-Mod): order fixes, smooth pacing, signatures, the company rules, the Mod Hub install, the
-shared industry-demand history.
+shared industry-demand history, the faster industry connection (the span fill).
 They are used under the MIT License:
 
 MIT License
