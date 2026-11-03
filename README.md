@@ -38,8 +38,9 @@ Each player plays in their own copy of the game. MPFever replays every player's 
 
 | Requirement | Why |
 |---|---|
-| **Transport Fever 3 on Steam, Windows** | MPFever is tested on the Steam version only. Other stores (Epic...) are not supported yet. |
+| **Transport Fever 3 on Steam, Windows** | MPFever is tested on the Steam version. A GOG copy works too, experimentally (joining through Steam isn't possible there: join the host's address). |
 | **The same game version on every PC** | Two different game builds don't simulate the world the same way. Supported: **40425** (current), **40423** and **40420**. Make sure Steam has updated the game on every PC. |
+| **The same DLCs on every PC** | The Deluxe edition's upgrade pack and the pre-order pack put their animals, people and vehicles in the world of the PC that owns them only, and the games drift apart. The lobby shows a red warning when the players' DLCs differ. |
 | **The same MPFever version on every PC** | MPFever updates itself; every player just needs a recent version (0.3.15 or later). |
 | **The same mods, in the same version** | MPFever checks it in the lobby, installs the missing ones from the game's Mod Hub and tells you what to fix. Mods that only change your interface may differ. |
 
@@ -48,7 +49,7 @@ Each player plays in their own copy of the game. MPFever replays every player's 
 1. Download **`MPFever-<version>.zip`** from the [releases](https://github.com/dkdknight/MPFever/releases/latest).
 2. **Extract the whole folder** anywhere, for example on your desktop.
    Always start `MPFever.exe` **from that folder**. Don't move the `.exe` out of it, use a shortcut instead: MPFever needs the files next to it to update itself and to stay in sync.
-3. Start **`MPFever.exe`**. It finds the game, installs the mod and starts Transport Fever 3.
+3. Start **`MPFever.exe`**. It finds the game (or asks you for its `TransportFever3.exe`), installs the mod and starts Transport Fever 3.
 4. In the main menu, click the **Multiplayer** card (top left).
    - **The host** clicks **Host** under one of their savegames to open a lobby.
    - **The others** accept the host's Steam invitation, join the host's address, or pick a dedicated server in the **Public servers** tab.
@@ -135,6 +136,7 @@ See [SERVER](docs/SERVER.txt).
 |---|---|
 | **Content** (vehicles, buildings, streets, textures...), interface, game data | ✅ When every player has the same version. |
 | **Mods that name, colour or assign lines by themselves** (*Auto Line Namer*, *Auto Color Lines*, *Auto Assign Terminals*...) | ✅ Only the host's game makes the changes, shared with everybody. |
+| **Mods that upgrade streets by script** (*Auto Road Upgrade*...) | ⚠️ They can desynchronise the game: avoid them in multiplayer. |
 | **Other mods with a script that changes the game by itself** | ⚠️ Shown as « untested script ». They may make the games drift apart. |
 | **Other multiplayer mods** | ❌ Incompatible: turn them off. |
 
@@ -149,7 +151,7 @@ The mods tested so far are listed in [MODS](docs/MODS.md).
 - **One company per player: the game's achievements** are counted for the savegame's company only (the game's own scripts see that company alone).
 - **Small drifts of vehicles and passengers** can happen. They are repaired by a reload if they last.
 - **Two players changing the same place within about two seconds**: the build made second is left out on every game when it no longer fits the place, and has to be made again (with one company per player, the chat tells its player).
-- **Every build of another player stops the games for about a second**, the time to apply it at the same game time everywhere.
+- **Every build of another player stops the games for about a second**, the time to apply it at the same game time everywhere. A module added to a big station or warehouse can take several seconds.
 
 What's planned: [ROADMAP](docs/ROADMAP.txt). What changed: [CHANGELOG](docs/CHANGELOG.txt).
 
@@ -157,7 +159,7 @@ What's planned: [ROADMAP](docs/ROADMAP.txt). What changed: [CHANGELOG](docs/CHAN
 
 | Problem | What to do |
 |---|---|
-| Resyncs every few minutes, even without building anything | Check that every player has the **same game build**: it's written at the top of each report and in the host's launcher log (« game ready ... build »). Update the game in Steam (*Properties → Installed Files → Verify integrity*). |
+| Resyncs every few minutes, even without building anything | Check that every player has the **same game build**: it's written at the top of each report and in the host's launcher log (« game ready ... build »). Update the game in Steam (*Properties → Installed Files → Verify integrity*). Check the **DLCs** too: the host's player list says « (different DLCs) » when they differ. |
 | The launcher's log says « MPFever.exe is not in a version folder » or « winhttp.dll missing » | `MPFever.exe` was started outside its folder. Extract the whole zip again and start it from there. |
 | « Savegame not found » when hosting | Update to 0.4.1 or later. |
 | The guest can't connect | Check the port (above), or try the host's IPv6 address shown in the launcher. |
@@ -253,7 +255,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
   - the translations into 13 languages;
   - the in-game window and the chat.
 - **[Steelworm](https://github.com/Steelworm)**: build timing fixes, the builder lead, in-depth issue analyses.
-- **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures, the company rules and the faster industry connection (MIT).
+- **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures, the company rules, the industries' demand fix and the faster industry connection (MIT).
 - **DubstepDude-hub, Kev1505in (keviK), AMD and hschi**: long sessions sent with the logs of every player, which showed
   that players with different DLCs desynchronise (0.6.9).
 - **The testers** who sent reports, logs and savegames: most fixes came from them. Thank you to
