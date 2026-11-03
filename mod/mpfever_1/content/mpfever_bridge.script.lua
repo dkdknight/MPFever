@@ -4308,6 +4308,35 @@ G.stepOwner = function(a, step, seg)
 	return seg
 end
 
+-- (0.6.10) The host's player edited a station of company 2, a company no player plays (tests nr2 to nr7 of 2026-11-03, Test
+-- Gameplay, 0.6.9 as well): the engine kept the station's owner on the host's game (an edit keeps it, whoever's tool makes it:
+-- the proposal names the host's player), and the other game's replay, converted by the engine for the replaying company (the
+-- context's player), made it company 1's: owners and money apart at every check. An edit (a construction taken away) is now
+-- converted for the owner of the construction it replaces, when that is a player of this game; a new construction for the
+-- builder's company, as before. MPFEVER_CONOWNER=0: as before
+G.conOwner = function(a, m, ctx)
+	if os.getenv("MPFEVER_CONOWNER") == "0" then return end
+	local o = nil
+	pcall(function()
+		local rm = m.toRemove and m.toRemove[1]
+		-- (the same construction file: an edit, not a new construction in place of another)
+		local con = type(rm) == "number" and rm >= 0 and api.engine.getComponent(rm, api.type.ComponentType.CONSTRUCTION) or nil
+		if con and m.toAdd and m.toAdd[1] and tostring(con.fileName):match("[^/]*$") == tostring(m.toAdd[1].fileName):match("[^/]*$") then
+			local po = api.engine.getComponent(rm, api.type.ComponentType.PLAYER_OWNED)
+			if po and type(po.player) == "number" and po.player >= 0 then o = po.player end
+		end
+	end)
+	if type(o) ~= "number" or o < 0 or o == ctx.player then return end
+	local okP, pl = pcall(api.engine.getComponent, o, api.type.ComponentType.PLAYER)
+	if not (okP and pl) then return end
+	ctx.player = o
+	-- (and the construction's own player, which the conversion and the build take: the first call, before the conversion)
+	if m.toAdd[1].playerEntity ~= o then
+		for i = 1, #m.toAdd do if type(m.toAdd[i]) == "table" then m.toAdd[i].playerEntity = o end end
+		log("NATIVE REPLAY " .. tostring(a and a.uid) .. " native construction: an edit, built for the owner of what it replaces, " .. o)
+	end
+end
+
 -- (0.6.7) An upgrade of ONE town street segment that moves town buildings (a.townAuto): replaceSegment aligned the terrain
 -- otherwise than the tool (an autotest on #109's world, 2026-11-01: terrain aligned 1055.9 on the builder's game, 1079.0 here,
 -- 5 town buildings taken away and 1 put back; "town stats differ", a reload). The tool's own proposal is replayed instead, as
@@ -5187,6 +5216,8 @@ local function replayNativeConstruction(a)
 	local miss = R.translateIn(cArgs, G.bind)
 	if #miss > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: unresolved " .. table.concat(miss, ",")) return false end
 	local m = cArgs[1]
+	-- (0.6.10: an edit of another company's construction, for that company, see G.conOwner)
+	pcall(G.conOwner, a, m, { player = api.engine.util.getPlayer() })
 	-- the engine's conversion of the construction (twice: guaranteed collision, so that nothing is built)
 	local spCon = C.rebuildProposal(m, { noStreet = true, seed = 7919 })
 	local cons = {}
@@ -5206,6 +5237,7 @@ local function replayNativeConstruction(a)
 	ctx.gatherBuildings = true
 	ctx.gatherFields = os.getenv("MPFEVER_CONVFIELDS") ~= "0"
 	ctx.player = api.engine.util.getPlayer()
+	pcall(G.conOwner, a, m, ctx)
 	G.refundInto(ctx)
 	local okc, dry = pcall(function() return api.cmd.makeWorldBuildProposalCmd(spCon, ctx, false, true) end)
 	if not okc or not dry then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: conversion command " .. shortErr(dry)) return false end
@@ -5290,6 +5322,7 @@ local function replayNativeConstruction(a)
 			ctx2.gatherBuildings = a.keepBuildings ~= true
 			ctx2.gatherFields = true
 			ctx2.player = api.engine.util.getPlayer()
+			pcall(G.conOwner, a, m, ctx2)
 			G.refundInto(ctx2)
 			if a.keepBuildings == true then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the town buildings in its way are kept (a computer company's build)") end
 			local okk, cmd = false, nil

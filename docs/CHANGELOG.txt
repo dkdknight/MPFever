@@ -15,6 +15,12 @@ MPFever - Changelog
     other game booked its cost and refund on that company (money apart, 30 000). The capture now names the company the
     build is for, and the build of that company is the one shipped; the other builds of that time wait for their own
     capture (MPFEVER_SHIPCO=0: the first one, as before). Test: tests/test_shipco.py.
+  - FIX (desync, one company per player): a player edited the station of another company (Test Gameplay: the host's player,
+    a station of keviK's company, which nobody played): the engine kept the station's owner on the builder's game and booked
+    the edit there, while the other games' replay built it for the builder's company. Owners and money apart at every check,
+    0.6.9 as well (tests nr2 to nr9). An edit (the same construction taken away and added again) is now replayed for the owner
+    of the construction it replaces (MPFEVER_CONOWNER=0: for the builder's company, as before). Test: tests/test_conowner.py;
+    autotest nr10 in sync.
   - FIX (one company per player): a station, stop or depot put on another company's shared street made the street's new
     pieces the builder's (the game's own rule; "the street no longer belongs to me", 2026-11-01). As decided: a street that
     is not shared cannot be built on (0.6.8), and a shared one now stays its company's. Right after the build, on every game
