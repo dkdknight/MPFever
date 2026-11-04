@@ -49,7 +49,7 @@ api = {
   },
   cmd = { makeWorldBuildProposalCmd = function(p, ctx, a, b) return { kind = "build", p = p, ctx = ctx } end },
 }
-C = { ser = function(v) return v end, deser = copy, plain = copy, marshal = function(v) return v end }
+C = { ser = function(v) return v end, deser = copy, copy = copy, plain = copy, marshal = function(v) return v end }
 R = { translateIn = function(args, bind) return MISSING or {} end }
 G = { bind = {}, refundInto = function(ctx) end }
 function log(s) LOGS[#LOGS + 1] = s end

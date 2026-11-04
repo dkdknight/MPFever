@@ -47,6 +47,17 @@ MPFever - Changelog
     showed the fields missing on the builder's game, the only difference with the replay. An idle campaign now hashes as no
     campaign (both mean none for the game, isMarketingActive); a running one still counts. MPFEVER_MARKETINGHASH=0: as
     before. Test: tests/test_townhash.py.
+  - LAG (the user's test of 2026-11-03 23:17): the builds of a station's or warehouse's module tool and of the street and track
+    upgrade tool were held 16 steps at 4x (7 at 1x) on the builder's game before they showed, and the other games stood
+    seconds waiting for them: the module tool sends no tool event, and the upgrade tool was not among the "responsive builds"
+    tools. The upgrade tool now leads like the others (MPFEVER_LEADTOOLS=0: as before), and a build held although no lead
+    tool was in hand starts the lead as a tool in hand would: from the next module on, the builds show at once on the
+    builder's game, the others stay behind it meanwhile and get each build before they come to its time (BUILDLEAD's own
+    checks still decide every build; MPFEVER_LEADHELD=0: as before). Test: tests/test_leadheld.py.
+  - LAG: the replays copied a big station's 2.3 MB action through its text several times while the games stood (0.17 s each);
+    C.copy makes the same copy without the text (0.04 s; MPFEVER_FASTCOPY=0: as before). The capture no longer writes a big
+    build out a second time only to log its size (0.15 s of the builder's simulation; the size is logged when it is sent,
+    MPFEVER_CAPSIZE=1: as before). Test: tests/test_fastcopy.py.
   - NEW (diagnostic): every build of another player replayed here writes a "LAG" line: how long this game stood at its time,
     waiting for its data and then for its replay, the commands it took and the data's size (the measure of the freezes on
     big stations, the user's test of 2026-11-03 23:17). MPFEVER_LAGLINE=0: none. Test: tests/test_lagline.py.

@@ -47,7 +47,7 @@ api = {
     end,
   },
 }
-C = { ser = function(v) return v end, deser = copy, plain = copy, marshal = function(v) return v end }
+C = { ser = function(v) return v end, deser = copy, copy = copy, plain = copy, marshal = function(v) return v end }
 R = { translateIn = function(args, bind) return {} end }
 G = { bind = {}, assetPI = function() return true end,
   assetEngineRemoval = function(a, uid, rm, cons, ctx, strict) CALLS[#CALLS + 1] = "engine " .. table.concat(rm, ",") end }

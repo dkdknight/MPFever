@@ -45,7 +45,7 @@ api = {
   },
   cmd = { makeWorldBuildProposalCmd = function(p, ctx, a, b) return { kind = p.kind or "build", p = p } end },
 }
-C = { ser = function(v) return v end, deser = copy, errors = {},
+C = { ser = function(v) return v end, deser = copy, copy = copy, errors = {},
   rebuildProposal = function(m, opts) return { kind = "conversion", constructionsToAdd = { {} } } end,
   rebuildNativeWithConstruction = function(m, conv, rm, opts) REBUILT[#REBUILT + 1] = opts return { kind = "build" } end }
 R = { translateIn = function() return {} end, allEdges = function() return {} end }

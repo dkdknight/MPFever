@@ -943,7 +943,7 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 			local src = a.args[1].proposal or {}
 			local seg = (src.addedSegments or {})[1]
 			local shipped = seg and seg.comp and seg.comp.roadTemplate
-			local margs = C.deser(C.ser(a.args))
+			local margs = C.copy(a.args)
 			local args = C.rebuildArgs(a.fn, margs, { seed = 7919, variant = label:match("^[^/]+"), raw = label:find("/raw") ~= nil })
 			local ssp = args[1].streetProposal
 			local e = ssp.edgesToAdd[1]
@@ -2877,7 +2877,9 @@ local function captureNativeBuild(state, param)
 		log("capture: held back " .. slow .. " s (MPFEVER_SLOWCAPTURE)")
 	end
 	local okc, compact = pcall(C.compactProposal, proposal)
-	log("capture: compact " .. string.format("%.3f", os.clock() - c0) .. " s, " .. #C.ser(compact or {}) .. " bytes" .. C.mapSizes(compact))
+	-- (0.6.12: its size is no longer written out here, a whole C.ser of it, 0.15 s of a big station's capture while the simulation
+	-- stood; the interface logs it when it ships it. MPFEVER_CAPSIZE=1: here, as before)
+	log("capture: compact " .. string.format("%.3f", os.clock() - c0) .. " s" .. (os.getenv("MPFEVER_CAPSIZE") == "1" and (", " .. #C.ser(compact or {}) .. " bytes") or "") .. C.mapSizes(compact))
 	if not okc then
 		log("native build capture failed at t=" .. now .. ": " .. tostring(compact) .. " (desync)")
 		return
@@ -2937,7 +2939,7 @@ local function captureNativeBuild(state, param)
 	st.selfChecks = (st.selfChecks or 0) + 1
 	if false and st.selfChecks <= 12 then
 		local oks, errs = pcall(function()
-			local margs = C.deser(C.ser(args))
+			local margs = C.copy(args)
 			local missing = R.translateIn(margs, st.bind or {})
 			local cmd, label, fails = buildCommand("makeWorldBuildProposalCmd", C.ser(margs), BUILD_TRIES)
 			local nObj = #((compact.proposal or {}).edgeObjectsToAdd or {})
@@ -3542,7 +3544,10 @@ local function PL(a)
 end
 
 local function send(kind, payload)
-	if not C.appendFile(C.DIR .. BS .. "out.log", C.line(kind, payload)) then log("cannot write out.log") end
+	local line = C.line(kind, payload)
+	if not C.appendFile(C.DIR .. BS .. "out.log", line) then log("cannot write out.log") end
+	-- (the size of a big action, once written: see the capture)
+	if kind == "act" and #line > 100000 then log("sent " .. tostring(type(payload) == "table" and payload.uid or "?") .. ": " .. #line .. " bytes") end
 end
 
 local function readLines(fileName, offKey)
@@ -3704,8 +3709,22 @@ end
 -- (the tools whose builds were tried with the lead: streets, tracks, constructions such as stations, street stops, the bulldozer;
 -- the others, as the module builder or the lane and track modifiers, keep the held builds of today until they are tried)
 G.BUILD_LEAD_TOOLS = { streetBuilder = true, trackBuilder = true, constructionBuilder = true, streetTerminalBuilder = true, bulldozer = true }
+-- (0.6.12, the user's test of 2026-11-03 23:17: upgrading railway lines waited 16 steps before showing on the builder's game)
+-- the street and track upgrade tool too. MPFEVER_LEADTOOLS=0: the five tools above, as before
+if os.getenv("MPFEVER_LEADTOOLS") ~= "0" then G.BUILD_LEAD_TOOLS.streetTrackModifier = true end
 G.buildLeadTool = function(id)
 	return G.BUILD_LEAD_TOOLS[id] == true
+end
+-- (0.6.12) A tool's build held the usual way although no lead tool was in hand: the module tool of a station's or a warehouse's
+-- window sends no tool event (the user's test of 2026-11-03 23:17: every module waited 16 steps on the builder's game and held
+-- the others seconds). Such a build starts the lead as a tool in hand would: the next ones are released at once, and the others
+-- stay behind meanwhile (BUILDLEAD's own checks still decide each build). Every build from a tool site keeps it going.
+-- MPFEVER_LEADHELD=0: not, as before.
+G.leadFromBuild = function(lead, why)
+	if not G.buildLead or os.getenv("MPFEVER_LEADHELD") == "0" or not G.buildLeadPeers() then return end
+	if lead or why == "no tool in hand" or (G.buildLeadUntil and os.clock() < G.buildLeadUntil) then
+		terrainLead("a tool's build", "BUILDLEAD: a build without a lead tool (a module tool)")
+	end
 end
 
 -- A lead that comes from construction tools only gives way while another game's build is announced to this one: that game
@@ -5137,7 +5156,7 @@ local function depotExperiments(a, m, conv, rm, ctx)
 		for i, n in ipairs(st.addedNodes or {}) do nodes[i] = C.rebuild("NodeAndEntity", n, "n" .. i) end
 		local extra = {}
 		for i, sg in ipairs(st.addedSegments or {}) do
-			local c = C.deser(C.ser(sg))
+			local c = C.copy(sg)
 			for _, k in ipairs({ "node0", "node1" }) do
 				if type(c.comp[k]) == "number" and c.comp[k] >= 0 then
 					local q = api.engine.getComponent(c.comp[k], api.type.ComponentType.BASE_NODE).position
@@ -5174,7 +5193,7 @@ G.replayByReplace = function(a)
 		replayFailed(a, "station edit not replayed")
 		return true
 	end
-	local cArgs = C.deser(C.ser(a.args))
+	local cArgs = C.copy(a.args)
 	local miss = R.translateIn(cArgs, G.bind)
 	if #miss > 0 then return no("unresolved " .. table.concat(miss, ",")) end
 	local m = cArgs[1]
@@ -5269,7 +5288,7 @@ local function replayNativeConstruction(a)
 	if not hasConstructionSegments(m0) and not a.industryEdit and not a.ownTracks then return false end
 	-- (0.5.14, issue #97: a station edit that takes ALL its own tracks away; one that keeps some, issue #90, the conversion below)
 	if a.ownTracks and a.ownTracksAll and not hasConstructionSegments(m0) and os.getenv("MPFEVER_EDITREPLACE") ~= "0" then return G.replayByReplace(a) end
-	local cArgs = C.deser(C.ser(a.args))
+	local cArgs = C.copy(a.args)
 	local miss = R.translateIn(cArgs, G.bind)
 	if #miss > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: unresolved " .. table.concat(miss, ",")) return false end
 	local m = cArgs[1]
@@ -5594,7 +5613,7 @@ G.placeStopsAfter = function(a)
 		end
 		local objs = {}
 		for _, o in ipairs(g.objs) do
-			local x = C.deser(C.ser(o))
+			local x = C.copy(o)
 			-- (this game's segment runs the other way round: the place along it and the side are the opposite ones)
 			if reversed then x.param = 1 - (tonumber(x.param) or 0.5); x.left = not x.left end
 			objs[#objs + 1] = x
@@ -5676,7 +5695,7 @@ local function replayNativeStreet(a)
 		if a.eoNative or a.eoRoute == "stop" then return G.eoAsBefore(a, "native street: " .. why) end
 		replayFailed(a, why)
 	end
-	local cArgs = C.deser(C.ser(a.args))
+	local cArgs = C.copy(a.args)
 	local miss = R.translateIn(cArgs, G.bind)
 	if #miss > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " native street: unresolved " .. table.concat(miss, ",")) gaveUp("unresolved references") return end
 	local m = cArgs[1]
@@ -5870,7 +5889,7 @@ G.eoDryRun = function(m, opts)
 	local edges, eos = {}, {}
 	for copy = 0, 1 do
 		for ci, sg in ipairs(carriers) do
-			local s = C.deser(C.ser(sg))
+			local s = C.copy(sg)
 			s.entity = -(copy * nC + ci)
 			s.comp.node0 = endOf(sg.comp.node0)
 			s.comp.node1 = endOf(sg.comp.node1)
@@ -5997,7 +6016,7 @@ end
 G.replayStreetWithObjects = function(a)
 	a.eoTried = true
 	local uid = tostring(a.uid)
-	local cArgs = C.deser(C.ser(a.args))
+	local cArgs = C.copy(a.args)
 	local miss = R.translateIn(cArgs, G.bind)
 	if #miss > 0 then return G.eoAsBefore(a, "unresolved " .. table.concat(miss, ",")) end
 	local okd, dry, n = pcall(G.eoDryRun, cArgs[1])
@@ -6068,7 +6087,7 @@ G.replayNativeStop = function(a, plan)
 		log("NATIVE REPLAY " .. uid .. " native stop: " .. why .. ": replayed as before (replayStop)")
 		return G.nowOrNext(function() replayStop(a, plan) end)
 	end
-	local cArgs = C.deser(C.ser(a.args))
+	local cArgs = C.copy(a.args)
 	local miss = R.translateIn(cArgs, G.bind)
 	if #miss > 0 then return asBefore("unresolved " .. table.concat(miss, ",")) end
 	local m = cArgs[1]
@@ -6218,7 +6237,7 @@ G.stopAlignProbe = function(a, plan, sp, mkCtx)
 	-- segment -1 replacing the old one, the maps saying so)
 	local m
 	if type(a.args) == "table" and not plan.after then
-		local cArgs = C.deser(C.ser(a.args))
+		local cArgs = C.copy(a.args)
 		local miss = R.translateIn(cArgs, G.bind)
 		if #miss > 0 then say("(c)-(e): unresolved " .. table.concat(miss, ",")) return end
 		m = cArgs[1]
@@ -6294,7 +6313,7 @@ function replayTwoStep(a)
 	local m0 = a.args[1]
 	if type(m0) ~= "table" or #(m0.toAdd or {}) == 0 or type(m0.proposal) ~= "table" then return false end
 	if editsConstruction(m0) then log("NATIVE REPLAY " .. tostring(a.uid) .. " two steps: not for the edit of an existing station (the engine asserts)") return false end
-	local cArgs = C.deser(C.ser(a.args))
+	local cArgs = C.copy(a.args)
 	local miss = R.translateIn(cArgs, G.bind)
 	if #miss > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " two steps: unresolved " .. table.concat(miss, ",")) return false end
 	-- (the street part alone would take away the own tracks of the construction it replaces: never built apart, see
@@ -6302,7 +6321,7 @@ function replayTwoStep(a)
 	local ownTracks = a.ownTracks or G.ownTracksRemoved(cArgs[1])
 
 	local function buildConstruction()
-		local okr, args, n = pcall(C.rebuildArgs, a.fn, C.deser(C.ser(cArgs)), { seed = 7919, variant = "minimal", raw = true, ctx = "terrainNoCleanup", noStreet = true })
+		local okr, args, n = pcall(C.rebuildArgs, a.fn, C.copy(cArgs), { seed = 7919, variant = "minimal", raw = true, ctx = "terrainNoCleanup", noStreet = true })
 		if not okr then log("NATIVE REPLAY " .. tostring(a.uid) .. " two steps: construction not rebuilt (" .. shortErr(args) .. ")") replayFailed(a, "construction not rebuilt") return end
 		args[3] = true args[4] = false   -- (non-critical collision with its own street connection: ignored)
 		local okk, cmd2 = pcall(function() return api.cmd[a.fn](table.unpack(args, 1, n)) end)
@@ -6336,7 +6355,7 @@ function replayTwoStep(a)
 			replayFailed(a, "street part refused")
 			return
 		end
-		local sArgs = C.deser(C.ser(cArgs))
+		local sArgs = C.copy(cArgs)
 		if not together then
 			sArgs[1].toAdd = {}
 			sArgs[1].toRemove = {}
@@ -6428,7 +6447,7 @@ local function replayNative(a, formIndex)
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " detail: constructions {" .. table.concat(names, ", ") .. "} node heights " ..
 				tostring(zmin) .. ".." .. tostring(zmax) .. " segment type/index {" .. table.concat(kinds, ", ") .. "}")
 		end)
-		local probe = C.deser(C.ser(a.args))
+		local probe = C.copy(a.args)
 		local missing = R.translateIn(probe, G.bind)
 		-- the edit of a construction sent by a window (a warehouse's goods with the Drive-in Warehouses mod, see G.uiEdit): the
 		-- engine's own replacement with the new settings, made the same way on every game
@@ -6644,7 +6663,7 @@ local function replayNative(a, formIndex)
 			local function try(k)
 				local ex = exps[k]
 				if not ex then return end
-				local mx = C.deser(C.ser(a.args))
+				local mx = C.copy(a.args)
 				R.translateIn(mx, G.bind)
 				local okr, args, n = pcall(C.rebuildArgs, a.fn, mx, { seed = 7919, variant = "minimal", ctx = (ex == "plain") and "plain" or "terrainNoCleanup", raw = true, exp = ex })
 				local okc, cmd = false, args
@@ -6667,7 +6686,7 @@ local function replayNative(a, formIndex)
 		replayFailed(a, "every form refused")
 		return
 	end
-	local margs = C.deser(C.ser(a.args))
+	local margs = C.copy(a.args)
 	local missing = R.translateIn(margs, G.bind)
 	if #missing > 0 then
 		log("NATIVE REPLAY " .. tostring(a.uid) .. " SKIPPED, unresolved: " .. table.concat(missing, ","))
@@ -7238,6 +7257,7 @@ local function pollNativeEvents()
 			if G.buildLead then G.leadRefusedCheck(true) end
 			if G.buildLead and not paused then lead, why = G.buildLeadState() end
 			if G.buildLead and paused then why = leadLevel() > 0 and "the session is paused" or "no tool in hand" end
+			if not paused then pcall(G.leadFromBuild, lead, why) end
 			if lead then
 				G.natRelease[#G.natRelease + 1] = { id = id, at = now, lead = true }
 				send("nat_pending", { origin = G.me, at = now, id = id, lead = true })
@@ -7383,9 +7403,9 @@ G.restaleBody = function(r, at)
 	local why = G.restaleWhy(r, at)
 	if not why then return false end
 	-- the act a capture of this build would have shipped (the compact proposal, its references translated as the capture does)
-	local args = { n = 4, [1] = C.deser(C.ser(r.copy)), [2] = { __player = true }, [3] = false, [4] = true }
+	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
 	R.translateOut("makeWorldBuildProposalCmd", args, G.rev or {})
-	args = C.deser(C.ser(args))
+	args = C.copy(args)
 	G.oseq = G.oseq + 1
 	local a = { fn = "makeWorldBuildProposalCmd", args = args, at = at, origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
 		native = true, natId = r.id, paused = r.paused and true or nil, co = G.myCo, lt = G.loadId,
@@ -7398,7 +7418,7 @@ G.restaleBody = function(r, at)
 	send("act", a)
 	-- (here: in the replays' queue at once; in a pause it keeps its turn, which the queue takes when it applies it, so that no
 	-- later turn goes before it here)
-	local here = C.deser(C.ser(a))
+	local here = C.copy(a)
 	here.recvFrame = G.frames
 	G.nativeQueue[#G.nativeQueue + 1] = here
 	G.restaled = (G.restaled or 0) + 1
@@ -7446,6 +7466,8 @@ local function deferredSend(cmd, cb, proposal, still)
 	-- (in a pause: as a tool's build, at the paused time, in its turn: see pollNativeEvents and G.pt)
 	local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt
 	if G.buildLead and not paused then lead, why = G.buildLeadState() end
+	-- (MPFEVER_LEADHELDTEST=1, autotests: as a build of the module tool, see G.leadFromBuild)
+	if not paused and os.getenv("MPFEVER_LEADHELDTEST") == "1" then pcall(G.leadFromBuild, lead, why) end
 	if lead then
 		-- (a scripted build hears the engine's answer: a refused one is cancelled at once. MPFEVER_BUILDLEAD_NOANSWER=1, tests:
 		-- not used, as for a tool's build, whose answer only the tool hears: G.leadRefusedCheck must find it out)
@@ -8139,7 +8161,7 @@ G.assetEngineRemoval = function(a, uid, rm, cons, ctx, strict)
 end
 
 local function replayAssets(a)
-	local args = C.deser(C.ser(a.args or {}))
+	local args = C.copy(a.args or {})
 	local miss = R.translateIn(args, G.bind)
 	local uid = tostring(a.uid)
 	local rm, unresolved = {}, 0
@@ -9410,7 +9432,7 @@ local function buildMatrixProposal(o, n, pn, a)
 			c.laneConfigs = lanes
 		elseif o.lanesWire then
 			local src = api.engine.getComponent(o.cloneOf, api.type.ComponentType.BASE_EDGE)
-			local wire = C.deser(C.ser(C.marshal(src.laneConfigs)))
+			local wire = C.copy(C.marshal(src.laneConfigs))
 			c.laneConfigs = C.rebuildLanes(wire)
 		elseif o.lanes then
 			local src = api.engine.getComponent(o.cloneOf, api.type.ComponentType.BASE_EDGE)
@@ -9748,7 +9770,7 @@ local function runUpgrade(p)
 				local compact = C.compactProposal(P)
 				local margs = { n = 4, [1] = compact, [2] = { __player = true }, [3] = false, [4] = true }
 				R.translateOut("makeWorldBuildProposalCmd", margs, {})
-				margs = C.deser(C.ser(margs))
+				margs = C.copy(margs)
 				R.translateIn(margs, {})
 				local args, n = C.rebuildArgs("makeWorldBuildProposalCmd", margs, { seed = 7919, variant = "native" })
 				C.appendFile(C.DIR .. BS .. "ab_simple_in.txt", C.dump(args[1]):sub(1, 60000) .. NL)
@@ -11451,7 +11473,7 @@ local function runReplayFile(p)
 		local compact = C.deser(lines[i])
 		local margs = { n = 4, [1] = compact, [2] = { __player = true }, [3] = false, [4] = true }
 		R.translateOut("makeWorldBuildProposalCmd", margs, {})
-		local a = { uid = "file:" .. i, origin = "file", fn = "makeWorldBuildProposalCmd", args = C.deser(C.ser(margs)), native = true }
+		local a = { uid = "file:" .. i, origin = "file", fn = "makeWorldBuildProposalCmd", args = C.copy(margs), native = true }
 		local st = compact.proposal
 		local line = "case " .. i .. ": originator +" .. #st.addedSegments .. " -" .. #st.removedSegments .. ", edges before " .. #R.allEdges()
 		local ok, err = pcall(replayNative, a, 1)
@@ -12115,7 +12137,7 @@ H.pmix = function(from, p)
 	local n = 0
 	local function buyOne()
 		n = n + 1
-		uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = depot, [3] = C.deser(C.ser(cfg)) })
+		uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = depot, [3] = C.copy(cfg) })
 		if n < 8 then G.waits[#G.waits + 1] = { at = G.frames + 30, fn = buyOne } end
 	end
 	buyOne()
@@ -13013,7 +13035,7 @@ H.buy2 = function(from, p)
 	for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do before[v] = true end
 	for k = 1, 2 do
 		G.waits[#G.waits + 1] = { at = G.frames + k * 45, fn = function()
-			uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = pick.depot, [3] = C.deser(C.ser(pick.cfg)) })
+			uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = pick.depot, [3] = C.copy(pick.cfg) })
 		end }
 	end
 	G.waits[#G.waits + 1] = { at = G.frames + 400, fn = function()

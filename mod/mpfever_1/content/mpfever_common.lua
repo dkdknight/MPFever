@@ -176,6 +176,31 @@ function C.deser(s)
 	return nil
 end
 
+-- (0.6.12) A copy of a plain value as C.deser(C.ser(v)) makes it (what C.ser cannot write is left out: functions, native objects,
+-- tables deeper than 40; NaN and infinities become 0), without the text in between: about 4 times faster on a big station's
+-- 2.3 MB action (0.04 s instead of 0.17 s), which the replays copied several times while the games stood (the user's test of
+-- 2026-11-03 23:17). MPFEVER_FASTCOPY=0: through the text, as before.
+function C.copy(v, depth)
+	if C.SLOWCOPY then return C.deser(C.ser(v)) end
+	depth = depth or 0
+	local t = type(v)
+	if t == "number" then
+		if v ~= v or v == math.huge or v == -math.huge then return 0 end
+		return v
+	elseif t == "string" or t == "boolean" then
+		return v
+	elseif t == "table" and depth < 40 then
+		local out = {}
+		for k, x in pairs(v) do
+			local kk = C.copy(k, depth + 1)
+			if kk ~= nil then out[kk] = C.copy(x, depth + 1) end
+		end
+		return out
+	end
+	return nil
+end
+C.SLOWCOPY = os.getenv("MPFEVER_FASTCOPY") == "0"
+
 function C.dump(v)
 	local ok, s = pcall(function() return toString(v) end)
 	if ok then return tostring(s) end
