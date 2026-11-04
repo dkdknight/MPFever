@@ -187,25 +187,35 @@ function PG.measure(api, reg, game)
 		if owners[line] == nil then
 			local owner = PG.ownerOf(api, line)
 			owners[line] = (owner and ids[owner]) or false
+			if PG.seen then
+				PG.seen.lines = PG.seen.lines + 1
+				if not owners[line] then PG.seen.stranger[tostring(owner)] = (PG.seen.stranger[tostring(owner)] or 0) + 1 end
+			end
 		end
 		return owners[line] or nil
 	end
 	local populations = api.engine.system.townBuildingSystem.getTown2personCapacitiesMap()
 	local states = game.townStates()
+	-- (what the sample saw, for the detail line of PG.tally: lines of the statistics, their owners that are no company's)
+	PG.seen = { lines = 0, stranger = {}, noState = 0, popType = nil }
 	local halfYear = math.floor(api.util.getDefaultYearDuration() / 2 + 0.5)
 	local towns = {}
 	for town, capacities in pairs(populations) do
+		PG.seen.popType = PG.seen.popType or type(capacities)
 		towns[#towns + 1] = { town = town, population = (type(capacities) == "table" and capacities[1]) or 0 }
 	end
 	table.sort(towns, function(a, b) return a.town < b.town end)
 	for _, t in ipairs(towns) do
 		t.state = states[t.town]
+		if t.state == nil then PG.seen.noState = PG.seen.noState + 1 end
 		local carried = {}
 		local function of(id)
 			carried[id] = carried[id] or { cargo = 0, late = 0, passengers = 0, unhappy = 0 }
 			return carried[id]
 		end
 		local stats = api.engine.util.town.getTownDeliveriesStats(t.town, halfYear, true, false)
+		local nd = 0
+		for _ in pairs(type(stats) == "table" and stats or {}) do nd = nd + 1 end
 		for line, byCargo in pairs(stats or {}) do
 			local id = type(line) == "number" and line >= 0 and companyOf(line)
 			if id then
@@ -215,6 +225,27 @@ function PG.measure(api, reg, game)
 			end
 		end
 		local happiness = api.engine.util.town.getTownHappinessStats(t.town, PG.LINES)
+		-- (the raw shape of the statistics of the most populous town, for the detail line)
+		if PG.seen and (PG.seen.top == nil or t.population > PG.seen.top.population) then
+			local okR, raw = pcall(function()
+				local h = happiness
+				local function n(x) local c = 0 if type(x) == "table" or type(x) == "userdata" then for _ in pairs(x) do c = c + 1 end end return c end
+				local function tot(pair) return (pair and pair[2]) or -1 end
+				local other = {}
+				for _, k in ipairs({ 0, 5, 50 }) do
+					local okH, hk = pcall(api.engine.util.town.getTownHappinessStats, t.town, k)
+					other[#other + 1] = k .. " lines: " .. (okH and hk and (tostring(tot(hk.travellingInside)) .. "/" .. tostring(tot(hk.travellingTo and hk.travellingTo.resident)) .. "/" .. n(hk.byLine)) or "?")
+				end
+				local all = 0
+				pcall(function() for _ in pairs(api.engine.util.town.getTownDeliveriesStats(t.town, halfYear, false, false) or {}) do all = all + 1 end end)
+				return string.format("deliveries %s/%d keys (%d not per line), happiness %s, byLine %s/%d, travelling to %s/%s from %s/%s inside %s, walking %s, by car %s (asked %d lines; %s)",
+					type(stats), nd, all, type(h), type(h and h.byLine), n(h and h.byLine), tostring(tot(h and h.travellingTo and h.travellingTo.resident)),
+					tostring(tot(h and h.travellingTo and h.travellingTo.nonResident)), tostring(tot(h and h.travellingFrom and h.travellingFrom.resident)),
+					tostring(tot(h and h.travellingFrom and h.travellingFrom.nonResident)), tostring(tot(h and h.travellingInside)),
+					tostring(tot(h and h.walking)), tostring(tot(h and h.byCar)), PG.LINES, table.concat(other, ", "))
+			end)
+			PG.seen.top = { population = t.population, town = t.town, raw = okR and raw or ("unreadable: " .. tostring(raw)) }
+		end
 		for _, entry in ipairs(type(happiness) == "table" and happiness.byLine or {}) do
 			local id = companyOf(entry[1])
 			local by = entry[2]
@@ -286,8 +317,12 @@ function PG.tally(prog, reg, towns, game, say, now)
 		index[tostring(e.company) .. ":" .. tostring(e.town)] = e
 	end
 	local scores = {}
-	for _, entry in ipairs(list) do scores[entry.company.id] = 0 end
+	-- (the detail line: per company, the towns where it carried cargo, passengers, and where it scored)
+	local detail = {}
+	for _, entry in ipairs(list) do scores[entry.company.id] = 0; detail[entry.company.id] = { cargo = 0, passengers = 0, scored = 0, own0 = 0 } end
+	local pop, noShared = 0, 0
 	for _, t in ipairs(towns) do
+		pop = pop + (tonumber(t.population) or 0)
 		local cargoAll, passengersAll = 0, 0
 		local averages = {}
 		for _, entry in ipairs(list) do
@@ -298,6 +333,12 @@ function PG.tally(prog, reg, towns, game, say, now)
 			passengersAll = passengersAll + averages[id]
 		end
 		local shared = sharedRating(t.state)
+		if shared == nil then noShared = noShared + 1 end
+		for _, entry in ipairs(list) do
+			local c = t.carried[entry.company.id]
+			if c and c.cargo > 0 then detail[entry.company.id].cargo = detail[entry.company.id].cargo + 1 end
+			if c and c.passengers > 0 then detail[entry.company.id].passengers = detail[entry.company.id].passengers + 1 end
+		end
 		if (cargoAll > 0 or passengersAll > 0) and shared ~= nil then
 			local sensHappy = game.sensitivity(t.state, "people_happiness")
 			local sensCargo = game.sensitivity(t.state, "cargo_delivery")
@@ -308,9 +349,28 @@ function PG.tally(prog, reg, towns, game, say, now)
 				if share > 0 then
 					local own = math.min(shared, PG.happiness(c.unhappy, c.passengers, sensHappy), PG.onTime(c.late, c.cargo, sensCargo))
 					scores[id] = scores[id] + t.population * share * 100 * clamp(own, 0, 1) / 100
+					if own > 0 then detail[id].scored = detail[id].scored + 1 else detail[id].own0 = detail[id].own0 + 1 end
 				end
 			end
 		end
+	end
+	-- the detail line: on the first sample of a game here, every 16 samples (4 game months), every sample with
+	-- MPFEVER_RANKDETAIL=1 (the same numbers on every game: what a report needs when a score stays at 0, #125)
+	if say and (PG.detailed == nil or (prog.quarter or 0) % 16 == 0 or os.getenv("MPFEVER_RANKDETAIL") == "1") then
+		PG.detailed = true
+		local seen = PG.seen or { lines = 0, stranger = {}, noState = 0 }
+		local str = {}
+		for k, n in pairs(seen.stranger) do str[#str + 1] = k .. " x" .. n end
+		table.sort(str)
+		local parts = {}
+		for _, entry in ipairs(list) do
+			local d = detail[entry.company.id]
+			parts[#parts + 1] = string.format("company %d (player %s): cargo in %d, passengers in %d, scored in %d, rating 0 in %d",
+				entry.company.id, tostring(entry.company.ent), d.cargo, d.passengers, d.scored, d.own0)
+		end
+		say(string.format("ranks detail: %d town(s), population %d (%s), %d without a state, %d without a rating; %d line(s) in the statistics, of no company: %s; %s; most populous town %s (%s): %s",
+			#towns, pop, tostring(seen.popType), seen.noState, noShared, seen.lines, (#str > 0 and table.concat(str, ", ") or "none"), table.concat(parts, "; "),
+			tostring(seen.top and seen.top.town), tostring(seen.top and seen.top.population), tostring(seen.top and seen.top.raw)))
 	end
 	local keep = {}
 	for _, e in ipairs(prog.passengers) do
@@ -389,7 +449,12 @@ function PG.view(prog, id)
 	if type(prog) ~= "table" or type(prog.records) ~= "table" or type(id) ~= "number" then return nil end
 	local r = record(prog, id)
 	if r == nil then return nil end
-	return { experience = r.experience, level = r.level, potentialLevel = r.potential }
+	-- (0.6.12, #125) the game's company window greys its Company tab while the experience is 0
+	-- (game_mechanics/company/company.tl: "enabled = ... experience > 0"): a company that has not scored yet showed it greyed and
+	-- its players took it for closed. Shown with at least 1 (display only: the record keeps its own). MPFEVER_RANKTAB=0: as before.
+	local x = r.experience
+	if os.getenv("MPFEVER_RANKTAB") ~= "0" and type(x) == "number" and x < 1 then x = 1 end
+	return { experience = x, level = r.level, potentialLevel = r.potential }
 end
 
 return PG

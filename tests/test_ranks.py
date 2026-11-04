@@ -11,7 +11,9 @@ PG.tally is run through lupa (Lua 5.2) with a mocked game (levels, the game's ow
   - company 1 carries: its experience grows from where it began by its own score (its bar moves: #63 stays fixed);
   - a savegame of 0.6.2, company 1's record already far up (no base yet): never lowered, then its own score only;
   - its rank never goes down when its score falls;
-  - MPFEVER_RANK1BASE=0: follows the game's own experience (0.6.2); MPFEVER_RANK1OWN=0: its score only (before #63).
+  - MPFEVER_RANK1BASE=0: follows the game's own experience (0.6.2); MPFEVER_RANK1OWN=0: its score only (before #63);
+  - (0.6.12, #125) the company window is shown at least 1 experience (the game greys its Company tab at 0), the record
+    keeps 0; MPFEVER_RANKTAB=0: 0 as before; the detail line names each company's towns.
 Run: python tests/test_ranks.py
 """
 import os, sys
@@ -117,6 +119,24 @@ def main():
       return tostring(EXP(prog, 1))""")
     check("MPFEVER_RANK1OWN=0: stays at the game's start, as before #63", got == "9000", got)
     run("ENV.MPFEVER_RANK1OWN = nil")
+
+    # --- (0.6.12, #125) the company window: never 0 experience (the game greys its Company tab), the record keeps its own
+    got = run("""
+      local prog = PG.ensure({ records = { { company = 2, experience = 0, potential = 1, level = 1 } } })
+      local v = PG.view(prog, 2)
+      return v.experience .. " " .. prog.records[1].experience .. " " .. v.level""")
+    check("#125: a company that has not scored is shown 1 experience (its tab not greyed), its record keeps 0", got == "1 0 1", got)
+    run("ENV.MPFEVER_RANKTAB = '0'")
+    got = run("""return tostring(PG.view(PG.ensure({ records = { { company = 2, experience = 0, potential = 1, level = 1 } } }), 2).experience)""")
+    check("MPFEVER_RANKTAB=0: 0 as before", got == "0", got)
+    run("ENV.MPFEVER_RANKTAB = nil")
+    got = run("""
+      local lines = {}
+      PG.detailed = nil
+      PG.tally(PG.ensure({}), REG, TOWNS(1000, 0, 100), GAME, function(s) lines[#lines + 1] = s end, 5)
+      for _, s in ipairs(lines) do if s:find("ranks detail", 1, true) then return s end end
+      return "none" """)
+    check("#125: the detail line names each company's towns", "company 2 (player 102): cargo in 1" in got and "company 1 (player 101): cargo in 0" in got, got)
 
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0

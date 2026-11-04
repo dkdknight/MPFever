@@ -61,6 +61,7 @@ namespace MPFever
             ok &= RunIssue111();
             ok &= RunSession067();
             ok &= RunDlcs();
+            ok &= RunReportMode();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -283,6 +284,30 @@ namespace MPFever
             }
             catch (Exception e) { Check(false, "dlcs: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_DLCS", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.6.12, #125) The company mode a player's problem report names: the host's, from its "session" message, then
+        /// its lobby; the host's own report names its choice; MPFEVER_REPORTMODE=0 as before.</summary>
+        static bool RunReportMode()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_REPORTMODE");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTMODE", null);
+                Check(MainForm.SessionMode("{[\"started\"]=true,[\"speed\"]=1,[\"cmode\"]=\"separate\",[\"cstart\"]=2000000}") == "separate", "report mode: read from the host's session message");
+                Check(MainForm.SessionMode("{[\"started\"]=false,[\"speed\"]=0}") == "" && MainForm.SessionMode("garbage{") == "", "report mode: none in MPFever's own stop message, nor in garbage");
+                Check(MainForm.ModeForReport(false, "shared", "separate", "") == "separate", "report mode: a player names the host's separate companies (#125: it said shared)");
+                Check(MainForm.ModeForReport(false, "shared", "", "separate") == "separate", "report mode: else its lobby's");
+                Check(MainForm.ModeForReport(false, "shared", "", "") == "shared", "report mode: nothing known: as before");
+                Check(MainForm.ModeForReport(true, "separate", "shared", "shared") == "separate", "report mode: the host names its own choice");
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTMODE", "0");
+                Check(MainForm.ModeForReport(false, "shared", "separate", "separate") == "shared", "report mode: MPFEVER_REPORTMODE=0 as before");
+            }
+            catch (Exception e) { Check(false, "report mode: " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_REPORTMODE", kept); }
             return ok;
         }
 

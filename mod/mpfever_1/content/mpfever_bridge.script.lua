@@ -360,6 +360,24 @@ function REFUND.pendingOf(key)
 	return sum
 end
 
+-- (0.6.12) The differences recorded and not booked yet (st.rcost: the replays of a pause are booked at the first step after
+-- it), counted as booked in the checks and the host's money corrections too: the paused checkpoints corrected a replaying game
+-- by the difference, and the booking after the pause added it again (the user's session of 2026-11-03 20:37: -336 456 on the
+-- client, the sum of the eight differences booked at 20:36:20). REFUND.list: this state's copy of st.rcost (the simulation's
+-- own, the interface's from the state it reads). MPFEVER_REFUNDCHECK=0: not counted, 8 records kept, as before.
+REFUND.CHECKED = os.getenv("MPFEVER_REFUNDCHECK") ~= "0"
+function REFUND.unbooked(key)
+	if not REFUND.CHECKED or type(REFUND.list) ~= "table" or #REFUND.list == 0 or REFUND.freeBuilds() then return 0 end
+	local sum = 0
+	for _, rc in ipairs(REFUND.list) do
+		if (rc.n or 0) > 0 and type(rc.cost) == "number" and (key == "balance" or key == "b" .. tostring(rc.co)) then
+			sum = sum + math.floor((rc.got or 0) - rc.cost + 0.5)
+		end
+	end
+	return sum
+end
+function REFUND.heldOf(key) return REFUND.pendingOf(key) + REFUND.unbooked(key) end
+
 function REFUND.book(st, now)
 	-- (a booking whose answer never came is not counted for ever)
 	if #REFUND.pending > 0 then
@@ -425,12 +443,12 @@ local function authValues(reg)
 		local t = {}
 		for _, c in ipairs(reg.list) do
 			local okc, acc = pcall(function() return api.engine.getComponent(c.ent, api.type.ComponentType.ACCOUNT) end)
-			if okc and acc then t["b" .. c.id] = acc.balance + REFUND.pendingOf("b" .. c.id); t["l" .. c.id] = acc.loan end
+			if okc and acc then t["b" .. c.id] = acc.balance + REFUND.heldOf("b" .. c.id); t["l" .. c.id] = acc.loan end
 		end
 		return t
 	end
 	local acc = api.engine.getComponent(api.engine.util.getPlayer(), api.type.ComponentType.ACCOUNT)
-	return { balance = acc.balance + REFUND.pendingOf("balance"), loan = acc.loan }
+	return { balance = acc.balance + REFUND.heldOf("balance"), loan = acc.loan }
 end
 
 -- a client brings its money to the host's value at checkpoint n: the difference measured at the same game time
@@ -608,12 +626,12 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 			local t = {}
 			for _, c in ipairs(reg.list) do
 				local acc = api.engine.getComponent(c.ent, api.type.ComponentType.ACCOUNT)
-				t[#t + 1] = c.id .. ":" .. (acc.balance + REFUND.pendingOf("b" .. c.id)) .. "/" .. acc.loan
+				t[#t + 1] = c.id .. ":" .. (acc.balance + REFUND.heldOf("b" .. c.id)) .. "/" .. acc.loan
 			end
 			return table.concat(t, "|")
 		end
 		local acc = api.engine.getComponent(api.engine.util.getPlayer(), api.type.ComponentType.ACCOUNT)
-		return (acc.balance + REFUND.pendingOf("balance")) .. "/" .. acc.loan
+		return (acc.balance + REFUND.heldOf("balance")) .. "/" .. acc.loan
 	end)
 	parts.money = okm and money or "?"
 	if reg and reg.mode == "separate" then log("companies check at t=" .. tostring(parts.time) .. ": owners {" .. tostring(parts.owners) .. "} money " .. tostring(parts.money)) end
@@ -1379,6 +1397,7 @@ local function simApplyDue(state)
 				if dk then st.doneUid[dk] = now end
 				if a.kind == "hash" then
 					local c0 = os.clock()
+					REFUND.list = st.rcost
 					local okA, auth = pcall(authValues, st.co)
 					local nameSync = K.nameSyncOn()
 					if nameSync then R.nameCollect = {} end
@@ -3398,7 +3417,8 @@ local function handleEvent(userParams, state, src, id, name, param)
 			-- (a shipped native build about to be replayed here, with what it cost its builder: see REFUND.book)
 			st.rcost = st.rcost or {}
 			st.rcost[#st.rcost + 1] = { at = gameTime(), uid = param.uid, cost = tonumber(param.cost), co = param.co, got = 0, n = 0, kind = param.kind }
-			while #st.rcost > 8 do table.remove(st.rcost, 1) end
+			-- (0.6.12: 256 kept; the oldest of a long pause's builds were dropped unbooked beyond 8)
+			while #st.rcost > (REFUND.CHECKED and 256 or 8) do table.remove(st.rcost, 1) end
 		elseif name == "replay_stats" then
 			-- (a shipped native build about to be replayed here, with its builder's town statistics: see SIM.townStats)
 			local okT, errT = pcall(SIM.townExpect, st, param)
@@ -17766,6 +17786,7 @@ local function guiUpdate(userParams, state, guiState)
 	G.simTerrainSig = st.terrainSig
 	G.simBuildIds = st.buildIds
 	G.co = st.co
+	REFUND.list = st.rcost
 	local okco, errco = pcall(coGui, st)
 	if not okco then log("companies (gui): " .. tostring(errco)) end
 	-- (0.6) the game options: the host's options into the game (f_opts), the modules' gui (mpfever_feat.lua); nothing while no option

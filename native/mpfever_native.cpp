@@ -799,10 +799,24 @@ static u32 RVA_SWAP = 0x9d2d20;      // CommandList::Swap
 extern "C" void* LinesDetour(void* out, void* a2, void* a3, void* a4, void* a5, u32 player, void* a7, void* a8)
 {
     u32 canon = (u32)g_canon, mine = (u32)g_localPlayer;
+    u32 asked = player;
     { static volatile long seen = 0; if (_InterlockedIncrement(&seen) <= 2) { Buf b; b.str("line viewer: lines of company ").dec(player).str(" asked"); LogLine(b); } }
     if (canon && mine && canon != mine && player == canon) {
         player = mine;
         if (_InterlockedIncrement(&g_linesShown) <= 3) { Buf b; b.str("line routes: the viewer asks for company ").dec(canon).str(", shown for ").dec(mine); LogLine(b); }
+    }
+    // (0.6.12, the line routes gone after a resynchronisation and back for an instant every few seconds, Discord 2026-11-03)
+    // every change of what the viewers ask and get, with the companies known then (300 lines at most)
+    {
+        static volatile long lastKey = -1, changes = 0;
+        long key = (long)(((u64)asked * 2654435761u) ^ ((u64)player * 40503u) ^ ((u64)canon << 7) ^ ((u64)mine << 3));
+        if (key != lastKey) {
+            lastKey = key;
+            if (_InterlockedIncrement(&changes) <= 300) {
+                Buf b; b.str("line viewer: asks ").dec(asked).str(", given ").dec(player).str(" (savegame company ").dec(canon).str(", this machine ").dec(mine).str(")");
+                LogLine(b);
+            }
+        }
     }
     return g_linesOrig(out, a2, a3, a4, a5, player, a7, a8);
 }
@@ -1494,12 +1508,20 @@ static void DropCanon(const char* why)
 }
 
 // The game states this machine's player was written into, with the control token of that value (see ApplyLocalPlayer)
-static void* g_doneSlot[16]; static long g_doneTok[16]; static int g_nDone = 0;
+#include "state_seen.h"
+static bool SeenFirst()
+{
+    static long v = -1;
+    if (v < 0) { char e[4]; v = GetEnvironmentVariableA("MPFEVER_SEENFIRST", e, 3) > 0 ? 1 : 0; }
+    return v == 1;
+}
+static void* g_doneSlot[SEEN_MAX]; static long g_doneTok[SEEN_MAX]; static int g_nDone = 0, g_doneNext = 0;
 static void NoteWritten(void* slot)
 {
     int di = -1;
     for (int i = 0; i < g_nDone; i++) if (g_doneSlot[i] == slot) di = i;
-    if (di < 0) { di = g_nDone < 16 ? g_nDone++ : 0; g_doneSlot[di] = slot; }
+    // (0.6.12: the oldest place once full, see state_seen.h)
+    if (di < 0) { di = SeenPlace(&g_nDone, &g_doneNext, SeenFirst()); g_doneSlot[di] = slot; }
     g_doneTok[di] = g_localTok;
 }
 // A game loaded in the same process can get its game state at the address of the previous one: no new state to notice. The word,
@@ -1516,7 +1538,7 @@ static bool ReloadedAt(void* slot, u32 cur, u32 want)
         NoteStale(0, g_localPlayer);
         g_localPlayer = 0;
         g_nOthers = 0;
-        g_nDone = 0;
+        g_nDone = 0; g_doneNext = 0;
         DropCanon("a game was loaded");
         return true;
     }
@@ -1529,11 +1551,13 @@ static void ApplyLocalPlayer(const char* why)
     // word is written into every one, at the moment it applies a command (so it is alive). A state never seen before while a
     // value is set is a game that has just been loaded (resynchronisation): the entity ids of the previous one mean nothing
     // there until the mod asks again (it does, every few seconds).
-    static void* seen[16]; static int nseen = 0;
+    static void* seen[SEEN_MAX]; static int nseen = 0, seenNext = 0;
     bool known = false;
     for (int i = 0; i < nseen; i++) if (seen[i] == g_slot) known = true;
     if (!known) {
-        if (nseen < 16) seen[nseen++] = g_slot; else seen[0] = g_slot;
+        // (0.6.12: the oldest place once full. Always the first one before: after about eight games loaded in this process the two
+        // states of the engine took it in turn and this machine's player was forgotten at every batch, see state_seen.h)
+        seen[SeenPlace(&nseen, &seenNext, SeenFirst())] = g_slot;
         // the savegame's company too: the simulation's readings of the word are redirected to it (PatchPlayerReads), and a new
         // game after a session of companies read the company of the game before, an entity that is something else there (a
         // group of trees): the game's scripts failed and the engine closed the game when it booked money on it (issue #88)

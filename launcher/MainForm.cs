@@ -99,6 +99,7 @@ namespace MPFever
         // the host and sent with the lobby; a player who joins sees them as lobbyColors ("name:index,...") and the host's mode
         readonly Dictionary<string, int> lobbyColorOf = new Dictionary<string, int>();
         string lobbyColors = "", lobbyMode = "";
+        string hostCompanyMode = "";   // (a player) the host's company mode, from its "session" messages: see ReportCompanyMode
         // one company per player: the computer companies of the host's lobby (experimental, 0.5.12), by number n of their key
         // "ai:<n>" in the companies' registry: their colour (palette index) and name (a savegame's, "" for a new one). Those of the
         // lobby's savegame are there from the start (SaveInfo.AiCompanies); the host adds, removes and colours them. Sent to the
@@ -963,7 +964,7 @@ namespace MPFever
                 Log.Ok(F("Rapport de problème : {0} ({1:0.0} Mo)", "Problem report: {0} ({1:0.0} MB)", zip, size / 1048576.0));
                 if (left.Count > 0) Log.W(F("Laissés de côté (trop gros) : {0}", "Left out (too large): {0}", string.Join(", ", left)));
                 var body = Reporter.IssueBody(Path.GetFileName(zip), size, summary, crashed);
-                var title = (crashed ? "Crash" : "Problem") + " (MPFever " + Version + ", " + (companyMode == "separate" ? "separate companies" : "shared company") + ")";
+                var title = (crashed ? "Crash" : "Problem") + " (MPFever " + Version + ", " + (ReportCompanyMode() == "separate" ? "separate companies" : "shared company") + ")";
                 try { BeginInvoke((Action)(() => { try { Clipboard.SetText(body); } catch { } })); } catch { }
                 Reporter.ShowInExplorer(zip);
                 Reporter.OpenIssue(title, body);
@@ -979,12 +980,37 @@ namespace MPFever
         /// <summary>The session as a problem report describes it, two lines: the company mode and this MPFever's role (with the
         /// host), then the players and whether the game runs. joining: a player whose join or reconnection is under way, with no
         /// connection to the host right now (a "client", not "no session").</summary>
+        /// <summary>(0.6.12, #125) The company mode a problem report names. companyMode is the host's own choice (its lobby, the
+        /// dedicated server's settings): a player's launcher never sets it, and every player's report said "shared company"
+        /// (#110, #113, #115, #125, all separate). A player names the host's mode, from its "session" messages, else from its
+        /// lobby. MPFEVER_REPORTMODE=0: companyMode, as before.</summary>
+        string ReportCompanyMode() => ModeForReport(hostGame != null || server != null, companyMode, hostCompanyMode, lobbyMode);
+
+        internal static string ModeForReport(bool ownsSession, string own, string fromHost, string fromLobby)
+        {
+            if (ownsSession || Environment.GetEnvironmentVariable("MPFEVER_REPORTMODE") == "0") return own;
+            if (fromHost == "separate" || fromHost == "shared") return fromHost;
+            if (fromLobby == "separate" || fromLobby == "shared") return fromLobby;
+            return own;
+        }
+
+        /// <summary>The company mode of a host's "session" message (its "cmode"), or "".</summary>
+        internal static string SessionMode(string payload)
+        {
+            try
+            {
+                var d = LuaLit.Parse(payload) as Dictionary<object, object>;
+                return d != null && d.TryGetValue("cmode", out var v) && v is string s ? s : "";
+            }
+            catch { return ""; }
+        }
+
         string SessionLines(bool joining)
         {
             bool st; lock (sessionGate) st = started;
             string role = server != null ? "dedicated server" : hostGame != null ? "host" : clients.Count > 0 ? "client" : joining ? "client (not connected)" : "no session";
             string[] ready; lock (players) ready = players.ToArray();
-            return "Company mode: " + (companyMode == "separate" ? "one company per player" : "one company for everybody") + "; role: " + role
+            return "Company mode: " + (ReportCompanyMode() == "separate" ? "one company per player" : "one company for everybody") + "; role: " + role
                 + (hostName != null ? " (host " + BaseName(hostName) + ")" : "") + Environment.NewLine
                 + "Players: " + (ready.Length > 0 ? string.Join(", ", ready.Select(BaseName)) : "-") + "; game running: " + (st ? "yes" : "no");
         }
@@ -2860,6 +2886,8 @@ namespace MPFever
                 };
                 client.Received += m =>
                 {
+                    // (0.6.12, #125: the host's company mode, for this player's problem reports; the message goes on to the game)
+                    if (m.Kind == "session") { var cm = SessionMode(m.Payload); if (cm != "") hostCompanyMode = cm; }
                     if (m.Kind == "resync_file" || m.Kind == "resync_bin") { OnResyncFile(game, m); return; }
                     if (m.Kind == "resync_use") { OnResyncUse(game, client, name, m); return; }
                     if (m.Kind == "delta_bin") { OnDeltaFile(game, client, name, m); return; }

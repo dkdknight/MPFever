@@ -6,6 +6,33 @@ MPFever - Changelog
     not good enough yet). The Settings tab turns them on ("vdots=1" in ui_prefs.txt, kept across launches); the "dots=1" that
     0.6.10 and 0.6.11 wrote for everybody who changed any setting is no choice and is left aside. MPFEVER_DOTSON=1: on by
     default as in 0.6.11; MPFEVER_DOTS=0/1 decides alone (autotests). Test: tests/test_dots.py.
+  - FIX (one company per player, #125): the game's company window greys its Company tab while the company's experience is
+    0 (game_mechanics/company/company.tl), and a company that had not scored yet showed it greyed: its players took it for
+    closed. The window is now given at least 1 (display only, the rank's record keeps its own). MPFEVER_RANKTAB=0: as before.
+    The ranks' log gets a detail line (on the first sample of a game, every 4 game months, every sample with
+    MPFEVER_RANKDETAIL=1): per company the towns where it carried cargo and passengers and where it scored, the lines of
+    the statistics that belong to no company, and the raw statistics of the most populous town. Test: tests/test_ranks.py.
+  - FIX (problem reports, #125): a player's report said "shared company" in its title and "one company for everybody" in its
+    session line whatever the host chose (#110, #113, #115, #125 were all one company per player): the company mode was
+    the host's own setting, never set on a player's launcher. A player's report now names the host's mode (its "session"
+    messages, else its lobby). MPFEVER_REPORTMODE=0: as before. Test: MPFever.exe --selftest (RunReportMode).
+  - FIX (money, both modes, the user's session of 2026-11-03 20:37): the replays of a pause are booked at the first step
+    after it (the difference between what the build cost its builder and its replay here). The checkpoints of the pause
+    compared the money without them: the host corrected the replaying game by the difference, and the booking after the pause
+    added it again (-336 456 on the client, the sum of its eight differences). The differences not booked yet now count as
+    booked in the money checks and in the host's corrections, as a booking not applied yet already did, and 256 of them are
+    kept (8 before: a long pause of builds dropped the oldest unbooked). MPFEVER_REFUNDCHECK=0: as before.
+    Test: tests/test_refundcheck.py.
+  - FIX (one company per player, line routes and tools after a resynchronisation, Discord 2026-11-03): the native module
+    keeps two lists of 16 game states (the states this machine's player was written into, the states seen applying
+    commands: a state never seen is a game just loaded). Once full, a new state always took the first place: after about
+    eight games loaded in one game process (the session's start and every resynchronisation bring two states), the two
+    states the engine runs its batches on took that place in turn, each was "a new game state" at every batch, and this
+    machine's player and the savegame's company were forgotten at every batch. The mod says them again every 400 frames: the
+    line routes on the map showed for an instant every few seconds, and the tools built for the savegame's company in
+    between. A state not in a full list now takes the place of the oldest one (native/state_seen.h).
+    MPFEVER_SEENFIRST=1: as before. The line viewers' log line now says every change of what they ask and get.
+    Test: tests/test_stateseen.py.
 
 0.6.11 - 2026-11-03: smoother dots, computer companies on a new map and depot tolls (#122), the names checks (#121)
   - NEW (one company per player): the colour dots over the other companies' vehicles follow them. The game's HUD image stays
