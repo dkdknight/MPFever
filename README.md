@@ -120,7 +120,7 @@ See [SERVER](docs/SERVER.txt).
 
 - Automatic updates of MPFever.
 - Smooth game speed between players.
-- **Responsive builds** (experimental host setting, off at first): your builds show at once on your game, so you can attach the next piece right away.
+- **Responsive builds** (host setting, on at first): your builds show at once on your game, so you can attach the next piece right away.
 - **Game options (0.6, all off by default)**, chosen by the host in the lobby and kept in the savegame: players' journal and "built by", ranking and game goal, competition (market shares), territories and handicaps, tenders, permissions and plans, trade between companies, stock market, public games (ban list, approval of arrivals).
 - The 13 languages of the game.
 
