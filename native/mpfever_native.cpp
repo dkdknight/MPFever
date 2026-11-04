@@ -4468,7 +4468,9 @@ static void ReadPace()
         while (i < got && buf[i] == ' ') i++;
         while (i < got && buf[i] >= '0' && buf[i] <= '9') seq = seq * 10 + (buf[i++] - '0');
         if (seq != g_trimSeq) { g_trimSeq = seq; g_trimSeqAt = now; }
-        if (v >= 500 && v <= 2500) g_trim = v;
+        // (0.6.12: down to 100, the "fast stand" of the bridge: while this game stands at a step for another player's build and
+        // its replay is at the engine, the batches carry no step and only the exchange of commands goes faster, see G.smoothPace)
+        if (v >= 100 && v <= 2500) g_trim = v;
     }
     if (g_trim != 1000 && now - g_trimSeqAt > 5000) g_trim = 1000;
 }
@@ -4481,7 +4483,8 @@ extern "C" u64 SyncCallWrap(void* cgame, void* fn)
     }
     if (!(r & 0xFF) || g_paceOff) return r;
     DWORD now = GetTickCount();
-    if (now - g_paceReadAt >= 250) { g_paceReadAt = now; ReadPace(); }
+    // (a fast stand is asked for one replay: read at every batch while the factor is below 1, every 250 ms otherwise)
+    if (now - g_paceReadAt >= 250 || g_trim < 1000) { g_paceReadAt = now; ReadPace(); }
     long trim = g_trim;
     if (trim == 1000) return r;
     u8* cg = (u8*)cgame;

@@ -3971,12 +3971,32 @@ end
 -- 15 to 50 % slower, 50 to 300 ms apart: no stop left at 1x and 2x up to 30 % slower, fewer at 4x.) MPFEVER_SMOOTH=0 turns
 -- it off.
 G.smooth = { on = os.getenv("MPFEVER_SMOOTH") ~= "0", trim = 1, written = 1, frame = -1000, seq = 0 }
+G.fastStand = os.getenv("MPFEVER_FASTSTAND") == "1"
 G.smoothPace = function(sp)
 	local S = G.smooth
 	if not S.on then return end
 	local s = G.session
 	local target = 1
 	local okT, now = pcall(gameTime)
+	-- (0.6.12, MPFEVER_FASTSTAND=1) this game stands at a step for another player's build (or in a pause) while its replay is at
+	-- the engine: every command waits for the next batch to go to the simulation and for the one after to come back (up to
+	-- 200 ms each way; two commands for a station edit). The batches carry no step then (the native stop point, or the pause),
+	-- so they are made ten times shorter (20 ms), only while the replay is out, written at once both ways.
+	if G.fastStand then
+		local standing = okT and (G.replayOut or 0) > 0 and (sp == 0 or (G.holdAt ~= nil and now >= G.holdAt))
+		local want = standing and 0.1 or nil
+		if want or S.trim < 1 then
+			S.trim = want or 1
+			if S.trim ~= S.written then
+				S.written, S.frame, S.seq = S.trim, G.frames, S.seq + 1
+				local f = C.IO.open(C.DIR .. BS .. "native_pace.txt", "wb")
+				if f then f:write(tostring(math.floor(S.trim * 1000 + 0.5)) .. " " .. S.seq .. NL); f:close() end
+				S.fastN = (S.fastN or 0) + (want and 1 or 0)
+				if want and S.fastN <= 3 then log("fast stand: batches of 20 ms while a replay is at the engine [frame " .. G.frames .. "]") end
+			end
+			if want then return end
+		end
+	end
 	-- (running at the session's speed, nothing held or stepped exactly: the stop points keep their own logic)
 	if okT and s.started and s.pauseAt == nil and sp > 0 and sp == s.speed and G.holdAt == nil and not G.stepTarget and G.lastBarrier then
 		local per = math.max(1, sp)                                  -- steps per batch
