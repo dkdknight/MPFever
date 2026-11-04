@@ -75,6 +75,8 @@ end
 -- (noName: the texts kept under "name" left out. The subsidies' script keeps the title of each one in the language of the
 -- game that made it, "Transport Workers" here and "Arbeiter transportieren" there: games in different languages were found
 -- out of sync and reloaded at every new subsidy, #102. MPFEVER_SUBNAMES=1: hashed as before)
+-- (the game's scripts forbid new globals: kept in the common module's table)
+C.marketingHash = os.getenv("MPFEVER_MARKETINGHASH") ~= "0"
 local function valueHash(v, d, noName)
 	local t = type(v)
 	if t == "number" then
@@ -88,10 +90,21 @@ local function valueHash(v, d, noName)
 	elseif t == "table" then
 		if d > 14 then return 13 end
 		local acc = 17
+		-- (0.6.12) a town's marketing campaign that is not running: the game's town_util.getTownState writes these two fields
+		-- with their defaults (timestamp 0, duration 0) into every town a build touches, and the town's next update drops them
+		-- again (applyEventDecay keeps a campaign only while it runs). A build and its replay do not touch exactly the same
+		-- towns (towns with no effect at all are listed by one only), so the fields stood in one game's state and not in the
+		-- other's until that update, through a whole pause: "script:towns" differed and the games reloaded (the user's session
+		-- of 2026-11-03 20:37, after three maintenance stations built in a pause). Both forms mean no campaign
+		-- (isMarketingActive): they hash alike. MPFEVER_MARKETINGHASH=0: as before.
+		local idle = (v.marketingInitiatedTimestamp ~= nil or v.marketingParams ~= nil) and (tonumber(v.marketingInitiatedTimestamp) or 0) <= 0
+			and C.marketingHash
 		for k, x in pairs(v) do
 			-- local counters, not game state: entity revisions (bumped by each game's own component writes) and the
 			-- interface clock of the mission script
-			if k ~= "revision" and k ~= "guiTimeSeconds" and not (noName and k == "name" and type(x) == "string") then
+			if idle and (k == "marketingInitiatedTimestamp" or k == "marketingParams") then
+				-- (an idle campaign's default fields, see above)
+			elseif k ~= "revision" and k ~= "guiTimeSeconds" and not (noName and k == "name" and type(x) == "string") then
 				acc = (acc + C.hashStr(valueHash(k, d + 1), tostring(valueHash(x, d + 1, noName)))) % 4294967296
 			end
 		end
@@ -4173,6 +4186,7 @@ local function replaySend(cmd, cb)
 	-- each) and the player's own next builds were taken as replays and never shipped (issues #64, #66)
 	local counted = (G.replayCounted or 0) > 0 and os.getenv("MPFEVER_REPLAYUNUSED") ~= "0"
 	if counted then G.replayCounted = G.replayCounted - 1 end
+	if G.lagCommand then pcall(G.lagCommand) end
 	G.replayOut = (G.replayOut or 0) + 1
 	G.replaySince = G.frames
 	-- (another player's build reaches the engine here: a build this game holds was computed before it, see G.restale)
@@ -7639,7 +7653,10 @@ end
 local function expireNativeWaits()
 	local keep = {}
 	local secs = tonumber(os.getenv("MPFEVER_NATWAITSECONDS") or "60") or 60
+	-- (0.6.12, the lag line: the moment this game came to the build's time, see G.lagLine)
+	local okN, nowN = pcall(gameTime)
 	for _, w in ipairs(G.natWait) do
+		if okN and not w.reachedT and type(w.at) == "number" and nowN >= w.at then w.reachedT = os.clock() end
 		if not w.arrived and G.frames - w.since > 1800 and (secs <= 0 or not w.sinceT or os.clock() - w.sinceT > secs) then
 			log("NATIVE build of " .. tostring(w.origin) .. " for t=" .. tostring(w.at) .. " never arrived: no longer holding (desync risk)")
 		else
@@ -7658,16 +7675,48 @@ end
 -- the data of an announced build is here: hold at its real time (the capture may come a step after the announce)
 nativeReceived = function(a)
 	for _, w in ipairs(G.natWait) do
-		if matchesWait(w, a) then w.at = a.at; w.arrived = true end
+		if matchesWait(w, a) then w.at = a.at; w.arrived = true; w.gotT = w.gotT or os.clock() end
 	end
 end
 
 local function nativeArrived(a)
 	local keep = {}
 	for _, w in ipairs(G.natWait) do
-		if not matchesWait(w, a) then keep[#keep + 1] = w end
+		if not matchesWait(w, a) then keep[#keep + 1] = w else G.lagW = w end
 	end
 	G.natWait = keep
+end
+
+-- (0.6.12) The lag line of each build of another player replayed here: how long this game stood at the build's time, waiting
+-- for its data and then for its replay, with the data's size. One line per build ("LAG ..."), the measure of the freezes the
+-- players feel (big stations: the user's test of 2026-11-03 23:17). MPFEVER_LAGLINE=0: none.
+G.lagStart = function(a)
+	if os.getenv("MPFEVER_LAGLINE") == "0" then G.lagCur = nil; return end
+	local w = G.lagW
+	G.lagW = nil
+	if w and not matchesWait(w, a) then w = nil end
+	local bytes = nil
+	pcall(function() bytes = a.lagBytes end)
+	G.lagCur = { uid = a.uid, at = a.at, sentT = os.clock(), sentF = G.frames, w = w, bytes = bytes, cmds = 0 }
+end
+G.lagCommand = function()
+	if G.lagCur then G.lagCur.cmds = G.lagCur.cmds + 1; G.lagCur.lastT = os.clock() end
+end
+-- (from the interface's frame: once the replay has nothing at the engine for 10 frames)
+G.lagLine = function()
+	local L = G.lagCur
+	if not L or (G.replayOut or 0) > 0 or not L.lastT or G.frames - (L.doneF or G.frames) < 10 then
+		if L and (G.replayOut or 0) == 0 and L.lastT and not L.doneF then L.doneF = G.frames; L.doneT = os.clock() end
+		if L and (G.replayOut or 0) > 0 then L.doneF = nil end
+		return
+	end
+	G.lagCur = nil
+	local function ms(a, b) return (a and b) and string.format("%.0f", (b - a) * 1000) or "?" end
+	local w = L.w or {}
+	local from = w.reachedT or L.sentT
+	log("LAG " .. tostring(L.uid) .. " for t=" .. tostring(L.at) .. ": this game stood " .. ms(math.min(from, L.sentT), L.doneT) .. " ms at its time ("
+		.. ms(w.reachedT, w.gotT) .. " ms for its data, " .. ms(w.gotT or w.reachedT, L.sentT) .. " ms before its replay, " .. ms(L.sentT, L.doneT) .. " ms of replay, "
+		.. L.cmds .. " command(s)); data " .. ms(w.sinceT, w.gotT) .. " ms after its announce" .. (L.bytes and (", " .. L.bytes .. " bytes") or ""))
 end
 
 -- (0.5.14, issue #96) Whether another game's build that came too late here is left unbuilt: this game already built something
@@ -8361,6 +8410,7 @@ local function runNativeReplays()
 						.. " wantSteps=" .. tostring(G.wantSteps) .. " barrier=" .. tostring(G.lastBarrier) .. " replayOut=" .. tostring(G.replayOut)
 						.. " [frame " .. G.frames .. "]")
 				end)
+				pcall(G.lagStart, a)
 				okr, errr = pcall(withActor, PL(a), replayNative, a, 1)
 				G.refund = nil
 			end
@@ -17761,7 +17811,10 @@ local function guiUpdate(userParams, state, guiState)
 		if kind then
 			local h = H[kind]
 			if h then
+				local nb = #payload
 				payload = C.deser(payload) or {}
+				-- (the size of an action, for its lag line, see G.lagLine)
+				if kind == "act" and nb > 20000 then payload.lagBytes = nb end
 				if G.staleNow and G.staleDrop(kind, payload, G.staleNow) then h = nil end
 				if h then
 					local ok, err = pcall(h, from, payload)
@@ -17838,6 +17891,7 @@ local function guiUpdate(userParams, state, guiState)
 			pollNativeEvents()
 			runNativeRelease()
 			expireNativeWaits()
+			if G.lagCur then pcall(G.lagLine) end
 		end)
 		if not okv then log("native deferral failed: " .. tostring(errv)) end
 	end

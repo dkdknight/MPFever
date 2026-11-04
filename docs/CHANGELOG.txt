@@ -33,6 +33,17 @@ MPFever - Changelog
     between. A state not in a full list now takes the place of the oldest one (native/state_seen.h).
     MPFEVER_SEENFIRST=1: as before. The line viewers' log line now says every change of what they ask and get.
     Test: tests/test_stateseen.py.
+  - FIX (desync "script:towns", both modes, the user's session of 2026-11-03 20:37 and likely #126's last reload): the game's
+    town_util.getTownState writes an idle marketing campaign (timestamp 0, duration 0) into every town a build touches, and
+    the town's next update drops it again. A build and its replay do not touch exactly the same towns (a town with no effect
+    at all is listed by one only), so these two fields stood in one game's state only, through the whole pause, and the
+    games reloaded. Replaying that session from its savegame (both games replaying) gave equal towns; the host's own report
+    showed the fields missing on the builder's game, the only difference with the replay. An idle campaign now hashes as no
+    campaign (both mean none for the game, isMarketingActive); a running one still counts. MPFEVER_MARKETINGHASH=0: as
+    before. Test: tests/test_townhash.py.
+  - NEW (diagnostic): every build of another player replayed here writes a "LAG" line: how long this game stood at its time,
+    waiting for its data and then for its replay, the commands it took and the data's size (the measure of the freezes on
+    big stations, the user's test of 2026-11-03 23:17). MPFEVER_LAGLINE=0: none. Test: tests/test_lagline.py.
 
 0.6.11 - 2026-11-03: smoother dots, computer companies on a new map and depot tolls (#122), the names checks (#121)
   - NEW (one company per player): the colour dots over the other companies' vehicles follow them. The game's HUD image stays
