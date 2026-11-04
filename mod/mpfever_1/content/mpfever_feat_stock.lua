@@ -34,6 +34,11 @@ M.ID = "stock"
 
 -- (a value's label in the lobby: a percentage, yes or no)
 local function pct(v) return tostring(v) .. " %" end
+-- (a number of months shown as years: "2 years")
+local function years(v, T)
+	local f = T and T("%s ans", "%s years") or "%s years"
+	return (f:gsub("%%s", tostring(math.floor((tonumber(v) or 24) / 12))))
+end
 local function yesNo(v, T)
 	if T then return (tonumber(v) == 1) and T("Oui", "Yes") or T("Non", "No") end
 	return (tonumber(v) == 1) and "Yes" or "No"
@@ -49,6 +54,8 @@ M.OPTIONS = {
 			{ id = "premium", label = { "Prime de rachat", "Takeover premium" }, values = { 0, 10, 25, 50, 75, 100 }, default = 25, show = pct },
 			{ id = "ai_buyable", label = { "IA rachetables", "Computer companies can be taken over" }, values = { 0, 1 }, default = 1, show = yesNo },
 			{ id = "dividend", label = { "Dividendes (part du résultat du mois)", "Dividends (share of the month's result)" }, values = { 0, 10, 25, 50, 75 }, default = 25, show = pct },
+			-- (0.6.12, a player's suggestion on Discord: 2 years only before)
+			{ id = "protect", label = { "Protection d'une nouvelle entreprise", "A new company's protection" }, values = { 24, 60, 120 }, default = 24, show = years },
 		} },
 }
 M.EVENTS = { f_stock_price = true, f_stock_buy = true, f_stock_sell = true }
@@ -56,7 +63,7 @@ M.TAB = { id = "stock", title = { "Bourse", "Stocks" } }
 
 M.SHARES = 10        -- shares of a company
 M.LIMIT = 2          -- shares a company buys of another one (or of itself) in a game month
-M.PROTECT = 24       -- months a new company's shares are not for sale
+M.PROTECT = 24       -- months a new company's shares are not for sale (the host's "protect" parameter since 0.6.12: 24, 60 or 120)
 M.SPREAD = 98        -- a sale gets 98 % (against buying and selling over and over)
 M.FLOOR_MIN = 1000   -- the lowest price of a share, whatever the start money
 M.NEWS = 20          -- what happened, the last 20 (told in every game's chat)
@@ -66,7 +73,7 @@ M.SETTLE = 5         -- seconds a company's entity is known before the host read
 -- savegame. Read once; every game of the test is started with the same value)
 pcall(function()
 	local p = os.getenv("MPFEVER_SCENARIO") and tonumber(os.getenv("MPFEVER_STOCKPROTECT") or "")
-	if p then M.PROTECT = math.max(0, math.floor(p)) end
+	if p then M.PROTECT = math.max(0, math.floor(p)); M.TESTPROTECT = M.PROTECT end
 end)
 
 -- ---------------------------------------------------------------- small helpers (both halves)
@@ -142,7 +149,8 @@ end
 M.opts = function(env)
 	return { premium = math.max(0, math.min(100, math.floor(opt(env, "premium", 25)))),
 		ai = math.floor(opt(env, "ai_buyable", 1)) == 1,
-		dividend = math.max(0, math.min(100, math.floor(opt(env, "dividend", 25)))) }
+		dividend = math.max(0, math.min(100, math.floor(opt(env, "dividend", 25)))),
+		protect = M.TESTPROTECT or math.max(0, math.min(240, math.floor(opt(env, "protect", M.PROTECT)))) }
 end
 
 -- the lowest price of a share: a twentieth of a new company's start money for the 10 shares (10 000 for 2 million)
@@ -343,8 +351,9 @@ local function applyPrice(st, S, param, env)
 		set1(S, "result", k, row.r)
 		set1(S, "cash", k, row.c)
 		if not (S["until"] and S["until"][k]) then
-			-- (listed for the first time: protected; at the opening, only up to the game's 24th month)
-			set1(S, "until", k, m + (opening and math.max(0, M.PROTECT - age) or M.PROTECT))
+			-- (listed for the first time: protected; at the opening, only up to the game's month of the protection, 24th by default)
+			local protect = M.opts(env).protect
+			set1(S, "until", k, m + (opening and math.max(0, protect - age) or protect))
 		end
 		listed = listed + 1
 	end
@@ -655,7 +664,7 @@ M.fileLines = function(st, env)
 	local S = st.feat and st.feat.stock
 	local o = M.opts(env)
 	local reg = st.co
-	local L = { table.concat({ "opt", o.premium, o.ai and 1 or 0, o.dividend, S and S.month or -1, M.PROTECT, M.LIMIT, M.SHARES }, "\t") }
+	local L = { table.concat({ "opt", o.premium, o.ai and 1 or 0, o.dividend, S and S.month or -1, o.protect, M.LIMIT, M.SHARES }, "\t") }
 	local my = findCo(reg, env.myCo)
 	L[#L + 1] = "me\t" .. tostring(my and my.id or 0) .. "\t" .. tostring(my and my.ent or -1)
 	for _, c in ipairs(reg.list or {}) do

@@ -6,6 +6,8 @@ MPFever - Changelog
     not good enough yet). The Settings tab turns them on ("vdots=1" in ui_prefs.txt, kept across launches); the "dots=1" that
     0.6.10 and 0.6.11 wrote for everybody who changed any setting is no choice and is left aside. MPFEVER_DOTSON=1: on by
     default as in 0.6.11; MPFEVER_DOTS=0/1 decides alone (autotests). Test: tests/test_dots.py.
+  - NEW (game option "stock market", a player's suggestion on Discord): the host chooses how long a new company's shares are not
+    for sale: 2 years (as before), 5 or 10 years ("A new company's protection" in the lobby). Test: tests/test_feat_stock.py.
   - FIX (one company per player, #125): the game's company window greys its Company tab while the company's experience is
     0 (game_mechanics/company/company.tl), and a company that had not scored yet showed it greyed: its players took it for
     closed. The window is now given at least 1 (display only, the rank's record keeps its own). MPFEVER_RANKTAB=0: as before.

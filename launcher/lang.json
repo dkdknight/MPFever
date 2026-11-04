@@ -12936,6 +12936,19 @@
       "zh-CN": "每家公司有 10 股，每月按其价值定价；购股资金归该公司所有。超过 50 % 即收购整家公司。",
       "zh-TW": "每家公司有 10 股，每月按其價值定價；購股資金歸該公司所有。超過 50 % 即收購整家公司。"
     },
+    "A new company's protection": {
+      "de": "Schutz eines neuen Unternehmens",
+      "es": "Protección de una empresa nueva",
+      "it": "Protezione di una nuova azienda",
+      "nl": "Bescherming van een nieuw bedrijf",
+      "pl": "Ochrona nowej firmy",
+      "pt-BR": "Proteção de uma empresa nova",
+      "ru": "Защита новой компании",
+      "ja": "新しい会社の保護期間",
+      "ko": "신규 회사 보호 기간",
+      "zh-CN": "新公司保护期",
+      "zh-TW": "新公司保護期"
+    },
     "Takeover premium": {
       "de": "Übernahmeprämie",
       "es": "Prima de compra",

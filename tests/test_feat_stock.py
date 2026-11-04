@@ -198,7 +198,7 @@ for _, p in ipairs(M.OPTIONS[1].params) do
   for _, v in ipairs(p.values) do if v == p.default then found = true end end
   ok = ok and found and type(p.label[1]) == "string" and type(p.label[2]) == "string" and type(p.show(p.default, function(fr, en) return en end)) == "string"
 end
-return ok and #M.OPTIONS[1].params == 3 and M.OPTIONS[1].title[1] == "Bourse" and M.OPTIONS[1].desc[2] ~= nil'''), "3 parameters, defaults among the values, French and English")
+return ok and #M.OPTIONS[1].params == 4 and M.OPTIONS[1].title[1] == "Bourse" and M.OPTIONS[1].desc[2] ~= nil'''), "4 parameters, defaults among the values, French and English")
 check(run(A, '''local d = {} for _, p in ipairs(M.OPTIONS[1].params) do d[p.id] = p.default end
 return d.premium == 25 and d.ai_buyable == 1 and d.dividend == 25'''), "defaults: premium 25 %, computer companies can be taken over, dividends 25 %")
 check(run(A, 'for k in pairs(M.EVENTS) do if k:sub(1, 8) ~= "f_stock_" then return false end end return true'), "events named f_stock_*")
@@ -400,6 +400,19 @@ run(A, "ev('f_stock_buy', { co = 3, n = 1 }, 'Host', 1)")
 check(run(A, "return #BOOKS") == n0 and "no company" in run(A, "return lastLog()"), "a company taken over buys nothing any more")
 run(A, "ev('f_stock_sell', { co = 1, n = 1 }, 'Dan#3', 5)")
 check(run(A, "return #BOOKS") == n0 and "no company" in run(A, "return lastLog()"), "a bankrupt company sells nothing")
+
+# ---------------------------------------------------------------------------------------------- (0.6.12) the protection's length
+print("the protection's length chosen by the host (2, 5 or 10 years)")
+P = new_game(0)
+run(P, '''OPTS.stock = true; PARAMS.protect = 60; M.month(st, env)
+ev("f_stock_price", { month = 100, rows = "1,5000000,0,5000000;2,2000000,0,2000000", age = 10 }, "Host", 1)''')
+check(run(P, "return S()['until']['1']") == 150, "5 years: a game 10 months old opens protected 50 more months")
+run(P, '''addCompany(5, 'dan', 'Dan Co'); MONTH = 101; M.month(st, env)
+ev("f_stock_price", { month = 101, rows = "1,5000000,0,5000000;2,2000000,0,2000000;5,2000000,0,2000000" }, "Host", 1)''')
+check(run(P, "return S()['until']['5']") == 161, "5 years: a new company protected 60 months")
+check(run(P, "PARAMS.protect = 120; return M.opts(env).protect") == 120, "10 years: 120 months")
+check(run(P, "PARAMS.protect = nil; return M.opts(env).protect") == 24, "the default: 2 years, as before")
+check(run(P, "return M.OPTIONS[1].params[4].show(60)") == "5 years", "shown in years in the lobby")
 
 # ---------------------------------------------------------------------------------------------- protection at the opening
 print("the protection at the opening of a young game")
