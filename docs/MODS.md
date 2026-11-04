@@ -35,6 +35,18 @@ The version is compared from the mod's files (their paths, sizes and the content
 | Vehicles, wagons, trams, buildings, stations, streets, tracks, assets (ModWerkstatt, MaikC, ACCAD assets, Classic/Early packs...) | no risk known | Content only. |
 | Dark UI, Doubleclick To Edit, Easy Terminal Assignment, Disable Unreachable Terminals, Highlight Preferred Terminal, Industry Boosts at a Glance, Traffic Jam Analyzer, Better Minimap, Drive-in Warehouses | no risk known | Interface, or data changed at load. Their commands, when they send any, go through MPFever like the player's. |
 
+## Mods seen since (November 2026)
+
+| Mod | Status | Why |
+|---|---|---|
+| Overpass Builder, Auto Line Namer, Doubleclick To Edit, Auto Signals, Parallel Tracks | **seen working** | Played for hours in one company per player with two players, with no error ([Discussion #118](https://github.com/dkdknight/MPFever/discussions/118)). |
+| Auto Road Upgrade | **avoid in multiplayer** | Its script upgrades streets by itself, on each game at its own moments: it can desynchronise the game (0.6.11's tests). It was in the savegame of a session that resynchronised while building ([#119](https://github.com/dkdknight/MPFever/issues/119)). |
+| No costs (the game's own mod) | made compatible | Building is free, but the builds still say what they would cost: MPFever booked the difference between the builder's and the replay's price on the other games at every build. Since 0.6.7 nothing is booked with it. |
+| Advanced Station Builder, Advanced Track Patterns, Move It, Road&Rail Station Expander, Eisenbahn Unterführung, Where's the Problem? (Line Diagnostics), Cargo & Passenger Station Range | untested script | Seen in a host's savegame (#119). Their tools build through the game's own commands, which MPFever shares; a script that builds by itself may drift. |
+| Vehicles, wagons, stations, depots, bridges, landmarks and maps (Siemens Vectron, V200, TGV PSE/Atlantique, Mercedes-Benz Actros L, Modern Railway Depot, Roundhouse with turntable, Truss Arch Bridge, Observatory, Wind Turbines, Germany - Mittellandkanal, Realistic Front Lights, Realistic Seat Capacity, Dark Overlays, Vehicles: No End Year...) | no risk known | Content, interface or game data changed at load (#119). |
+
+**The game's DLCs are not mods but count the same way** (0.6.9): the Deluxe edition's upgrade pack and the pre-order pack put their animals, people and vehicles in the world of the PC that owns them only. Every player needs the same DLCs; the lobby shows a red warning when they differ.
+
 ## How MPFever 0.4.0 handles mod scripts
 
 - **Line names, colours and line updates sent by a mod's simulation script** are taken from the host's game only and applied on every game at the same step, like a player's command. The other games drop their own. Expert setting: « Mods' line names, colours and terminals sent by the host only ».
