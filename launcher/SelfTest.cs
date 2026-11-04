@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -62,6 +62,7 @@ namespace MPFever
             ok &= RunSession067();
             ok &= RunDlcs();
             ok &= RunReportMode();
+            ok &= RunFineTimer();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -308,6 +309,30 @@ namespace MPFever
             }
             catch (Exception e) { Check(false, "report mode: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_REPORTMODE", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.6.12) The 1 ms timer: asked and given back, measured on a Thread.Sleep(5); MPFEVER_TIMER1MS=0 asks nothing.</summary>
+        static bool RunFineTimer()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_TIMER1MS");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_TIMER1MS", null);
+                bool on = FineTimer.Begin();
+                Check(on, "timer: 1 ms asked");
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                for (int i = 0; i < 20; i++) System.Threading.Thread.Sleep(5);
+                double avg = sw.Elapsed.TotalMilliseconds / 20;
+                if (on) FineTimer.End();
+                Check(avg < 10, "timer: Thread.Sleep(5) lasts " + avg.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms (15.6 with the system's timer)");
+                Environment.SetEnvironmentVariable("MPFEVER_TIMER1MS", "0");
+                Check(!FineTimer.Begin(), "timer: MPFEVER_TIMER1MS=0 asks nothing");
+            }
+            catch (Exception e) { Check(false, "timer: " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_TIMER1MS", kept); }
             return ok;
         }
 

@@ -67,9 +67,27 @@ namespace MPFever
             // the server's archive opens its window by itself (server-edition.txt next to MPFever.exe)
             MainForm.ServerMode = !auto && (args.Contains("--server") || File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, MainForm.ServerEditionFile)));
             if (MainForm.ServerMode) MainForm.ServerArgs(args, updated);
-            Application.Run(new MainForm(auto));
+            bool timer = FineTimer.Begin();
+            try { Application.Run(new MainForm(auto)); }
+            finally { if (timer) FineTimer.End(); }
             return 0;
         }
+    }
+
+    /// <summary>(0.6.12) Windows' timer at 1 ms while MPFever runs: without it every Thread.Sleep(5) of the links between the game and
+    /// the network (out.log read, in.log written) lasts a timer tick, 15.6 ms, at each of the two launchers a build goes through
+    /// (seen in TPF3-MP's measures, 2026-10-31). MPFEVER_TIMER1MS=0: the system's timer, as before.</summary>
+    static class FineTimer
+    {
+        [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
+        [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeEndPeriod(uint ms);
+        internal static bool Wanted() => Environment.GetEnvironmentVariable("MPFEVER_TIMER1MS") != "0";
+        public static bool Begin()
+        {
+            if (!Wanted()) return false;
+            try { return timeBeginPeriod(1) == 0; } catch { return false; }
+        }
+        public static void End() { try { timeEndPeriod(1); } catch { } }
     }
 
     sealed partial class MainForm : Form

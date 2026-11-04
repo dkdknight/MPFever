@@ -58,6 +58,9 @@ MPFever - Changelog
     C.copy makes the same copy without the text (0.04 s; MPFEVER_FASTCOPY=0: as before). The capture no longer writes a big
     build out a second time only to log its size (0.15 s of the builder's simulation; the size is logged when it is sent,
     MPFEVER_CAPSIZE=1: as before). Test: tests/test_fastcopy.py.
+  - LAG: MPFever.exe asks Windows for its 1 ms timer while it runs: every Thread.Sleep(5) of the links between the game and the
+    network lasted a timer tick, 15.6 ms, at each of the two launchers a build goes through (after TPF3-MP's measures, MIT).
+    MPFEVER_TIMER1MS=0: the system's timer, as before. Test: MPFever.exe --selftest (RunFineTimer).
   - NEW (diagnostic): every build of another player replayed here writes a "LAG" line: how long this game stood at its time,
     waiting for its data and then for its replay, the commands it took and the data's size (the measure of the freezes on
     big stations, the user's test of 2026-11-03 23:17). MPFEVER_LAGLINE=0: none. Test: tests/test_lagline.py.
