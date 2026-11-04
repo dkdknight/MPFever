@@ -3813,12 +3813,21 @@ G.buildLeadState = function()
 	-- past that (the barrier keeps a reserve for it), and must still have the room to stop exactly at the announced step
 	local need = (terrainLeadSteps() - overshootReserve()) * STEP
 	local n = 0
+	-- (0.6.12) the other game's clock as it is now, not as it was when it sent it: it ran on since, up to the session's speed (5
+	-- steps a second at 1x), one step more for the frame. With the clock as it was sent (0.1 to 0.5 s old at 4x: 2 to 10
+	-- steps), a build released at once landed 1 to 3 steps late on a game that had started building too (the final stress test
+	-- of 2026-11-04, both games building at once: "already past t=...", a desync). MPFEVER_LEADAGE=0: the clock as sent, as before
+	local spd = math.max(1, math.min(4, G.session.speed or 1))
 	for name, pc in pairs(G.peers) do
 		n = n + 1
 		if (pc.tl or 0) >= mine then return false, tostring(name) .. " leads too (level " .. pc.tl .. ", this game " .. mine .. ")" end
 		if (pc.bl or 0) < 2 then return false, tostring(name) .. " does not follow yet" end
-		if type(pc.t) ~= "number" or pc.t > now - need then
-			return false, tostring(name) .. " is only " .. (type(pc.t) == "number" and ((now - pc.t) / STEP) or "?") .. " steps behind (needs " .. (need / STEP) .. ")"
+		local est = pc.t
+		if type(est) == "number" and type(pc.at) == "number" and os.getenv("MPFEVER_LEADAGE") ~= "0" then
+			est = est + (math.floor((os.clock() - pc.at) * 5 * spd) + 1) * STEP
+		end
+		if type(est) ~= "number" or est > now - need then
+			return false, tostring(name) .. " is only " .. (type(est) == "number" and ((now - est) / STEP) or "?") .. " steps behind (needs " .. (need / STEP) .. ")"
 		end
 	end
 	if n == 0 then return false, "no other game" end
@@ -4098,7 +4107,7 @@ H.peerclock = function(from, p)
 		-- (bl: the game takes part in BUILDLEAD, 1; 2: and it follows another game's lead now; only sent with the switch on)
 		local bl = tonumber(p.bl)
 		-- (ns: that game keeps its stop points natively, see G.nstop)
-		G.peers[p.name] = { t = p.t, ah = p.ah, tl = tl > 0 and tl or nil, bl = bl and bl > 0 and bl or nil, ns = tonumber(p.ns) == 1 }
+		G.peers[p.name] = { t = p.t, ah = p.ah, tl = tl > 0 and tl or nil, bl = bl and bl > 0 and bl or nil, ns = tonumber(p.ns) == 1, at = os.clock() }
 		if (tl > 0) ~= (was > 0) then
 			log(tostring(p.name) .. (tl > 0 and (" has a tool in hand that leads (level " .. tl .. "): the game that used it last leads") or " put its leading tool away"))
 		end

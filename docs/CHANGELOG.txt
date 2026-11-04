@@ -56,6 +56,12 @@ MPFever - Changelog
     tool was in hand starts the lead as a tool in hand would: from the next module on, the builds show at once on the
     builder's game, the others stay behind it meanwhile and get each build before they come to its time (BUILDLEAD's own
     checks still decide every build; MPFEVER_LEADHELD=0: as before). Test: tests/test_leadheld.py.
+  - FIX (desync, "Responsive builds"): a build released at once by the player who leads must land on the other games before they
+    come to its step; the leader checked it with the other game's clock as it was sent, 0.1 to 0.5 s old at 4x (2 to 10 steps
+    of game). With both games building at once (the final stress test of 2026-11-04, one company per player and two computer
+    companies) builds landed 1 to 3 steps late on the other game ("already past t=..."), and the games drifted. The other
+    game's clock is now taken as it is now (what it may have run since it sent it); otherwise the build is held the usual way.
+    MPFEVER_LEADAGE=0: as before. Test: tests/test_leadage.py.
   - LAG: the replays copied a big station's 2.3 MB action through its text several times while the games stood (0.17 s each);
     C.copy makes the same copy without the text (0.04 s; MPFEVER_FASTCOPY=0: as before). The capture no longer writes a big
     build out a second time only to log its size (0.15 s of the builder's simulation; the size is logged when it is sent,
