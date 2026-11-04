@@ -1,5 +1,5 @@
 MPFever - Multiplayer for Transport Fever 3
-Version 0.4.3
+Version 0.6.12
 ===========================================
 
 MPFever lets several players play the same Transport Fever 3 world together, each one
@@ -106,16 +106,19 @@ WHAT WORKS
 
 KNOWN LIMITATIONS
 -----------------
-- Separate companies: the level (rank, permits) of the savegame's company is shared by all the
-  companies; the company actions of the Company window (market campaigns, greening, industry
-  prospecting) only work for the host's company for now (the other players' requests are
-  ignored); there is no money transfer between companies yet. Depots cannot be shared. The map
-  shows the routes of your own company's lines only.
+- One company per player: each company has its own rank (from what it carries for the towns),
+  its own Company window actions, money gifts and shared stations, depots and tracks; the
+  game's achievements still count for the savegame's company only. The map shows the routes of
+  your own company's lines.
+- Every player needs the same DLCs: the Deluxe upgrade pack and the pre-order pack put their
+  animals, people and vehicles in the world of the PC that owns them only (the lobby warns).
 - The tutorial is not supported: its missions are validated on each game separately, so the
   games diverge (a unique building made by one player blocks the other's task). Play a game
   without the tutorial.
-- Each build waits about 1 to 2 seconds before it appears: the games apply every
-  construction at the same game time, which needs a safety margin. When two players change
+- With "Responsive builds" (on at first) your builds show at once on your game; the other
+  games apply each of them at the same game time and stop for it a moment: about half a
+  second for a road or a module, about a second for a module of a very big station. Without
+  it, each build waits 1 to 2 seconds before it appears. When two players change
   the same place within those seconds, the build made second is computed again on every
   game (if it no longer fits the place, it is left out everywhere: make it again). With one
   company per player, this can still lead to an automatic resynchronisation.

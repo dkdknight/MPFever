@@ -33,6 +33,10 @@ it is stable enough.
   [x] A savegame loaded again right after a resynchronisation no longer applies the last builds twice; a computer
       company's build made at the same moment as the host's sent for the right company (0.6.10)
   [x] A shorter freeze when an industry appears and is connected to the roads (0.6.10)
+  [x] Station and warehouse modules and railway upgrades show at once for their builder; the other games stop about
+      half a second for each (a second for a very big station) instead of up to 3 seconds (0.6.12)
+  [x] No more "script:towns" reloads after building in a pause; money no longer evened out twice after a pause (0.6.12)
+  [ ] Replays of big stations without the engine's two proposals (the rest of their freeze)
   [ ] Tests and fixes for 3 to 8 players
   [ ] Feedback from the first testers
 
@@ -68,6 +72,9 @@ it is stable enough.
   [x] Every company's vehicles wear and get repaired, not only the savegame company's (0.6.9)
   [x] A dot of their company's colour over the other companies' vehicles (0.6.10), following them smoothly (0.6.11)
   [x] Depot tolls shown in the company window (0.6.11)
+  [x] Ranks count the passengers (companies with buses and trains only stayed at rank 1) (#125, 0.6.12)
+  [x] Line routes stay on the map after several reloads in one game (0.6.12)
+  [x] Stock market: a new company's protection of 2, 5 or 10 years (0.6.12)
   [x] A shared street stays its company's when another builds a station on it; another company's station edited by a
       player stays its owner's (0.6.10)
 

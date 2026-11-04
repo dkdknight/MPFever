@@ -151,7 +151,7 @@ The mods tested so far are listed in [MODS](docs/MODS.md).
 - **One company per player: the game's achievements** are counted for the savegame's company only (the game's own scripts see that company alone).
 - **Small drifts of vehicles and passengers** can happen. They are repaired by a reload if they last.
 - **Two players changing the same place within about two seconds**: the build made second is left out on every game when it no longer fits the place, and has to be made again (with one company per player, the chat tells its player).
-- **Every build of another player stops the games for about a second**, the time to apply it at the same game time everywhere. A module added to a big station or warehouse can take several seconds.
+- **Every build of another player stops your game a moment**, the time to apply it at the same game time everywhere: about half a second for a road or a module, about a second for a module of a very big station.
 
 What's planned: [ROADMAP](docs/ROADMAP.txt). What changed: [CHANGELOG](docs/CHANGELOG.txt).
 
