@@ -370,7 +370,13 @@ namespace MPFever
             void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
             Check(Mods.LocalSource("StagingArea") && Mods.LocalSource("Local") && Mods.LocalSource("user"), "mods: StagingArea, Local, User are local origins");
             Check(!Mods.LocalSource("Workshop") && !Mods.LocalSource("ModIo") && !Mods.LocalSource("BuiltIn") && !Mods.LocalSource(""), "mods: Workshop, mod.io, the game's are not");
-            Check(Mods.Judge("devers_1", Mods.Sim).Level == "bad", "mods: Real Track Cant (devers_1) incompatible");
+            // (0.6.13: no longer incompatible, its automatic builds go from one game only; to confirm in a session)
+            Check(Mods.Judge("devers_1", Mods.Sim).Level == "caution", "mods: Real Track Cant (devers_1) to confirm (0.6.13)");
+            // (0.6.13: the script mods read one by one)
+            Check(Mods.Judge("parallel_tracks_1", Mods.Sim).Level == "ok", "mods: Parallel Tracks read, works");
+            Check(Mods.Judge("line_role_renamer", Mods.Sim).Level == "fixed", "mods: Line Roles made compatible (0.6.13)");
+            Check(Mods.Judge("stombor_zoning", Mods.Sim).Level == "caution", "mods: Town Zoning still to check");
+            Check(Mods.Judge("some_unknown_mod", Mods.Sim).Level == "caution" && Mods.Judge("some_unknown_mod", Mods.Assets).Level == "ok", "mods: an unknown mod judged by its files, as before");
             Check(Mods.Judge("urbangames_no_costs_1", Mods.Load).Level == "fixed", "mods: the game's No costs made compatible");
             var roots = Mods.LocalRoots(@"C:\x\local");
             Check(roots.Contains(Path.Combine(@"C:\x\local", "mods")) && roots.Contains(Path.Combine(@"C:\x\local", "staging_area")), "mods: local\\mods and local\\staging_area searched");

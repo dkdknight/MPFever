@@ -1734,6 +1734,26 @@ function DET.wrapModEvents()
 			end
 			log("mod script events watched: " .. k)
 		end
+		-- (0.6.13) The engine calls the game scripts' update once per step with dt 0.2, and with dt 0 in a batch of no step (a
+		-- game standing at a stop point, a pause): how many of those calls a game makes depends on its frames. A mod that works
+		-- at every call (Cargo & Passenger Station Range rebuilds two stations per call during an "apply to all") then did more
+		-- of its work on one game than on another, and the stations were rebuilt at other steps. A mod's update is called with
+		-- the steps only (the game's own scripts are left as they are: skipping their calls made things worse, STANDSKIP).
+		-- MPFEVER_MODDT0=1: every call, as before
+		if type(k) == "string" and type(v) == "table" and type(v.update) == "function" and not v.__mpfDt
+			and k:sub(1, 3) ~= "::/" and not k:find("mpfever", 1, true) and os.getenv("MPFEVER_MODDT0") ~= "1" then
+			v.__mpfDt = true
+			local origU = v.update
+			v.update = function(u, st, dt, ...)
+				-- (in a session only: alone, the game runs as it always did)
+				if dt == 0 and (C.ROLE == "host" or C.ROLE == "client") then
+					SIM.modDt0 = (SIM.modDt0 or 0) + 1
+					return
+				end
+				return origU(u, st, dt, ...)
+			end
+			log("mod script update called with the steps only: " .. k)
+		end
 	end
 end
 
@@ -4157,6 +4177,18 @@ local function logMargin(kind, at, origin, lead)
 	end
 end
 
+-- (0.6.13) The new file of a construction's edit, when it is not the construction's own (else nil): see the edits' replay
+G.replaceNewFile = function(old, newFile)
+	if os.getenv("MPFEVER_REPLACEFILE") == "0" or type(newFile) ~= "string" or newFile == "" then return nil end
+	local okC, c = pcall(function() return api.engine.getComponent(old, api.type.ComponentType.CONSTRUCTION) end)
+	local cur = okC and c and c.fileName or nil
+	if type(cur) ~= "string" or cur == newFile then return nil end
+	-- (the same resource written another way: "::/a.con" or "a.con")
+	local function bare(s) return (s:gsub("^.-::/", ""):gsub("^/", "")) end
+	if bare(cur) == bare(newFile) then return nil end
+	return newFile
+end
+
 -- The edit of an existing construction sent by a window of the interface (not by a tool, whose builds the native module holds):
 -- the Drive-in Warehouses mod's goods for a warehouse. Its proposal (the engine's replacement of the construction) could not be
 -- rebuilt from its pieces on any game ("Unknown exception": refused everywhere, a session of the friends). Such an edit is
@@ -6496,7 +6528,14 @@ local function replayNative(a, formIndex)
 			if type(ctxArg) == "table" then
 				a.ctx = 32 + (ctxArg.gatherBuildings and 1 or 0) + (ctxArg.checkTerrainAlignment and 2 or 0) + (ctxArg.cleanupStreetGraph and 4 or 0)
 			end
-			return engineReplay(a, "edit of the construction " .. e1.toRemove[1] .. " (" .. tostring(e1.toAdd[1].fileName):match("[^/]*$") .. ")", function()
+			-- (0.6.13) an edit that changes the construction's file too (Advanced Station Configuration Tool widens a station into
+			-- another file, Simply Relocate turns a building into its stand-in): the engine's replacement takes the new file as its
+			-- third argument. Without it every game rebuilt the old file with the new settings: the station was not widened, and
+			-- Simply Relocate's move stopped halfway on the builder's game. MPFEVER_REPLACEFILE=0: the old file, as before
+			local newFile = G.replaceNewFile(e1.toRemove[1], e1.toAdd[1].fileName)
+			return engineReplay(a, "edit of the construction " .. e1.toRemove[1] .. " (" .. tostring(e1.toAdd[1].fileName):match("[^/]*$") .. ")"
+				.. (newFile and " into a new file" or ""), function()
+				if newFile then return api.engine.util.proposal.createProposalReplaceConstruction(e1.toRemove[1], C.plain(e1.toAdd[1].params), newFile) end
 				return api.engine.util.proposal.createProposalReplaceConstruction(e1.toRemove[1], C.plain(e1.toAdd[1].params))
 			end)
 		end
@@ -9122,10 +9161,26 @@ local function runPausedActions()
 		joining = G.coBusy ~= nil
 		for _, q in ipairs(G.nativeQueue) do if q.fn == "mpfCoJoin" and q.at <= now then joining = true end end
 	end
+	-- (0.6.13) A checkpoint also waits for the engine's answer to every paused action this game handed it before: in a pause the
+	-- engine applies a command at its next swap of the command list (every 200 ms), so a line renamed just before a checkpoint
+	-- (by a player, or by Auto Line Namer's host-only renames) was already renamed in one game's hash and not yet in the other's:
+	-- a "lines" difference that healed by itself at the next check (the 20:37 replay of 2026-11-04, twice). At most 600 frames.
+	-- MPFEVER_PAUSEDANSWER=0: as before
+	local answering = false
+	if os.getenv("MPFEVER_PAUSEDANSWER") ~= "0" then
+		G.pausedOut = G.pausedOut or {}
+		for uid, fr in pairs(G.pausedOut) do
+			if G.frames - fr < 600 then answering = true else G.pausedOut[uid] = nil end
+		end
+	end
 	for _, a in ipairs(G.pendingPaused) do
 		if a.kind == "hash" and joining and a.at <= now and not creating then
 			creating = true
 			if G.coHashWaitLogged ~= a.n then G.coHashWaitLogged = a.n; log("checkpoint " .. tostring(a.n) .. " waits for a company join under way here") end
+		end
+		if a.kind == "hash" and answering and a.at <= now and not creating then
+			creating = true
+			if G.ansHashWaitLogged ~= a.n then G.ansHashWaitLogged = a.n; log("checkpoint " .. tostring(a.n) .. " waits for the engine's answer to the paused actions before it") end
 		end
 		-- (in its turn among the paused builds and actions, see G.actTurn; not while a build before it is still being handed to the
 		-- engine here, a stop's replay is several commands)
@@ -9172,7 +9227,9 @@ local function runPausedActions()
 					local okD, dg = pcall(G.featDigests, a)
 					if okD then featDg = dg end
 				end
+				if G.pausedOut then G.pausedOut[tostring(a.uid)] = G.frames end
 				withActor(PL(a), executeAction, a, O.sendCommand, true, G.bind, function(r)
+					if G.pausedOut then G.pausedOut[tostring(a.uid)] = nil end
 					if G.pausedCreating and G.pausedCreating.uid == a.uid then G.pausedCreating = nil end
 					-- (the replay counted above went to the engine by itself, not through replaySend: its count is used here. A
 					-- refused or unreplayable one builds nothing, the simulation is told: else, in a pause (the same game time for
@@ -9196,6 +9253,8 @@ local function runPausedActions()
 					if r.created then C.appendFile(C.DIR .. BS .. "bindings.log", r.created.key .. " " .. tostring(r.created.e) .. NL) end
 					G.reportResult(r)
 				end)
+				-- (a checkpoint after it in this same frame waits too, see answering above)
+				if G.pausedOut and G.pausedOut[tostring(a.uid)] ~= nil then answering = true end
 			end
 		else
 			keep[#keep + 1] = a
@@ -18147,6 +18206,8 @@ local function guiHandleEvent(userParams, state, guiState, src, id, name, param)
 	if name == "builder.proposalCreate" then pcall(G.previewOut, tostring(id), param)
 	elseif name == "builder.proposalApply" then
 		pcall(G.previewGone); pcall(G.toolApplied, param)
+		-- (0.6.13: this player's own build, for the mods that finish it from their guiUpdate, see mpfever_modauto.lua)
+		pcall(function() package.loaded["mpfever_local_activity"] = os.clock() end)
 		-- (0.6: the build the tool applies, for a game option that checks this player's builds, see G.featRefuse)
 		if G.featOn and G.featAllow then pcall(G.featTool, param) end
 	end

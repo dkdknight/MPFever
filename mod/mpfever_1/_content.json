@@ -26,6 +26,7 @@
         "mpfever_feat_trade.lua",
         "mpfever_feat_stock.lua",
         "mpfever_feat_public.lua",
+        "mpfever_modauto.lua",
         "mpfever_asset.con.lua",
         "mpfever_asset.script.lua",
         "mpfever_chat@2x.tga",

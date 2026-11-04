@@ -39,12 +39,43 @@ namespace MPFever
             ["zhenya_auto_color_lines"] = () => new Verdict { Level = "fixed", Note = T("Les couleurs données par le jeu de l'hôte s'appliquent partout (0.4.0).", "The colours given by the host's game apply everywhere (0.4.0).") },
             ["zhenya_auto_assign_terminals"] = () => new Verdict { Level = "fixed", Note = T("Les quais choisis par le jeu de l'hôte s'appliquent partout (0.4.0).", "The platforms chosen by the host's game apply everywhere (0.4.0).") },
             // (0.6.7) Real Track Cant builds its cant pieces by script on every game: each game ships them as a player's builds, the
-            // constructions then differ (393 against 469 in the session of 2026-11-01 02:20) and the host's game reloads (#96)
-            ["devers_1"] = () => new Verdict { Level = "bad", Note = T("Real Track Cant construit tout seul sur chaque jeu : la partie se recharge sans cesse. Désactivez-le.", "Real Track Cant builds by itself on every game: the game keeps reloading. Turn it off.") },
+            // constructions then differ (393 against 469 in the session of 2026-11-01 02:20) and the host's game reloads (#96).
+            // (0.6.13) Those builds come from its interface, by itself after a load: one game sends them now (mpfever_modauto.lua)
+            ["devers_1"] = () => new Verdict { Level = "caution", Note = T("Ses constructions automatiques ne partent plus que d'un jeu (0.6.13) : à confirmer en partie.", "Its automatic builds now go from one game only (0.6.13): to confirm in a session.") },
             // (0.6.7) the game's own "No costs": nothing is charged, MPFever books no refund difference then (REFUND.freeBuilds)
             ["urbangames_no_costs_1"] = () => new Verdict { Level = "fixed", Note = T("Constructions gratuites : MPFever ne corrige plus leur prix entre les jeux (0.6.7).", "Free building: MPFever no longer evens out its price between the games (0.6.7).") },
             ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Les signaux ajoutés ne sont construits qu'une fois, par le jeu qui a posé le signal (0.4.0).", "Added signals are built once, by the game where the signal was placed (0.4.0).") },
         };
+
+        // (0.6.13) the 83 most downloaded script mods of mod.io, read one by one (docs/MODS.md): those that work as they are, and
+        // those made to work by 0.6.13 (their interface's automatic commands sent by one game only, see mpfever_modauto.lua)
+        static readonly string[] CheckedOk =
+        {
+            "parallel_tracks_1", "parallel_roads_1", "automatic_signal_spacing", "automatic_station_throat", "auto_bridges_1",
+            "express_local_stations_1", "ethan_track_connector", "celmi_timetables", "tcoleman_financial_statements_1",
+            "keinschlechterruf", "budok_stop_capacity_tf3_1", "hary_export_hub", "dgbooth_supply_chain_manager_1", "spy_industry_evolution",
+            "maksymenkoml_roadform_1", "move_it", "move_it_probe_overpass", "undo_tf3_test", "road_station_expander",
+            "local_underground_cargo_stop", "industry_tram_access_1", "deadeye_tpf3_bus_bay", "bus_loops_1", "miib_city_bus_lines",
+            "mz_gleisset3", "cmf_bb27000_base_pack_1", "tpf3_grab_bb60000_1", "tpf3_Grab_SignalFR_Mod_1", "zhenya_easy_terminal_assignment",
+            "jansc_fehlerstellen", "train_horns_1", "square_better_minimap", "build_anyway_1", "zhenya_doubleclick_to_edit",
+        };
+        static readonly string[] FixedHostNames = { "visual_auto_namer", "gameburrow_destinationdisplays" };
+        static readonly string[] Fixed0613 =
+        {
+            "line_role_renamer", "modern_bus_shelter", "kamil_street_lights_1", "sydney_harbour_bridge", "zhenya_optimized_traffic_lights",
+            "square_smart_lanes", "epod_pay_your_tolls_tf3_1", "epod_pyt_mega_warehouse_1", "blueprint_demo", "just_more_weather_1",
+            "square_organic_towns", "gabri_cargo_catchment_1", "advanced_station_editor", "john_cargo_station_drag",
+        };
+        static readonly string[] ToCheck = { "stombor_zoning", "hugedragonyk_uep3_b07_shopping_mall_and_auto_dealership_1", "stardorn_industry_upgrades" };
+
+        static Verdict Checked(string id)
+        {
+            if (CheckedOk.Contains(id)) return new Verdict { Level = "ok", Note = T("Script lu : rien qui désynchronise (0.6.13).", "Script read: nothing that desynchronises (0.6.13).") };
+            if (FixedHostNames.Contains(id)) return new Verdict { Level = "fixed", Note = T("Les noms donnés par le jeu de l'hôte s'appliquent partout (0.4.0).", "The names given by the host's game apply everywhere (0.4.0).") };
+            if (Fixed0613.Contains(id)) return new Verdict { Level = "fixed", Note = T("Ce qu'il envoie tout seul ne part plus que d'un jeu (0.6.13) : à confirmer en partie.", "What it sends by itself now goes from one game only (0.6.13): to confirm in a session.") };
+            if (ToCheck.Contains(id)) return new Verdict { Level = "caution", Note = T("Script lu : un point reste à vérifier en partie (voir MODS.md).", "Script read: one point is still to check in a session (see MODS.md).") };
+            return null;
+        }
 
         /// <summary>(0.6.7) A mod of this PC only, published on no Mod Hub (the game's origins "StagingArea", "Local", "User"...):
         /// only the host can send it.</summary>
@@ -111,6 +142,8 @@ namespace MPFever
         public static Verdict Judge(string id, string kind)
         {
             if (id != null && Known.TryGetValue(id, out var k)) return k();
+            var c = id != null ? Checked(id) : null;
+            if (c != null) return c;
             if (kind == Sim) return new Verdict { Level = "caution", Note = T("Script qui agit sur la partie : pas encore testé avec MPFever.", "Script acting on the game: not tested with MPFever yet.") };
             return new Verdict { Level = "ok", Note = "" };
         }

@@ -1,6 +1,38 @@
 MPFever - Changelog
 ===================
 
+0.6.13 - (in progress): more mods made compatible, paused checkpoints wait for the engine
+  - FIX (both modes, a pause, the 20:37 replay of 2026-11-04): in a pause the engine applies a command at its next swap of
+    the command list (every 200 ms). A line renamed just before a checkpoint (by a player, or by Auto Line Namer, whose
+    renames only the host's game sends) was already renamed in one game's checkpoint and not yet in the other's: a "lines"
+    difference that healed by itself at the next check. A paused checkpoint now waits for the engine's answer to every
+    paused action this game handed it before (600 frames at most). MPFEVER_PAUSEDANSWER=0: as before.
+    Test: tests/test_pausedanswer.py.
+  - FIX (mods, both modes): some mods send commands from their interface by themselves (their guiUpdate, or a step of their
+    windows): a scan after a load, a timer that renames the lines, a toll counted every 5 s, the decorations of a stop. Their
+    interface runs on every game, so every game sent the same command and it was applied once per player (Line Roles, Modern
+    Bus Shelter, Road Lighting, Sydney Harbour Bridge, Optimized Traffic Lights, Smart Lanes, PYT - Pay Your Tolls, PYT - Mega
+    Warehouse, Blueprint, Real Track Cant (#96), Organic Towns, Just More Weather's clock, Auto Color Lines' first sweep). Such
+    a command now goes from one game only: the host's, or with one company per player the game of the company that owns the
+    line, vehicle or money it changes. Within 15 s of this player's own action (a command, a tool's build) it is still sent by
+    this game, for the mods that finish the player's own job (Auto Signals, Parallel Tracks, Express & Local...), except for
+    the mods known to act on the whole world. Found by reading the scripts of the 83 most downloaded script mods of mod.io.
+    MPFEVER_MODAUTO=0: as before. Test: tests/test_modauto.py.
+  - FIX (mods): a mod's debug command (api.cmd.debug: a person's state, a stock's cargo...) is applied by the engine on one
+    game only; Just More Weather sent them every frame (life rhythm, snow paralysis). Refused in a session. MPFEVER_MODAUTO=0:
+    as before. Test: tests/test_modauto.py.
+  - FIX (mods): the engine calls the game scripts' update with dt 0 while a game waits (a stop point, a pause), as many times
+    as that game draws frames. A mod that works at every call (Cargo & Passenger Station Range during "apply to all")
+    rebuilt its stations at other steps on each game. In a session a mod's update is called with the steps only (the game's
+    own scripts are left alone). MPFEVER_MODDT0=1: as before. Test: tests/test_moddt0.py.
+  - FIX (mods): a construction edited by a window into another file (Advanced Station Configuration Tool widens a station,
+    Simply Relocate moves a building) was replayed with the old file: the station stayed narrow on the other games, the move
+    stopped halfway. The engine's replacement now gets the new file. MPFEVER_REPLACEFILE=0: as before.
+    Test: tests/test_replacefile.py.
+  - CHANGE (lobby, docs/MODS.md): the mods' list rewritten from that reading: which mods work, which 0.6.13 made
+    compatible, which are still to check. The lobby no longer calls "untested" the script mods read and found fine, and Real
+    Track Cant is no longer "incompatible" (to confirm). Test: MPFever.exe --selftest (RunSession067).
+
 0.6.12 - 2026-11-04: station modules and railway upgrades without waiting, ranks with passengers (#125), the 20:37 and #126 reloads, line routes after reloads
   - CHANGE (one company per player): the colour dots over the other companies' vehicles are off by default (their look is
     not good enough yet). The Settings tab turns them on ("vdots=1" in ui_prefs.txt, kept across launches); the "dots=1" that

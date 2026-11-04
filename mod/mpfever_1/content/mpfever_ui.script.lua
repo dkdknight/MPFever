@@ -38,9 +38,120 @@ local function isCallable(f)
 	return mt ~= nil and (type(mt) ~= "table" or mt.__call ~= nil)
 end
 
+-- ---------------------------------------------------------------- mods' automatic commands (0.6.13, see mpfever_modauto.lua)
+local okMA, MA = pcall(ug_require, "mpfever_modauto.lua")
+if not (okMA and type(MA) == "table") then okMA, MA = pcall(ug_require, "mpfever_1::/mpfever_modauto.lua") end
+if not (okMA and type(MA) == "table") then MA = nil end
+-- (MPFEVER_MODAUTO=0: every game sends what its mods send, as before)
+U.modAutoOn = MA ~= nil and C.ACTIVE and os.getenv("MPFEVER_MODAUTO") ~= "0"
+-- > 0 while a react.onStep / onStepTimer callback or a mod's guiUpdate runs (see the wrappers below)
+U.autoDepth = 0
+
+-- What the stack says about the code sending a command: the mods' files on it, and whether the outermost Lua function is a
+-- mod's guiUpdate (called by the engine itself every frame: 3 parameters, userParams, state, guiState). Nothing without the
+-- debug library.
+U.stackFacts = function()
+	local okD, dbg = pcall(function() return debug end)
+	local getinfo = okD and type(dbg) == "table" and dbg.getinfo or nil
+	if not getinfo then
+		if not U.noDebugLogged then U.noDebugLogged = true; log("mods' automatic commands: no debug library here, only react.onStep is watched") end
+		return { mods = {}, guiUpdate = false }
+	end
+	local mods, outer = {}, nil
+	for lv = 3, 60 do
+		local okI, info = pcall(getinfo, lv, "Su")
+		if not okI or not info then break end
+		if info.what ~= "C" then
+			outer = info
+			if MA.isModSource(info.source) then mods[#mods + 1] = info.source end
+		end
+	end
+	local gu = outer ~= nil and MA.isModSource(outer.source) and outer.nparams == 3 and not outer.isvararg
+	return { mods = mods, guiUpdate = gu }
+end
+
+-- the mod sending the command (its label), or nil
+U.fromMod = function()
+	local f = U.stackFacts()
+	return f.mods[1] and MA.label(f.mods[1]) or nil
+end
+
+-- Which company owns what a command changes (its first argument): "mine", "theirs" or nil (no owner, or one company for
+-- everybody: only one company per player has owners that tell the games apart)
+U.ownerOf = function(tag)
+	local e = tag.args and tag.args[1]
+	if type(e) ~= "number" or not U.myCo or not U.coMap then return nil end
+	local co = U.coMap[e]
+	if co == nil then
+		local okO, po = pcall(function() return api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED) end)
+		if okO and po and po.player then co = U.coMap[po.player] end
+	end
+	if co == nil then return nil end
+	return co == U.myCo and "mine" or "theirs"
+end
+
+U.autoVerdict = function(tag)
+	local sf = U.stackFacts()
+	local auto
+	if U.cbAuto ~= nil then auto = U.cbAuto else auto = U.autoDepth > 0 or sf.guiUpdate end
+	local facts = { auto = auto, mod = #sf.mods > 0, src = sf.mods[1] }
+	if not (facts.auto and facts.mod) then return "send", "not automatic", facts end
+	local st = U.status
+	facts.role = C.ROLE
+	facts.separate = st ~= nil and st.mode == "separate"
+	facts.strict = MA.strictOf(sf.mods)
+	if facts.separate then facts.owner = U.ownerOf(tag) end
+	-- (this player's own last action: a command of theirs, or a build of their tools, see the bridge's guiHandleEvent)
+	local last = U.lastLocal
+	local okP, tb = pcall(function() return package.loaded["mpfever_local_activity"] end)
+	if okP and type(tb) == "number" and (last == nil or tb > last) then last = tb end
+	facts.idle = last and (os.clock() - last) or nil
+	local verdict, why = MA.decide(facts)
+	return verdict, why, facts
+end
+
+U.autoLog = function(tag, facts, why, dropped)
+	local key = (facts and facts.src and MA.label(facts.src) or "?") .. "/" .. tostring(tag.name) .. (dropped and "/d" or "/s")
+	U.autoSeen = U.autoSeen or {}
+	local n = (U.autoSeen[key] or 0) + 1
+	U.autoSeen[key] = n
+	if dropped then U.stats.autoDropped = (U.stats.autoDropped or 0) + 1 end
+	if n <= 3 or n % 200 == 0 then
+		log("mods: " .. tostring(tag.name) .. " sent by itself by " .. (facts and facts.src and MA.label(facts.src) or "?")
+			.. (facts and facts.strict and (" (" .. facts.strict .. ")") or "") .. ": " .. (dropped and "not sent from this game, " or "sent, ")
+			.. tostring(why) .. " x" .. n)
+	end
+end
+
+-- A mod's game script whose guiUpdate the engine calls every frame: its commands are automatic (the same as the stack's
+-- guiUpdate test above, for a game without the debug library). The interface's table of game scripts, when it has one.
+U.wrapModGuiUpdates = function()
+	if not U.modAutoOn then return end
+	local okG, g = pcall(function() return game end)
+	if not (okG and type(g) == "table") then return end
+	for k, v in pairs(g) do
+		if type(k) == "string" and type(v) == "table" and type(v.guiUpdate) == "function" and not v.__mpfAuto
+			and k:sub(1, 3) ~= "::/" and not k:find("mpfever", 1, true) then
+			v.__mpfAuto = true
+			local orig = v.guiUpdate
+			v.guiUpdate = function(...)
+				U.autoDepth = U.autoDepth + 1
+				local r = table.pack(pcall(orig, ...))
+				U.autoDepth = U.autoDepth - 1
+				if not r[1] then error(r[2], 0) end
+				return table.unpack(r, 2, r.n)
+			end
+			log("mods' automatic commands: the guiUpdate of " .. k .. " is watched")
+		end
+	end
+end
+
 local function install()
 	if U.installed then return end
 	U.installed = true
+	-- (a game just loaded: what its mods send in their first seconds (a scan of the whole world) is nobody's own job, even
+	-- right after this player built something in the game before)
+	pcall(function() package.loaded["mpfever_local_activity"] = nil end)
 	-- the game script bridge may share this api table: it must keep using the game's own functions, never the
 	-- wrapped ones (its speed commands would come back as player requests, its events would be replicated)
 	-- (api.cmd is userdata and takes no new member: the originals are kept in package.loaded, shared by the state)
@@ -67,11 +178,46 @@ local function install()
 			missing[#missing + 1] = name .. "(" .. type(fn) .. ")"
 		end
 	end
+	-- (0.6.13) the debug factories are tagged too (they go to the engine as before, but a mod's are refused in a session, see
+	-- tag.debug below)
+	if U.modAutoOn then
+		pcall(function()
+			local dbgCmd = api.cmd.debug
+			for _, name in ipairs({ "makeMaintenanceCostUpdateCmd", "makeSimPersonSetStateCmd", "makeSimPersonSetHappiness",
+				"makeComponentExchangeCmd", "makeStockSetCargoAmountCmd", "makeClearLogbooksCmd" }) do
+				local fn = nil
+				pcall(function() fn = dbgCmd[name] end)
+				if fn ~= nil and isCallable(fn) then
+					pcall(function()
+						dbgCmd[name] = function(...)
+							local cmd = fn(...)
+							if cmd ~= nil then U.tags[cmd] = { name = "debug." .. name, debug = true, args = { n = 0 } } end
+							return cmd
+						end
+					end)
+				end
+			end
+		end)
+	end
 	api.cmd.sendCommand = function(cmd, cb, progress)
 		local tag = cmd ~= nil and U.tags[cmd] or nil
 		if tag == nil then
 			U.stats.untracked = U.stats.untracked + 1
 			if U.logged < 30 then U.logged = U.logged + 1; log("untracked command sent natively: " .. C.dump(cmd):sub(1, 160)) end
+			return O.sendCommand(cmd, cb, progress)
+		end
+		-- (0.6.13) a debug command (api.cmd.debug: a person's state, a stock's cargo...) is applied on this game only. A mod that
+		-- sends one changed this game's world alone (Just More Weather sets people's states every frame): refused in a session.
+		-- Anything else (the game's own debug tools) goes to the engine as before. MPFEVER_MODAUTO=0: as before
+		if tag.debug then
+			local okD, fromMod = pcall(U.fromMod)
+			if okD and fromMod and (C.ROLE == "host" or C.ROLE == "client") then
+				U.debugRefused = (U.debugRefused or 0) + 1
+				if U.debugRefused <= 5 or U.debugRefused % 500 == 0 then
+					log("mods: debug command " .. tag.name .. " of " .. tostring(fromMod) .. " refused in a session (it would change this game only) x" .. U.debugRefused)
+				end
+				return
+			end
 			return O.sendCommand(cmd, cb, progress)
 		end
 		-- notification events (popup sound, dismiss) are sent automatically by each game's own interface: local only
@@ -103,6 +249,26 @@ local function install()
 			if cb then pcall(cb, nil, true, {}) end
 			return
 		end
+		-- (0.6.13) a command a mod's interface sends by itself goes from one game only (mpfever_modauto.lua); a debug command of a
+		-- mod is refused in a session (applied on this game only, it made the games differ)
+		local autoNow, autoCtx, fromMod = false, false, false
+		if U.modAutoOn then
+			local okA, verdict, why, facts = pcall(U.autoVerdict, tag)
+			if okA and facts then autoNow, autoCtx, fromMod = facts.auto and facts.mod, facts.auto, facts.mod end
+			if okA and verdict == "drop" then
+				U.autoLog(tag, facts, why, true)
+				return
+			elseif okA and autoNow then
+				U.autoLog(tag, facts, why, false)
+			elseif not okA then
+				U.autoErr = (U.autoErr or 0) + 1
+				if U.autoErr <= 3 then log("mods' automatic commands: check failed: " .. tostring(verdict)) end
+			end
+		end
+		-- (this player's own action: what a mod sends by itself in the next seconds is taken as the end of this job. A command
+		-- of the game's own windows only: a mod's command that is not seen as automatic (sent while the game loads, from
+		-- elsewhere than a step) opened that window on every game, the test of 2026-11-04 10:17)
+		if not autoCtx and not fromMod then U.lastLocal = os.clock() end
 		local okm, margs = pcall(function()
 			local r = { n = tag.args.n }
 			for i = 1, tag.args.n do r[i] = C.marshal(tag.args[i]) end
@@ -130,7 +296,7 @@ local function install()
 				local okc, errc = pcall(cb, nil, true, {})
 				if not okc then log("tool callback error (ignored): " .. tostring(errc):sub(1, 160)) end
 			else
-				U.pending[U.seq] = { cb = cb, name = tag.name, t0 = os.clock() }
+				U.pending[U.seq] = { cb = cb, name = tag.name, t0 = os.clock(), auto = autoNow }
 			end
 		end
 	end
@@ -4775,7 +4941,11 @@ local function pollResults()
 				U.stats.answered = U.stats.answered + 1
 				local data = type(r.data) == "table" and C.plain(r.data) or nil
 				local entities = type(r.entities) == "table" and C.plain(r.entities) or {}
+				-- (a mod's next command from this callback is automatic when the first one was, see U.autoFacts)
+				local prevCb = U.cbAuto
+				U.cbAuto = p.auto == true
 				local okc, errc = pcall(p.cb, data, r.success == true, entities)
+				U.cbAuto = prevCb
 				log("result #" .. tostring(r.id) .. " " .. tostring(p.name) .. " success=" .. tostring(r.success) .. " after " .. string.format("%.2f", os.clock() - p.t0) .. "s" .. (okc and "" or (" (callback error: " .. tostring(errc):sub(1, 160) .. ")")))
 			end
 		end
@@ -5222,6 +5392,9 @@ local function tick(pendingState)
 	end)
 	pcall(pollBindings)
 	pcall(pollCompanies)
+	-- (0.6.13: the mods' guiUpdate, when the interface has a table of game scripts; a script may start late: every 300 ticks)
+	U.autoTicks = (U.autoTicks or 0) + 1
+	if U.modAutoOn and U.autoTicks % 300 == 1 then pcall(U.wrapModGuiUpdates) end
 	if not U.terrainWatch then
 		local okt, errt = pcall(installTerrainWatch)
 		if not okt then U.terrainWatch = true; log("terrain tools: not watched: " .. tostring(errt)) end
@@ -5321,6 +5494,29 @@ do
 	local okR, react = pcall(ug_require, "::/gui/main/react.lua")
 	local okB, builtin = pcall(ug_require, "::/gui/main/builtin.lua")
 	local okE, entry = pcall(ug_require, "::/gui/main/mod_entry_point.tl")
+	-- (0.6.13) what runs from react.onStep / onStepTimer runs by itself every frame (or every few seconds): a mod's command sent
+	-- from there is automatic (see mpfever_modauto.lua). Wrapped here, at the interface's start, before the windows register
+	if okR and type(react) == "table" and U.modAutoOn and not U.reactWrapped then
+		pcall(function()
+			for _, name in ipairs({ "onStep", "onStepTimer" }) do
+				local orig = react[name]
+				if type(orig) == "function" then
+					react[name] = function(fn, ...)
+						if type(fn) ~= "function" then return orig(fn, ...) end
+						return orig(function(...)
+							U.autoDepth = U.autoDepth + 1
+							local r = table.pack(pcall(fn, ...))
+							U.autoDepth = U.autoDepth - 1
+							if not r[1] then error(r[2], 0) end
+							return table.unpack(r, 2, r.n)
+						end, ...)
+					end
+				end
+			end
+			U.reactWrapped = true
+		end)
+		log("mods' automatic commands: react.onStep and onStepTimer watched (" .. tostring(U.reactWrapped) .. ")")
+	end
 	if okR and okB then
 		U.react, U.builtin = react, builtin
 		-- hidden entry point (the game keeps it invisible): only used as a periodic hook
