@@ -5309,8 +5309,10 @@ local function replayNativeConstruction(a)
 	if not hasConstructionSegments(m0) and not a.industryEdit and not a.ownTracks then return false end
 	-- (0.5.14, issue #97: a station edit that takes ALL its own tracks away; one that keeps some, issue #90, the conversion below)
 	if a.ownTracks and a.ownTracksAll and not hasConstructionSegments(m0) and os.getenv("MPFEVER_EDITREPLACE") ~= "0" then return G.replayByReplace(a) end
+	if G.lagMark then G.lagMark("construction") end
 	local cArgs = C.copy(a.args)
 	local miss = R.translateIn(cArgs, G.bind)
+	if G.lagMark then G.lagMark("copied+translated again") end
 	if #miss > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: unresolved " .. table.concat(miss, ",")) return false end
 	local m = cArgs[1]
 	-- (0.6.10: an edit of another company's construction, for that company, see G.conOwner)
@@ -5337,6 +5339,7 @@ local function replayNativeConstruction(a)
 	pcall(G.conOwner, a, m, ctx)
 	G.refundInto(ctx)
 	local okc, dry = pcall(function() return api.cmd.makeWorldBuildProposalCmd(spCon, ctx, false, true) end)
+	if G.lagMark then G.lagMark("conversion made") end
 	if not okc or not dry then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: conversion command " .. shortErr(dry)) return false end
 	toSim("replaying", { tok = a.tsTok })
 	local edgesBefore = #R.allEdges()
@@ -6468,8 +6471,11 @@ local function replayNative(a, formIndex)
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " detail: constructions {" .. table.concat(names, ", ") .. "} node heights " ..
 				tostring(zmin) .. ".." .. tostring(zmax) .. " segment type/index {" .. table.concat(kinds, ", ") .. "}")
 		end)
+		if G.lagMark then G.lagMark("described") end
 		local probe = C.copy(a.args)
+		if G.lagMark then G.lagMark("copied") end
 		local missing = R.translateIn(probe, G.bind)
+		if G.lagMark then G.lagMark("translated") end
 		-- the edit of a construction sent by a window (a warehouse's goods with the Drive-in Warehouses mod, see G.uiEdit): the
 		-- engine's own replacement with the new settings, made the same way on every game
 		local e1 = probe[1]
@@ -7749,6 +7755,10 @@ G.lagCommand = function()
 		G.lagCur.sends[#G.lagCur.sends + 1] = os.clock()
 	end
 end
+-- (a step of the replay's own work, for the line: G.lagMark("name"))
+G.lagMark = function(name)
+	if G.lagCur then G.lagCur.marks = G.lagCur.marks or {}; G.lagCur.marks[#G.lagCur.marks + 1] = { name, os.clock() } end
+end
 -- (each command's answer, for the line: where the replay's time goes, the engine's round trips or this script's work)
 G.lagAnswer = function()
 	if G.lagCur then G.lagCur.answers = G.lagCur.answers or {}; G.lagCur.answers[#G.lagCur.answers + 1] = os.clock() end
@@ -7771,7 +7781,9 @@ G.lagLine = function()
 		.. (function()
 			local t = {}
 			for i, x in ipairs(L.sends or {}) do t[#t + 1] = "+" .. ms(L.sentT, x) .. ">" .. ms(L.sentT, (L.answers or {})[i]) end
-			return #t > 0 and ("; commands sent>answered at " .. table.concat(t, ", ") .. " ms") or ""
+			local mk = {}
+			for _, x in ipairs(L.marks or {}) do mk[#mk + 1] = x[1] .. " +" .. ms(L.sentT, x[2]) end
+			return (#t > 0 and ("; commands sent>answered at " .. table.concat(t, ", ") .. " ms") or "") .. (#mk > 0 and ("; " .. table.concat(mk, ", ")) or "")
 		end)())
 end
 
