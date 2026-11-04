@@ -4212,6 +4212,7 @@ local function replaySend(cmd, cb)
 	G.worldFrame = G.frames
 	local who, rf = G.actor, G.refund
 	O.sendCommand(cmd, function(...)
+		if G.lagAnswer then pcall(G.lagAnswer) end
 		G.replayOut = math.max(0, (G.replayOut or 1) - 1)
 		-- room for a follow-up command (next segment, next form); a longer hold for an edge-object count is kept (G.eoCheckHold)
 		G.replayQuiet = G.eoHoldOwn and math.max(G.replayQuiet or 0, G.frames + 3) or (G.frames + 3)
@@ -7722,7 +7723,15 @@ G.lagStart = function(a)
 	G.lagCur = { uid = a.uid, at = a.at, sentT = os.clock(), sentF = G.frames, w = w, bytes = bytes, cmds = 0 }
 end
 G.lagCommand = function()
-	if G.lagCur then G.lagCur.cmds = G.lagCur.cmds + 1; G.lagCur.lastT = os.clock() end
+	if G.lagCur then
+		G.lagCur.cmds = G.lagCur.cmds + 1; G.lagCur.lastT = os.clock()
+		G.lagCur.sends = G.lagCur.sends or {}
+		G.lagCur.sends[#G.lagCur.sends + 1] = os.clock()
+	end
+end
+-- (each command's answer, for the line: where the replay's time goes, the engine's round trips or this script's work)
+G.lagAnswer = function()
+	if G.lagCur then G.lagCur.answers = G.lagCur.answers or {}; G.lagCur.answers[#G.lagCur.answers + 1] = os.clock() end
 end
 -- (from the interface's frame: once the replay has nothing at the engine for 10 frames)
 G.lagLine = function()
@@ -7738,7 +7747,12 @@ G.lagLine = function()
 	local from = w.reachedT or L.sentT
 	log("LAG " .. tostring(L.uid) .. " for t=" .. tostring(L.at) .. ": this game stood " .. ms(math.min(from, L.sentT), L.doneT) .. " ms at its time ("
 		.. ms(w.reachedT, w.gotT) .. " ms for its data, " .. ms(w.gotT or w.reachedT, L.sentT) .. " ms before its replay, " .. ms(L.sentT, L.doneT) .. " ms of replay, "
-		.. L.cmds .. " command(s)); data " .. ms(w.sinceT, w.gotT) .. " ms after its announce" .. (L.bytes and (", " .. L.bytes .. " bytes") or ""))
+		.. L.cmds .. " command(s)); data " .. ms(w.sinceT, w.gotT) .. " ms after its announce" .. (L.bytes and (", " .. L.bytes .. " bytes") or "")
+		.. (function()
+			local t = {}
+			for i, x in ipairs(L.sends or {}) do t[#t + 1] = "+" .. ms(L.sentT, x) .. ">" .. ms(L.sentT, (L.answers or {})[i]) end
+			return #t > 0 and ("; commands sent>answered at " .. table.concat(t, ", ") .. " ms") or ""
+		end)())
 end
 
 -- (0.5.14, issue #96) Whether another game's build that came too late here is left unbuilt: this game already built something

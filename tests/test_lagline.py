@@ -51,9 +51,9 @@ matchesWait = function(w, a) return w.origin == a.origin and w.at == a.at end
       NOW = 12.0
       G.lagStart(a)
       G.replayOut = 1; G.lagCommand(); G.lagLine()            -- the conversion command at the engine
-      NOW = 12.4; G.replayOut = 0; G.frames = 110; G.lagLine()  -- answered
+      NOW = 12.4; G.lagAnswer(); G.replayOut = 0; G.frames = 110; G.lagLine()  -- answered
       G.replayOut = 1; G.lagCommand(); G.frames = 112; G.lagLine()   -- the real command
-      NOW = 13.5; G.replayOut = 0; G.frames = 120; G.lagLine()
+      NOW = 13.5; G.lagAnswer(); G.replayOut = 0; G.frames = 120; G.lagLine()
       for f = 121, 129 do G.frames = f; G.lagLine() end
       local n0 = #LOG
       G.frames = 131; G.lagLine()
@@ -62,6 +62,7 @@ matchesWait = function(w, a) return w.origin == a.origin and w.at == a.at end
     check("nothing before 10 quiet frames after the last command", n0 == "0", got)
     check("one line: stood 4500 ms (data 2500 ms, replay 1500 ms, 2 commands, its size)",
           "LAG Dimi:102 for t=500: this game stood 4500 ms at its time (2500 ms for its data, 500 ms before its replay, 1500 ms of replay, 2 command(s)); data 3500 ms after its announce, 2295081 bytes" in line, line)
+    check("each command's send and answer", "commands sent>answered at +0>400, +400>1500 ms" in line, line)
     got = run("""G.frames = 200; G.lagLine(); return tostring(G.lagCur) .. " " .. #LOG""")
     check("once", got == "nil 1", got)
     got = run("""ENV.MPFEVER_LAGLINE = "0"; G.lagStart({ uid = "x", at = 1 }); return tostring(G.lagCur)""")
