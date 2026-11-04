@@ -358,7 +358,8 @@ The rule since 0.4.0: replay a build as the tool's own native proposal whenever 
   - A company's score is the sum over the towns of population x its share of what was carried x its rating there, taken four times a game month (after TPF3-MP's progression, MIT); experience is the highest score.
   - Company 1 first followed the game's own experience (#63, 0.3.21), which is the world's population and grows with every company's work. Since 0.6.4 it keeps its start and adds its own score (`MPFEVER_RANK1BASE=0`).
   - A rank is never below 1, nor below a rank already taken (`MPFEVER_RANKFLOOR=0`). The game's own "rank reached" notice belongs to the savegame's company and is dismissed on the other games (`MPFEVER_RANKNOTIF=0`).
-  - Open: the scale (shares keep the other companies below the game's thresholds) and #125 (every score 0 on some saves).
+  - #125 (found 2026-11-04, fixed in 0.6.12): `getTownHappinessStats` returns a native object (userdata), and the ranks read it as a Lua table only: no passenger was ever counted, and companies carrying passengers only scored 0 for good (`MPFEVER_RANKNATIVE=0`: as before). The deliveries statistics are a plain table. Read engine results through field access, never through `type(x) == "table"` tests.
+  - Open: the scale (shares keep the other companies below the game's thresholds).
 - **Owners of builds.**
   - The builder's engine applies its tool's build natively with the canon company in the command; the native module replaces it in the held command (0.3.1). A capture names the company it is for (0.6.10, `MPFEVER_SHIPCO=0`).
   - An edit of another company's station is replayed for its owner (0.6.10, `MPFEVER_CONOWNER=0`). An upgraded segment gets the tool's owner (#104, 0.6.2, `MPFEVER_UPGOWNER=0`).

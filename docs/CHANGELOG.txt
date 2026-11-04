@@ -12,6 +12,12 @@ MPFever - Changelog
     The ranks' log gets a detail line (on the first sample of a game, every 4 game months, every sample with
     MPFEVER_RANKDETAIL=1): per company the towns where it carried cargo and passengers and where it scored, the lines of
     the statistics that belong to no company, and the raw statistics of the most populous town. Test: tests/test_ranks.py.
+  - FIX (one company per player, #125, #115): a company that carries passengers only kept a score of 0 and rank 1 for good
+    (its Company tab greyed, the host's company never past its first rank, no special buildings). The game gives a town's
+    happiness statistics, where each line's passengers are, as a native object, and the ranks read them as Lua tables only:
+    no passenger of any line was ever counted, a company carrying cargo to towns scored with its cargo only. Found with the
+    detail line above on a test save: 37 lines and 1 600 travellers in its biggest town, "passengers in 0" towns for every
+    company. They are now read whatever they are. MPFEVER_RANKNATIVE=0: as before. Test: tests/test_ranknative.py.
   - FIX (problem reports, #125): a player's report said "shared company" in its title and "one company for everybody" in its
     session line whatever the host chose (#110, #113, #115, #125 were all one company per player): the company mode was
     the host's own setting, never set on a player's launcher. A player's report now names the host's mode (its "session"

@@ -246,16 +246,49 @@ function PG.measure(api, reg, game)
 			end)
 			PG.seen.top = { population = t.population, town = t.town, raw = okR and raw or ("unreadable: " .. tostring(raw)) }
 		end
-		for _, entry in ipairs(type(happiness) == "table" and happiness.byLine or {}) do
-			local id = companyOf(entry[1])
-			local by = entry[2]
-			if id and type(by) == "table" then
-				local c = of(id)
-				for _, who in ipairs({ "resident", "nonResident" }) do
-					local pair = by[who]
-					if type(pair) == "table" then
-						c.unhappy = c.unhappy + (pair[1] or 0)
-						c.passengers = c.passengers + (pair[2] or 0)
+		-- (0.6.12, #125) the game gives these statistics as a native object (userdata), not a Lua table: read as tables only,
+		-- no passenger of any line was ever counted, and the companies that carry passengers only (#125, #115: buses and
+		-- trains) kept a score of 0 and rank 1 for good (a company also carrying cargo to towns scored with its cargo only).
+		-- Their fields are now read whatever they are. MPFEVER_RANKNATIVE=0: tables only, as before.
+		if os.getenv("MPFEVER_RANKNATIVE") ~= "0" then
+			local function field(x, k)
+				if x == nil then return nil end
+				local ok, v = pcall(function() return x[k] end)
+				if ok then return v end
+				return nil
+			end
+			local byLine = field(happiness, "byLine")
+			local list = {}
+			if type(byLine) == "table" then list = byLine
+			elseif byLine ~= nil then pcall(function() for i, e in pairs(byLine) do list[#list + 1] = e end end) end
+			for _, entry in ipairs(list) do
+				local line = field(entry, 1)
+				local id = type(line) == "number" and companyOf(line) or nil
+				local by = field(entry, 2)
+				if id and by ~= nil then
+					local c = of(id)
+					for _, who in ipairs({ "resident", "nonResident" }) do
+						local pair = field(by, who)
+						local unhappy, total = tonumber(field(pair, 1)), tonumber(field(pair, 2))
+						if total then
+							c.unhappy = c.unhappy + (unhappy or 0)
+							c.passengers = c.passengers + total
+						end
+					end
+				end
+			end
+		else
+			for _, entry in ipairs(type(happiness) == "table" and happiness.byLine or {}) do
+				local id = companyOf(entry[1])
+				local by = entry[2]
+				if id and type(by) == "table" then
+					local c = of(id)
+					for _, who in ipairs({ "resident", "nonResident" }) do
+						local pair = by[who]
+						if type(pair) == "table" then
+							c.unhappy = c.unhappy + (pair[1] or 0)
+							c.passengers = c.passengers + (pair[2] or 0)
+						end
 					end
 				end
 			end
