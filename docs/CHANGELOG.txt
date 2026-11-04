@@ -68,7 +68,11 @@ MPFever - Changelog
     about 0.06 s less on a small build, nothing on a big station's (the engine's own work), so it stays off.
   - NEW (diagnostic): every build of another player replayed here writes a "LAG" line: how long this game stood at its time,
     waiting for its data and then for its replay, the commands it took and the data's size (the measure of the freezes on
-    big stations, the user's test of 2026-11-03 23:17). MPFEVER_LAGLINE=0: none. Test: tests/test_lagline.py.
+    big stations, the user's test of 2026-11-03 23:17), each command and its answer, and the replay's own steps.
+    MPFEVER_LAGLINE=0: none. Measured on the user's station of 181 modules (2.3 MB): the other game stood 2.9 s per edit before
+    (1.5 s waiting for the build, 1.4 s replaying it), 1.15 s with the lead above (the build is there before its step; the rest
+    is the engine's own work: its proposal factory 0.33 s, the build 0.5 s); small builds 0.4 to 0.55 s.
+    Test: tests/test_lagline.py.
 
 0.6.11 - 2026-11-03: smoother dots, computer companies on a new map and depot tolls (#122), the names checks (#121)
   - NEW (one company per player): the colour dots over the other companies' vehicles follow them. The game's HUD image stays
