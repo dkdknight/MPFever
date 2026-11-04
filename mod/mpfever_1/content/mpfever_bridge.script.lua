@@ -5317,8 +5317,10 @@ local function replayNativeConstruction(a)
 	local m = cArgs[1]
 	-- (0.6.10: an edit of another company's construction, for that company, see G.conOwner)
 	pcall(G.conOwner, a, m, { player = api.engine.util.getPlayer() })
+	if G.lagMark then G.lagMark("owner") end
 	-- the engine's conversion of the construction (twice: guaranteed collision, so that nothing is built)
 	local spCon = C.rebuildProposal(m, { noStreet = true, seed = 7919 })
+	if G.lagMark then G.lagMark("rebuilt") end
 	local cons = {}
 	do
 		local one = spCon.constructionsToAdd
@@ -5338,6 +5340,7 @@ local function replayNativeConstruction(a)
 	ctx.player = api.engine.util.getPlayer()
 	pcall(G.conOwner, a, m, ctx)
 	G.refundInto(ctx)
+	if G.lagMark then G.lagMark("context") end
 	local okc, dry = pcall(function() return api.cmd.makeWorldBuildProposalCmd(spCon, ctx, false, true) end)
 	if G.lagMark then G.lagMark("conversion made") end
 	if not okc or not dry then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: conversion command " .. shortErr(dry)) return false end

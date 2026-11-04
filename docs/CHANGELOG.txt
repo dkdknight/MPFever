@@ -63,6 +63,9 @@ MPFever - Changelog
   - LAG: MPFever.exe asks Windows for its 1 ms timer while it runs: every Thread.Sleep(5) of the links between the game and the
     network lasted a timer tick, 15.6 ms, at each of the two launchers a build goes through (after TPF3-MP's measures, MIT).
     MPFEVER_TIMER1MS=0: the system's timer, as before. Test: MPFever.exe --selftest (RunFineTimer).
+  - EXPERIMENTAL (off, MPFEVER_FASTSTAND=1): while a game stands at a step for another player's build with its replay at the
+    engine, its batches are made ten times shorter (20 ms), so that the replay's commands go and come back sooner. Measured:
+    about 0.06 s less on a small build, nothing on a big station's (the engine's own work), so it stays off.
   - NEW (diagnostic): every build of another player replayed here writes a "LAG" line: how long this game stood at its time,
     waiting for its data and then for its replay, the commands it took and the data's size (the measure of the freezes on
     big stations, the user's test of 2026-11-03 23:17). MPFEVER_LAGLINE=0: none. Test: tests/test_lagline.py.
