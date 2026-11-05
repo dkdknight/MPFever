@@ -40,15 +40,15 @@ namespace MPFever
             ["zhenya_auto_assign_terminals"] = () => new Verdict { Level = "fixed", Note = T("Les quais choisis par le jeu de l'hôte s'appliquent partout (0.4.0).", "The platforms chosen by the host's game apply everywhere (0.4.0).") },
             // (0.6.7) Real Track Cant builds its cant pieces by script on every game: each game ships them as a player's builds, the
             // constructions then differ (393 against 469 in the session of 2026-11-01 02:20) and the host's game reloads (#96).
-            // (0.6.13) Those builds come from its interface, by itself after a load: one game sends them now (mpfever_modauto.lua)
-            ["devers_1"] = () => new Verdict { Level = "caution", Note = T("Ses constructions automatiques ne partent plus que d'un jeu (0.6.13) : à confirmer en partie.", "Its automatic builds now go from one game only (0.6.13): to confirm in a session.") },
+            // (0.7.0) Those builds come from its interface, by itself after a load: one game sends them now (mpfever_modauto.lua)
+            ["devers_1"] = () => new Verdict { Level = "caution", Note = T("Ses constructions automatiques ne partent plus que d'un jeu (0.7.0) : à confirmer en partie.", "Its automatic builds now go from one game only (0.7.0): to confirm in a session.") },
             // (0.6.7) the game's own "No costs": nothing is charged, MPFever books no refund difference then (REFUND.freeBuilds)
             ["urbangames_no_costs_1"] = () => new Verdict { Level = "fixed", Note = T("Constructions gratuites : MPFever ne corrige plus leur prix entre les jeux (0.6.7).", "Free building: MPFever no longer evens out its price between the games (0.6.7).") },
             ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Les signaux ajoutés ne sont construits qu'une fois, par le jeu qui a posé le signal (0.4.0).", "Added signals are built once, by the game where the signal was placed (0.4.0).") },
         };
 
-        // (0.6.13) the 83 most downloaded script mods of mod.io, read one by one (docs/MODS.md): those that work as they are, and
-        // those made to work by 0.6.13 (their interface's automatic commands sent by one game only, see mpfever_modauto.lua)
+        // (0.7.0) the 83 most downloaded script mods of mod.io, read one by one (docs/MODS.md): those that work as they are, and
+        // those made to work by 0.7.0 (their interface's automatic commands sent by one game only, see mpfever_modauto.lua)
         static readonly string[] CheckedOk =
         {
             "parallel_tracks_1", "parallel_roads_1", "automatic_signal_spacing", "automatic_station_throat", "auto_bridges_1",
@@ -70,9 +70,9 @@ namespace MPFever
 
         static Verdict Checked(string id)
         {
-            if (CheckedOk.Contains(id)) return new Verdict { Level = "ok", Note = T("Script lu : rien qui désynchronise (0.6.13).", "Script read: nothing that desynchronises (0.6.13).") };
+            if (CheckedOk.Contains(id)) return new Verdict { Level = "ok", Note = T("Script lu : rien qui désynchronise (0.7.0).", "Script read: nothing that desynchronises (0.7.0).") };
             if (FixedHostNames.Contains(id)) return new Verdict { Level = "fixed", Note = T("Les noms donnés par le jeu de l'hôte s'appliquent partout (0.4.0).", "The names given by the host's game apply everywhere (0.4.0).") };
-            if (Fixed0613.Contains(id)) return new Verdict { Level = "fixed", Note = T("Ce qu'il envoie tout seul ne part plus que d'un jeu (0.6.13) : à confirmer en partie.", "What it sends by itself now goes from one game only (0.6.13): to confirm in a session.") };
+            if (Fixed0613.Contains(id)) return new Verdict { Level = "fixed", Note = T("Ce qu'il envoie tout seul ne part plus que d'un jeu (0.7.0) : à confirmer en partie.", "What it sends by itself now goes from one game only (0.7.0): to confirm in a session.") };
             if (ToCheck.Contains(id)) return new Verdict { Level = "caution", Note = T("Script lu : un point reste à vérifier en partie (voir MODS.md).", "Script read: one point is still to check in a session (see MODS.md).") };
             return null;
         }
@@ -106,7 +106,7 @@ namespace MPFever
             catch { return ""; }
         }
 
-        /// <summary>(0.6.13) The DLCs a game uses: those of its savegame's mods (a "described" list, see Describe: the entries whose
+        /// <summary>(0.7.0) The DLCs a game uses: those of its savegame's mods (a "described" list, see Describe: the entries whose
         /// source is "DLC"; the host can switch one off in the savegame's mods when it loads it), "none" when it uses none; null
         /// when the savegame's mods are not known (the host's installed DLCs are said then, see SessionDlcs in MainForm).</summary>
         public static string SaveDlcs(string described, bool known)
@@ -125,12 +125,12 @@ namespace MPFever
             return id;
         }
 
-        /// <summary>(0.6.13) Where a player gets a DLC: the Steam store page of the Deluxe upgrade (app 3979620), else the game's
+        /// <summary>(0.7.0) Where a player gets a DLC: the Steam store page of the Deluxe upgrade (app 3979620), else the game's
         /// own page (3493540: the pre-order pack is not sold on its own; the page lists what is).</summary>
         public static string DlcStoreUrl(string id) =>
             (id ?? "").IndexOf("deluxe", StringComparison.OrdinalIgnoreCase) >= 0 ? "steam://store/3979620" : "steam://store/3493540";
 
-        /// <summary>(0.6.13) What the host and the players can do when their DLCs differ (the user's choice, 2026-11-05: no second
+        /// <summary>(0.7.0) What the host and the players can do when their DLCs differ (the user's choice, 2026-11-05: no second
         /// press of « Start the game » any more, the advice instead).</summary>
         public static string DlcAdvice() => T(
             " Pour l'éviter, l'hôte peut désactiver ces DLC dans les mods de la sauvegarde (au chargement de la partie), ou les joueurs peuvent acquérir les DLC qui leur manquent. La partie peut tout de même être lancée, mais des désynchronisations peuvent se produire.",
@@ -160,7 +160,7 @@ namespace MPFever
             return string.Join(T(" ; ", "; "), parts);
         }
 
-        /// <summary>(0.6.13) The DLCs of a host's game and of this PC for the menu's list, "id|name|state|store;..." in the host's
+        /// <summary>(0.7.0) The DLCs of a host's game and of this PC for the menu's list, "id|name|state|store;..." in the host's
         /// order then this PC's: state "both" (alike), "host" (the host's game uses it, this PC lacks it: to get, the store page) or
         /// "mine" (this PC has it, the host's game does not). "" when either list is unknown or neither has any.</summary>
         public static string DlcListView(string hostList, string mine)
@@ -177,7 +177,7 @@ namespace MPFever
             return string.Join(";", rows);
         }
 
-        /// <summary>(0.6.13) The whole warning from the differences of each player (DlcWarning), the advice once: "" when none.</summary>
+        /// <summary>(0.7.0) The whole warning from the differences of each player (DlcWarning), the advice once: "" when none.</summary>
         public static string DlcWarningText(IEnumerable<string> differences)
         {
             var d = (differences ?? Enumerable.Empty<string>()).Where(x => !string.IsNullOrEmpty(x)).ToList();

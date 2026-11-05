@@ -1,4 +1,4 @@
-"""Offline test of the paused checkpoints that wait for the engine's answer (0.6.13).
+"""Offline test of the paused checkpoints that wait for the engine's answer (0.7.0).
 
 In a pause the engine applies a command at its next swap of the command list (every 200 ms). A line renamed just before a
 checkpoint (by a player, or by Auto Line Namer's renames that only the host's game sends) was already renamed in one game's

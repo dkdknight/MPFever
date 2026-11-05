@@ -54,7 +54,7 @@ end
 
 local MOD_ID = "mpfever_1"
 
--- (0.6.13) A DLC of the host's game this PC does not have (the Deluxe upgrade, the pre-order pack): the game loads without it, as
+-- (0.7.0) A DLC of the host's game this PC does not have (the Deluxe upgrade, the pre-order pack): the game loads without it, as
 -- its own load screen lets a player do (the DLCs' severityRemove "Warning"), instead of not loading at all; the lobby and the join
 -- review said that the games may then desynchronise (the user's choice, 2026-11-05: the game can still be played).
 -- MPFEVER_DLCDROP=0: a missing DLC counts as a missing mod, the host's game is not loaded, as before.
@@ -146,7 +146,7 @@ local function loadPending()
 	-- (tests: MPFEVER_DROPMODS=id1,id2 leaves mods of the savegame out, as the load screen does: a DLC this PC does not have)
 	local drop, dropped = {}, {}
 	for id in tostring(os.getenv("MPFEVER_DROPMODS") or ""):gmatch("[^,%s]+") do drop[id] = true end
-	-- (0.6.13) the host's DLCs this PC does not have: left out (see dlcOf)
+	-- (0.7.0) the host's DLCs this PC does not have: left out (see dlcOf)
 	local descs = descsOf(info)
 	local okrep, rep0 = pcall(function() return app.getUserProfile():getModRep() end)
 	local function dlcMissing(m)

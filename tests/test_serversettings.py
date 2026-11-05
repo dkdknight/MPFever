@@ -1,4 +1,4 @@
-"""Offline test of the dedicated server's settings window (0.6.13, the user's request of 2026-11-05: "a nice interface for every
+"""Offline test of the dedicated server's settings window (0.7.0, the user's request of 2026-11-05: "a nice interface for every
 setting of the server, with the list of the savegames and the computer companies", instead of mpfever_server.properties in
 Notepad).
 

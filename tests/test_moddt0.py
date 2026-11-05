@@ -1,4 +1,4 @@
-"""Offline test of the mods' game script updates called with the steps only (0.6.13).
+"""Offline test of the mods' game script updates called with the steps only (0.7.0).
 
 The engine calls the game scripts' update once per step with dt 0.2, and with dt 0 in a batch of no step (a game standing
 at a stop point, a pause): how many of those calls a game makes depends on its frames. A mod that works at every call

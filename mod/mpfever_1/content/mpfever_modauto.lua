@@ -1,4 +1,4 @@
--- MPFever: the commands that a mod's interface sends by itself (0.6.13).
+-- MPFever: the commands that a mod's interface sends by itself (0.7.0).
 --
 -- Every command a game's interface sends goes through MPFever (mpfever_ui.script.lua): it is shipped and applied once on
 -- every game at the same step. That is right for what the player asked for. But some mods send commands from their

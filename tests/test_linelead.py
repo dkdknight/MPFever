@@ -1,4 +1,4 @@
-"""Offline test of the line lead (0.6.13, experimental, MPFEVER_LINELEAD=1; the user's sessions of 2026-11-04: a stop added in the
+"""Offline test of the line lead (0.7.0, experimental, MPFEVER_LINELEAD=1; the user's sessions of 2026-11-04: a stop added in the
 line window showed 1.3 s later, up to 3.7 s).
 
 A line command starts the builder's lead; while this game leads (G.buildLeadState true) it is stamped its overshoot plus one step

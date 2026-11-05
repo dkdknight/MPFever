@@ -39,7 +39,7 @@ namespace MPFever
                 foreach (var c in SaveInfo.AiCompanies(args[1])) Console.WriteLine("ai:" + c.Number + " colour " + c.Color + " " + c.Name);
                 return 0;
             }
-            // --savemods <savegame file>: the mods a savegame lists, read from its start (0.6.13, diagnostics)
+            // --savemods <savegame file>: the mods a savegame lists, read from its start (0.7.0, diagnostics)
             if (args.Length > 1 && args[0] == "--savemods")
             {
                 Log.Init(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs"));
@@ -66,7 +66,7 @@ namespace MPFever
             // --settings: the settings window alone (to look at it)
             if (args.Length > 0 && args[0] == "--settings") { using (var t = new OptionsDialog(args.Contains("--guest"))) { t.StartPosition = FormStartPosition.CenterScreen; t.ShowInTaskbar = true; t.ShowDialog(); } return 0; }
             if (args.Length > 0 && args[0] == "--thanks") { using (var t = new ThanksDialog()) { t.StartPosition = FormStartPosition.CenterScreen; t.ShowInTaskbar = true; t.ShowDialog(); } return 0; }
-            // --serversettings [file] [--shots <folder>]: the dedicated server's settings window alone (0.6.13, to look at it): the settings
+            // --serversettings [file] [--shots <folder>]: the dedicated server's settings window alone (0.7.0, to look at it): the settings
             // file given (else mpfever_server.properties here); --shots saves a picture of each of its pages there and closes it
             if (args.Length > 0 && args[0] == "--serversettings")
             {
@@ -117,7 +117,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.6.13";
+        public const string Version = "0.7.0";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -132,11 +132,11 @@ namespace MPFever
         GameLink menuGame;
         string menuPhase = "idle", menuText = "", menuLoad = "", menuLoadSeq = "", lastMenuReq;
         volatile bool joinPending;
-        // (0.6.13, the host) the players who look at the game's mods and DLCs before joining a game already running (see the join
+        // (0.7.0, the host) the players who look at the game's mods and DLCs before joining a game already running (see the join
         // review): they get the game once they say so (joinready). MPFEVER_JOINREVIEW=0: a player gets the game at once, as before
         readonly HashSet<string> reviewing = new HashSet<string>();
         static bool JoinReviewOn => Environment.GetEnvironmentVariable("MPFEVER_JOINREVIEW") != "0";
-        // (0.6.13, a player) the join waiting for the player's word (its page's « Join the game »): sends joinready and resync_have;
+        // (0.7.0, a player) the join waiting for the player's word (its page's « Join the game »): sends joinready and resync_have;
         // and what the player accepted (host run, mods, DLCs): the same again after a cut joins without asking
         volatile Action reviewSend;
         volatile string reviewAccepted;
@@ -173,10 +173,10 @@ namespace MPFever
         // when it is in another host's lobby or session
         readonly Dictionary<string, string> dlcIssues = new Dictionary<string, string>();
         string dlcWarn = "";
-        // (0.6.13) the savegame's mods are known (host_mods.txt written by the host's menu, or read from a dedicated server's
+        // (0.7.0) the savegame's mods are known (host_mods.txt written by the host's menu, or read from a dedicated server's
         // world): the session's DLCs are then the savegame's (see SessionDlcs), the host may have switched one off in it
         bool lobbyModsKnown;
-        // (0.6.13, a player) the host's DLCs for the menu's DLC list: "id|name|state|store;..." (state: both, host = the host's game
+        // (0.7.0, a player) the host's DLCs for the menu's DLC list: "id|name|state|store;..." (state: both, host = the host's game
         // uses it and this PC lacks it, mine = this PC has it and the host's game does not), see DlcListView
         string dlcListView = "";
         // Mods a player lacks that no Mod Hub has (the host's own local mods, see Mods): the host is asked whether to send them
@@ -1387,7 +1387,7 @@ namespace MPFever
             try
             {
                 var f = Path.Combine(menuGame.Dir, "host_mods.txt");
-                // (0.6.13: written by the menu when the host picks the savegame, its DLCs among its mods, see SessionDlcs)
+                // (0.7.0: written by the menu when the host picks the savegame, its DLCs among its mods, see SessionDlcs)
                 lobbyModsKnown = File.Exists(f);
                 var mods = File.Exists(f) ? File.ReadAllText(f).Trim() : "";
                 var names = ModNames(mods);
@@ -1452,7 +1452,7 @@ namespace MPFever
             var parts = new List<string>();
             if (mineOnly.Count > 0) parts.Add(F("vous avez {0}, pas la partie de l'hôte", "you have the {0}, the host's game does not", string.Join(", ", mineOnly)));
             if (hostOnly.Count > 0) parts.Add(F("la partie de l'hôte utilise {0}, vous ne l'avez pas", "the host's game uses the {0}, you do not have it", string.Join(", ", hostOnly)));
-            // (0.6.13: the advice instead of "every player needs the same DLCs"; the game can still be played)
+            // (0.7.0: the advice instead of "every player needs the same DLCs"; the game can still be played)
             dlcWarn = Mods.DlcWarningText(parts);
             dlcListView = Mods.DlcListView(hostList, mine);
             if (dlcWarn != "") Log.Err(dlcWarn);
@@ -1460,7 +1460,7 @@ namespace MPFever
             MenuStatus();
         }
 
-        /// <summary>(0.6.13, a player) Nothing to look at before joining a game already running: the host's mods are all here in its
+        /// <summary>(0.7.0, a player) Nothing to look at before joining a game already running: the host's mods are all here in its
         /// version (or taken for personal), none is incompatible, and the DLCs are the same.</summary>
         bool JoinReviewClear()
         {
@@ -1472,7 +1472,7 @@ namespace MPFever
         /// <summary>(0.6.9, the host) The DLC warnings of the players whose DLCs are not the host's, for the lobby.</summary>
         string HostDlcWarn() { lock (dlcIssues) return Mods.DlcWarningText(dlcIssues.Values.ToList()); }
 
-        /// <summary>(0.6.13) The DLCs of this session as the host tells them to its players: its savegame's when its mods are known
+        /// <summary>(0.7.0) The DLCs of this session as the host tells them to its players: its savegame's when its mods are known
         /// (the host may have switched a DLC off in them), else the DLCs installed on the host's PC. MPFEVER_SAVEDLCS=0: always
         /// the installed ones, as 0.6.9 to 0.6.12.</summary>
         string SessionDlcs()
@@ -1571,7 +1571,7 @@ namespace MPFever
                     ["modSend"] = lobbyOpen ? modSendText : "",
                     // (0.6.9) players whose DLCs are not the host's (the host's lobby), or this player's own difference
                     ["dlcWarn"] = (lobbyOpen || hostGame != null) ? HostDlcWarn() : dlcWarn,
-                    // (0.6.13, a player) the host's DLCs and this PC's, for the list of the lobby and of the join review
+                    // (0.7.0, a player) the host's DLCs and this PC's, for the list of the lobby and of the join review
                     ["dlcList"] = (lobbyOpen || hostGame != null) ? "" : dlcListView,
                     ["modOffer"] = lobbyOpen ? "" : modOffer,
                     ["modAskState"] = lobbyOpen ? "" : modAskState,
@@ -1841,7 +1841,7 @@ namespace MPFever
             else if (cmd == "start")
             {
                 if (!lobbyOpen || hostGame == null) return;
-                // (0.6.13) players of other DLCs: the lobby shows the warning and the advice, the start goes on (the user's choice,
+                // (0.7.0) players of other DLCs: the lobby shows the warning and the advice, the start goes on (the user's choice,
                 // 2026-11-05: no second press); said once more in the log
                 var dw = HostDlcWarn();
                 if (dw != "") Log.Warn(T("Lancement avec des DLC différents : ", "Starting with different DLCs: ") + dw);
@@ -1876,7 +1876,7 @@ namespace MPFever
                     return;
                 }
                 // (a host that refused this player already said why)
-                // (0.6.13: unless the welcome came first and asks the player to look at the game's mods and DLCs)
+                // (0.7.0: unless the welcome came first and asks the player to look at the game's mods and DLCs)
                 if (!clientCancelled && menuPhase != "review") { menuPhase = "connected"; menuText = T("Connecté. L'hôte prépare sa partie...", "Connected. The host is preparing its game..."); MenuStatus(); }
             }
             else if (cmd == "color")
@@ -2083,7 +2083,7 @@ namespace MPFever
             }
             else if (cmd == "joinready")
             {
-                // (0.6.13) « Join the game » of the join review: the host sends its game now
+                // (0.7.0) « Join the game » of the join review: the host sends its game now
                 var go = reviewSend;
                 if (go == null) return;
                 Log.W(T("Vous rejoignez la partie : l'hôte envoie sa partie.", "You join the game: the host sends its game."));
@@ -2093,7 +2093,7 @@ namespace MPFever
             }
             else if (cmd == "dlcstore")
             {
-                // (0.6.13) a DLC's Steam store page (only the pages MPFever knows, from the DLC's id, see Mods.DlcStoreUrl)
+                // (0.7.0) a DLC's Steam store page (only the pages MPFever knows, from the DLC's id, see Mods.DlcStoreUrl)
                 var url = Mods.DlcStoreUrl(arg ?? "");
                 Log.W(F("Page Steam du DLC {0} : {1}", "Steam page of the DLC {0}: {1}", Mods.DlcName(arg ?? ""), url));
                 try { Process.Start(url); }
@@ -2260,7 +2260,7 @@ namespace MPFever
                 // (the tests, without a lobby: MPFEVER_AI="n:colour,..." stands for the host's choice)
                 var env = Environment.GetEnvironmentVariable("MPFEVER_AI") ?? "";
                 if (lobbyAi.Count == 0 && env.Contains(":")) return env;
-                // (0.6.13) a dedicated server has no lobby: the computer companies of its settings (ai-companies, its window's list)
+                // (0.7.0) a dedicated server has no lobby: the computer companies of its settings (ai-companies, its window's list)
                 if (lobbyAi.Count == 0 && server != null) return server.AiCompanies ?? "";
                 // (":money", 0.5.14: only when the host chose one for it, else the players')
                 return string.Join(",", lobbyAi.Select(kv => kv.Key.ToString(CultureInfo.InvariantCulture) + ":" + kv.Value.Color.ToString(CultureInfo.InvariantCulture)
@@ -2781,7 +2781,7 @@ namespace MPFever
                 Log.Ok(F("{0} a rejoint la session", "{0} joined the session", p.Name));
                 lock (leftAt) leftAt.Remove(BaseName(p.Name));
                 relay.DropOlder(p);
-                // (0.6.13) a game already running (no lobby: a player's game started, a dedicated server): the player sees its mods and
+                // (0.7.0) a game already running (no lobby: a player's game started, a dedicated server): the player sees its mods and
                 // DLCs on its page first, gets what it lacks, and says when it joins (joinready); only then does it get the game
                 bool review = menuMode && !lobbyOpen && JoinReviewOn;
                 relay.Send(p, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(SessionDlcs())
@@ -3128,7 +3128,7 @@ namespace MPFever
                                 Log.W(F("[{0}] partie de l'hôte reçue en partie ({1}/{2}) : seule la suite est demandée", "[{0}] host game partly received ({1}/{2}): only the rest is asked for", name, kv.Value.Length - miss.Length, kv.Value.Length));
                             }
                         }
-                        // (0.6.13) a game already running asks this player to look at its mods and DLCs first (see the join review):
+                        // (0.7.0) a game already running asks this player to look at its mods and DLCs first (see the join review):
                         // nothing to look at (the same mods and DLCs), or what this player accepted already (back after a cut), joins
                         // at once; else the page shows them with « Join the game », and the host's game comes after it
                         bool review = w.TryGetValue("review", out var rvo) && rvo is bool rvb && rvb && menuMode && !game.InGame;
@@ -3493,7 +3493,7 @@ namespace MPFever
         string BankruptMonths()
         {
             var v = Environment.GetEnvironmentVariable("MPFEVER_BANKRUPT");
-            // (0.6.13) a dedicated server: bankruptcy-months of its settings
+            // (0.7.0) a dedicated server: bankruptcy-months of its settings
             if (string.IsNullOrEmpty(v) && server != null) v = server.BankruptMonths.ToString(CultureInfo.InvariantCulture);
             if (string.IsNullOrEmpty(v)) LoadSettings().TryGetValue("bankrupt", out v);
             return int.TryParse(v ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && (n == 0 || n == 3 || n == 6 || n == 12 || n == 24)
@@ -3745,7 +3745,7 @@ namespace MPFever
             // a dedicated server: a player whose game is not in this session's world yet (it reconnected after a restart of
             // the server, still in its old world) only counts once its game has loaded the server's world: its clock,
             // actions and checks are those of another world
-            // (0.6.13: but its word after the join review, and its DLCs, come before its game loads: they are about joining)
+            // (0.7.0: but its word after the join review, and its DLCs, come before its game loads: they are about joining)
             if (server != null && from != null && m.Kind != "hello" && m.Kind != "chat" && m.Kind != "joinready" && m.Kind != "dlccheck")
             {
                 bool ready; lock (players) ready = players.Contains(m.From);
@@ -3889,7 +3889,7 @@ namespace MPFever
 
                 case "joinready":
                     {
-                        // (0.6.13) a player who looked at the game's mods and DLCs (see the join review) joins: it gets the game now
+                        // (0.7.0) a player who looked at the game's mods and DLCs (see the join review) joins: it gets the game now
                         if (from == null) break;
                         bool was;
                         lock (reviewing) was = reviewing.Remove(from.Name);
@@ -4348,7 +4348,7 @@ namespace MPFever
                 lastLoadOrder = Now;
                 hostGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
                 var all = relay?.PeerNames() ?? new string[0];
-                // (0.6.13: not to a player still looking at the game's mods and DLCs: it gets the game when it joins, see joinready)
+                // (0.7.0: not to a player still looking at the game's mods and DLCs: it gets the game when it joins, see joinready)
                 lock (reviewing) all = all.Where(n => !reviewing.Contains(n)).ToArray();
                 // (the whole game to the others at once; the differences worked out meanwhile)
                 var viaDelta = DeltaPeers(all);

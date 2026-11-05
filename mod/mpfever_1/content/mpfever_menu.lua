@@ -1356,7 +1356,7 @@ local function setup()
 				lobby = isHost and T("Salon ouvert", "Lobby open") or T("Dans le salon", "In the lobby"),
 				connecting = T("Connexion à l'hôte...", "Connecting to the host..."),
 				connected = T("Connecté à l'hôte", "Connected to the host"),
-				-- (0.6.13) a game already running: its mods and DLCs first, then « Join the game »
+				-- (0.7.0) a game already running: its mods and DLCs first, then « Join the game »
 				review = T("Avant de rejoindre la partie", "Before joining the game"),
 				downloading = T("Réception de la partie", "Receiving the game"),
 				loading = T("Chargement de la partie", "Loading the game"),
@@ -1394,7 +1394,7 @@ local function setup()
 					text(st.dlcWarn, "font-scale-body, warning", PAGE_W - SIDE_W - 84),
 				}, nil, { padding = { 8, 12, 8, 12 }, background = { 0.6, 0.15, 0.1, 0.3 }, size = { PAGE_W - SIDE_W - 60, -1 } })
 			end
-			-- (0.6.13, a player) the DLCs of the host's game and of this PC, each with what to do: one the host's game uses and this
+			-- (0.7.0, a player) the DLCs of the host's game and of this PC, each with what to do: one the host's game uses and this
 			-- PC lacks has its Steam page (MPFever.exe opens it, request dlcstore); from MPFever.exe's dlcList "id|name|state|store;..."
 			if not isHost and (st.dlcList or "") ~= "" then
 				local w = PAGE_W - SIDE_W - 60
@@ -1845,7 +1845,7 @@ local function setup()
 			end
 			-- the buttons
 			local actions = {}
-			-- (0.6.13) the join review: the host's game comes once the player says so
+			-- (0.7.0) the join review: the host's game comes once the player says so
 			if st.phase == "review" and not isHost then
 				actions[#actions + 1] = button(T("Rejoindre la partie", "Join the game"), function() request("joinready", "", playerName()) end,
 					{ primary = true, icon = "::/gui/menu/icons/menu_play.tga", font = "font-scale-title-3" })
@@ -1874,7 +1874,7 @@ local function setup()
 			-- (the host's game cannot be loaded without them, see mpfever_auto.lua)
 			local modsBox, modsFirst, modsInfo
 			local mods = decodeMods(st.hostMods)
-			-- (0.6.13, a player) the DLCs have their own list (st.dlcList, above): not here, where a missing one was told to be
+			-- (0.7.0, a player) the DLCs have their own list (st.dlcList, above): not here, where a missing one was told to be
 			-- installed from a Mod Hub
 			if not isHost then
 				local kept = {}
@@ -2385,7 +2385,7 @@ local function setup()
 
 		-- a session starts without the page (a Steam invitation accepted, the command line): the page opens to show it
 		local lastPhase = react.useRef(readState().phase)
-		-- (0.6.13) the join review waits for the player's « Join the game »: the page opens once for it, even when the phase was
+		-- (0.7.0) the join review waits for the player's « Join the game »: the page opens once for it, even when the phase was
 		-- already "review" as the main menu showed (a join from the command line or a Steam invitation is faster than the menu)
 		local reviewShown = react.useRef(false)
 		react.onStepTimer(function()

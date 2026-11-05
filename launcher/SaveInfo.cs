@@ -152,14 +152,14 @@ namespace MPFever
             return Encoding.ASCII.GetString(d, i + OptsMark.Length, len - OptsMark.Length - 1);
         }
 
-        /// <summary>(0.6.13) A mod a savegame lists (the game's GameSaveCommandData modDescs, near the start of the decompressed file):
+        /// <summary>(0.7.0) A mod a savegame lists (the game's GameSaveCommandData modDescs, near the start of the decompressed file):
         /// its id, origin ("DLC", "UserMods", "mod.io", ...), its Mod Hub number (a mod.io mod's; "" else) and its name.</summary>
         public sealed class SaveMod
         {
             public string Id = "", Source = "", Hub = "", Name = "";
         }
 
-        /// <summary>(0.6.13) The mods a savegame lists, read from its first MB only (a dedicated server's world, the server window's
+        /// <summary>(0.7.0) The mods a savegame lists, read from its first MB only (a dedicated server's world, the server window's
         /// list of savegames); null when the list is not found. Seen in build 40425's savegames (and documented by TPF3-MP for 40408):
         /// a count (uint32), then per mod five strings (uint32 length, UTF-8: id, source, hub id "source,id" or a mod.io number,
         /// name, url) and an int32 severity of 0 to 2. The list is the first place of the first 64 KiB where a whole list holds.</summary>
@@ -206,7 +206,7 @@ namespace MPFever
             return null;
         }
 
-        /// <summary>(0.6.13) A savegame's mods as the host's menu writes them (host_mods.txt: "id|name|source|hub" entries joined by
+        /// <summary>(0.7.0) A savegame's mods as the host's menu writes them (host_mods.txt: "id|name|source|hub" entries joined by
         /// ";;", MPFever's own left out), for Mods.Describe.</summary>
         public static string MenuList(List<SaveMod> mods)
         {

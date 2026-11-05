@@ -1,4 +1,4 @@
-"""Old vehicles of the computer companies renewed (0.6.13, mpfever_ai.lua renewStep): since 0.6.9 every company's vehicles wear,
+"""Old vehicles of the computer companies renewed (0.7.0, mpfever_ai.lua renewStep): since 0.6.9 every company's vehicles wear,
 and a computer company kept its first buses and trucks for the whole session. Offline, through lupa (Lua 5.2) with the mocked
 game of tests/ai_mock.py.
 

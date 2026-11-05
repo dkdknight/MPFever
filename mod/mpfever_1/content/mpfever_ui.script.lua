@@ -38,7 +38,7 @@ local function isCallable(f)
 	return mt ~= nil and (type(mt) ~= "table" or mt.__call ~= nil)
 end
 
--- ---------------------------------------------------------------- mods' automatic commands (0.6.13, see mpfever_modauto.lua)
+-- ---------------------------------------------------------------- mods' automatic commands (0.7.0, see mpfever_modauto.lua)
 local okMA, MA = pcall(ug_require, "mpfever_modauto.lua")
 if not (okMA and type(MA) == "table") then okMA, MA = pcall(ug_require, "mpfever_1::/mpfever_modauto.lua") end
 if not (okMA and type(MA) == "table") then MA = nil end
@@ -178,7 +178,7 @@ local function install()
 			missing[#missing + 1] = name .. "(" .. type(fn) .. ")"
 		end
 	end
-	-- (0.6.13) the debug factories are tagged too (they go to the engine as before, but a mod's are refused in a session, see
+	-- (0.7.0) the debug factories are tagged too (they go to the engine as before, but a mod's are refused in a session, see
 	-- tag.debug below)
 	if U.modAutoOn then
 		pcall(function()
@@ -206,7 +206,7 @@ local function install()
 			if U.logged < 30 then U.logged = U.logged + 1; log("untracked command sent natively: " .. C.dump(cmd):sub(1, 160)) end
 			return O.sendCommand(cmd, cb, progress)
 		end
-		-- (0.6.13) a debug command (api.cmd.debug: a person's state, a stock's cargo...) is applied on this game only. A mod that
+		-- (0.7.0) a debug command (api.cmd.debug: a person's state, a stock's cargo...) is applied on this game only. A mod that
 		-- sends one changed this game's world alone (Just More Weather sets people's states every frame): refused in a session.
 		-- Anything else (the game's own debug tools) goes to the engine as before. MPFEVER_MODAUTO=0: as before
 		if tag.debug then
@@ -249,7 +249,7 @@ local function install()
 			if cb then pcall(cb, nil, true, {}) end
 			return
 		end
-		-- (0.6.13) a command a mod's interface sends by itself goes from one game only (mpfever_modauto.lua); a debug command of a
+		-- (0.7.0) a command a mod's interface sends by itself goes from one game only (mpfever_modauto.lua); a debug command of a
 		-- mod is refused in a session (applied on this game only, it made the games differ)
 		local autoNow, autoCtx, fromMod = false, false, false
 		if U.modAutoOn then
@@ -5392,7 +5392,7 @@ local function tick(pendingState)
 	end)
 	pcall(pollBindings)
 	pcall(pollCompanies)
-	-- (0.6.13: the mods' guiUpdate, when the interface has a table of game scripts; a script may start late: every 300 ticks)
+	-- (0.7.0: the mods' guiUpdate, when the interface has a table of game scripts; a script may start late: every 300 ticks)
 	U.autoTicks = (U.autoTicks or 0) + 1
 	if U.modAutoOn and U.autoTicks % 300 == 1 then pcall(U.wrapModGuiUpdates) end
 	if not U.terrainWatch then
@@ -5494,7 +5494,7 @@ do
 	local okR, react = pcall(ug_require, "::/gui/main/react.lua")
 	local okB, builtin = pcall(ug_require, "::/gui/main/builtin.lua")
 	local okE, entry = pcall(ug_require, "::/gui/main/mod_entry_point.tl")
-	-- (0.6.13) what runs from react.onStep / onStepTimer runs by itself every frame (or every few seconds): a mod's command sent
+	-- (0.7.0) what runs from react.onStep / onStepTimer runs by itself every frame (or every few seconds): a mod's command sent
 	-- from there is automatic (see mpfever_modauto.lua). Wrapped here, at the interface's start, before the windows register
 	if okR and type(react) == "table" and U.modAutoOn and not U.reactWrapped then
 		pcall(function()

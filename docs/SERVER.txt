@@ -96,7 +96,7 @@ only.
 
 SETTINGS (mpfever_server.properties)
 ------------------------------------
-The "Server settings…" window sets them all (0.6.13), in six pages: Server, World, Companies,
+The "Server settings…" window sets them all (0.7.0), in six pages: Server, World, Companies,
 Computer companies, Game options and Running. "Save" writes the file; a stopped server reads
 it at once, a running one at the next "Restart the world" (or now: "Save and restart the
 world").

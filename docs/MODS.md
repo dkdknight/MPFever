@@ -28,7 +28,7 @@ A mod with a **script** can act on the game by itself. In November 2026 we read 
 | Mod | Notes |
 |---|---|
 | Auto Line Namer | **Seen working** ([Discussion #118](https://github.com/dkdknight/MPFever/discussions/118)). Since 0.4.0 only the host's game renames, and the names apply on every game at the same step ([#58](https://github.com/dkdknight/MPFever/issues/58)). With one company per player, it names the lines of the savegame's first company only. |
-| Auto Color Lines | Same as Auto Line Namer for colours. Since 0.6.13 its first sweep of the existing lines (option 3) is sent by one game only. |
+| Auto Color Lines | Same as Auto Line Namer for colours. Since 0.7.0 its first sweep of the existing lines (option 3) is sent by one game only. |
 | Auto Assign Terminals | Same mechanism for the terminals. If you edit a line while it is being updated, your edit may be undone (on every game alike, no desync). |
 | Visual Auto Namer, Improved Destination Displays | Same mechanism (names from the host's game). |
 | Auto Signals | **Seen working**. Adds signals after you place one: only on your game, and the other games replay them. |
@@ -38,8 +38,8 @@ A mod with a **script** can act on the game by itself. In November 2026 we read 
 | Auto Track Connector | Works. With one company per player the new track belongs to the savegame's first company. Two players using the tool at the same moment share one selection (the mod keeps only one). |
 | Overpass Builder, Move It, Roadform, MZ Gleisset 3.0, Undo! | **Seen working** (Overpass Builder). Tools: their builds are replayed on every game. Undo!, one company per player: undoing a town house's demolition is paid by the savegame's first company. |
 | Road&Rail Station Expander, Underground Cargo Station, Industry Tram Access, Bus And Truck Bay | Window or tool edits, replayed on every game. |
-| Advanced Station Configuration Tool | Since 0.6.13 widening a station (it changes the station's file) is replayed as such; before, the other games kept the narrow station. |
-| Simply Relocate | Since 0.6.13 its move (the building replaced by another file) is replayed as such; before, the move stopped halfway. Its "pick up" mode may still be refused on the other games when you place the building long after picking it up. |
+| Advanced Station Configuration Tool | Since 0.7.0 widening a station (it changes the station's file) is replayed as such; before, the other games kept the narrow station. |
+| Simply Relocate | Since 0.7.0 its move (the building replaced by another file) is replayed as such; before, the move stopped halfway. Its "pick up" mode may still be refused on the other games when you place the building long after picking it up. |
 | No Collision (Build Anyway) | Its builds are replayed with the same settings (errors ignored). To confirm in a session. |
 | Auto City Bus Lines, Town Transit Planner | Every step is a click: works, a little slower (each stop waits for the others' games). Town Transit Planner's undo list is the host's after a reload. |
 | Doubleclick To Edit, Easy Terminal Assignment, Where's the Problem? (Line Diagnostics), Timetables, Real Financial Statements, Supply Chain Manager, Better Minimap, Train Auto Horn, Dark UI, Track & Road Build Info | Interface, or game logic that is the same on every game. |
@@ -47,11 +47,11 @@ A mod with a **script** can act on the game by itself. In November 2026 we read 
 | Station and vehicle mods with scripts (Rail Vehicle Assets, CRH EMU Maintenance Depot, Seaplane & Land-Water Hub, Land Fish Farm, Elevated Curved Train Station, Curved Railway Station, Bigger Stations, All Stations...) | Their construction scripts give the same result on every game. |
 | cmf BB 27000 / BB 60000 packs, SNCF signals | The same on every game. With one company per player, the rebuilt locomotive assets belong to the savegame's first company. |
 
-### Made compatible in 0.6.13 (to confirm in your sessions)
+### Made compatible in 0.7.0 (to confirm in your sessions)
 
-These mods sent commands **from their interface by themselves** (a timer, a scan after a load). Each player's game sent the same command, and it was applied once per player: two sets of decorations, a toll paid twice, lines renamed back and forth. Since 0.6.13 such a command goes from **one game only**: the host's, or with one company per player the game of the company that owns the line or vehicle it changes.
+These mods sent commands **from their interface by themselves** (a timer, a scan after a load). Each player's game sent the same command, and it was applied once per player: two sets of decorations, a toll paid twice, lines renamed back and forth. Since 0.7.0 such a command goes from **one game only**: the host's, or with one company per player the game of the company that owns the line or vehicle it changes.
 
-| Mod | Before 0.6.13 |
+| Mod | Before 0.7.0 |
 |---|---|
 | Line Roles (Auto Rename & Colors) | Every game renamed and recoloured the lines and their vehicles every 10 s (with one company for everybody). |
 | Modern Bus Shelter | Every game added its own decorations to each stop. |
@@ -94,10 +94,10 @@ Something wrong with a mod in this list, or a mod missing? Tell us in the [issue
 
 - **Line names, colours and line updates sent by a mod's simulation script** are taken from the host's game only and applied on every game at the same step, like a player's command. The other games drop their own (0.4.0). Expert setting: « Mods' line names, colours and terminals sent by the host only ».
 - **A build replayed for another player** is announced to the mods' scripts as not made by a player on that game, so a mod that answers a player's build (adds signals, fences...) does it once, on the builder's game (0.4.0). Expert setting: « Replayed builds shown to mods as made elsewhere ».
-- **A command a mod's interface sends by itself** (from its guiUpdate, or from a window's step) goes from one game only: the host's, or the game of the company that owns what it changes. A command sent within 15 s of your own action is still sent by your game, for the mods that finish your own job (Auto Signals adds the signals after you placed one); the mods known to act on the whole world (the list above) never do (0.6.13, `MPFEVER_MODAUTO=0` to turn it off).
-- **A mod's debug command** (a person's state, a stock's cargo...) is refused in a session: the engine applies it on one game only (0.6.13).
-- **A mod's game script is called at the game's steps only** in a session: the engine also calls it with a time of 0 while a game waits, as many times as that game draws frames (0.6.13, `MPFEVER_MODDT0=1` to turn it off).
-- **A construction edited into another file** by a mod's window is replayed with that file (0.6.13, `MPFEVER_REPLACEFILE=0`).
+- **A command a mod's interface sends by itself** (from its guiUpdate, or from a window's step) goes from one game only: the host's, or the game of the company that owns what it changes. A command sent within 15 s of your own action is still sent by your game, for the mods that finish your own job (Auto Signals adds the signals after you placed one); the mods known to act on the whole world (the list above) never do (0.7.0, `MPFEVER_MODAUTO=0` to turn it off).
+- **A mod's debug command** (a person's state, a stock's cargo...) is refused in a session: the engine applies it on one game only (0.7.0).
+- **A mod's game script is called at the game's steps only** in a session: the engine also calls it with a time of 0 while a game waits, as many times as that game draws frames (0.7.0, `MPFEVER_MODDT0=1` to turn it off).
+- **A construction edited into another file** by a mod's window is replayed with that file (0.7.0, `MPFEVER_REPLACEFILE=0`).
 
 ## Mod authors
 

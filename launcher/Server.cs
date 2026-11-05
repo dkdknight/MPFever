@@ -14,7 +14,7 @@ namespace MPFever
 {
     /// <summary>The settings of a dedicated server: mpfever_server.properties next to MPFever.exe ("key=value" lines,
     /// "#" starts a comment line), written with every key and its default value the first time the server starts. Like
-    /// Minecraft's server.properties, the server itself only reads it; the window's settings (0.6.13, ServerSettingsDialog)
+    /// Minecraft's server.properties, the server itself only reads it; the window's settings (0.7.0, ServerSettingsDialog)
     /// write it again, every key with its comment, from the values chosen there (Save).</summary>
     sealed class ServerConfig
     {
@@ -41,9 +41,9 @@ namespace MPFever
         public string Motd = "";
         public bool Public = true;
         public string PublicAddress = "";
-        // (0.6.13) separate only: months in debt before a company goes bankrupt (0 never, 3, 6, 12, 24), as the lobby's rules
+        // (0.7.0) separate only: months in debt before a company goes bankrupt (0 never, 3, 6, 12, 24), as the lobby's rules
         public int BankruptMonths = 12;
-        // (0.6.13) separate only: the computer companies the server's game runs, "n:colour:level[:money],..." as the lobby sends them
+        // (0.7.0) separate only: the computer companies the server's game runs, "n:colour:level[:money],..." as the lobby sends them
         // (n 1-8, colour 1-12, level 1 easy 2 normal 3 hard, money: its start money, absent = the players')
         public string AiCompanies = "";
 
@@ -57,7 +57,7 @@ namespace MPFever
         /// <summary>(a value on one line: no line break in a text typed in the window)</summary>
         static string One(string v) => (v ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
 
-        /// <summary>The file with these values, every setting with what it does (0.6.13: the window's settings write it).</summary>
+        /// <summary>The file with these values, every setting with what it does (0.7.0: the window's settings write it).</summary>
         public string Text() => string.Join("\r\n", new[]
         {
             "# MPFever dedicated server (MPFever.exe --server)",
@@ -217,7 +217,7 @@ namespace MPFever
             return false;
         }
 
-        /// <summary>(0.6.13) The computer companies' text in its canonical form ("n:colour:level[:money]" sorted by n, each n and
+        /// <summary>(0.7.0) The computer companies' text in its canonical form ("n:colour:level[:money]" sorted by n, each n and
         /// colour once, at most 8), or null when it does not read so.</summary>
         public static string AiCanon(string v)
         {
@@ -241,7 +241,7 @@ namespace MPFever
             return string.Join(",", map.Values);
         }
 
-        /// <summary>(0.6.13) Writes the settings (the window's « Save »): the whole file again, with its comments, through a temporary
+        /// <summary>(0.7.0) Writes the settings (the window's « Save »): the whole file again, with its comments, through a temporary
         /// file (a crash never leaves half a file).</summary>
         public void Save(string path)
         {
@@ -500,7 +500,7 @@ namespace MPFever
                 return false;
             }
             Log.W(F("=== Serveur dédié « {0} » : chargement du monde « {1} » ===", "=== Dedicated server « {0} »: loading the world « {1} » ===", server.Name, server.World));
-            // (0.6.13) the world's mods and DLCs, read from its savegame: a player who joins sees them before joining (see the join
+            // (0.7.0) the world's mods and DLCs, read from its savegame: a player who joins sees them before joining (see the join
             // review), and installs the missing mods from there. Before, a server told its players none. MPFEVER_SERVERMODS=0: none
             if (Environment.GetEnvironmentVariable("MPFEVER_SERVERMODS") != "0")
                 try
@@ -1188,7 +1188,7 @@ namespace MPFever
                 if (MessageBox.Show(this, T("Arrêter le serveur ? Le monde est sauvegardé d'abord, puis la fenêtre attend un nouveau démarrage.", "Stop the server? The world is saved first, then the window waits for a new start."),
                     "MPFever", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) ServerCommand("stop");
             };
-            // (0.6.13) the settings window (ServerSettingsDialog) instead of the file in Notepad; MPFEVER_SERVERNOTEPAD=1: the file
+            // (0.7.0) the settings window (ServerSettingsDialog) instead of the file in Notepad; MPFEVER_SERVERNOTEPAD=1: the file
             settingsBtn.Click += (s, e) =>
             {
                 if (Environment.GetEnvironmentVariable("MPFEVER_SERVERNOTEPAD") == "1")
@@ -1211,7 +1211,7 @@ namespace MPFever
             return card;
         }
 
-        /// <summary>(0.6.13) The server's settings window: saved, the settings are read again at once while the server is stopped (the
+        /// <summary>(0.7.0) The server's settings window: saved, the settings are read again at once while the server is stopped (the
         /// card and the addresses show them), or at the next restart of the world while it runs (« Save and restart the world » now).</summary>
         void OpenServerSettings()
         {

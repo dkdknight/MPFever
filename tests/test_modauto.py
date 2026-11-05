@@ -1,4 +1,4 @@
-"""Offline test of the mods' automatic interface commands (0.6.13, mod/mpfever_1/content/mpfever_modauto.lua).
+"""Offline test of the mods' automatic interface commands (0.7.0, mod/mpfever_1/content/mpfever_modauto.lua).
 
 Some mods send commands from their interface by themselves (their guiUpdate, a react.onStep of their windows): every game
 sent the same command and it was applied once per player (two sets of a stop's decorations with Modern Bus Shelter, the
@@ -129,7 +129,7 @@ return R
 ''', GAMESRC)
     L.globals().react = react
     # (the wrapper of the interface's start, taken from the same file)
-    wrap = re.search(r"-- \(0\.6\.13\) what runs from react\.onStep.*?\n\tend\n", src, re.S)
+    wrap = re.search(r"-- \(0\.7\.0\) what runs from react\.onStep.*?\n\tend\n", src, re.S)
     if not wrap:
         print("FAIL: the react.onStep wrapper was not found in mpfever_ui.script.lua")
         return 1

@@ -284,16 +284,16 @@ namespace MPFever
                 Check(Mods.DlcWarning("AMD", D, "none").Contains(Mods.DlcName(D)), "dlcs: a pack of the host's only is said too");
                 Check(Mods.DlcWarning("x", D + "," + P, P + "," + D) == "", "dlcs: the same packs: no warning");
                 Check(Mods.DlcWarning("x", "", D) == "" && Mods.DlcWarning("x", D, "") == "", "dlcs: an older MPFever (no list): nothing said");
-                // (0.6.13) the warning: every player's differences, then the advice once (switch them off in the savegame, or get them;
+                // (0.7.0) the warning: every player's differences, then the advice once (switch them off in the savegame, or get them;
                 // the game can still be started); nothing when the DLCs are alike
                 var two = Mods.DlcWarningText(new List<string> { Mods.DlcWarning("keviK", D, "none"), Mods.DlcWarning("AMD", D, P + "," + D) });
                 Check(two.Contains("keviK") && two.Contains("AMD") && two.Split(new[] { Mods.DlcAdvice().Trim() }, StringSplitOptions.None).Length == 2, "dlc warning: both players, the advice once");
                 Check(Mods.DlcWarningText(new List<string> { "", Mods.DlcWarning("x", D, D) }) == "", "dlc warning: the same DLCs: none");
-                // (0.6.13) the session's DLCs are the savegame's when its mods are known (the host switched the pack off in it)
+                // (0.7.0) the session's DLCs are the savegame's when its mods are known (the host switched the pack off in it)
                 Check(Mods.SaveDlcs("mpfever_1|MPFever|UserMods;;" + D + "|Deluxe|DLC", true) == D, "session dlcs: the savegame's");
                 Check(Mods.SaveDlcs("auto_signals_1|x|UserMods", true) == "none", "session dlcs: a savegame without DLC uses none");
                 Check(Mods.SaveDlcs("", false) == null, "session dlcs: unknown mods: the installed ones are said");
-                // (0.6.13) the DLC list of the join review: the host's first, what this PC lacks with the Deluxe's store page
+                // (0.7.0) the DLC list of the join review: the host's first, what this PC lacks with the Deluxe's store page
                 var view = Mods.DlcListView(D, P);
                 Check(view.StartsWith(D + "|") && view.Contains("|host|steam://store/3979620") && view.Contains(P + "|") && view.Contains("|mine|"), "dlc list: host's pack to get, this PC's own");
                 Check(Mods.DlcListView(D, D).Contains("|both|") && Mods.DlcListView("", D) == "", "dlc list: alike; an older MPFever: none");
@@ -303,7 +303,7 @@ namespace MPFever
             return ok;
         }
 
-        /// <summary>(0.6.13) The dedicated server's settings written by its window (ServerConfig.Save) and read back by the server: every
+        /// <summary>(0.7.0) The dedicated server's settings written by its window (ServerConfig.Save) and read back by the server: every
         /// value kept, the comments there, the new keys (bankruptcy months, computer companies) read and checked, the game options'
         /// catalog of the window loaded.</summary>
         static bool RunServerConfig()
@@ -342,7 +342,7 @@ namespace MPFever
             return ok;
         }
 
-        /// <summary>(0.6.13) A savegame's mods read from the start of its file (a dedicated server's world, the server window's list):
+        /// <summary>(0.7.0) A savegame's mods read from the start of its file (a dedicated server's world, the server window's list):
         /// the list as the game writes it found after other bytes, its DLC, a mod.io number, MPFever's own left out of the menu's list;
         /// only the head decompressed; nothing found in other data.</summary>
         static bool RunSaveMods()
@@ -458,11 +458,11 @@ namespace MPFever
             void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
             Check(Mods.LocalSource("StagingArea") && Mods.LocalSource("Local") && Mods.LocalSource("user"), "mods: StagingArea, Local, User are local origins");
             Check(!Mods.LocalSource("Workshop") && !Mods.LocalSource("ModIo") && !Mods.LocalSource("BuiltIn") && !Mods.LocalSource(""), "mods: Workshop, mod.io, the game's are not");
-            // (0.6.13: no longer incompatible, its automatic builds go from one game only; to confirm in a session)
-            Check(Mods.Judge("devers_1", Mods.Sim).Level == "caution", "mods: Real Track Cant (devers_1) to confirm (0.6.13)");
-            // (0.6.13: the script mods read one by one)
+            // (0.7.0: no longer incompatible, its automatic builds go from one game only; to confirm in a session)
+            Check(Mods.Judge("devers_1", Mods.Sim).Level == "caution", "mods: Real Track Cant (devers_1) to confirm (0.7.0)");
+            // (0.7.0: the script mods read one by one)
             Check(Mods.Judge("parallel_tracks_1", Mods.Sim).Level == "ok", "mods: Parallel Tracks read, works");
-            Check(Mods.Judge("line_role_renamer", Mods.Sim).Level == "fixed", "mods: Line Roles made compatible (0.6.13)");
+            Check(Mods.Judge("line_role_renamer", Mods.Sim).Level == "fixed", "mods: Line Roles made compatible (0.7.0)");
             Check(Mods.Judge("stombor_zoning", Mods.Sim).Level == "caution", "mods: Town Zoning still to check");
             Check(Mods.Judge("some_unknown_mod", Mods.Sim).Level == "caution" && Mods.Judge("some_unknown_mod", Mods.Assets).Level == "ok", "mods: an unknown mod judged by its files, as before");
             Check(Mods.Judge("urbangames_no_costs_1", Mods.Load).Level == "fixed", "mods: the game's No costs made compatible");

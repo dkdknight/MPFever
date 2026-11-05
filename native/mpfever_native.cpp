@@ -4818,7 +4818,7 @@ static void SetupHeadlessImports()
     g_alSourcePlay = (AlSourcePlayF)PatchImport(base, "OpenAL32.dll", "alSourcePlay", (void*)&AlSourcePlayHeadless);
 }
 
-// (0.6.13, MPFEVER_HIDEDLC=1) the game without its DLCs: the DLCs (the Deluxe upgrade pack, the pre-order pack) are folders
+// (0.7.0, MPFEVER_HIDEDLC=1) the game without its DLCs: the DLCs (the Deluxe upgrade pack, the pre-order pack) are folders
 // of the game's "dlcs" that it lists at its start (KERNEL32 FindFirstFileW from its own code) and activates in every game;
 // their animals, people and vehicles make a world other than a player's without them (the reports of 2026-11-02 and
 // 2026-11-04). With the switch, the listing of that folder finds nothing and the files under it are not there: this game

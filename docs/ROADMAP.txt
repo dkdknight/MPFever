@@ -30,8 +30,8 @@ it is stable enough.
   [x] Vehicles and lines a player creates get the same number on every game: the cause of the resyncs "for no
       reason" (#109, 0.6.8); to confirm in sessions between two PCs
   [x] The players' DLCs compared: different DLCs make different worlds, warned in the lobby (0.6.9)
-  [x] What to do when the DLCs differ, and the mods and DLCs seen before joining a running game (0.6.13)
-  [x] The dedicated server's settings in a window, with its savegames and computer companies (0.6.13)
+  [x] What to do when the DLCs differ, and the mods and DLCs seen before joining a running game (0.7.0)
+  [x] The dedicated server's settings in a window, with its savegames and computer companies (0.7.0)
   [x] A savegame loaded again right after a resynchronisation no longer applies the last builds twice; a computer
       company's build made at the same moment as the host's sent for the right company (0.6.10)
   [x] A shorter freeze when an industry appears and is connected to the roads (0.6.10)

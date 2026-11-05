@@ -11,7 +11,7 @@ using static MPFever.L;
 
 namespace MPFever
 {
-    /// <summary>(0.6.13) The game options the feature modules declare, for the server window's settings: launcher/gameopts.json,
+    /// <summary>(0.7.0) The game options the feature modules declare, for the server window's settings: launcher/gameopts.json,
     /// made by tools/gen_gameopts.py from mod/mpfever_1/content/mpfever_feat_*.lua (tests/test_serversettings.py checks it is up
     /// to date). Texts in French and English; the other languages through T (lang.json, keyed by the English text).</summary>
     static class GameOptsCatalog
@@ -69,7 +69,7 @@ namespace MPFever
             All.Where(o => o.Module != "public" && (o.Modes == "" || o.Modes == "both" || o.Modes == companyMode)).ToList();
     }
 
-    /// <summary>(0.6.13) The dedicated server's settings, in a window instead of mpfever_server.properties opened in Notepad (the
+    /// <summary>(0.7.0) The dedicated server's settings, in a window instead of mpfever_server.properties opened in Notepad (the
     /// user's request, 2026-11-05): every setting of the file in sections, the savegames of this PC to pick the world from (with
     /// their picture, mods, DLCs and computer companies), the computer companies of the world and the game options. « Save »
     /// writes the file (ServerConfig.Save); the server reads it at its next start or « Restart the world ».</summary>

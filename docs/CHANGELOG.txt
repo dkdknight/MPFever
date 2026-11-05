@@ -1,10 +1,10 @@
 MPFever - Changelog
 ===================
 
-0.6.13 - 2026-11-05: more mods made compatible, what to do when the DLCs differ, mods and DLCs seen before joining a running game, the dedicated server's settings window, computer companies renew their vehicles
+0.7.0 - 2026-11-05: more mods made compatible, what to do when the DLCs differ, mods and DLCs seen before joining a running game, the dedicated server's settings window, computer companies renew their vehicles
   - CHANGE (lobby, players of other DLCs): the lobby's warning now says what to do: the host can switch the DLCs off in the
     savegame's mods (when loading the game), or the players can get the DLCs they lack; the game can still be started, but
-    desynchronisations may happen (the user's choice, 2026-11-05: no second press of "Start the game", as an earlier 0.6.13
+    desynchronisations may happen (the user's choice, 2026-11-05: no second press of "Start the game", as an earlier 0.7.0
     build asked; the start says it in the log). The DLCs a session compares are now its savegame's, when its mods are known
     (the host's menu wrote them, or a dedicated server read them): a DLC the host switched off in the savegame no longer
     counts; else the host's installed DLCs, as before (MPFEVER_SAVEDLCS=0: always those). A player's page lists the host's
@@ -97,7 +97,7 @@ MPFever - Changelog
     Simply Relocate moves a building) was replayed with the old file: the station stayed narrow on the other games, the move
     stopped halfway. The engine's replacement now gets the new file. MPFEVER_REPLACEFILE=0: as before.
     Test: tests/test_replacefile.py.
-  - CHANGE (lobby, docs/MODS.md): the mods' list rewritten from that reading: which mods work, which 0.6.13 made
+  - CHANGE (lobby, docs/MODS.md): the mods' list rewritten from that reading: which mods work, which 0.7.0 made
     compatible, which are still to check. The lobby no longer calls "untested" the script mods read and found fine, and Real
     Track Cant is no longer "incompatible" (to confirm). Test: MPFever.exe --selftest (RunSession067).
 

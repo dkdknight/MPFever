@@ -1,4 +1,4 @@
-"""Offline test of 0.6.13's DLC and join changes (the user's requests of 2026-11-05):
+"""Offline test of 0.7.0's DLC and join changes (the user's requests of 2026-11-05):
 
 1. Different DLCs: no second press of « Start the game » any more; the lobby shows the warning with the advice (the host can
    switch the DLCs off in the savegame's mods, the players can get the DLCs they lack, the game can still be started but may

@@ -1,4 +1,4 @@
-"""Offline test of a construction's edit into another file (0.6.13).
+"""Offline test of a construction's edit into another file (0.7.0).
 
 An edit sent by a window replaces a construction through the engine (createProposalReplaceConstruction(old, params)) on
 every game. Advanced Station Configuration Tool widens a station into another file, Simply Relocate turns a building into

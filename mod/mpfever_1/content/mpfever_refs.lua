@@ -1029,7 +1029,7 @@ function R.nameSeed(seenOnly)
 	local seen = {}
 	for e in pairs(col) do seen[e] = true end
 	R.namesSeen = seen
-	-- (0.6.13: and in the game script's state, see the names part, unless the savegame's state has it already: the copies of the
+	-- (0.7.0: and in the game script's state, see the names part, unless the savegame's state has it already: the copies of the
 	-- simulation's script each take their first step after the load at their own step, and every game loads the same state)
 	if R.namesStore and os.getenv("MPFEVER_NAMESSTATE") ~= "0" and type(R.namesStore.namesSeenL) ~= "table" then
 		R.namesStore.namesSeenL = R.seenList(seen)
@@ -1194,7 +1194,7 @@ function R.contentHash(hashStr, dumpFn)
 		local n, acc = 0, 0
 		-- (R.nameCollect, on the host's game: every name read here, for the games of the other languages, see R.nameChanges)
 		local col = R.nameCollect
-		-- (0.6.13: what was seen kept in the game script's state when the simulation gives it, R.namesStore: the simulation's
+		-- (0.7.0: what was seen kept in the game script's state when the simulation gives it, R.namesStore: the simulation's
 		-- script runs in two copies that take the steps in turn, each with its own copy of this module, so a module variable
 		-- held the names of the check before the last one on every other check, and the two games, not on the same copy at the
 		-- same check, differed by the stations and vehicles made between them, "slight simulation drift (names)" at most checks

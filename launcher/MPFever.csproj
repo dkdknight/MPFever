@@ -22,7 +22,7 @@
   <ItemGroup>
     <!-- texts of the other languages (French and English are in the code), keyed by the English text -->
     <EmbeddedResource Include="lang.json" LogicalName="lang.json" />
-    <!-- (0.6.13) the game options of the feature modules, for the dedicated server's settings window (tools/gen_gameopts.py) -->
+    <!-- (0.7.0) the game options of the feature modules, for the dedicated server's settings window (tools/gen_gameopts.py) -->
     <EmbeddedResource Include="gameopts.json" LogicalName="gameopts.json" />
   </ItemGroup>
 </Project>

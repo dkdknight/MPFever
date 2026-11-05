@@ -1387,7 +1387,7 @@ local function lineIdle(E, l)
 	return false
 end
 
--- (0.6.13) Old vehicles renewed. Since 0.6.9 every company's vehicles wear (their running costs grow, they break down), and a
+-- (0.7.0) Old vehicles renewed. Since 0.6.9 every company's vehicles wear (their running costs grow, they break down), and a
 -- computer company kept its first buses and trucks for the whole session. With money to spare (its reserve and three vehicles
 -- more), at a regular look with nothing else to buy, the oldest vehicle past its model's lifespan on a line that does not lose
 -- money gets a new one: the best model on sale now is bought for that line, and the old one is sold once the new one runs on
@@ -1513,7 +1513,7 @@ local function manageLines(E, co, lines, vehicles, money)
 	local solvent = os.getenv("MPFEVER_AISOLVENT") ~= "0"
 	local low = solvent and FLOOR or 0
 	local period = money < low and 1200 or 7200
-	-- (0.6.13: a renewal under way ends at any look, its old vehicle sold as soon as the new one runs, see renewStep)
+	-- (0.7.0: a renewal under way ends at any look, its old vehicle sold as soon as the new one runs, see renewStep)
 	if A.renew and G.frames - (A.manageAt or -100000) < period then return renewStep(E, co, lines, vehicles, money, E.gameTime(), false) end
 	if G.frames - (A.manageAt or -100000) < period then return false end
 	A.manageAt = G.frames

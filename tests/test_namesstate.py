@@ -1,4 +1,4 @@
-"""Offline test of the names part with the simulation's two copies of its script (0.6.13; the test nd1 of 2026-11-05, names_dump.txt:
+"""Offline test of the names part with the simulation's two copies of its script (0.7.0; the test nd1 of 2026-11-05, names_dump.txt:
 the same entities on both games, but a station "seen at the previous check" on one game and not on the other, every other check).
 
 The simulation's script runs in two copies that take the steps in turn, each with its own copy of mpfever_refs.lua: the module

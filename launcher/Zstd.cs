@@ -19,7 +19,7 @@ namespace MPFever
             return Decompress(File.ReadAllBytes(path));
         }
 
-        /// <summary>(0.6.13) The first bytes of a zstd file's content (at most maxOut, fewer when the content is shorter), decoded from
+        /// <summary>(0.7.0) The first bytes of a zstd file's content (at most maxOut, fewer when the content is shorter), decoded from
         /// the start of the file only: what a savegame says before its world (its mods list, see SaveInfo.Mods) without decompressing
         /// hundreds of MB. Throws when the file is not zstd data.</summary>
         public static byte[] DecompressHead(string path, int maxOut)

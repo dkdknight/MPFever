@@ -1744,7 +1744,7 @@ function DET.wrapModEvents()
 			end
 			log("mod script events watched: " .. k)
 		end
-		-- (0.6.13) The engine calls the game scripts' update once per step with dt 0.2, and with dt 0 in a batch of no step (a
+		-- (0.7.0) The engine calls the game scripts' update once per step with dt 0.2, and with dt 0 in a batch of no step (a
 		-- game standing at a stop point, a pause): how many of those calls a game makes depends on its frames. A mod that works
 		-- at every call (Cargo & Passenger Station Range rebuilds two stations per call during an "apply to all") then did more
 		-- of its work on one game than on another, and the stations were rebuilt at other steps. A mod's update is called with
@@ -3864,7 +3864,7 @@ G.buildLeadState = function()
 	return true
 end
 
--- (0.6.13, experimental, MPFEVER_LINELEAD=1) A line edited in the line window: every stop added is a command stamped the stamp
+-- (0.7.0, experimental, MPFEVER_LINELEAD=1) A line edited in the line window: every stop added is a command stamped the stamp
 -- distance ahead (7 steps at 1x, 16 at 4x), and the window shows the stop once it is applied: 1.3 s a stop in the user's
 -- sessions of 2026-11-04 (120 edits, up to 3.7 s). A line command starts the builder's lead (the others stay behind this game,
 -- see buildLeadState); while this game leads, its line commands are stamped as close as its own overshoot allows: the others,
@@ -4212,7 +4212,7 @@ local function logMargin(kind, at, origin, lead)
 	end
 end
 
--- (0.6.13) The new file of a construction's edit, when it is not the construction's own (else nil): see the edits' replay
+-- (0.7.0) The new file of a construction's edit, when it is not the construction's own (else nil): see the edits' replay
 G.replaceNewFile = function(old, newFile)
 	if os.getenv("MPFEVER_REPLACEFILE") == "0" or type(newFile) ~= "string" or newFile == "" then return nil end
 	local okC, c = pcall(function() return api.engine.getComponent(old, api.type.ComponentType.CONSTRUCTION) end)
@@ -6563,7 +6563,7 @@ local function replayNative(a, formIndex)
 			if type(ctxArg) == "table" then
 				a.ctx = 32 + (ctxArg.gatherBuildings and 1 or 0) + (ctxArg.checkTerrainAlignment and 2 or 0) + (ctxArg.cleanupStreetGraph and 4 or 0)
 			end
-			-- (0.6.13) an edit that changes the construction's file too (Advanced Station Configuration Tool widens a station into
+			-- (0.7.0) an edit that changes the construction's file too (Advanced Station Configuration Tool widens a station into
 			-- another file, Simply Relocate turns a building into its stand-in): the engine's replacement takes the new file as its
 			-- third argument. Without it every game rebuilt the old file with the new settings: the station was not widened, and
 			-- Simply Relocate's move stopped halfway on the builder's game. MPFEVER_REPLACEFILE=0: the old file, as before
@@ -9197,7 +9197,7 @@ local function runPausedActions()
 		joining = G.coBusy ~= nil
 		for _, q in ipairs(G.nativeQueue) do if q.fn == "mpfCoJoin" and q.at <= now then joining = true end end
 	end
-	-- (0.6.13) A checkpoint also waits for the engine's answer to every paused action this game handed it before: in a pause the
+	-- (0.7.0) A checkpoint also waits for the engine's answer to every paused action this game handed it before: in a pause the
 	-- engine applies a command at its next swap of the command list (every 200 ms), so a line renamed just before a checkpoint
 	-- (by a player, or by Auto Line Namer's host-only renames) was already renamed in one game's hash and not yet in the other's:
 	-- a "lines" difference that healed by itself at the next check (the 20:37 replay of 2026-11-04, twice). At most 600 frames.
@@ -14178,7 +14178,7 @@ H.cmdlat = function(from, p)
 	one()
 end
 
--- Line edits scenario (0.6.13, MPFEVER_SCENARIO=lineedit; MPFEVER_LINEEDIT_N edits, 12): the line window's edits one after
+-- Line edits scenario (0.7.0, MPFEVER_SCENARIO=lineedit; MPFEVER_LINEEDIT_N edits, 12): the line window's edits one after
 -- the other, each sent once the previous one shows on this game, as a player adds stops; the time each one took is the
 -- result (with MPFEVER_LINELEAD=1 and MPFEVER_BUILDLEAD=1: the line lead, see G.lineLeadStamp). The checks say whether the
 -- games stayed the same.
@@ -16170,7 +16170,7 @@ end
 local function resumeAfterLoad(state)
 	-- (the names of the savegame as every game loaded it, for the checks made in a pause, see R.nameSeed)
 	pcall(R.nameSeed, not K.nameSyncOn())
-	-- (0.6.13, diagnostic: the models this game knows; a game of other DLCs or mods knows another number)
+	-- (0.7.0, diagnostic: the models this game knows; a game of other DLCs or mods knows another number)
 	pcall(function()
 		local n = 0
 		for _ in pairs(api.res.modelRep.getAll()) do n = n + 1 end
@@ -18302,7 +18302,7 @@ local function guiHandleEvent(userParams, state, guiState, src, id, name, param)
 	if name == "builder.proposalCreate" then pcall(G.previewOut, tostring(id), param)
 	elseif name == "builder.proposalApply" then
 		pcall(G.previewGone); pcall(G.toolApplied, param)
-		-- (0.6.13: this player's own build, for the mods that finish it from their guiUpdate, see mpfever_modauto.lua)
+		-- (0.7.0: this player's own build, for the mods that finish it from their guiUpdate, see mpfever_modauto.lua)
 		pcall(function() package.loaded["mpfever_local_activity"] = os.clock() end)
 		-- (0.6: the build the tool applies, for a game option that checks this player's builds, see G.featRefuse)
 		if G.featOn and G.featAllow then pcall(G.featTool, param) end
