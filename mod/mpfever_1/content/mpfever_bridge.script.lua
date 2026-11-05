@@ -16170,6 +16170,12 @@ end
 local function resumeAfterLoad(state)
 	-- (the names of the savegame as every game loaded it, for the checks made in a pause, see R.nameSeed)
 	pcall(R.nameSeed, not K.nameSyncOn())
+	-- (0.6.13, diagnostic: the models this game knows; a game of other DLCs or mods knows another number)
+	pcall(function()
+		local n = 0
+		for _ in pairs(api.res.modelRep.getAll()) do n = n + 1 end
+		log("models known to this game: " .. n)
+	end)
 	-- the game time of the savegame loaded now (the session's start, or the host's game of a resynchronisation): the acts stamped
 	-- later cannot be in it (see G.alreadyBuilt)
 	pcall(function() G.loadT = gameTime() end)

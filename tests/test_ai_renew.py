@@ -32,6 +32,11 @@ FE = { api = { type = { ComponentType = { TRANSPORT_VEHICLE = 'tv' } },
 got = run("local a, l = M.p.vehicleAge(FE, 5, 1000 + 30 * %d); return a .. ' ' .. l" % Y)
 check(got == "%d %d" % (30 * Y, 36525000), "age from the purchase time, lifespan x 1000: " + str(got))
 check(run("return M.p.vehicleAge(FE, 99, 5000)") is None, "a vehicle that cannot be read: nil")
+run("""FE0 = { api = { type = FE.api.type, res = FE.api.res,
+  engine = { getComponent = function(e, c) return { transportVehicleConfig = { vehicles = { { purchaseTime = 0, part = { modelId = 11 } } } } } end } } }""")
+got = run("local a = M.p.vehicleAge(FE0, 5, 50 * %d, 49 * %d); return a" % (Y, Y))
+check(got == Y, "a purchase time of 0 (the computer companies' purchases): the age from when this session first saw it: " + str(got))
+check(run("return M.p.vehicleAge(FE0, 5, 50 * %d, nil)" % Y) is None, "a purchase time of 0 and never seen: nil")
 
 print("modelSeatsOf")
 run("""FE2 = { api = { type = { ComponentType = { TRANSPORT_VEHICLE = 'tv' } },

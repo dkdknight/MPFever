@@ -1393,14 +1393,18 @@ end
 -- money gets a new one: the best model on sale now is bought for that line, and the old one is sold once the new one runs on
 -- it (or after RENEW.waitFrames, when the purchase came to nothing). One at a time. MPFEVER_AIRENEW=0: none, as before.
 local RENEW = { waitFrames = 3 * 7200 }
--- the vehicle's age and its model's lifespan (game milliseconds; nil when unknown)
-local function vehicleAge(E, v, nowG)
+-- the vehicle's age and its model's lifespan (game milliseconds; nil when unknown). A purchase time of 0 (the computer
+-- companies buy with the shape the game's window sends, purchaseTime 0, and the engine keeps it) is unknown: the age then counts
+-- from seenAt, when this session first saw the vehicle (the test ai3 of 2026-11-05: every bus "33.8 years old")
+local function vehicleAge(E, v, nowG, seenAt)
 	local api = E.api
 	local age, life
 	pcall(function()
 		local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
 		local part = tv.transportVehicleConfig.vehicles[1]
-		age = nowG - part.purchaseTime
+		local pt = tonumber(part.purchaseTime) or 0
+		if pt <= 0 then pt = seenAt end
+		age = pt and (nowG - pt) or nil
 		local m = api.res.modelRep.get(part.part.modelId)
 		life = m.metadata.maintenance.lifespan * 1000
 	end)
@@ -1462,6 +1466,11 @@ local function renewStep(E, co, lines, vehicles, money, nowG, mayStart)
 		if not dropped(E, l.e) and (l.bal == nil or l.bal >= 0) then okLine[l.e] = l end
 	end
 	local cands = {}
+	-- (when this session first saw each vehicle, for those of an unknown purchase time, see vehicleAge)
+	A.vSeen = A.vSeen or {}
+	local live = {}
+	for _, v in ipairs(vehicles) do live[v.e] = true; if not A.vSeen[v.e] then A.vSeen[v.e] = nowG end end
+	for e in pairs(A.vSeen) do if not live[e] then A.vSeen[e] = nil end end
 	-- (a bus line's bus of half the seats of the best bus on sale now, two game years old or more, counts as past its lifespan:
 	-- the eras bring bigger buses. MPFEVER_AIRENEWBIG=0: the lifespan only)
 	local big = os.getenv("MPFEVER_AIRENEWBIG") ~= "0"
@@ -1472,7 +1481,7 @@ local function renewStep(E, co, lines, vehicles, money, nowG, mayStart)
 	for _, v in ipairs(vehicles) do
 		local l = okLine[v.line]
 		if l and not (A.renewFail and A.renewFail[v.e]) then
-			local age, life = vehicleAge(E, v.e, nowG)
+			local age, life = vehicleAge(E, v.e, nowG, A.vSeen[v.e])
 			if life then life = life * lifeF end
 			if age and best and not l.freight and age >= 2 * 1461000 then
 				local seats = modelSeatsOf(E, v.e)
