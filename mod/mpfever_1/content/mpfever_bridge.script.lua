@@ -3854,6 +3854,31 @@ G.buildLeadState = function()
 	return true
 end
 
+-- (0.6.13, experimental, MPFEVER_LINELEAD=1) A line edited in the line window: every stop added is a command stamped the stamp
+-- distance ahead (7 steps at 1x, 16 at 4x), and the window shows the stop once it is applied: 1.3 s a stop in the user's
+-- sessions of 2026-11-04 (120 edits, up to 3.7 s). A line command starts the builder's lead (the others stay behind this game,
+-- see buildLeadState); while this game leads, its line commands are stamped as close as its own overshoot allows: the others,
+-- far enough behind, get them before their time. The first command of an edit keeps the usual stamp (the others do not follow
+-- yet). Off: as before.
+G.LINE_LEAD_FNS = { makeLineCreateCmd = true, makeLineUpdateCmd = true }
+G.lineLeadStamp = function(a, now)
+	if not G.LINE_LEAD_FNS[a.fn] or os.getenv("MPFEVER_LINELEAD") ~= "1" or not G.buildLead then return end
+	if not G.buildLeadPeers() then return end
+	terrainLead("line window", "LINELEAD: a line edited")
+	local ok, why = G.buildLeadState()
+	if not ok then
+		log("LINELEAD: " .. tostring(a.fn) .. " stamped as usual (" .. tostring(why) .. ")")
+		return
+	end
+	-- (MPFEVER_LINELEADSTEPS=n, tests: n steps ahead instead of the overshoot and one, at least 2)
+	local steps = math.max(2, tonumber(os.getenv("MPFEVER_LINELEADSTEPS") or "") or (overshootReserve() + 1))
+	local at = now + steps * STEP
+	if at < a.at then
+		log("LINELEAD: " .. tostring(a.fn) .. " stamped t=" .. at .. " instead of " .. a.at .. " (" .. ((a.at - at) / STEP) .. " steps sooner)")
+		a.at = at
+	end
+end
+
 -- the time of this game's earliest held build (released by this script when the game stands at that time, see
 -- runNativeRelease), nil when there is none
 G.ownHeldAt = function()
@@ -8886,6 +8911,7 @@ local function stampHeld()
 			local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
 			local a = { tok = p.tok, id = p.id, fn = p.fn, args = p.args, origin = G.me, oseq = G.oseq, co = tonumber(p.co) or G.myCo,
 				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil }
+			if not paused and G.lineLeadStamp then G.lineLeadStamp(a, now) end
 			-- (the edit of a construction from a window: replayed here too, as the others' builds are, see G.uiEdit)
 			local edit = G.uiEdit(a)
 			if edit then
@@ -14140,6 +14166,60 @@ H.cmdlat = function(from, p)
 		end)
 	end
 	one()
+end
+
+-- Line edits scenario (0.6.13, MPFEVER_SCENARIO=lineedit; MPFEVER_LINEEDIT_N edits, 12): the line window's edits one after
+-- the other, each sent once the previous one shows on this game, as a player adds stops; the time each one took is the
+-- result (with MPFEVER_LINELEAD=1 and MPFEVER_BUILDLEAD=1: the line lead, see G.lineLeadStamp). The checks say whether the
+-- games stayed the same.
+H.lineedit = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local lines = R.entitiesWith("LINE")
+	if #lines == 0 then AUTO.results[1] = "needs a line"; return autoFinish() end
+	local line = lines[1]
+	local total = tonumber(os.getenv("MPFEVER_LINEEDIT_N") or "12") or 12
+	local took = {}
+	local i = 0
+	local function waitOf()
+		local okW, w = pcall(function() return api.engine.getComponent(line, api.type.ComponentType.LINE).stops[1].minWaitingTime end)
+		return okW and w or nil
+	end
+	local function nextEdit()
+		i = i + 1
+		if i > total then
+			table.sort(took)
+			local med = took[math.max(1, math.floor(#took / 2 + 0.5))] or -1
+			local r = string.format("%d line edits, median %.2f s, max %.2f s", #took, med, took[#took] or -1)
+			log("AUTOTEST lineedit " .. r)
+			AUTO.results[#AUTO.results + 1] = r
+			return autoFinish()
+		end
+		local want = 10 + i
+		local okE, errE = pcall(function()
+			local lc = C.marshal(api.engine.getComponent(line, api.type.ComponentType.LINE))
+			lc.stops[1].minWaitingTime = want
+			uiRequest("makeLineUpdateCmd", { n = 2, [1] = line, [2] = lc })
+		end)
+		if not okE then AUTO.results[#AUTO.results + 1] = "edit error " .. tostring(errE); return autoFinish() end
+		local c0, f0 = os.clock(), G.frames
+		local function poll()
+			if waitOf() == want then
+				took[#took + 1] = os.clock() - c0
+				log(string.format("AUTOTEST lineedit %d applied after %.2f s", i, os.clock() - c0))
+				G.waits[#G.waits + 1] = { at = G.frames + 20, fn = nextEdit }
+			elseif G.frames - f0 > 1200 then
+				AUTO.results[#AUTO.results + 1] = "edit " .. i .. " never applied"
+				autoFinish()
+			else
+				G.waits[#G.waits + 1] = { at = G.frames + 1, fn = poll }
+			end
+		end
+		poll()
+	end
+	nextEdit()
 end
 
 H.cmds = function(from, p)

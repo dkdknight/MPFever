@@ -106,6 +106,16 @@ namespace MPFever
             catch { return ""; }
         }
 
+        /// <summary>(0.6.13) The host's start with players of other DLCs: the first press of "start" only says it (the lobby's
+        /// warning was not read on 2026-11-04: two sessions, about twenty resyncs); a second press within 60 s starts anyway.
+        /// warn: the lobby's DLC warnings ("" = the same DLCs); askedAt: when the last press said it (null = never).
+        /// MPFEVER_DLCCONFIRM=0: started at once, as before.</summary>
+        public static bool DlcStartAllowed(string warn, DateTime? askedAt, DateTime now)
+        {
+            if (string.IsNullOrEmpty(warn) || Environment.GetEnvironmentVariable("MPFEVER_DLCCONFIRM") == "0") return true;
+            return askedAt.HasValue && (now - askedAt.Value).TotalSeconds >= 0 && (now - askedAt.Value).TotalSeconds <= 60;
+        }
+
         /// <summary>A DLC's name for the players.</summary>
         public static string DlcName(string id)
         {

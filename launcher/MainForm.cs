@@ -140,6 +140,8 @@ namespace MPFever
         // when it is in another host's lobby or session
         readonly Dictionary<string, string> dlcIssues = new Dictionary<string, string>();
         string dlcWarn = "";
+        // (0.6.13, the host) when a press of "start" said the players' other DLCs (see Mods.DlcStartAllowed)
+        DateTime? dlcAskedAt;
         // Mods a player lacks that no Mod Hub has (the host's own local mods, see Mods): the host is asked whether to send them
         // from its PC (with their size), the player whether to take them (they hold code its game will run).
         // (the host) the players' missing ones: player -> ids; its answer given: player -> "sent" / "refused"
@@ -1779,6 +1781,17 @@ namespace MPFever
             else if (cmd == "start")
             {
                 if (!lobbyOpen || hostGame == null) return;
+                // (0.6.13) players of other DLCs: the first press says it, a second one within 60 s starts (Mods.DlcStartAllowed)
+                var dw = HostDlcWarn();
+                if (!Mods.DlcStartAllowed(dw, dlcAskedAt, DateTime.UtcNow))
+                {
+                    dlcAskedAt = DateTime.UtcNow;
+                    Log.Err(dw);
+                    menuText = dw + T(" Appuyez encore sur « Lancer la partie » dans la minute pour lancer quand même.", " Press « Start the game » again within a minute to start anyway.");
+                    MenuStatus();
+                    return;
+                }
+                dlcAskedAt = null;
                 new Thread(StartLobbyGame) { IsBackground = true, Name = "Lobby start" }.Start();
             }
             else if (cmd == "join")

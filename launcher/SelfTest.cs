@@ -282,6 +282,12 @@ namespace MPFever
                 Check(Mods.DlcWarning("AMD", D, "none").Contains(Mods.DlcName(D)), "dlcs: a pack of the host's only is said too");
                 Check(Mods.DlcWarning("x", D + "," + P, P + "," + D) == "", "dlcs: the same packs: no warning");
                 Check(Mods.DlcWarning("x", "", D) == "" && Mods.DlcWarning("x", D, "") == "", "dlcs: an older MPFever (no list): nothing said");
+                // (0.6.13) the start with players of other DLCs: asked once, then started within 60 s
+                var t0 = new DateTime(2026, 11, 5, 0, 0, 0, DateTimeKind.Utc);
+                Check(Mods.DlcStartAllowed("", null, t0), "dlc start: the same DLCs start at once");
+                Check(!Mods.DlcStartAllowed("w", null, t0), "dlc start: other DLCs: the first press only says it");
+                Check(Mods.DlcStartAllowed("w", t0, t0.AddSeconds(20)), "dlc start: a second press within 60 s starts");
+                Check(!Mods.DlcStartAllowed("w", t0, t0.AddSeconds(90)), "dlc start: a press after 60 s asks again");
             }
             catch (Exception e) { Check(false, "dlcs: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_DLCS", kept); }

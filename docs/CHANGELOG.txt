@@ -2,6 +2,27 @@ MPFever - Changelog
 ===================
 
 0.6.13 - (in progress): more mods made compatible, paused checkpoints wait for the engine
+  - CHANGE (lobby, players of other DLCs): the lobby's warning "the game will desynchronise" was not enough: on 2026-11-04 two
+    groups started anyway (the host with the pre-order pack, a player without; the host with both packs, a player with
+    none) and had about twenty reloads between them, every one a "simulation drift" with no action in it. When a player's
+    DLCs are not the host's, the host's first press of "Start the game" now only says so; a second press within a minute
+    starts anyway. MPFEVER_DLCCONFIRM=0: started at once, as before. Test: MPFever.exe --selftest ("dlc start").
+  - NEW (computer companies): old vehicles are renewed. Since 0.6.9 every company's vehicles wear, and a computer company kept
+    its first buses and trucks for the whole session. With money to spare (its reserve and three vehicles more), at a regular
+    look with nothing else to buy, the oldest vehicle past its model's lifespan on a line that does not lose money gets a new
+    one: the best model on sale now is bought for that line, and the old one is sold once the new one runs on it. One at a
+    time. A bus two game years old or more whose model has half the seats of the best bus on sale now counts as past its
+    lifespan too: the eras bring bigger buses (MPFEVER_AIRENEWBIG=0: the lifespan only). MPFEVER_AIRENEW=0: none, as before.
+    Test: tests/test_ai_renew.py.
+  - NEW (experimental, off by default, both modes): the line lead. Every stop added in the line window is a command stamped
+    the stamp distance ahead (7 steps at 1x, 16 at 4x), and the window shows the stop once it is applied: 1.3 s a stop in the
+    user's sessions of 2026-11-04 (120 edits, up to 3.7 s). With MPFEVER_LINELEAD=1 (and "Responsive builds"), a line command
+    starts the builder's lead (the other games stay behind this one); while this game leads, its line commands are stamped
+    as close as its own overshoot allows. The first command of an edit keeps the usual stamp. Test: tests/test_linelead.py,
+    autotest scenario "lineedit" (the time each edit took).
+  - NEW (tests, native module): MPFEVER_HIDEDLC=1 hides the game's "dlcs" folder from that game (its listing finds nothing,
+    the files under it are not there), so one PC can run a game with its DLCs and one without, as two players of other
+    DLCs (MPFEVER_ENV_CLIENT=MPFEVER_HIDEDLC=1 in an autotest). native.log says it and how many reads it refused.
   - FIX (both modes, a pause, the 20:37 replay of 2026-11-04): in a pause the engine applies a command at its next swap of
     the command list (every 200 ms). A line renamed just before a checkpoint (by a player, or by Auto Line Namer, whose
     renames only the host's game sends) was already renamed in one game's checkpoint and not yet in the other's: a "lines"

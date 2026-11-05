@@ -1387,6 +1387,114 @@ local function lineIdle(E, l)
 	return false
 end
 
+-- (0.6.13) Old vehicles renewed. Since 0.6.9 every company's vehicles wear (their running costs grow, they break down), and a
+-- computer company kept its first buses and trucks for the whole session. With money to spare (its reserve and three vehicles
+-- more), at a regular look with nothing else to buy, the oldest vehicle past its model's lifespan on a line that does not lose
+-- money gets a new one: the best model on sale now is bought for that line, and the old one is sold once the new one runs on
+-- it (or after RENEW.waitFrames, when the purchase came to nothing). One at a time. MPFEVER_AIRENEW=0: none, as before.
+local RENEW = { waitFrames = 3 * 7200 }
+-- the vehicle's age and its model's lifespan (game milliseconds; nil when unknown)
+local function vehicleAge(E, v, nowG)
+	local api = E.api
+	local age, life
+	pcall(function()
+		local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+		local part = tv.transportVehicleConfig.vehicles[1]
+		age = nowG - part.purchaseTime
+		local m = api.res.modelRep.get(part.part.modelId)
+		life = m.metadata.maintenance.lifespan * 1000
+	end)
+	if type(age) ~= "number" or type(life) ~= "number" or life <= 0 then return nil end
+	return age, life
+end
+-- the seats of a vehicle's model (its first part; nil when unknown)
+local function modelSeatsOf(E, v)
+	local api = E.api
+	local seats
+	pcall(function()
+		local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+		local md = api.res.modelRep.get(tv.transportVehicleConfig.vehicles[1].part.modelId).metadata
+		seats = 0
+		for _, comp in ipairs(md.transportVehicle.compartments) do
+			for _, lc in ipairs(comp.loadConfigs) do seats = math.max(seats, lc.cargoEntry.capacity or 0) end
+		end
+	end)
+	return seats
+end
+-- the pick (pure, see tests/test_ai_renew.py): of cands = { { e, line, age, life } }, the oldest past its lifespan on a line of
+-- okLine[line]; nil when none
+local function renewPick(cands, okLine)
+	local best
+	for _, c in ipairs(cands) do
+		if okLine[c.line] and c.age > c.life and (not best or c.age - c.life > best.age - best.life) then best = c end
+	end
+	return best
+end
+local function renewStep(E, co, lines, vehicles, money, nowG, mayStart)
+	if os.getenv("MPFEVER_AIRENEW") == "0" then return false end
+	local A = E.G.AI
+	local r = A.renew
+	if r then
+		-- the old vehicle sold once its line has a vehicle more than when the new one was asked
+		local n, old = 0, false
+		for _, v in ipairs(vehicles) do
+			if v.line == r.line then n = n + 1 end
+			if v.e == r.old then old = true end
+		end
+		if not old then A.renew = nil; return false end
+		if n > r.n then
+			A.renew = nil
+			sellVehicle(E, co, r.old, "renewed: its new vehicle runs on line " .. r.line, r.line)
+			return true
+		end
+		if E.G.frames - r.frame > RENEW.waitFrames then
+			A.renew = nil
+			A.renewFail = A.renewFail or {}; A.renewFail[r.old] = true
+			L(E, "vehicle " .. r.old .. " not renewed: no new vehicle came for line " .. r.line)
+		end
+		return false
+	end
+	if not mayStart then return false end
+	local cost = math.max(A.busCost or BUS_COST, A.truckCost or 0)
+	if money < RESERVE + 3 * cost then return false end
+	local okLine = {}
+	for _, l in ipairs(lines) do
+		if not dropped(E, l.e) and (l.bal == nil or l.bal >= 0) then okLine[l.e] = l end
+	end
+	local cands = {}
+	-- (a bus line's bus of half the seats of the best bus on sale now, two game years old or more, counts as past its lifespan:
+	-- the eras bring bigger buses. MPFEVER_AIRENEWBIG=0: the lifespan only)
+	local big = os.getenv("MPFEVER_AIRENEWBIG") ~= "0"
+	-- (tests: MPFEVER_AIRENEWLIFE=f, the lifespans times f, so that a short test sees renewals)
+	local lifeF = tonumber(os.getenv("MPFEVER_AIRENEWLIFE") or "") or 1
+	local best = nil
+	if big then local okB, b = pcall(bestBus, E); if okB then best = b end end
+	for _, v in ipairs(vehicles) do
+		local l = okLine[v.line]
+		if l and not (A.renewFail and A.renewFail[v.e]) then
+			local age, life = vehicleAge(E, v.e, nowG)
+			if life then life = life * lifeF end
+			if age and best and not l.freight and age >= 2 * 1461000 then
+				local seats = modelSeatsOf(E, v.e)
+				if seats and seats > 0 and best.seats >= 2 * seats then life = math.min(life, age - 1) end
+			end
+			if age then cands[#cands + 1] = { e = v.e, line = v.line, age = age, life = life } end
+		end
+	end
+	local c = renewPick(cands, okLine)
+	if not c then return false end
+	local l = okLine[c.line]
+	local depot = garagesNear(E, co.ent, l.mid or (l.freight and l.freight.from.pos) or { x = 0, y = 0 }, 5000)[1]
+	if not depot then return false end
+	local n = 0
+	for _, v in ipairs(vehicles) do if v.line == c.line then n = n + 1 end end
+	A.renew = { old = c.e, line = c.line, n = n, frame = E.G.frames }
+	A.forLine = c.line
+	L(E, string.format("vehicle %d renewed: %.1f years old, its model lasts %.1f (or a bus of twice its seats is on sale); a new one for line %d", c.e, c.age / 1461000, c.life / 1461000, c.line))
+	buyFor(E, co, l, depot.depot)
+	return true
+end
+
 local function manageLines(E, co, lines, vehicles, money)
 	local G = E.G
 	local A = G.AI
@@ -1756,6 +1864,7 @@ local function manageLines(E, co, lines, vehicles, money)
 			end
 		end
 	end
+	if renewStep(E, co, lines, vehicles, money, nowG, bestBuy == nil) then return true end
 	if bestBuy then
 		local l = bestBuy.l
 		local depot = garagesNear(E, co.ent, l.mid or (l.freight and l.freight.from.pos) or { x = 0, y = 0 }, 5000)[1]
@@ -4992,7 +5101,7 @@ M.f = { isLeft = isLeft, leave = leave, aiCompany = aiCompany, myStops = myStops
 	step = step, RL = RL, stopSegments = stopSegments }
 
 -- (0.6) the pure rules, and the module's state of the company under way, for the offline tests (tests/test_ai_*.py)
-M.p = { floorOf = floorOf, ltBudget = ltBudget, ltJudge = ltJudge, ltScore = ltScore, densest = densest, LT = LT, FLOOR_MIN = FLOOR_MIN,
+M.p = { floorOf = floorOf, renewPick = renewPick, vehicleAge = vehicleAge, modelSeatsOf = modelSeatsOf, ltBudget = ltBudget, ltJudge = ltJudge, ltScore = ltScore, densest = densest, LT = LT, FLOOR_MIN = FLOOR_MIN,
 	set = function(level, reserve, floor) LV = LEVELS[level or 2] or LEVELS[2]; RESERVE = reserve or LV.reserve; FLOOR = floor or FLOOR_MIN end,
 	get = function() return { reserve = RESERVE, floor = FLOOR, level = LV.name } end }
 

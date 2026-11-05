@@ -4818,6 +4818,89 @@ static void SetupHeadlessImports()
     g_alSourcePlay = (AlSourcePlayF)PatchImport(base, "OpenAL32.dll", "alSourcePlay", (void*)&AlSourcePlayHeadless);
 }
 
+// (0.6.13, MPFEVER_HIDEDLC=1) the game without its DLCs: the DLCs (the Deluxe upgrade pack, the pre-order pack) are folders
+// of the game's "dlcs" that it lists at its start (KERNEL32 FindFirstFileW from its own code) and activates in every game;
+// their animals, people and vehicles make a world other than a player's without them (the reports of 2026-11-02 and
+// 2026-11-04). With the switch, the listing of that folder finds nothing and the files under it are not there: this game
+// runs as on a PC without DLCs. Read once, in DllMain, before the game lists its mods.
+typedef HANDLE (WINAPI* FindFirstFileWF)(const wchar_t* name, void* data);
+typedef DWORD (WINAPI* GetFileAttributesWF)(const wchar_t* name);
+typedef BOOL (WINAPI* GetFileAttributesExWF)(const wchar_t* name, int level, void* info);
+typedef HANDLE (WINAPI* FindFirstFileExWF)(const wchar_t* name, int level, void* data, int op, void* filter, DWORD flags);
+static FindFirstFileWF g_findFirstFileW = 0;
+static FindFirstFileExWF g_findFirstFileExW = 0;
+static GetFileAttributesExWF g_getFileAttributesExW2 = 0;
+static GetFileAttributesWF g_getFileAttributesW = 0;
+static GetFileAttributesExWF g_getFileAttributesExW = 0;
+static volatile long g_dlcHidden = 0;
+// a path with a "dlcs" part (between separators, the last part included), whatever the case
+static bool InDlcs(const wchar_t* p)
+{
+    if (!p) return false;
+    int i = 0;
+    for (;;) {
+        // at the start of a part
+        int j = i;
+        while (p[j] && p[j] != L'\\' && p[j] != L'/') j++;
+        if (j - i == 4) {
+            wchar_t a = p[i] | 0x20, b = p[i + 1] | 0x20, c = p[i + 2] | 0x20, d = p[i + 3] | 0x20;
+            if (a == L'd' && b == L'l' && c == L'c' && d == L's') return true;
+        }
+        if (!p[j]) return false;
+        i = j + 1;
+    }
+}
+extern "C" HANDLE WINAPI FindFirstFileWHide(const wchar_t* name, void* data)
+{
+    if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(2); return INVALID_HANDLE_VALUE; }   // ERROR_FILE_NOT_FOUND
+    return g_findFirstFileW(name, data);
+}
+extern "C" DWORD WINAPI GetFileAttributesWHide(const wchar_t* name)
+{
+    if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(2); return (DWORD)0xFFFFFFFF; }   // INVALID_FILE_ATTRIBUTES
+    return g_getFileAttributesW(name);
+}
+extern "C" BOOL WINAPI GetFileAttributesExWHide(const wchar_t* name, int level, void* info)
+{
+    if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(2); return 0; }
+    return g_getFileAttributesExW(name, level, info);
+}
+// (the C++ library's directory listing and file status, std::filesystem in MSVCP140.dll, which the game's mod list uses)
+extern "C" HANDLE WINAPI FindFirstFileExWHide(const wchar_t* name, int level, void* data, int op, void* filter, DWORD flags)
+{
+    if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(2); return INVALID_HANDLE_VALUE; }
+    return g_findFirstFileExW(name, level, data, op, filter, flags);
+}
+extern "C" BOOL WINAPI GetFileAttributesExWHide2(const wchar_t* name, int level, void* info)
+{
+    if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(2); return 0; }
+    return g_getFileAttributesExW2(name, level, info);
+}
+static void SetupHideDlc()
+{
+    char v[4];
+    if (GetEnvironmentVariableA("MPFEVER_HIDEDLC", v, 3) == 0 || v[0] != '1') return;
+    uptr base = (uptr)GetModuleHandleW(0);
+    g_findFirstFileW = (FindFirstFileWF)PatchImport(base, "KERNEL32.dll", "FindFirstFileW", (void*)&FindFirstFileWHide);
+    g_getFileAttributesW = (GetFileAttributesWF)PatchImport(base, "KERNEL32.dll", "GetFileAttributesW", (void*)&GetFileAttributesWHide);
+    g_getFileAttributesExW = (GetFileAttributesExWF)PatchImport(base, "KERNEL32.dll", "GetFileAttributesExW", (void*)&GetFileAttributesExWHide);
+    uptr cpp = (uptr)GetModuleHandleW(L"msvcp140.dll");
+    if (cpp) {
+        g_findFirstFileExW = (FindFirstFileExWF)PatchImport(cpp, "KERNEL32.dll", "FindFirstFileExW", (void*)&FindFirstFileExWHide);
+        g_getFileAttributesExW2 = (GetFileAttributesExWF)PatchImport(cpp, "KERNEL32.dll", "GetFileAttributesExW", (void*)&GetFileAttributesExWHide2);
+    }
+}
+// (said in native.log by Init, once the log is open)
+static void LogHideDlc()
+{
+    char v[4];
+    if (GetEnvironmentVariableA("MPFEVER_HIDEDLC", v, 3) == 0 || v[0] != '1') return;
+    Buf b; b.str("DLCs hidden from the game (MPFEVER_HIDEDLC=1): ").str(g_findFirstFileW ? "listing hooked" : "listing NOT hooked").str(g_findFirstFileExW ? ", C++ library hooked" : ", C++ library NOT hooked")
+        .str(", ").dec((i64)g_dlcHidden).str(" reads refused so far"); LogLine(b);
+}
+
+static DWORD WINAPI HideDlcLater(void*) { Sleep(60000); LogHideDlc(); return 0; }
+
 // a void function of the game made to return at once (its first byte a "ret")
 static bool SkipFunction(const char* what, const char* sig)
 {
@@ -4900,6 +4983,8 @@ static DWORD WINAPI Init(void*)
     { Buf t; t.str(g_scriptPoolPatched ? "game scripts: own pool, one worker" : "game scripts: pool NOT patched"); LogLine(t); }
     if (g_simPoolA || g_simPoolB) { Buf t; t.str("pool sizes forced: ").hex(g_simPoolA).str(",").hex(g_simPoolB); LogLine(t); }
     { Buf t; t.str(g_mathOther ? "mathematics: another C runtime's (MPFEVER_MATHDLL), functions " : (g_mathPatched ? "mathematics: MPFever's own, functions " : "mathematics: Windows' (not replaced), functions ")).hex(g_mathPatched); LogLine(t); }
+    LogHideDlc();
+    if (g_findFirstFileW) { HANDLE th = CreateThread(0, 0, HideDlcLater, 0, 0, 0); if (th) CloseHandle(th); }
     if (g_threads) { Buf t; t.str("engine told it has ").hex(g_threads).str(" processor(s)").str(g_realGetSystemInfo ? "" : " (GetSystemInfo not patched)"); LogLine(t); }
     InstallHeadless();
     bool known = SelectBuild(fh->TimeDateStamp);
@@ -5226,6 +5311,7 @@ extern "C" BOOL WINAPI DllMain(HMODULE inst, DWORD reason, void*)
             PatchMath(g_base);
             PatchLuaSeed(g_base);
             SetupHeadlessImports();
+            SetupHideDlc();
             u8* ll = FindUnique(g_base, P_LUA_LOAD, (int)sizeof(P_LUA_LOAD), g_knownLua);
             if (ll) { RVA_LUA_LOAD = (u32)((uptr)ll - g_base); InstallDetour(RVA_LUA_LOAD, P_LUA_LOAD, sizeof(P_LUA_LOAD), (void*)&LuaLoadDetour, (void**)&g_luaLoadOrig); }
         }
