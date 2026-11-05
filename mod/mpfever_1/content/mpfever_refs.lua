@@ -1029,6 +1029,19 @@ function R.nameSeed(seenOnly)
 	local seen = {}
 	for e in pairs(col) do seen[e] = true end
 	R.namesSeen = seen
+	-- (0.6.13: and in the game script's state, see the names part, unless the savegame's state has it already: the copies of the
+	-- simulation's script each take their first step after the load at their own step, and every game loads the same state)
+	if R.namesStore and os.getenv("MPFEVER_NAMESSTATE") ~= "0" and type(R.namesStore.namesSeenL) ~= "table" then
+		R.namesStore.namesSeenL = R.seenList(seen)
+	end
+end
+
+-- a set of entities as a sorted list (the game script's state keeps it)
+function R.seenList(set)
+	local l = {}
+	for e in pairs(set) do l[#l + 1] = e end
+	table.sort(l)
+	return l
 end
 
 function R.lineText(e)
@@ -1181,8 +1194,21 @@ function R.contentHash(hashStr, dumpFn)
 		local n, acc = 0, 0
 		-- (R.nameCollect, on the host's game: every name read here, for the games of the other languages, see R.nameChanges)
 		local col = R.nameCollect
-		local prev = os.getenv("MPFEVER_NAMEFRESH") ~= "0" and R.namesSeen or nil
+		-- (0.6.13: what was seen kept in the game script's state when the simulation gives it, R.namesStore: the simulation's
+		-- script runs in two copies that take the steps in turn, each with its own copy of this module, so a module variable
+		-- held the names of the check before the last one on every other check, and the two games, not on the same copy at the
+		-- same check, differed by the stations and vehicles made between them, "slight simulation drift (names)" at most checks
+		-- of a session that builds. MPFEVER_NAMESSTATE=0: the module's variable, as before)
+		local store = os.getenv("MPFEVER_NAMESSTATE") ~= "0" and R.namesStore or nil
+		local prevSet = R.namesSeen
+		if store then
+			prevSet = nil
+			if type(store.namesSeenL) == "table" then prevSet = {}; for _, e in ipairs(store.namesSeenL) do prevSet[e] = true end end
+		end
+		local prev = os.getenv("MPFEVER_NAMEFRESH") ~= "0" and prevSet or nil
 		local seen = {}
+		-- (diagnostic, MPFEVER_NAMESDUMP=1: every name and whether it counted, written by simHash to names_dump.txt)
+		local dump = os.getenv("MPFEVER_NAMESDUMP") and {} or nil
 		for _, cname in ipairs({ "STATION_GROUP", "LINE", "TRANSPORT_VEHICLE" }) do
 			for _, e in ipairs(R.entitiesWith(cname)) do
 				seen[e] = true
@@ -1191,10 +1217,13 @@ function R.contentHash(hashStr, dumpFn)
 					n = n + 1
 					acc = (acc + hashStr(0, cname .. ":" .. nm)) % 4294967296
 				end
+				if dump then dump[#dump + 1] = cname .. " " .. tostring(e) .. " " .. ((not prev or prev[e]) and "+" or "-") .. " " .. tostring(nm) end
 				if col then col[e] = { k = cname, nm = nm } end
 			end
 		end
 		R.namesSeen = seen
+		if store then store.namesSeenL = R.seenList(seen) end
+		R.namesDumpOut = dump
 		return n .. "/" .. acc
 	end)
 	-- what the player sets on a vehicle: its line, stopped by the player, to be sold

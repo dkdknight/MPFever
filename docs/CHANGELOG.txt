@@ -7,6 +7,15 @@ MPFever - Changelog
     none) and had about twenty reloads between them, every one a "simulation drift" with no action in it. When a player's
     DLCs are not the host's, the host's first press of "Start the game" now only says so; a second press within a minute
     starts anyway. MPFEVER_DLCCONFIRM=0: started at once, as before. Test: MPFever.exe --selftest ("dlc start").
+  - FIX (checks, both modes): "slight simulation drift (names)" at most checks of a session that builds (the AMD report of
+    2026-11-04: dozens; every autotest with computer companies; the user's server logs). The names part counts a station,
+    line or vehicle once it was there at the game's previous check (0.6.11, #121), and kept what it saw in a variable of its
+    module. The simulation's script runs in two copies that take the steps in turn, each with its own copy of the module: on
+    every other check that variable held what the check before the last one saw, and two games not on the same copy at the
+    same check differed by what was made in between (names_dump.txt of a test: the same entities on both games, a station
+    "seen" on one and not on the other, every other check). Meanwhile the lines and vehicles were not compared. What was
+    seen is now kept in the game script's state, which both copies share. MPFEVER_NAMESSTATE=0: as before.
+    MPFEVER_NAMESDUMP=1 (diagnostic): every name of every check in names_dump.txt. Test: tests/test_namesstate.py.
   - NEW (computer companies): old vehicles are renewed. Since 0.6.9 every company's vehicles wear, and a computer company kept
     its first buses and trucks for the whole session. With money to spare (its reserve and three vehicles more), at a regular
     look with nothing else to buy, the oldest vehicle past its model's lifespan on a line that does not lose money gets a new
@@ -19,7 +28,9 @@ MPFever - Changelog
     user's sessions of 2026-11-04 (120 edits, up to 3.7 s). With MPFEVER_LINELEAD=1 (and "Responsive builds"), a line command
     starts the builder's lead (the other games stay behind this one); while this game leads, its line commands are stamped
     as close as its own overshoot allows. The first command of an edit keeps the usual stamp. Test: tests/test_linelead.py,
-    autotest scenario "lineedit" (the time each edit took).
+    autotest scenario "lineedit" (the time each edit took). Measured (12 edits, Test Headless): 1.30 s off, 0.98 s (host) and
+    1.10 s (client) on at 1x, 1.01 s / 0.90 s at 4x, all in sync, no late action. Two steps ahead (MPFEVER_LINELEADSTEPS=2)
+    landed edits 2 steps late on the builder's own game at 4x: not used.
   - NEW (tests, native module): MPFEVER_HIDEDLC=1 hides the game's "dlcs" folder from that game (its listing finds nothing,
     the files under it are not there), so one PC can run a game with its DLCs and one without, as two players of other
     DLCs (MPFEVER_ENV_CLIENT=MPFEVER_HIDEDLC=1 in an autotest). native.log says it and how many reads it refused.

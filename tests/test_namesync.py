@@ -131,7 +131,7 @@ NAMES = { [10] = "Halle", [20] = "Linie 1", [30] = "Bus 1" }
     check("and nothing more", changes() == "nil")
     # the bridge calls R.nameSeed at the load (on the other games, 0.6.11: only the names its first check counts)
     check("the bridge sets the baseline at the simulation's first step after a load",
-          re.search(r"if not SIM\.loadChecked then\n\s*SIM\.loadChecked = true\n(\s*--[^\n]*\n)*\s*pcall\(R\.nameSeed, not K\.nameSyncOn\(\)\)", bridge) is not None)
+          re.search(r"if not SIM\.loadChecked then\n\s*SIM\.loadChecked = true\n(\s*--[^\n]*\n)*(\s*R\.namesStore = st\n)?\s*pcall\(R\.nameSeed, not K\.nameSyncOn\(\)\)", bridge) is not None)
     check("and in the interface's resumeAfterLoad",
           re.search(r"^local function resumeAfterLoad\(state\)\n(\t--[^\n]*\n)*\tpcall\(R\.nameSeed, not K\.nameSyncOn\(\)\)", bridge, re.M) is not None)
 

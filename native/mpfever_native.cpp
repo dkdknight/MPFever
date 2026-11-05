@@ -4828,13 +4828,23 @@ typedef DWORD (WINAPI* GetFileAttributesWF)(const wchar_t* name);
 typedef BOOL (WINAPI* GetFileAttributesExWF)(const wchar_t* name, int level, void* info);
 typedef HANDLE (WINAPI* FindFirstFileExWF)(const wchar_t* name, int level, void* data, int op, void* filter, DWORD flags);
 static FindFirstFileWF g_findFirstFileW = 0;
-static FindFirstFileExWF g_findFirstFileExW = 0;
+static FindFirstFileExWF g_findFirstFileExW = 0, g_findFirstFileExWCrt = 0;
 static GetFileAttributesExWF g_getFileAttributesExW2 = 0;
+typedef HANDLE (WINAPI* CreateFileWF)(const wchar_t* name, DWORD access, DWORD share, void* sa, DWORD disp, DWORD flags, HANDLE tmpl);
+static CreateFileWF g_createFileW[4] = {};
+static wchar_t g_dlcFirst[200];   // the first path refused (said in native.log)
 static GetFileAttributesWF g_getFileAttributesW = 0;
 static GetFileAttributesExWF g_getFileAttributesExW = 0;
 static volatile long g_dlcHidden = 0;
 // a path with a "dlcs" part (between separators, the last part included), whatever the case
+static bool InDlcsRaw(const wchar_t* p);
 static bool InDlcs(const wchar_t* p)
+{
+    bool r = InDlcsRaw(p);
+    if (r && !g_dlcFirst[0]) { int i = 0; for (; p[i] && i < 199; i++) g_dlcFirst[i] = p[i]; g_dlcFirst[i] = 0; }
+    return r;
+}
+static bool InDlcsRaw(const wchar_t* p)
 {
     if (!p) return false;
     int i = 0;
@@ -4876,6 +4886,17 @@ extern "C" BOOL WINAPI GetFileAttributesExWHide2(const wchar_t* name, int level,
     if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(2); return 0; }
     return g_getFileAttributesExW2(name, level, info);
 }
+// (files opened by path: the exe's own, the C++ library's and the C runtime's)
+template <int K> HANDLE WINAPI CreateFileWHide(const wchar_t* name, DWORD access, DWORD share, void* sa, DWORD disp, DWORD flags, HANDLE tmpl)
+{
+    if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(3); return INVALID_HANDLE_VALUE; }   // ERROR_PATH_NOT_FOUND
+    return g_createFileW[K](name, access, share, sa, disp, flags, tmpl);
+}
+extern "C" HANDLE WINAPI FindFirstFileExWHideCrt(const wchar_t* name, int level, void* data, int op, void* filter, DWORD flags)
+{
+    if (InDlcs(name)) { _InterlockedIncrement(&g_dlcHidden); SetLastError(2); return INVALID_HANDLE_VALUE; }
+    return g_findFirstFileExWCrt(name, level, data, op, filter, flags);
+}
 static void SetupHideDlc()
 {
     char v[4];
@@ -4884,10 +4905,19 @@ static void SetupHideDlc()
     g_findFirstFileW = (FindFirstFileWF)PatchImport(base, "KERNEL32.dll", "FindFirstFileW", (void*)&FindFirstFileWHide);
     g_getFileAttributesW = (GetFileAttributesWF)PatchImport(base, "KERNEL32.dll", "GetFileAttributesW", (void*)&GetFileAttributesWHide);
     g_getFileAttributesExW = (GetFileAttributesExWF)PatchImport(base, "KERNEL32.dll", "GetFileAttributesExW", (void*)&GetFileAttributesExWHide);
+    g_createFileW[0] = (CreateFileWF)PatchImport(base, "KERNEL32.dll", "CreateFileW", (void*)&CreateFileWHide<0>);
+    uptr crt = (uptr)GetModuleHandleW(L"ucrtbase.dll");
+    if (crt) {
+        g_createFileW[1] = (CreateFileWF)PatchImport(crt, "api-ms-win-core-file-l1-1-0.dll", "CreateFileW", (void*)&CreateFileWHide<1>);
+        if (!g_createFileW[1]) g_createFileW[1] = (CreateFileWF)PatchImport(crt, "KERNEL32.dll", "CreateFileW", (void*)&CreateFileWHide<1>);
+        // (_wfindfirst, which the game imports from the C runtime)
+        g_findFirstFileExWCrt = (FindFirstFileExWF)PatchImport(crt, "api-ms-win-core-file-l1-1-0.dll", "FindFirstFileExW", (void*)&FindFirstFileExWHideCrt);
+    }
     uptr cpp = (uptr)GetModuleHandleW(L"msvcp140.dll");
     if (cpp) {
         g_findFirstFileExW = (FindFirstFileExWF)PatchImport(cpp, "KERNEL32.dll", "FindFirstFileExW", (void*)&FindFirstFileExWHide);
         g_getFileAttributesExW2 = (GetFileAttributesExWF)PatchImport(cpp, "KERNEL32.dll", "GetFileAttributesExW", (void*)&GetFileAttributesExWHide2);
+        g_createFileW[2] = (CreateFileWF)PatchImport(cpp, "KERNEL32.dll", "CreateFileW", (void*)&CreateFileWHide<2>);
     }
 }
 // (said in native.log by Init, once the log is open)
@@ -4896,7 +4926,10 @@ static void LogHideDlc()
     char v[4];
     if (GetEnvironmentVariableA("MPFEVER_HIDEDLC", v, 3) == 0 || v[0] != '1') return;
     Buf b; b.str("DLCs hidden from the game (MPFEVER_HIDEDLC=1): ").str(g_findFirstFileW ? "listing hooked" : "listing NOT hooked").str(g_findFirstFileExW ? ", C++ library hooked" : ", C++ library NOT hooked")
-        .str(", ").dec((i64)g_dlcHidden).str(" reads refused so far"); LogLine(b);
+        .str(g_createFileW[0] ? ", opens hooked" : ", opens NOT hooked").str(g_createFileW[1] ? " (C runtime too)" : "")
+        .str(", ").dec((i64)g_dlcHidden).str(" reads refused so far");
+    if (g_dlcFirst[0]) { b.str(", the first: "); for (int i = 0; g_dlcFirst[i] && b.n < 900; i++) b.s[b.n++] = (char)(g_dlcFirst[i] < 128 ? g_dlcFirst[i] : '?'); }
+    LogLine(b);
 }
 
 static DWORD WINAPI HideDlcLater(void*) { Sleep(60000); LogHideDlc(); return 0; }

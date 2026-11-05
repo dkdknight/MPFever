@@ -529,6 +529,11 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 		for _, p in ipairs(keep) do R.hashSkip[p] = nil end
 	end
 	local parts = R.contentHash(C.hashStr, C.dump)
+	if R.namesDumpOut then
+		local nd = R.namesDumpOut
+		R.namesDumpOut = nil
+		pcall(C.appendFile, C.DIR .. BS .. "names_dump.txt", "== n=" .. tostring(n) .. " t=" .. tostring(at) .. NL .. table.concat(nd, NL) .. NL)
+	end
 	-- (the builds of 50 steps ago and before: every game has checked those, a few steps after the build, but not at the same
 	-- step - the checks follow the script's update calls)
 	local bn, bs = 0, 0
@@ -1360,7 +1365,10 @@ local function simApplyDue(state)
 		SIM.loadChecked = true
 		-- (the names of the savegame as every game loaded it: the first check sends what changed since, see R.nameSeed; on
 		-- every game, the names its first check counts)
+		R.namesStore = st
 		pcall(R.nameSeed, not K.nameSyncOn())
+		R.namesStore = nil
+		if os.getenv("MPFEVER_NAMESSTATE") ~= "0" then changed = true end
 		if os.getenv("MPFEVER_KEEPSTALE") ~= "1" then
 			local kept, gone = {}, {}
 			for _, a in ipairs(q) do
@@ -1414,7 +1422,9 @@ local function simApplyDue(state)
 					local okA, auth = pcall(authValues, st.co)
 					local nameSync = K.nameSyncOn()
 					if nameSync then R.nameCollect = {} end
+					R.namesStore = st
 					st.hash = { n = a.n, parts = simHash(terrainSigAt(st, now), st.co, a.n, st.buildIds, now), cost = os.clock() - c0, auth = okA and auth or nil }
+					R.namesStore = nil
 					if nameSync then
 						local col = R.nameCollect
 						R.nameCollect = nil
