@@ -14,7 +14,8 @@ namespace MPFever
 {
     /// <summary>The settings of a dedicated server: mpfever_server.properties next to MPFever.exe ("key=value" lines,
     /// "#" starts a comment line), written with every key and its default value the first time the server starts. Like
-    /// Minecraft's server.properties, the file is only read: the server never rewrites it.</summary>
+    /// Minecraft's server.properties, the server itself only reads it; the window's settings (0.6.13, ServerSettingsDialog)
+    /// write it again, every key with its comment, from the values chosen there (Save).</summary>
     sealed class ServerConfig
     {
         public const string FileName = "mpfever_server.properties";
@@ -40,79 +41,99 @@ namespace MPFever
         public string Motd = "";
         public bool Public = true;
         public string PublicAddress = "";
+        // (0.6.13) separate only: months in debt before a company goes bankrupt (0 never, 3, 6, 12, 24), as the lobby's rules
+        public int BankruptMonths = 12;
+        // (0.6.13) separate only: the computer companies the server's game runs, "n:colour:level[:money],..." as the lobby sends them
+        // (n 1-8, colour 1-12, level 1 easy 2 normal 3 hard, money: its start money, absent = the players')
+        public string AiCompanies = "";
 
         public static string DefaultPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, FileName);
 
         /// <summary>The file written the first time: every setting with its default value and what it does.</summary>
-        public static string Template() => string.Join("\r\n", new[]
+        public static string Template() => new ServerConfig().Text();
+
+        static string B(bool v) => v ? "true" : "false";
+        static string I(long v) => v.ToString(CultureInfo.InvariantCulture);
+        /// <summary>(a value on one line: no line break in a text typed in the window)</summary>
+        static string One(string v) => (v ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+
+        /// <summary>The file with these values, every setting with what it does (0.6.13: the window's settings write it).</summary>
+        public string Text() => string.Join("\r\n", new[]
         {
             "# MPFever dedicated server (MPFever.exe --server)",
             "# The game runs the world on this PC, nobody plays on it. Players join it with its address, as they join a host.",
             "# Lines \"key=value\"; a line starting with # is a comment. Restart the server (or type \"restart\") after a change.",
             "",
             "# Name shown to the players (in-game MPFever window, chat).",
-            "server-name=MPFever Server",
+            "server-name=" + One(Name),
             "",
             "# The world: the name of a savegame of this PC, as shown in the game's load list. Required.",
             "# The server saves the world under this name (autosave) and loads it again after a restart.",
-            "world=",
+            "world=" + One(World),
             "",
             "# TCP port the players connect to (forward it on the router to play over the Internet).",
-            "port=28090",
+            "port=" + I(Port),
             "",
             "# Password the players type in the MPFever window when they join (empty: no password).",
-            "password=",
+            "password=" + One(Password),
             "",
             "# Players at most (the server itself not counted).",
-            "max-players=8",
+            "max-players=" + I(MaxPlayers),
             "",
             "# shared: one company for everybody. separate: one company per player (still in development).",
-            "company-mode=shared",
+            "company-mode=" + CompanyMode,
             "",
             "# separate only: the player name that gets the savegame's own company (empty: nobody plays it).",
-            "owner=",
+            "owner=" + One(Owner),
             "",
             "# separate only: money of a new company.",
-            "start-money=2000000",
+            "start-money=" + I(StartMoney),
+            "",
+            "# separate only: months in debt before a company goes bankrupt: 0 (never), 3, 6, 12 or 24.",
+            "bankruptcy-months=" + I(BankruptMonths),
+            "",
+            "# separate only: the computer companies (experimental), \"n:colour:level[:money],...\": n 1 to 8, colour 1 to 12, level 1 (easy),",
+            "# 2 (normal) or 3 (hard), money: its start money (absent: the players'). Empty: none.",
+            "ai-companies=" + One(AiCompanies),
             "",
             "# separate only: true, each company decides whether its tracks, stations, stops and depots are private, open or paying;",
             "# false: everything is open and free for every company.",
-            "sharing-rules=true",
+            "sharing-rules=" + B(ShareRules),
             "",
             "# The game options (0.6), all off by default: \"id=1;id.param=value;...\" as the host's lobby makes them (its log names",
             "# them: \"Game options chosen by the host\"). Empty: none.",
-            "game-options=",
+            "game-options=" + GameOpts.Canon(GameOptions ?? ""),
             "",
             "# Game speed when the world starts: 1, 2 or 4.",
-            "start-speed=1",
+            "start-speed=" + I(StartSpeed),
             "",
             "# true: the world stops while nobody is connected (as in Satisfactory or Factorio). false: it always runs.",
-            "pause-when-empty=true",
+            "pause-when-empty=" + B(PauseWhenEmpty),
             "",
             "# true: the players may pause the game and change its speed. false: only the server console may.",
-            "player-speed-control=true",
+            "player-speed-control=" + B(PlayerSpeedControl),
             "",
             "# Minutes between two saves of the world (0: no autosave). The world stops for a few seconds while it is saved.",
-            "autosave-minutes=10",
+            "autosave-minutes=" + I(AutosaveMinutes),
             "",
             "# Copies of the world kept in server\\backups after each save (0: none).",
-            "backups=10",
+            "backups=" + I(Backups),
             "",
             "# true: the game is started again when it closes or crashes (at most 3 times in 15 minutes).",
-            "restart-on-crash=true",
+            "restart-on-crash=" + B(RestartOnCrash),
             "",
             "# Seconds without any sign of life from the game before it is restarted (0: never).",
-            "watchdog-seconds=180",
+            "watchdog-seconds=" + I(WatchdogSeconds),
             "",
             "# Chat message every player receives when it joins (empty: none).",
-            "motd=",
+            "motd=" + One(Motd),
             "",
             "# true: the server is shown in the public server list of MPFever's multiplayer page (its name, address, players,",
             "# world and motd), while its world runs. false: only those who know its address find it.",
-            "public=true",
+            "public=" + B(Public),
             "",
             "# The address the list shows (a domain name, name:port). Empty: the public IP address the list sees, and port.",
-            "public-address=",
+            "public-address=" + One(PublicAddress),
             "",
         });
 
@@ -181,8 +202,52 @@ namespace MPFever
                 case "motd": Motd = v; return true;
                 case "public": return Bool(v, ref Public);
                 case "public-address": PublicAddress = v.Length > 80 ? v.Substring(0, 80) : v; return true;
+                case "bankruptcy-months":
+                    if (v != "0" && v != "3" && v != "6" && v != "12" && v != "24") return false;
+                    BankruptMonths = int.Parse(v, CultureInfo.InvariantCulture);
+                    return true;
+                case "ai-companies":
+                    {
+                        var canon = AiCanon(v);
+                        if (canon == null) return false;
+                        AiCompanies = canon;
+                        return true;
+                    }
             }
             return false;
+        }
+
+        /// <summary>(0.6.13) The computer companies' text in its canonical form ("n:colour:level[:money]" sorted by n, each n and
+        /// colour once, at most 8), or null when it does not read so.</summary>
+        public static string AiCanon(string v)
+        {
+            var map = new SortedDictionary<int, string>();
+            var colours = new HashSet<int>();
+            foreach (var part in (v ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var f = part.Trim().Split(':');
+                if (f.Length < 3 || f.Length > 4) return null;
+                if (!int.TryParse(f[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) || n < 1 || n > 8 || map.ContainsKey(n)) return null;
+                if (!int.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int col) || col < 1 || col > 12 || !colours.Add(col)) return null;
+                if (!int.TryParse(f[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int lv) || lv < 1 || lv > 3) return null;
+                string money = "";
+                if (f.Length == 4)
+                {
+                    if (!long.TryParse(f[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out long mo) || mo < -1 || mo > 10000000000L) return null;
+                    if (mo >= 0) money = ":" + mo.ToString(CultureInfo.InvariantCulture);
+                }
+                map[n] = n.ToString(CultureInfo.InvariantCulture) + ":" + col.ToString(CultureInfo.InvariantCulture) + ":" + lv.ToString(CultureInfo.InvariantCulture) + money;
+            }
+            return string.Join(",", map.Values);
+        }
+
+        /// <summary>(0.6.13) Writes the settings (the window's « Save »): the whole file again, with its comments, through a temporary
+        /// file (a crash never leaves half a file).</summary>
+        public void Save(string path)
+        {
+            var tmp = path + ".tmp";
+            File.WriteAllText(tmp, Text() + "\r\n", new UTF8Encoding(false));
+            if (File.Exists(path)) File.Replace(tmp, path, null); else File.Move(tmp, path);
         }
 
         /// <summary>Whether a player who says "join" (its payload: { v = version, pw = password }) may come in, with
@@ -435,6 +500,23 @@ namespace MPFever
                 return false;
             }
             Log.W(F("=== Serveur dédié « {0} » : chargement du monde « {1} » ===", "=== Dedicated server « {0} »: loading the world « {1} » ===", server.Name, server.World));
+            // (0.6.13) the world's mods and DLCs, read from its savegame: a player who joins sees them before joining (see the join
+            // review), and installs the missing mods from there. Before, a server told its players none. MPFEVER_SERVERMODS=0: none
+            if (Environment.GetEnvironmentVariable("MPFEVER_SERVERMODS") != "0")
+                try
+                {
+                    var t0 = DateTime.UtcNow;
+                    var sm = SaveInfo.Mods(GameInstall.FindSave(server.World));
+                    if (sm != null)
+                    {
+                        lobbyMods = Mods.Describe(SaveInfo.MenuList(sm));
+                        lobbyModsKnown = true;
+                        LogModVerdicts(lobbyMods, (DateTime.UtcNow - t0).TotalSeconds);
+                        Log.W(F("DLC du monde : {0}", "The world's DLCs: {0}", SessionDlcs() == "none" ? T("aucun", "none") : SessionDlcs()));
+                    }
+                    else Log.Warn(T("Mods du monde illisibles dans sa sauvegarde : les joueurs ne les verront pas avant de rejoindre.", "The world's mods could not be read from its savegame: the players will not see them before joining."));
+                }
+                catch (Exception e) { Log.W("world mods: " + e.Message); }
             if (launch && !menuGame.GameRunning) menuGame.Launch(gameDir);
             lastAutosave = Now;
             hostingSince = Now;
@@ -1052,8 +1134,10 @@ namespace MPFever
             var peers = relay?.Admitted() ?? new Peer[0];
             string[] ready; lock (players) ready = players.ToArray();
             res.Add(F("Joueurs : {0}/{1}", "Players: {0}/{1}", peers.Length, server.MaxPlayers));
+            HashSet<string> looking; lock (reviewing) looking = new HashSet<string>(reviewing);
             foreach (var p in peers.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
-                res.Add("    " + BaseName(p.Name) + "  ·  " + (ready.Contains(p.Name) ? T("en jeu", "in game") : T("se connecte", "connecting")) + "  ·  " + p.Address);
+                res.Add("    " + BaseName(p.Name) + "  ·  " + (ready.Contains(p.Name) ? T("en jeu", "in game")
+                    : looking.Contains(p.Name) ? T("regarde les mods et DLC avant de rejoindre", "looks at the mods and DLCs before joining") : T("se connecte", "connecting")) + "  ·  " + p.Address);
             res.Add(T("Synchronisation : ", "Sync: ") + (syncText ?? "—"));
             res.Add(lastSavedAt.HasValue ? F("Dernière sauvegarde : {0:HH:mm:ss}", "Last save: {0:HH:mm:ss}", lastSavedAt.Value) : T("Pas encore sauvegardé.", "Not saved yet."));
             return res;
@@ -1090,7 +1174,7 @@ namespace MPFever
             };
             var saveBtn = new ModernButton(ButtonKind.Primary) { Text = T("Sauvegarder maintenant", "Save now") };
             var restartBtn = new ModernButton(ButtonKind.Secondary) { Text = T("Redémarrer le monde", "Restart the world") };
-            var settingsBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Ouvrir les paramètres", "Open the settings") };
+            var settingsBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Paramètres du serveur…", "Server settings…") };
             var stopBtn = new ModernButton(ButtonKind.Ghost) { Text = T("Arrêter le serveur", "Stop the server") };
             serverStopBtn = stopBtn;
             saveBtn.Click += (s, e) => ServerCommand("save");
@@ -1104,10 +1188,16 @@ namespace MPFever
                 if (MessageBox.Show(this, T("Arrêter le serveur ? Le monde est sauvegardé d'abord, puis la fenêtre attend un nouveau démarrage.", "Stop the server? The world is saved first, then the window waits for a new start."),
                     "MPFever", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) ServerCommand("stop");
             };
+            // (0.6.13) the settings window (ServerSettingsDialog) instead of the file in Notepad; MPFEVER_SERVERNOTEPAD=1: the file
             settingsBtn.Click += (s, e) =>
             {
-                try { Process.Start("notepad.exe", "\"" + ServerConfig.DefaultPath + "\""); }
-                catch (Exception ex) { Log.W(ex.Message); }
+                if (Environment.GetEnvironmentVariable("MPFEVER_SERVERNOTEPAD") == "1")
+                {
+                    try { Process.Start("notepad.exe", "\"" + ServerConfig.DefaultPath + "\""); }
+                    catch (Exception ex) { Log.W(ex.Message); }
+                    return;
+                }
+                OpenServerSettings();
             };
             serverIdle = new Panel();
             Ui.StackTop(serverIdle, startDisplayBtn, Ui.Gap(8), startHeadlessBtn, Ui.Gap(6), autoStartBox, Ui.Gap(4));
@@ -1119,6 +1209,21 @@ namespace MPFever
             FitServerCard();
             UpdateServerCard();
             return card;
+        }
+
+        /// <summary>(0.6.13) The server's settings window: saved, the settings are read again at once while the server is stopped (the
+        /// card and the addresses show them), or at the next restart of the world while it runs (« Save and restart the world » now).</summary>
+        void OpenServerSettings()
+        {
+            bool on = serverStarted && !serverStopping;
+            using (var d = new ServerSettingsDialog(ServerConfig.DefaultPath, on))
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                if (!on) { ReloadServerConfig(); UpdateServerCard(); return; }
+                if (d.RestartAsked) ServerCommand("restart");
+                else Log.W(T("Paramètres enregistrés : ils s'appliqueront au prochain redémarrage du monde (bouton « Redémarrer le monde » ou « restart »).",
+                    "Settings saved: they will apply at the next restart of the world (« Restart the world » button or « restart »)."));
+            }
         }
 
         /// <summary>The buttons of the server as it is: stopped (the start buttons) or running.</summary>

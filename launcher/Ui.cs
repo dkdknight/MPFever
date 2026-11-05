@@ -148,7 +148,7 @@ namespace MPFever
     enum ButtonKind { Primary, Secondary, Ghost, Segment }
 
     /// <summary>Flat button with rounded corners, hover and pressed states.</summary>
-    sealed class ModernButton : Button
+    class ModernButton : Button
     {
         public readonly ButtonKind Kind;
         bool hover, down, active;

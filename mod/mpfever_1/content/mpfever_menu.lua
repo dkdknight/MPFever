@@ -1356,6 +1356,8 @@ local function setup()
 				lobby = isHost and T("Salon ouvert", "Lobby open") or T("Dans le salon", "In the lobby"),
 				connecting = T("Connexion à l'hôte...", "Connecting to the host..."),
 				connected = T("Connecté à l'hôte", "Connected to the host"),
+				-- (0.6.13) a game already running: its mods and DLCs first, then « Join the game »
+				review = T("Avant de rejoindre la partie", "Before joining the game"),
 				downloading = T("Réception de la partie", "Receiving the game"),
 				loading = T("Chargement de la partie", "Loading the game"),
 				hosting = T("En partie", "In game"),
@@ -1391,6 +1393,29 @@ local function setup()
 				right[#right + 1] = box(V, {
 					text(st.dlcWarn, "font-scale-body, warning", PAGE_W - SIDE_W - 84),
 				}, nil, { padding = { 8, 12, 8, 12 }, background = { 0.6, 0.15, 0.1, 0.3 }, size = { PAGE_W - SIDE_W - 60, -1 } })
+			end
+			-- (0.6.13, a player) the DLCs of the host's game and of this PC, each with what to do: one the host's game uses and this
+			-- PC lacks has its Steam page (MPFever.exe opens it, request dlcstore); from MPFever.exe's dlcList "id|name|state|store;..."
+			if not isHost and (st.dlcList or "") ~= "" then
+				local w = PAGE_W - SIDE_W - 60
+				local rows = { text(T("DLC de la partie", "The game's DLCs"), "font-scale-title-4", w - 24), gap(1, 4) }
+				for e in st.dlcList:gmatch("[^;]+") do
+					local id, nm, state = e:match("^([^|]*)|([^|]*)|([^|]*)")
+					if id and id ~= "" then
+						local dlcId = id
+						local line = state == "both" and T("vous l'avez aussi", "you have it too")
+							or state == "host" and T("la partie de l'hôte l'utilise, vous ne l'avez pas", "the host's game uses it, you do not have it")
+							or T("vous l'avez, la partie de l'hôte ne l'utilise pas", "you have it, the host's game does not use it")
+						local row = { text(nm .. " : " .. line, state == "both" and "font-scale-body, success" or "font-scale-body, warning", w - 220), hfill() }
+						if state == "host" then
+							row[#row + 1] = button(T("Page Steam", "Steam page"), function() request("dlcstore", dlcId, playerName()) end,
+								{ font = "font-scale-body", icon = "::/gui/menu/icons/mod_management/platform_steam.tga" })
+						end
+						rows[#rows + 1] = box(H, row, nil, { size = { w - 24, -1 } })
+					end
+				end
+				right[#right + 1] = gap(1, 8)
+				right[#right + 1] = box(V, rows, nil, { padding = { 8, 12, 8, 12 }, background = { 1, 1, 1, 0.07 }, size = { w, -1 } })
 			end
 			if isHost and st.publicAddr and st.publicAddr ~= "" then
 				local w = PAGE_W - SIDE_W - 60
@@ -1820,6 +1845,12 @@ local function setup()
 			end
 			-- the buttons
 			local actions = {}
+			-- (0.6.13) the join review: the host's game comes once the player says so
+			if st.phase == "review" and not isHost then
+				actions[#actions + 1] = button(T("Rejoindre la partie", "Join the game"), function() request("joinready", "", playerName()) end,
+					{ primary = true, icon = "::/gui/menu/icons/menu_play.tga", font = "font-scale-title-3" })
+				actions[#actions + 1] = gap(8, 1)
+			end
 			if isHost then
 				actions[#actions + 1] = button(T("Lancer la partie", "Start the game"), function() request("start", "", playerName()) end,
 					{ primary = true, icon = "::/gui/menu/icons/menu_play.tga", font = "font-scale-title-3" })
@@ -1843,6 +1874,13 @@ local function setup()
 			-- (the host's game cannot be loaded without them, see mpfever_auto.lua)
 			local modsBox, modsFirst, modsInfo
 			local mods = decodeMods(st.hostMods)
+			-- (0.6.13, a player) the DLCs have their own list (st.dlcList, above): not here, where a missing one was told to be
+			-- installed from a Mod Hub
+			if not isHost then
+				local kept = {}
+				for _, m in ipairs(mods) do if m.source ~= "DLC" then kept[#kept + 1] = m end end
+				mods = kept
+			end
 			if #mods > 0 then
 				-- each mod with what is wrong first: missing here, another version than the host's, known to break a session,
 				-- then the untested scripts, the mods MPFever made work, and the others (models, interface, data)
@@ -2347,11 +2385,17 @@ local function setup()
 
 		-- a session starts without the page (a Steam invitation accepted, the command line): the page opens to show it
 		local lastPhase = react.useRef(readState().phase)
+		-- (0.6.13) the join review waits for the player's « Join the game »: the page opens once for it, even when the phase was
+		-- already "review" as the main menu showed (a join from the command line or a Steam invitation is faster than the menu)
+		local reviewShown = react.useRef(false)
 		react.onStepTimer(function()
 			local phase = readState().phase
 			local was = lastPhase:get()
 			lastPhase:set(phase)
-			if phase ~= was and busyPhase(phase) and not busyPhase(was) and phase ~= "hosting" and phase ~= "loading" and phase ~= "ingame" and not showMP:old() then
+			local review = phase == "review" and not reviewShown:get()
+			if phase ~= "review" then reviewShown:set(false) end
+			if (review or (phase ~= was and busyPhase(phase) and not busyPhase(was))) and phase ~= "hosting" and phase ~= "loading" and phase ~= "ingame" and not showMP:old() then
+				if phase == "review" then reviewShown:set(true) end
 				log("phase " .. tostring(phase) .. ": opening the MPFever page")
 				for id, close in pairs(noticeClose) do noticeClose[id] = nil; pcall(close) end
 				showMP:set(true)

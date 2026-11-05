@@ -1,12 +1,44 @@
 MPFever - Changelog
 ===================
 
-0.6.13 - (in progress): more mods made compatible, paused checkpoints wait for the engine
-  - CHANGE (lobby, players of other DLCs): the lobby's warning "the game will desynchronise" was not enough: on 2026-11-04 two
-    groups started anyway (the host with the pre-order pack, a player without; the host with both packs, a player with
-    none) and had about twenty reloads between them, every one a "simulation drift" with no action in it. When a player's
-    DLCs are not the host's, the host's first press of "Start the game" now only says so; a second press within a minute
-    starts anyway. MPFEVER_DLCCONFIRM=0: started at once, as before. Test: MPFever.exe --selftest ("dlc start").
+0.6.13 - 2026-11-05: more mods made compatible, what to do when the DLCs differ, mods and DLCs seen before joining a running game, the dedicated server's settings window, computer companies renew their vehicles
+  - CHANGE (lobby, players of other DLCs): the lobby's warning now says what to do: the host can switch the DLCs off in the
+    savegame's mods (when loading the game), or the players can get the DLCs they lack; the game can still be started, but
+    desynchronisations may happen (the user's choice, 2026-11-05: no second press of "Start the game", as an earlier 0.6.13
+    build asked; the start says it in the log). The DLCs a session compares are now its savegame's, when its mods are known
+    (the host's menu wrote them, or a dedicated server read them): a DLC the host switched off in the savegame no longer
+    counts; else the host's installed DLCs, as before (MPFEVER_SAVEDLCS=0: always those). A player's page lists the host's
+    DLCs and its own, each with what to do: one the host's game uses and this PC lacks has its Steam page (the Deluxe
+    upgrade's store page; the pre-order pack is not sold alone: the game's page). Test: MPFever.exe --selftest ("dlc
+    warning", "session dlcs", "dlc list"), tests/test_joinreview.py.
+  - NEW (joining a game already running, a player's game or a dedicated server): there was no lobby to see its mods and DLCs
+    before the host sent its game. Now a player who joins a running game first sees them on its Multiplayer page ("Before
+    joining the game"): the missing mods with their Mod Hub install (or the host's offer for its local ones), the mods of
+    another version, the DLCs with their Steam page; « Join the game » then asks the host for its game. The same mods and
+    DLCs join at once, as before; what a player accepted once (the same host, mods and DLCs) joins at once after a cut. The
+    host sends the game only after the player's word (joinready), and a reload meanwhile leaves the player out. A dedicated
+    server's status names the players looking. MPFEVER_JOINREVIEW=0: a player gets the game at once, as before.
+    Test: tests/test_joinreview.py.
+  - FIX (dedicated server): a server told its players none of its world's mods and DLCs (its world has no lobby, where a
+    player's game reads them): the players could not see what they lacked, and the DLC check compared the server PC's DLCs.
+    Its world's mods are now read from its savegame (the list the game writes at its start: 0.06 s for 120 MB, the file's
+    first megabyte only) when it opens the world. MPFEVER_SERVERMODS=0: none, as before. MPFever.exe --savemods <file> prints
+    a savegame's list. Test: MPFever.exe --selftest ("save mods").
+  - CHANGE (a DLC the host's game uses and this PC lacks): the host's game was not loaded at all ("mods missing", as for a
+    mod). It now loads without that DLC, as the game's own load screen lets a player do; the lobby and the join review said
+    the games may then desynchronise. MPFEVER_DLCDROP=0: as before. Test: tests/test_joinreview.py.
+  - NEW (dedicated server): its settings in a window ("Server settings…" on the server's card) instead of
+    mpfever_server.properties opened in Notepad: the server (name, welcome message, password, players at most, port, public
+    list, public address), the world (the savegames of this PC, with their picture, date, size, DLCs, mods, company mode and
+    computer companies; the autosaves on demand), the companies (mode, the savegame's owner, start money, sharing rules,
+    bankruptcy), the computer companies (up to 8, each with its level, colour and start money; those of the world's savegame
+    taken again with one button), the game options (those of the company mode, with their parameters) and the running
+    (speed at the start, pause when empty, the players' speed control, autosave, copies kept, restart after a crash, time
+    without an answer). « Save » writes the file with all its comments; a stopped server reads it at once, a running one at
+    the next « Restart the world », or now with « Save and restart the world ». Two new keys: bankruptcy-months and
+    ai-companies (before, a server had no computer companies and its bankruptcy rule was the PC's last lobby choice).
+    MPFEVER_SERVERNOTEPAD=1: the file in Notepad, as before. MPFever.exe --serversettings [file] shows the window alone.
+    Test: tests/test_serversettings.py, MPFever.exe --selftest ("server config", "server window").
   - FIX (checks, both modes): "slight simulation drift (names)" at most checks of a session that builds (the AMD report of
     2026-11-04: dozens; every autotest with computer companies; the user's server logs). The names part counts a station,
     line or vehicle once it was there at the game's previous check (0.6.11, #121), and kept what it saw in a variable of its

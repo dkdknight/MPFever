@@ -19,6 +19,25 @@ namespace MPFever
             return Decompress(File.ReadAllBytes(path));
         }
 
+        /// <summary>(0.6.13) The first bytes of a zstd file's content (at most maxOut, fewer when the content is shorter), decoded from
+        /// the start of the file only: what a savegame says before its world (its mods list, see SaveInfo.Mods) without decompressing
+        /// hundreds of MB. Throws when the file is not zstd data.</summary>
+        public static byte[] DecompressHead(string path, int maxOut)
+        {
+            byte[] head;
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                // (zstd rarely compresses a savegame's first part more than 50:1; a block is at most 128 KiB of input)
+                int want = (int)Math.Min(f.Length, Math.Max(1L << 20, (long)maxOut * 4 + 2 * BlockSizeMax));
+                head = new byte[want];
+                int got = 0, n;
+                while (got < want && (n = f.Read(head, got, want - got)) > 0) got += n;
+                if (got < want) Array.Resize(ref head, got);
+            }
+            if (head.Length < 4 || BitConverter.ToUInt32(head, 0) != FrameMagic) throw new InvalidDataException("Not zstd data.");
+            return new Decoder(head) { HeadLimit = Math.Max(1, maxOut) }.RunHead();
+        }
+
         public static byte[] Decompress(byte[] compressed)
         {
             if (compressed == null) throw new ArgumentNullException(nameof(compressed));
@@ -409,6 +428,25 @@ namespace MPFever
 
             public Decoder(byte[] src) { this.src = src; }
 
+            /// <summary>(DecompressHead) the output wanted at most: decoding stops at the first block that reaches it, or where the
+            /// input given (the start of a file) ends.</summary>
+            public int HeadLimit;
+
+            sealed class HeadDone : Exception { }
+
+            public byte[] RunHead()
+            {
+                dst = new byte[HeadLimit + BlockSizeMax];
+                try { DecodeFrame(4); }
+                catch (HeadDone) { }
+                // (the input ends in the middle of a block: what was decoded before it is kept)
+                catch (IndexOutOfRangeException) { }
+                catch (ArgumentException) { }
+                catch (InvalidDataException) { }
+                Array.Resize(ref dst, Math.Min(op, HeadLimit));
+                return dst;
+            }
+
             public byte[] Run()
             {
                 dst = new byte[OutputBound()];
@@ -542,6 +580,7 @@ namespace MPFever
                         ip += size;
                     }
                     else throw Corrupt();
+                    if (HeadLimit > 0 && op >= HeadLimit) throw new HeadDone();
                     if ((bh & 1) != 0) break;
                 }
                 if (h.Checksum)

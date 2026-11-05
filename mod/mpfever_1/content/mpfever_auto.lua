@@ -54,6 +54,25 @@ end
 
 local MOD_ID = "mpfever_1"
 
+-- (0.6.13) A DLC of the host's game this PC does not have (the Deluxe upgrade, the pre-order pack): the game loads without it, as
+-- its own load screen lets a player do (the DLCs' severityRemove "Warning"), instead of not loading at all; the lobby and the join
+-- review said that the games may then desynchronise (the user's choice, 2026-11-05: the game can still be played).
+-- MPFEVER_DLCDROP=0: a missing DLC counts as a missing mod, the host's game is not loaded, as before.
+local function dlcOf(descs, m)
+	local d = descs[m.name]
+	return os.getenv("MPFEVER_DLCDROP") ~= "0" and d ~= nil and d.modSource == "DLC"
+end
+
+local function descsOf(info)
+	local descs = {}
+	pcall(function()
+		for _, d in ipairs(info.metadata.gameModDescs or {}) do
+			if d.modId and d.modId.name then descs[d.modId.name] = d end
+		end
+	end)
+	return descs
+end
+
 -- personal mods (0.5.0): the launcher's plan for this player's load of the host's game (load_mods.txt, see Mods.LoadPlan):
 -- "drop TAB id" (the host's personal mods this player does not run) and "add TAB id" (this player's own)
 local function loadPlan()
@@ -76,15 +95,10 @@ end
 local function missingMods(info, plan)
 	local okr, rep = pcall(function() return app.getUserProfile():getModRep() end)
 	if not okr or not rep then return false end
-	local descs = {}
-	pcall(function()
-		for _, d in ipairs(info.metadata.gameModDescs or {}) do
-			if d.modId and d.modId.name then descs[d.modId.name] = d end
-		end
-	end)
+	local descs = descsOf(info)
 	local lines = {}
 	for _, m in ipairs(info.mods or {}) do
-		if m.name ~= MOD_ID and not (plan and plan.drop[m.name]) then
+		if m.name ~= MOD_ID and not (plan and plan.drop[m.name]) and not dlcOf(descs, m) then
 			local ok, exists = pcall(function() return rep:exists(m) end)
 			if ok and exists == false then
 				local d = descs[m.name]
@@ -132,8 +146,17 @@ local function loadPending()
 	-- (tests: MPFEVER_DROPMODS=id1,id2 leaves mods of the savegame out, as the load screen does: a DLC this PC does not have)
 	local drop, dropped = {}, {}
 	for id in tostring(os.getenv("MPFEVER_DROPMODS") or ""):gmatch("[^,%s]+") do drop[id] = true end
+	-- (0.6.13) the host's DLCs this PC does not have: left out (see dlcOf)
+	local descs = descsOf(info)
+	local okrep, rep0 = pcall(function() return app.getUserProfile():getModRep() end)
+	local function dlcMissing(m)
+		if not (p.fromMenu and okrep and rep0 and dlcOf(descs, m)) then return false end
+		local ok, ex = pcall(function() return rep0:exists(m) end)
+		return ok and ex == false
+	end
 	for _, m in ipairs(info.mods or {}) do
-		if drop[m.name] or (plan and plan.drop[m.name]) then dropped[#dropped + 1] = m.name
+		if dlcMissing(m) then dropped[#dropped + 1] = m.name; log("DLC " .. tostring(m.name) .. " of the host's game not on this PC: loaded without it (the games may desynchronise)")
+		elseif drop[m.name] or (plan and plan.drop[m.name]) then dropped[#dropped + 1] = m.name
 		else
 			mods[#mods + 1] = m
 			if m.name == MOD_ID then has = true end

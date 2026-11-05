@@ -61,6 +61,8 @@ namespace MPFever
             ok &= RunIssue111();
             ok &= RunSession067();
             ok &= RunDlcs();
+            ok &= RunSaveMods();
+            ok &= RunServerConfig();
             ok &= RunReportMode();
             ok &= RunFineTimer();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
@@ -282,15 +284,95 @@ namespace MPFever
                 Check(Mods.DlcWarning("AMD", D, "none").Contains(Mods.DlcName(D)), "dlcs: a pack of the host's only is said too");
                 Check(Mods.DlcWarning("x", D + "," + P, P + "," + D) == "", "dlcs: the same packs: no warning");
                 Check(Mods.DlcWarning("x", "", D) == "" && Mods.DlcWarning("x", D, "") == "", "dlcs: an older MPFever (no list): nothing said");
-                // (0.6.13) the start with players of other DLCs: asked once, then started within 60 s
-                var t0 = new DateTime(2026, 11, 5, 0, 0, 0, DateTimeKind.Utc);
-                Check(Mods.DlcStartAllowed("", null, t0), "dlc start: the same DLCs start at once");
-                Check(!Mods.DlcStartAllowed("w", null, t0), "dlc start: other DLCs: the first press only says it");
-                Check(Mods.DlcStartAllowed("w", t0, t0.AddSeconds(20)), "dlc start: a second press within 60 s starts");
-                Check(!Mods.DlcStartAllowed("w", t0, t0.AddSeconds(90)), "dlc start: a press after 60 s asks again");
+                // (0.6.13) the warning: every player's differences, then the advice once (switch them off in the savegame, or get them;
+                // the game can still be started); nothing when the DLCs are alike
+                var two = Mods.DlcWarningText(new List<string> { Mods.DlcWarning("keviK", D, "none"), Mods.DlcWarning("AMD", D, P + "," + D) });
+                Check(two.Contains("keviK") && two.Contains("AMD") && two.Split(new[] { Mods.DlcAdvice().Trim() }, StringSplitOptions.None).Length == 2, "dlc warning: both players, the advice once");
+                Check(Mods.DlcWarningText(new List<string> { "", Mods.DlcWarning("x", D, D) }) == "", "dlc warning: the same DLCs: none");
+                // (0.6.13) the session's DLCs are the savegame's when its mods are known (the host switched the pack off in it)
+                Check(Mods.SaveDlcs("mpfever_1|MPFever|UserMods;;" + D + "|Deluxe|DLC", true) == D, "session dlcs: the savegame's");
+                Check(Mods.SaveDlcs("auto_signals_1|x|UserMods", true) == "none", "session dlcs: a savegame without DLC uses none");
+                Check(Mods.SaveDlcs("", false) == null, "session dlcs: unknown mods: the installed ones are said");
+                // (0.6.13) the DLC list of the join review: the host's first, what this PC lacks with the Deluxe's store page
+                var view = Mods.DlcListView(D, P);
+                Check(view.StartsWith(D + "|") && view.Contains("|host|steam://store/3979620") && view.Contains(P + "|") && view.Contains("|mine|"), "dlc list: host's pack to get, this PC's own");
+                Check(Mods.DlcListView(D, D).Contains("|both|") && Mods.DlcListView("", D) == "", "dlc list: alike; an older MPFever: none");
             }
             catch (Exception e) { Check(false, "dlcs: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_DLCS", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.6.13) The dedicated server's settings written by its window (ServerConfig.Save) and read back by the server: every
+        /// value kept, the comments there, the new keys (bankruptcy months, computer companies) read and checked, the game options'
+        /// catalog of the window loaded.</summary>
+        static bool RunServerConfig()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var file = Path.Combine(Path.GetTempPath(), "mpfever_selftest_server.properties");
+            try
+            {
+                if (File.Exists(file)) File.Delete(file);
+                var c = new ServerConfig { Name = "Serveur de test", World = "Test Monde", Port = 28111, Password = "pw", MaxPlayers = 5, CompanyMode = "separate", Owner = "Knight",
+                    StartMoney = 5000000, ShareRules = false, GameOptions = "stats=1;goal=1;goal.target=x", StartSpeed = 2, PauseWhenEmpty = false, PlayerSpeedControl = false,
+                    AutosaveMinutes = 15, Backups = 3, RestartOnCrash = false, WatchdogSeconds = 240, Motd = "Bonjour\nà tous", Public = false, PublicAddress = "mp.example.org:28111",
+                    BankruptMonths = 6, AiCompanies = "2:11:3:5000000,1:12:1" };
+                c.AiCompanies = ServerConfig.AiCanon(c.AiCompanies);
+                c.Save(file);
+                var problems = new List<string>();
+                var r = ServerConfig.Load(file, problems, out bool created);
+                Check(!created && problems.Count == 0, "server config: written and read back without a problem");
+                Check(r.Name == c.Name && r.World == c.World && r.Port == 28111 && r.Password == "pw" && r.MaxPlayers == 5 && r.CompanyMode == "separate" && r.Owner == "Knight", "server config: the server's values");
+                Check(r.StartMoney == 5000000 && !r.ShareRules && r.BankruptMonths == 6 && r.AiCompanies == "1:12:1,2:11:3:5000000", "server config: the companies' rules and the computer companies");
+                Check(r.GameOptions == "goal=1;goal.target=x;stats=1" && r.StartSpeed == 2 && !r.PauseWhenEmpty && !r.PlayerSpeedControl, "server config: the game options and the speed");
+                Check(r.AutosaveMinutes == 15 && r.Backups == 3 && !r.RestartOnCrash && r.WatchdogSeconds == 240 && r.Motd == "Bonjour à tous" && !r.Public && r.PublicAddress == "mp.example.org:28111", "server config: the rest, a line break of the motd made a space");
+                var text = File.ReadAllText(file);
+                Check(text.Contains("# The world: the name of a savegame") && text.Contains("bankruptcy-months=6") && text.Contains("# separate only: the computer companies"), "server config: the comments are in the file");
+                Check(ServerConfig.AiCanon("1:12:2,1:11:2") == null && ServerConfig.AiCanon("1:12:2,2:12:2") == null && ServerConfig.AiCanon("9:1:2") == null && ServerConfig.AiCanon("1:1:4") == null,
+                    "server config: a computer company twice, a colour twice, a number or a level out of range: refused");
+                Check(ServerConfig.AiCanon("") == "" && ServerConfig.AiCanon("3:5:2:-1") == "3:5:2", "server config: none; the players' money said by no amount");
+                Check(new ServerConfig().Text() == ServerConfig.Template() && ServerConfig.Template().Contains("world=\r\n"), "server config: the template is the defaults' text");
+                var cat = GameOptsCatalog.All;
+                Check(cat.Count >= 10 && cat.Any(o => o.Id == "goal" && o.Params.Any(p => p.Id == "target" && p.Values.Count > 1)), "server window: the game options' catalog");
+                Check(GameOptsCatalog.ForServer("shared").All(o => o.Module != "public" && o.Modes != "separate") && GameOptsCatalog.ForServer("separate").Any(o => o.Id == "goal"), "server window: the options of a mode, without the public games'");
+            }
+            catch (Exception e) { Check(false, "server config: " + e.Message); }
+            finally { try { File.Delete(file); } catch { } }
+            return ok;
+        }
+
+        /// <summary>(0.6.13) A savegame's mods read from the start of its file (a dedicated server's world, the server window's list):
+        /// the list as the game writes it found after other bytes, its DLC, a mod.io number, MPFever's own left out of the menu's list;
+        /// only the head decompressed; nothing found in other data.</summary>
+        static bool RunSaveMods()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            try
+            {
+                var ms = new MemoryStream();
+                var w = new BinaryWriter(ms);
+                w.Write(Encoding.ASCII.GetBytes("tf**")); w.Write(605); w.Write(new byte[81]);
+                void Str(string s) { var b = Encoding.UTF8.GetBytes(s); w.Write(b.Length); w.Write(b); }
+                w.Write(3);
+                Str("urbangames_deluxe_upgrade_pack"); Str("DLC"); Str("DLC,urbangames_deluxe_upgrade_pack"); Str("Mise à niveau Deluxe"); Str(""); w.Write(1);
+                Str("timetables_1"); Str("mod.io"); Str("6037864"); Str("Timetables"); Str("https://mod.io"); w.Write(0);
+                Str("mpfever_1"); Str("UserMods"); Str("UserMods,mpfever_1"); Str("MPFever Multiplayer"); Str(""); w.Write(0);
+                w.Write(new byte[3 << 20]);   // (the world after it: not decompressed)
+                var file = Path.Combine(Path.GetTempPath(), "mpfever_selftest_mods.sav");
+                Zstd.WriteRawFrame(file, ms.ToArray());
+                var head = Zstd.DecompressHead(file, 1 << 20);
+                Check(head.Length == 1 << 20, "save mods: only the head decompressed");
+                var mods = SaveInfo.Mods(file);
+                Check(mods != null && mods.Count == 3 && mods[0].Source == "DLC" && mods[0].Name == "Mise à niveau Deluxe" && mods[1].Hub == "6037864" && mods[2].Hub == "", "save mods: the list, its DLC and a mod.io number");
+                var list = SaveInfo.MenuList(mods);
+                Check(list.StartsWith("urbangames_deluxe_upgrade_pack|Mise à niveau Deluxe|DLC|;;timetables_1|Timetables|mod.io|6037864") && !list.Contains("mpfever_1"), "save mods: the menu's list without MPFever");
+                Check(Mods.SaveDlcs(Mods.Describe(list), true) == "urbangames_deluxe_upgrade_pack", "save mods: the world's DLCs");
+                Check(SaveInfo.ModsOf(new byte[70000]) == null, "save mods: none in other data");
+                File.Delete(file);
+            }
+            catch (Exception e) { Check(false, "save mods: " + e.Message); }
             return ok;
         }
 

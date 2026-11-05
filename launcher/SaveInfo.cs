@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace MPFever
@@ -149,6 +150,69 @@ namespace MPFever
             int len = i >= 4 ? BitConverter.ToInt32(d, i - 4) : -1;
             if (len < OptsMark.Length + 1 || len > GameOpts.MaxText + OptsMark.Length + 1 || i + len > d.Length || d[i + len - 1] != (byte)';') return null;
             return Encoding.ASCII.GetString(d, i + OptsMark.Length, len - OptsMark.Length - 1);
+        }
+
+        /// <summary>(0.6.13) A mod a savegame lists (the game's GameSaveCommandData modDescs, near the start of the decompressed file):
+        /// its id, origin ("DLC", "UserMods", "mod.io", ...), its Mod Hub number (a mod.io mod's; "" else) and its name.</summary>
+        public sealed class SaveMod
+        {
+            public string Id = "", Source = "", Hub = "", Name = "";
+        }
+
+        /// <summary>(0.6.13) The mods a savegame lists, read from its first MB only (a dedicated server's world, the server window's
+        /// list of savegames); null when the list is not found. Seen in build 40425's savegames (and documented by TPF3-MP for 40408):
+        /// a count (uint32), then per mod five strings (uint32 length, UTF-8: id, source, hub id "source,id" or a mod.io number,
+        /// name, url) and an int32 severity of 0 to 2. The list is the first place of the first 64 KiB where a whole list holds.</summary>
+        public static List<SaveMod> Mods(string savePath)
+        {
+            byte[] d;
+            try { d = Zstd.DecompressHead(savePath, 1 << 20); }
+            catch (Exception e) { Log.W("savegame mods: " + e.Message); return null; }
+            return ModsOf(d);
+        }
+
+        public static List<SaveMod> ModsOf(byte[] d)
+        {
+            if (d == null) return null;
+            for (int off = 0; off + 4 <= Math.Min(d.Length, 65536); off++)
+            {
+                uint count = BitConverter.ToUInt32(d, off);
+                if (count < 1 || count > 4096) continue;
+                var list = new List<SaveMod>();
+                int p = off + 4;
+                bool ok = true;
+                for (int i = 0; i < count && ok; i++)
+                {
+                    var f = new string[5];
+                    for (int k = 0; k < 5 && ok; k++)
+                    {
+                        if (p + 4 > d.Length) { ok = false; break; }
+                        uint len = BitConverter.ToUInt32(d, p);
+                        if (len > 4096 || p + 4 + len > d.Length) { ok = false; break; }
+                        // (the id, source and hub id strict: a wrong place rarely holds valid UTF-8 there; a name or url as it comes)
+                        try { f[k] = (k < 3 ? new UTF8Encoding(false, true) : new UTF8Encoding(false, false)).GetString(d, p + 4, (int)len); }
+                        catch { ok = false; break; }
+                        p += 4 + (int)len;
+                    }
+                    if (!ok || p + 4 > d.Length) { ok = false; break; }
+                    int sev = BitConverter.ToInt32(d, p);
+                    p += 4;
+                    bool hubOk = f[2].IndexOf(',') > 0 || (f[2].Length > 0 && f[2].All(char.IsDigit));
+                    if (sev < 0 || sev > 2 || f[0].Length == 0 || f[0].Any(char.IsControl) || f[1].Any(char.IsControl) || !hubOk) { ok = false; break; }
+                    list.Add(new SaveMod { Id = f[0], Source = f[1], Hub = f[2].All(char.IsDigit) ? f[2] : "", Name = f[3].Length > 0 ? f[3] : f[0] });
+                }
+                if (ok) return list;
+            }
+            return null;
+        }
+
+        /// <summary>(0.6.13) A savegame's mods as the host's menu writes them (host_mods.txt: "id|name|source|hub" entries joined by
+        /// ";;", MPFever's own left out), for Mods.Describe.</summary>
+        public static string MenuList(List<SaveMod> mods)
+        {
+            if (mods == null) return "";
+            string C(string s) => System.Text.RegularExpressions.Regex.Replace(s ?? "", "[|;\\p{Cc}]", " ");
+            return string.Join(";;", mods.Where(m => m.Id != "mpfever_1").Select(m => C(m.Id) + "|" + C(m.Name) + "|" + C(m.Source) + "|" + C(m.Hub)));
         }
 
         static bool Same(byte[] d, int at, byte[] p)

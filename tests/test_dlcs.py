@@ -35,7 +35,8 @@ def main():
     st = read("launcher", "SelfTest.cs")
     menu = read("mod", "mpfever_1", "content", "mpfever_menu.lua")
     check("this PC's DLCs: the folders of the game's dlcs with a mod.json", 'Path.Combine(g, "dlcs")' in mods and 'File.Exists(Path.Combine(x, "mod.json"))' in mods)
-    check("the host's lobby carries its DLCs", form.count('[\\"dlcs\\"]=" + LuaLit.Quote(Mods.InstalledDlcs())') == 3)
+    # (0.6.13: the session's DLCs, the savegame's when its mods are known, see SessionDlcs and tests/test_joinreview.py)
+    check("the host's lobby carries its DLCs", form.count('[\\"dlcs\\"]=" + LuaLit.Quote(SessionDlcs())') == 3)
     check("a player compares them, from the lobby and from the welcome", 'CheckHostDlcs(S("dlcs"), client, name);' in form and "CheckHostDlcs(ds0, client, name);" in form)
     check("and sends its own to the host", 'Msg.Make("dlccheck", name,' in form)
     check("the host names the player in its lobby and logs the warning", 'case "dlccheck":' in form and '" (DLC différents)", " (different DLCs)"' in form

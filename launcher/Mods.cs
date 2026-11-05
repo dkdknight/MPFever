@@ -106,14 +106,15 @@ namespace MPFever
             catch { return ""; }
         }
 
-        /// <summary>(0.6.13) The host's start with players of other DLCs: the first press of "start" only says it (the lobby's
-        /// warning was not read on 2026-11-04: two sessions, about twenty resyncs); a second press within 60 s starts anyway.
-        /// warn: the lobby's DLC warnings ("" = the same DLCs); askedAt: when the last press said it (null = never).
-        /// MPFEVER_DLCCONFIRM=0: started at once, as before.</summary>
-        public static bool DlcStartAllowed(string warn, DateTime? askedAt, DateTime now)
+        /// <summary>(0.6.13) The DLCs a game uses: those of its savegame's mods (a "described" list, see Describe: the entries whose
+        /// source is "DLC"; the host can switch one off in the savegame's mods when it loads it), "none" when it uses none; null
+        /// when the savegame's mods are not known (the host's installed DLCs are said then, see SessionDlcs in MainForm).</summary>
+        public static string SaveDlcs(string described, bool known)
         {
-            if (string.IsNullOrEmpty(warn) || Environment.GetEnvironmentVariable("MPFEVER_DLCCONFIRM") == "0") return true;
-            return askedAt.HasValue && (now - askedAt.Value).TotalSeconds >= 0 && (now - askedAt.Value).TotalSeconds <= 60;
+            if (!known) return null;
+            var ids = Parse(described).Where(e => e.Source.Equals("DLC", StringComparison.OrdinalIgnoreCase)).Select(e => e.Id)
+                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+            return ids.Count == 0 ? "none" : string.Join(",", ids);
         }
 
         /// <summary>A DLC's name for the players.</summary>
@@ -123,6 +124,17 @@ namespace MPFever
             if (id.IndexOf("preorder", StringComparison.OrdinalIgnoreCase) >= 0) return T("bonus de précommande", "pre-order pack");
             return id;
         }
+
+        /// <summary>(0.6.13) Where a player gets a DLC: the Steam store page of the Deluxe upgrade (app 3979620), else the game's
+        /// own page (3493540: the pre-order pack is not sold on its own; the page lists what is).</summary>
+        public static string DlcStoreUrl(string id) =>
+            (id ?? "").IndexOf("deluxe", StringComparison.OrdinalIgnoreCase) >= 0 ? "steam://store/3979620" : "steam://store/3493540";
+
+        /// <summary>(0.6.13) What the host and the players can do when their DLCs differ (the user's choice, 2026-11-05: no second
+        /// press of « Start the game » any more, the advice instead).</summary>
+        public static string DlcAdvice() => T(
+            " Pour l'éviter, l'hôte peut désactiver ces DLC dans les mods de la sauvegarde (au chargement de la partie), ou les joueurs peuvent acquérir les DLC qui leur manquent. La partie peut tout de même être lancée, mais des désynchronisations peuvent se produire.",
+            " To avoid it, the host can switch these DLCs off in the savegame's mods (when loading the game), or the players can get the DLCs they lack. The game can still be started, but desynchronisations may happen.");
 
         /// <summary>What differs between two DLC lists (InstalledDlcs): the names of those only in the first, those only in the
         /// second. Nothing when either list is unknown ("": an older MPFever, or no game folder).</summary>
@@ -143,10 +155,34 @@ namespace MPFever
             var (hostOnly, playerOnly) = DlcDiff(hostList, playerList);
             if (hostOnly.Count == 0 && playerOnly.Count == 0) return "";
             var parts = new List<string>();
-            if (playerOnly.Count > 0) parts.Add(F("{0} a {1}, pas l'hôte", "{0} has the {1}, the host does not", player, string.Join(", ", playerOnly)));
-            if (hostOnly.Count > 0) parts.Add(F("l'hôte a {1}, pas {0}", "the host has the {1}, {0} does not", player, string.Join(", ", hostOnly)));
-            return string.Join(T(" ; ", "; "), parts) + T(" : la partie va se désynchroniser. Tous les joueurs doivent avoir les mêmes DLC.",
-                ": the game will desynchronise. Every player needs the same DLCs.");
+            if (playerOnly.Count > 0) parts.Add(F("{0} a {1}, pas la partie de l'hôte", "{0} has the {1}, the host's game does not", player, string.Join(", ", playerOnly)));
+            if (hostOnly.Count > 0) parts.Add(F("la partie de l'hôte utilise {1}, {0} ne l'a pas", "the host's game uses the {1}, {0} does not have it", player, string.Join(", ", hostOnly)));
+            return string.Join(T(" ; ", "; "), parts);
+        }
+
+        /// <summary>(0.6.13) The DLCs of a host's game and of this PC for the menu's list, "id|name|state|store;..." in the host's
+        /// order then this PC's: state "both" (alike), "host" (the host's game uses it, this PC lacks it: to get, the store page) or
+        /// "mine" (this PC has it, the host's game does not). "" when either list is unknown or neither has any.</summary>
+        public static string DlcListView(string hostList, string mine)
+        {
+            if (string.IsNullOrEmpty(hostList) || string.IsNullOrEmpty(mine)) return "";
+            List<string> Of(string s) => s == "none" ? new List<string>() : s.Split(',').Select(x => x.Trim()).Where(x => x != "").ToList();
+            var h = Of(hostList); var m = Of(mine);
+            var rows = new List<string>();
+            foreach (var id in h.Concat(m.Where(x => !h.Contains(x, StringComparer.OrdinalIgnoreCase))))
+            {
+                bool inH = h.Contains(id, StringComparer.OrdinalIgnoreCase), inM = m.Contains(id, StringComparer.OrdinalIgnoreCase);
+                rows.Add(string.Join("|", Clean(id), Clean(DlcName(id)), inH && inM ? "both" : inH ? "host" : "mine", DlcStoreUrl(id)));
+            }
+            return string.Join(";", rows);
+        }
+
+        /// <summary>(0.6.13) The whole warning from the differences of each player (DlcWarning), the advice once: "" when none.</summary>
+        public static string DlcWarningText(IEnumerable<string> differences)
+        {
+            var d = (differences ?? Enumerable.Empty<string>()).Where(x => !string.IsNullOrEmpty(x)).ToList();
+            if (d.Count == 0) return "";
+            return T("DLC différents : ", "Different DLCs: ") + string.Join(T(" ; ", "; "), d) + T(". Des désynchronisations sont possibles.", ". Desynchronisations may happen.") + DlcAdvice();
         }
 
         public static Verdict Judge(string id, string kind)

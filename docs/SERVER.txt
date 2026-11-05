@@ -70,9 +70,10 @@ SETTING IT UP
 3. Open MPFever.exe (or start-server.bat, the same). The first time, it writes
    mpfever_server.properties next to MPFever.exe. The server does not start by itself: the
    window waits.
-4. Open mpfever_server.properties (button "Open the settings"), write the savegame's name
-   after world= (for example  world=Our World ), set a password if you want one, and save
-   the file.
+4. Click "Server settings…": on its "World" page, pick the savegame to host (the list shows
+   every savegame of this PC with its picture, DLCs, mods and companies) and click "Host this
+   world"; set a password on the "Server" page if you want one, then "Save". (Editing
+   mpfever_server.properties by hand works too: write the savegame's name after world=.)
 5. Click "Start with display" or "Start without display" (or type  start  or
    start headless  in the server console). Transport Fever 3 starts, loads the world and
    the server is ready. The log shows the addresses the players join with.
@@ -95,8 +96,13 @@ only.
 
 SETTINGS (mpfever_server.properties)
 ------------------------------------
-One "key=value" per line; a line starting with # is a comment. Read when the server starts
-and on "restart".
+The "Server settings…" window sets them all (0.6.13), in six pages: Server, World, Companies,
+Computer companies, Game options and Running. "Save" writes the file; a stopped server reads
+it at once, a running one at the next "Restart the world" (or now: "Save and restart the
+world").
+
+In the file: one "key=value" per line; a line starting with # is a comment. Read when the
+server starts and on "restart".
 
   server-name=MPFever Server   Name shown to the players (in-game MPFever window, chat).
   world=                       The savegame to host (name of the game's load list). Required.
@@ -111,6 +117,12 @@ and on "restart".
                                on the company follows that player's Steam account). Empty:
                                nobody plays it (every player gets a new one).
   start-money=2000000          separate only: money of a new company.
+  bankruptcy-months=12         separate only: months in debt before a company goes bankrupt:
+                               0 (never), 3, 6, 12 or 24.
+  ai-companies=                separate only: the computer companies (experimental), run by
+                               the server's game: "n:colour:level[:money],..." (n 1 to 8,
+                               colour 1 to 12, level 1 easy, 2 normal, 3 hard, money its start
+                               money, absent: the players'). Easier in the window.
   sharing-rules=true           separate only: each company decides whether its tracks,
                                stations, stops and depots are private, open or paying.
                                false: everything is open and free for every company.
