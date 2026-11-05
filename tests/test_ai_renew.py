@@ -52,4 +52,14 @@ check(run("return M.p.renewPick(%s, { [10] = true }).e" % cands) == 2, "only on 
 check(run("return M.p.renewPick({ { e = 1, line = 10, age = 20, life = 25 } }, { [10] = true })") is None, "every vehicle younger: none")
 check(run("return M.p.renewPick({}, {})") is None, "no vehicle: none")
 
+print("renewStep: a renewal under way")
+run("ACTS = {}; E.G.AI = E.G.AI or {}; E.G.AI.renew = { old = 801, line = 70, n = 1, frame = E.G.frames }")
+got = run("local r = M.p.renewStep(E, { id = 3, ent = 3 }, {}, { { e = 801, line = 70 } }, 2000000, 0, false); return tostring(r) .. ' ' .. acts('makeVehicleSellCmd')")
+check(got == "false 0", "the new vehicle not on the line yet: the old one kept: " + str(got))
+got = run("local r = M.p.renewStep(E, { id = 3, ent = 3 }, {}, { { e = 801, line = 70 }, { e = 802, line = 70 } }, 2000000, 0, false); return tostring(r) .. ' ' .. acts('makeVehicleSellCmd') .. ' ' .. tostring(E.G.AI.renew)")
+check(got == "true 1 nil", "the new one runs on the line: the old one sold, the renewal over: " + str(got))
+run("E.G.AI.renew = { old = 801, line = 70, n = 1, frame = E.G.frames - 999999 }; ACTS = {}")
+got = run("local r = M.p.renewStep(E, { id = 3, ent = 3 }, {}, { { e = 801, line = 70 } }, 2000000, 0, false); return tostring(r) .. ' ' .. acts('makeVehicleSellCmd') .. ' ' .. tostring(E.G.AI.renewFail and E.G.AI.renewFail[801])")
+check(got == "false 0 true", "no new vehicle for too long: given up, that vehicle not tried again: " + str(got))
+
 sys.exit(1 if failures else 0)

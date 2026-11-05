@@ -1513,6 +1513,8 @@ local function manageLines(E, co, lines, vehicles, money)
 	local solvent = os.getenv("MPFEVER_AISOLVENT") ~= "0"
 	local low = solvent and FLOOR or 0
 	local period = money < low and 1200 or 7200
+	-- (0.6.13: a renewal under way ends at any look, its old vehicle sold as soon as the new one runs, see renewStep)
+	if A.renew and G.frames - (A.manageAt or -100000) < period then return renewStep(E, co, lines, vehicles, money, E.gameTime(), false) end
 	if G.frames - (A.manageAt or -100000) < period then return false end
 	A.manageAt = G.frames
 	local probs = problemLines(E, co.ent)
@@ -5110,7 +5112,7 @@ M.f = { isLeft = isLeft, leave = leave, aiCompany = aiCompany, myStops = myStops
 	step = step, RL = RL, stopSegments = stopSegments }
 
 -- (0.6) the pure rules, and the module's state of the company under way, for the offline tests (tests/test_ai_*.py)
-M.p = { floorOf = floorOf, renewPick = renewPick, vehicleAge = vehicleAge, modelSeatsOf = modelSeatsOf, ltBudget = ltBudget, ltJudge = ltJudge, ltScore = ltScore, densest = densest, LT = LT, FLOOR_MIN = FLOOR_MIN,
+M.p = { floorOf = floorOf, renewStep = renewStep, renewPick = renewPick, vehicleAge = vehicleAge, modelSeatsOf = modelSeatsOf, ltBudget = ltBudget, ltJudge = ltJudge, ltScore = ltScore, densest = densest, LT = LT, FLOOR_MIN = FLOOR_MIN,
 	set = function(level, reserve, floor) LV = LEVELS[level or 2] or LEVELS[2]; RESERVE = reserve or LV.reserve; FLOOR = floor or FLOOR_MIN end,
 	get = function() return { reserve = RESERVE, floor = FLOOR, level = LV.name } end }
 
