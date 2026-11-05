@@ -15,7 +15,8 @@ MPFever - Changelog
     same check differed by what was made in between (names_dump.txt of a test: the same entities on both games, a station
     "seen" on one and not on the other, every other check). Meanwhile the lines and vehicles were not compared. What was
     seen is now kept in the game script's state, which both copies share. MPFEVER_NAMESSTATE=0: as before.
-    MPFEVER_NAMESDUMP=1 (diagnostic): every name of every check in names_dump.txt. Test: tests/test_namesstate.py.
+    MPFEVER_NAMESDUMP=1 (diagnostic): every name of every check in names_dump.txt. Test: tests/test_namesstate.py; in game
+    (Test Headless, one company per player, two computer companies building, 4x, 3 min): 5 "names" drifts before, 0 after.
   - NEW (computer companies): old vehicles are renewed. Since 0.6.9 every company's vehicles wear, and a computer company kept
     its first buses and trucks for the whole session. With money to spare (its reserve and three vehicles more), at a regular
     look with nothing else to buy, the oldest vehicle past its model's lifespan on a line that does not lose money gets a new
@@ -31,9 +32,12 @@ MPFever - Changelog
     autotest scenario "lineedit" (the time each edit took). Measured (12 edits, Test Headless): 1.30 s off, 0.98 s (host) and
     1.10 s (client) on at 1x, 1.01 s / 0.90 s at 4x, all in sync, no late action. Two steps ahead (MPFEVER_LINELEADSTEPS=2)
     landed edits 2 steps late on the builder's own game at 4x: not used.
-  - NEW (tests, native module): MPFEVER_HIDEDLC=1 hides the game's "dlcs" folder from that game (its listing finds nothing,
-    the files under it are not there), so one PC can run a game with its DLCs and one without, as two players of other
-    DLCs (MPFEVER_ENV_CLIENT=MPFEVER_HIDEDLC=1 in an autotest). native.log says it and how many reads it refused.
+  - NEW (tests, native module, unfinished): MPFEVER_HIDEDLC=1 hides the game's "dlcs" folder from that game's file reads (the
+    game's own, the C++ library's and the C runtime's listings and opens), meant to run on one PC a game with its DLCs and one
+    without (MPFEVER_ENV_CLIENT=MPFEVER_HIDEDLC=1 in an autotest). The game still loads its DLC by another way: the listing of
+    "dlcs/" is refused, yet both games know the same 4405 models. native.log says it, how many reads it refused and the first.
+  - NEW (diagnostic): the log says how many models the game knows at each load ("models known to this game"): a game of other
+    DLCs or mods knows another number.
   - FIX (both modes, a pause, the 20:37 replay of 2026-11-04): in a pause the engine applies a command at its next swap of
     the command list (every 200 ms). A line renamed just before a checkpoint (by a player, or by Auto Line Namer, whose
     renames only the host's game sends) was already renamed in one game's checkpoint and not yet in the other's: a "lines"
