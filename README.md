@@ -40,7 +40,7 @@ Each player plays in their own copy of the game. MPFever replays every player's 
 |---|---|
 | **Transport Fever 3 on Steam, Windows** | MPFever is tested on the Steam version. A GOG copy works too, experimentally (joining through Steam isn't possible there: join the host's address). |
 | **The same game version on every PC** | Two different game builds don't simulate the world the same way. Supported: **40425** (current), **40423** and **40420**. Make sure Steam has updated the game on every PC. |
-| **The same DLCs on every PC** | The Deluxe edition's upgrade pack and the pre-order pack put their animals, people and vehicles in the world of the PC that owns them only, and the games drift apart. The lobby shows a red warning when the players' DLCs differ. |
+| **The same DLCs on every PC** | The Deluxe edition's upgrade pack and the pre-order pack put their animals, people and vehicles in the world of the PC that owns them only, and the games may drift apart. The lobby warns when the players' DLCs differ and says what to do: the host can switch them off in the savegame's mods, or the players can get them. |
 | **The same MPFever version on every PC** | MPFever updates itself; every player just needs a recent version (0.3.15 or later). |
 | **The same mods, in the same version** | MPFever checks it in the lobby, installs the missing ones from the game's Mod Hub and tells you what to fix. Mods that only change your interface may differ. |
 
@@ -105,7 +105,9 @@ Players can also join a game already running, and a lost connection reconnects b
 
 ### Dedicated server
 
-A PC of its own can run the world without anybody playing on it: download **`MPFever-<version>-server.zip`**, open its `MPFever.exe` and click a start button. It includes:
+A PC of its own can run the world without anybody playing on it: download **`MPFever-<version>-server.zip`**, open its `MPFever.exe`, pick the world in **Server settings…** and click a start button. It includes:
+
+- a settings window: the world among the PC's savegames, the companies and their rules, computer companies, game options;
 
 - a start with display (the game shows the world) or without (the game runs hidden and draws nothing: far fewer resources);
 - a password and a player limit;
@@ -261,7 +263,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
 - **The testers** who sent reports, logs and savegames: most fixes came from them. Thank you to
   kingplay98, theop, edith-piffpaff, DrWolf03, kasa1990, Acki007, simon21-la, Vogel, Alex, CrossCroissant, AZalshehri7, ArtemQa8, KatzenSupport, GreGNee, terpo,
   seksi1227-wq, Manocornuto, dev-andrei-v, Nassachi, Zippo1578, Shog-SC, thedevouttrout, AlexXY2, MorganJones13,
-  razer911118888, HolderLord, Getriebesand, Kompetenzteam
+  razer911118888, HolderLord, Getriebesand, Kompetenzteam, AMD, keviK
   and everyone who played and gave feedback on Nexus.
 
 Written about MPFever: [PCGamesN](https://www.pcgamesn.com/transport-fever-3/multiplayer-mod), [PC Games](https://www.pcgames.de/Transport-Fever-3-Spiel-75226/News/Multiplayer-Mod-Koop-Kompetitiv-Unternehmen-1558055/) (German), [PlayNews](https://www.playnews.gg/en/news/transport-fever-3-multiplayer-mpfever-adds-co-op-and-competition-all-for-free) and an [interview on Spielemagazin.de](https://www.spielemagazin.de/spiele/interviews/mpfever-multiplayer-fuer-transport-fever-3/45494) (German).

@@ -110,8 +110,11 @@ KNOWN LIMITATIONS
   its own Company window actions, money gifts and shared stations, depots and tracks; the
   game's achievements still count for the savegame's company only. The map shows the routes of
   your own company's lines.
-- Every player needs the same DLCs: the Deluxe upgrade pack and the pre-order pack put their
-  animals, people and vehicles in the world of the PC that owns them only (the lobby warns).
+- Every player should have the same DLCs: the Deluxe upgrade pack and the pre-order pack put
+  their animals, people and vehicles in the world of the PC that owns them only. The lobby warns
+  and says what to do: the host can switch the DLCs off in the savegame's mods (when loading
+  it), or the players can get them. Joining a game already running, the Multiplayer page shows
+  its mods and DLCs first, then « Join the game ».
 - The tutorial is not supported: its missions are validated on each game separately, so the
   games diverge (a unique building made by one player blocks the other's task). Play a game
   without the tutorial.
