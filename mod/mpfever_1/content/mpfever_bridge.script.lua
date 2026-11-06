@@ -7346,7 +7346,9 @@ local function nativeHoldAt()
 	if G.stopsAfterBusy and G.frames - G.stopsAfterBusy > 3600 then log("stops placed again: still busy after a minute, hold released"); G.stopsAfterBusy = nil end
 	-- (at the time of the replay sent last when it was sent as the simulation came to it, see G.nstopWillStand)
 	local gh = nil
-	if G.gateHolds and not (G.terrainBusy or G.coBusy or G.stopsAfterBusy) then gh = G.gateHolds() end
+	-- (only while the replay is under way: once its answers are back, nothing of it holds, as before)
+	local replayBusy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)
+	if G.gateHolds and replayBusy and not (G.terrainBusy or G.coBusy or G.stopsAfterBusy) then gh = G.gateHolds() end
 	if gh then
 		-- (0.8, the gate: at the replay's step, not where the game is)
 		if m == nil or gh < m then m = gh end
