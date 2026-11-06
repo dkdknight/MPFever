@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.1 - (in progress): issues #125 to #129
+0.7.1 - 2026-11-06: every company climbs the ranks like the host's, fewer reloads (towns' pollution), a host crash fixed, Advanced Station Builder and Improved Destination Displays made compatible
   - FIX (issue #127, a host's crash): a client's builds made during a pause reached the host all at once at the unpause and
     were rebuilt from their capture; one of them only changed a junction's configuration and added one to a node the host had
     configured already: ecs::Engine::AddComponent asserted and the host's game closed. A node configured already now gets its
@@ -18,12 +18,16 @@ MPFever - Changelog
     always shipped). MPFEVER_MODDEDUP=0: every command shipped, as before. With one company per player a mod's name on another
     company's vehicle is still refused (the host's mod speaks for the host's company): it stops after 3 tries.
     Test: tests/test_moddedup.py (a fake renaming mod, 200 vehicles, one hour: 2600 commands instead of 360000).
+    Seen in a game with the mod itself (two games on one PC, 3 minutes): 104 names sent (70 at the first sweep, then one
+    or two when a destination changes), none refused, in sync; with MPFEVER_MODANYTARGET=0 and MPFEVER_MODDEDUP=0, 7210
+    sent and every one refused on both games.
   - FIX (issue #126, reloads "script:towns"): a town's pollution rating comes from the engine's emission grid, whose sums
     come out a little different on PCs of other thread counts (0.7808833144 on one, 0.7808838594 on the other, the same town
     and step): the towns' script keeps the rating in its state, and the checks reloaded the games 11 times in one session.
     The rating is now kept in steps of 1/64: the same on every game, unless two games fall on either side of a step (about
     once in 3300 computations of a town whose grid differs). Pollution keeps its effect on the towns. In a session only.
     MPFEVER_POLLUTIONQ=0: the engine's value, as before; MPFEVER_POLLUTIONQ=<n>: steps of 1/n. Test: tests/test_pollutionq.py.
+    Seen in a game (two games on one PC): every town's pollution rating on a step of 1/64, the same on both.
   - FIX (issue #125 reopened, one company per player): the host's company reached rank 5 while the others stayed at rank 1,
     their bar moving by 1 or 2 % an hour (6237 against 1497 experience, base population 3427, world 11368). The game's own
     experience is the world's population: it begins at the game's start population (the first rank) and grows as the towns
@@ -33,7 +37,8 @@ MPFever - Changelog
     exactly the game's own experience; a town nobody serves grows for every company alike. A savegame of an earlier MPFever:
     the world's growth since its start is shared out by the companies' scores the first time (the report's numbers: the
     client's company from rank 1 to rank 5, the host's from 5 to 7 reached). Experience never goes down. MPFEVER_RANKGROWTH=0:
-    the scores, as before. Test: tests/test_rankgrowth.py.
+    the scores, as before. Test: tests/test_rankgrowth.py. Seen in a game (one company per player, x4, 4 minutes):
+    the same records on both games, the new company at the base population (rank 1), the host's growing with its towns.
   - FIX (Advanced Station Builder, the user's dedicated server session of 2026-11-05): after every station of this mod the
     checks found "conParams" apart 5 s later and reloaded the game. The mod's game script builds the station anew without the
     setting that keeps it from snapping while it is placed, then joins its throats and puts up their signals, all from its
@@ -43,7 +48,10 @@ MPFever - Changelog
     the interface's (stamped, applied by every game at the same step) when mpfever_modauto.lua says this game sends it (the
     player's own job within 15 s of their build, else the host's game or the owner company's), and its callback is answered
     once it is applied here, with the engine's verdict. The game's own scripts and MPFever's are left as they are.
-    MPFEVER_GSMODS=0: as before. Test: tests/test_gsmods.py.
+    MPFEVER_GSMODS=0: as before. Test: tests/test_gsmods.py. Seen in a game (two games on one PC, a test mod whose game
+    script renames a line and rebuilds a station as Advanced Station Builder does): the rename sent by the host's game
+    only, the rebuild by the client's, both applied on both games, in sync; with MPFEVER_GSMODS=0 the rebuild stayed on the
+    client's game and the checks found conParams and script:towns apart (21 desyncs).
 
 0.7.0 - 2026-11-05: more mods made compatible, what to do when the DLCs differ, mods and DLCs seen before joining a running game, the dedicated server's settings window, computer companies renew their vehicles
   - CHANGE (lobby, players of other DLCs): the lobby's warning now says what to do: the host can switch the DLCs off in the
