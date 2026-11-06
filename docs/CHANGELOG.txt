@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.3 - 2026-11-06 (test build): several players building at once without stopping (a host setting, experimental, OFF by default)
+0.7.3 - 2026-11-06: several players building at once without stopping (a host setting, experimental, OFF by default), and joining players waited for
   - EXPERIMENTAL, OFF by default: a session setting of the host, "Several players building without stopping"
     (MPFEVER_NOSTOP=1). It turns on the three parts below together; each one can still be set alone (=1 on, =0 off).
   - Builds shipped at the click (MPFEVER_PRESHIP). When several players build at once, a build of this game is held for a
