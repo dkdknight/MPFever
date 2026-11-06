@@ -3739,11 +3739,6 @@ end
 local function toSim(name, param)
 	-- (a replay announced to the simulation: the next replaySend is the command it counts, see replaySend)
 	if name == "replaying" then G.replayCounted = (G.replayCounted or 0) + 1 end
-	-- (0.8, the gate: the events of a replay sent ahead reach the simulation at the replay's step, with its build: the simulation
-	-- dates them with its own time, "replaying" above all, which marks the build of that step as a replay and not this player's)
-	if G.gateCur and G.gateOn() and name:sub(1, 6) == "replay" then
-		return G.gateSend(O.event("mpfever", "mpfever", name, param), nil, G.gateCur.at, false)
-	end
 	O.sendCommand(O.event("mpfever", "mpfever", name, param))
 end
 
@@ -4427,7 +4422,7 @@ local function buildEffects(res, success)
 end
 
 local function replaySend(cmd, cb, noGate)
-	-- (0.8: a dry run, marked just before this call, never goes through the gate)
+	-- (0.8: a dry run, marked just before this call, is not the replay's build)
 	if G.gateDryNext then noGate = true; G.gateDryNext = nil end
 	-- A replay counted by the simulation ("replaying": its build there is taken as this replay, not shipped) that the engine
 	-- refuses builds nothing: the simulation is told, else it kept waiting for that build. While the game is paused (the same
@@ -4441,12 +4436,10 @@ local function replaySend(cmd, cb, noGate)
 	-- (another player's build reaches the engine here: a build this game holds was computed before it, see G.restale)
 	G.worldFrame = G.frames
 	local who, rf = G.actor, G.refund
-	-- (0.8, the gate: a replay sent ahead goes to the native module, which gives it to the engine at the replay's step; a dry run,
-	-- refused on purpose, goes at once)
-	local gated = (not noGate) and G.gateCur ~= nil and G.gateOn()
-	local send = O.sendCommand
-	if gated then send = function(c, f) G.gateCur.handed = (G.gateCur.handed or 0) + 1; return G.gateSend(c, f, G.gateCur.at, true) end end
-	send(cmd, function(...)
+	-- (0.8, MPFEVER_NOWAIT: the replay's build handed to the engine, the game need not wait for the answer; a dry run, refused
+	-- on purpose, does not count)
+	if not noGate and G.gateCur ~= nil and G.gateOn() then G.gateCur.handed = (G.gateCur.handed or 0) + 1; G.gateStats.handed = G.gateStats.handed + 1 end
+	O.sendCommand(cmd, function(...)
 		if G.lagAnswer then pcall(G.lagAnswer) end
 		G.replayOut = math.max(0, (G.replayOut or 1) - 1)
 		-- room for a follow-up command (next segment, next form); a longer hold for an edge-object count is kept (G.eoCheckHold)
@@ -4852,6 +4845,8 @@ local function engineReplay(a, what, makeP, cons)
 	ctx.player = api.engine.util.getPlayer()
 	G.refundInto(ctx)
 	toSim("replaying", { tok = a.tsTok })
+	-- (0.8: one command, see G.gateSingle; a refused one reloads the host's game)
+	pcall(G.gateSingle)
 	replaySend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res, success)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
@@ -5714,6 +5709,8 @@ local function replayNativeConstruction(a)
 				return
 			end
 			toSim("replaying", { tok = a.tsTok })
+			-- (0.8: the construction's last command, its conversions went before, see G.gateSingle; a refused one reloads)
+			pcall(G.gateSingle)
 			replaySend(cmd, function(res2, success2)
 				if not success2 then
 					local why = ""
@@ -6990,6 +6987,8 @@ local function replayNative(a, formIndex)
 		expected = #(st.addedSegments or {}) - #(st.removedSegments or {})
 	end)
 	local edgesBefore = #R.allEdges()
+	-- (0.8: one command, unless the stops are placed again after it, see G.gateSingle)
+	if not (a.stopsAfter and #a.stopsAfter > 0) then pcall(G.gateSingle) end
 	replaySend(cmd, function(res, success)
 		if success then
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " BUILT with form " .. label)
@@ -7033,67 +7032,60 @@ local function replayNative(a, formIndex)
 			local why = ""
 			pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end)
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " form " .. label .. ": refused " .. why)
+			pcall(G.gateLate, "a refused form, the next one tried")
 			G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() replayNative(a, formIndex + 1) end }
 		end
 	end)
 end
 
--- ================================================================== the gate (0.8, MPFEVER_GATE=1)
--- Another player's build replayed here needed this game standing exactly at the build's step: the replay went to the engine
--- once the simulation stood there, and the game went on when the engine had answered, a handshake later: about 0.4 s for every
--- build of every other player ("LAG" lines), and the time grew with the number of players building. With the gate (see
--- GateRelease in mpfever_native.cpp), the replay goes to the engine as soon as it is ready, while this game is still before its
--- step: the native module holds its command and gives it to the engine at the swap that follows the batch which ended at the
--- step, where the engine applies it as before. The game does not stand for it. The replay's events to the simulation
--- ("replaying"...) go the same way, at the same step (toSim).
--- What a replay sends only after an answer would come too late: a construction's conversion (refused on purpose, it changes
--- nothing) goes at once and the game does not pass the step before the real build is held (G.gateHolds); the replays made of
--- several commands one after the other (stops, a street upgrade segment by segment, two-step builds, stops placed again after a
--- street) keep the game at the step until they are done (G.gateGroup), as before but without stopping early. A refused form
--- (the next one is tried) comes late: logged "GATE ... late".
-G.gateWanted = os.getenv("MPFEVER_GATE") == "1"
-G.gateCap = false
-G.gateSeq = 0
-G.gateStats = { early = 0, handed = 0, events = 0, group = 0 }
-G.gateOn = function() return G.gateWanted and G.gateCap and C.ACTIVE end
--- (cmd: a command made already; cb: its callback; at: the replay's game time; build: a build of the replay, not one of its events)
-G.gateSend = function(cmd, cb, at, build)
-	G.gateSeq = G.gateSeq + 1
-	local tok = (os.time() % 1000000) * 1000 + (G.gateSeq % 1000)
-	C.appendFile(C.DIR .. BS .. "native_ctl.txt", "gate " .. tok .. " " .. math.floor(at / STEP) .. NL)
-	local ok, err = pcall(O.sendCommand, cmd, cb)
-	if not ok then
-		-- (the command never reached the engine: the line must not hold the next command added; kind 255 is none's)
-		G.gateSeq = G.gateSeq + 1
-		C.appendFile(C.DIR .. BS .. "native_ctl.txt", "gate " .. ((os.time() % 1000000) * 1000 + (G.gateSeq % 1000)) .. " 0 255" .. NL)
-		error(err, 0)
-	end
-	if build then G.gateStats.handed = G.gateStats.handed + 1 else G.gateStats.events = G.gateStats.events + 1 end
-	return tok
-end
+-- ================================================================== no wait for the answer (0.8, MPFEVER_NOWAIT=1)
+-- Another player's build is replayed at its step: the replay goes to the engine as the simulation comes to that step (the
+-- batch that ends there has started, see G.nstopWillStand), and the engine applies it at the start of the next batch, at that
+-- step. Then this game stood there until the engine's answer came back, a handshake later: about 0.4 s for every build of
+-- every other player (the "LAG" lines: "443 ms of replay, 1 command(s)"; 85 % of the replays are one command), and the time grew
+-- with the number of players building. The interface and the engine's handshake (CGame::Sync, which swaps the commands to the
+-- simulation) run on the same thread: a command sent in this frame is in the next swap, before any later batch, wherever the
+-- stop point is moved meanwhile. So once the replay's build is handed to the engine, nothing has to hold the game at the step.
+-- Only the replays known to end with that one command skip the wait (G.gateSingle, called just before it is sent): a street or a
+-- track rebuilt by the script forms (but one whose stops are placed again after it), an engine's removal or replacement, a
+-- construction (its conversions, refused on purpose, go before it). Every other replay waits for its answers as before (the
+-- stops, a street upgrade segment by segment, two-step builds...: their next command needs the answer, at the same step). A
+-- refused form, whose next form is tried, comes after the step: logged (G.gateLate), the checks then tell whether the games
+-- differ.
+G.gateWanted = false
+G.gateCap = true
+G.gateStats = { handed = 0, group = 0, replays = 0 }
+G.gateOn = function() return G.gateWanted and C.ACTIVE end
 -- (called by the replays made of several commands that follow each other: the game stays at the step until they are done)
 G.gateGroup = function(why)
 	local g = G.gateCur
 	if g and not g.group and G.gateOn() then
 		g.group = why or "several commands"
 		G.gateStats.group = G.gateStats.group + 1
-		log("GATE " .. tostring(g.uid) .. ": " .. tostring(g.group) .. ": this game stays at t=" .. tostring(g.at) .. " until it is done")
+		log("NOWAIT " .. tostring(g.uid) .. ": " .. tostring(g.group) .. ": this game stays at t=" .. tostring(g.at) .. " until it is done")
 	end
 end
--- the time this game must not pass for the replay under way (nativeHoldAt): its step while its build is not held by the module
--- yet, or while a replay of several commands is under way; false: nothing to hold (the module holds the build); nil: no gated
--- replay
+-- (the replay's next command is its last one: once handed, the game need not wait for its answer)
+G.gateSingle = function()
+	local g = G.gateCur
+	if g and G.gateOn() then g.single = true end
+end
+-- the time this game must not pass for the replay under way (nativeHoldAt): its step while its last command is not handed to
+-- the engine yet, and for every replay not known to end with one command (as before); false: nothing to hold (the last command
+-- is in the engine's hands, applied at the step); nil: no such replay
 G.gateHolds = function()
 	local g = G.gateCur
 	if not g or not G.gateOn() then return nil end
-	if g.group or (g.handed or 0) == 0 then return g.at end
+	if g.group or not g.single or (g.handed or 0) == 0 then return g.at end
 	return false
 end
--- (from runNativeReplays) a native build of another player that may go ahead of its time
-G.gateAhead = function(a, now, seq)
-	if not G.gateOn() or a.paused or seq or not a.native or a.at <= now then return false end
-	if a.fn == "terrainEdit" or a.fn == "mpfCoJoin" or a.fn == "assetBuild" then return false end
-	return true
+-- (a follow-up of a replay after its step: a refused form's next one, logged once per replay)
+G.gateLate = function(why)
+	local g = G.gateCur
+	if g and G.gateOn() and not g.group and (g.handed or 0) > 0 and not g.lateTold then
+		g.lateTold = true
+		log("NOWAIT " .. tostring(g.uid) .. ": " .. tostring(why) .. " after the build's step (the game did not wait for the answer)")
+	end
 end
 
 -- ================================================================== native deferral (with mpfever_native.dll)
@@ -8950,9 +8942,6 @@ local function runNativeReplays()
 		if et then seq = et end
 		-- (a native build of the engine's own kind may go as the simulation is about to stand at its time, see G.nstopWillStand)
 		local due = a.at <= now or (a.native and not a.paused and a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and a.fn ~= "assetBuild" and G.nstopWillStand(a.at))
-		-- (0.8, the gate: as soon as it is here, see G.gateAhead)
-		local ahead = not due and G.gateAhead(a, now, seq)
-		if ahead then due = true end
 		if due and ((a.fn == "terrainEdit" and G.terrainBusy) or (a.fn == "mpfCoJoin" and (G.coBusy or jt == false or G.frames - (a.recvFrame or 0) < K.JOIN_GATHER))
 			or (a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and replayBusy()) or et == false) then
 			keep[#keep + 1] = a      -- the previous one is still being handed to the engine (or its turn has not been given yet)
@@ -8960,18 +8949,16 @@ local function runNativeReplays()
 			keep[#keep + 1] = a      -- a paused build whose turn has not come here yet
 		elseif due and not seq and a.native and G.sameStepWait(a.at, a.origin) then
 			keep[#keep + 1] = a      -- a build of a player ranked before this one, at this same step, comes first
-		elseif due and not ahead and a.fn ~= "mpfCoJoin" and G.sendStillWait(a, now) then
+		elseif due and a.fn ~= "mpfCoJoin" and G.sendStillWait(a, now) then
 			keep[#keep + 1] = a      -- the engine may still be making a step (see G.sendStillWait)
 		elseif due then
 			G.replayAt = a.at
-			-- (the gate: this replay's commands and events go to the native module, held until its step)
-			G.gateCur = ahead and { at = a.at, uid = a.uid, frame = G.frames, t0 = os.clock() } or nil
-			if ahead then
-				G.gateStats.early = G.gateStats.early + 1
-				if G.gateStats.early <= 40 or G.gateStats.early % 50 == 0 then
-					log("GATE " .. tostring(a.uid) .. ": sent ahead for t=" .. a.at .. " (this interface at " .. now .. ", " .. ((a.at - now) / STEP) .. " step(s) before) [frame " .. G.frames .. "]")
-				end
-			elseif a.at > now then log("NATIVE REPLAY " .. tostring(a.uid) .. ": sent as the simulation comes to t=" .. a.at .. " (this interface at " .. now .. ") [frame " .. G.frames .. "]") end
+			-- (0.8, MPFEVER_NOWAIT: once its build is handed to the engine, the game does not wait for the answer, see G.gateHolds;
+			-- not a terrain edit, an asset or a company join, which have their own holds, nor a paused build)
+			local nw = G.gateOn() and a.native and not a.paused and not seq and a.fn ~= "terrainEdit" and a.fn ~= "assetBuild" and a.fn ~= "mpfCoJoin"
+			G.gateCur = nw and { at = a.at, uid = a.uid, frame = G.frames } or nil
+			if nw then G.gateStats.replays = G.gateStats.replays + 1 end
+			if a.at > now then log("NATIVE REPLAY " .. tostring(a.uid) .. ": sent as the simulation comes to t=" .. a.at .. " (this interface at " .. now .. ") [frame " .. G.frames .. "]") end
 			if seq then G.ptDone(seq); log("NATIVE REPLAY " .. tostring(a.uid) .. ": paused build, turn " .. seq) end
 			if a.at < now then
 				log("LATE native build " .. tostring(a.uid) .. " for t=" .. a.at .. " applied at " .. now .. " (" .. ((now - a.at) / STEP) .. " step(s) late)")
@@ -16621,6 +16608,9 @@ end
 local function resumeAfterLoad(state)
 	-- (the names of the savegame as every game loaded it, for the checks made in a pause, see R.nameSeed)
 	pcall(R.nameSeed, not K.nameSyncOn())
+	-- (0.8, MPFEVER_NOWAIT, at every start: the settings are not known yet when this file is loaded)
+	G.gateWanted = os.getenv("MPFEVER_NOWAIT") == "1"
+	if G.gateWanted then log("no wait: on (once another player's build is handed to the engine, this game does not wait for its answer)") end
 	-- (0.7.0, diagnostic: the models this game knows; a game of other DLCs or mods knows another number)
 	pcall(function()
 		local n = 0
@@ -16710,15 +16700,6 @@ local function resumeAfterLoad(state)
 	G.uiOff = fileSize("ui.log")
 	G.modOff = fileSize("sim_mods.log")
 	G.natOff = fileSize("native_events.log")
-	-- (0.8, the gate: whether the native module holds gated commands, and those held for the game before this one go)
-	if G.gateWanted then
-		pcall(function()
-			local fe = C.IO.open(C.DIR .. BS .. "native_events.log", "rb")
-			if fe then local se = fe:read("*a") or ""; fe:close(); G.gateCap = se:find("gatecap 1", 1, true) ~= nil end
-			C.appendFile(C.DIR .. BS .. "native_ctl.txt", "gatedrop " .. ((os.time() % 1000000) * 1000 + 999) .. NL)
-		end)
-		log("gate: " .. (G.gateCap and "on (other players' builds go to the engine ahead of their step, held by the native module)" or "wanted, but the native module does not hold commands: off"))
-	end
 	local f = C.IO.open(C.DIR .. BS .. "native_ctl.txt", "rb")
 	if f then
 		local s = f:read("*a") or ""
@@ -18470,9 +18451,19 @@ local function guiUpdate(userParams, state, guiState)
 	if G.frames % 15 == 0 then pcall(G.previewTick); pcall(G.pingTick) end
 	if G.frames % 30 == 7 then pcall(G.nameTick) end
 	if G.frames % 60 == 11 then local okA, errA = pcall(G.asbTest); if not okA then log("ASBTEST: " .. tostring(errA)) end end
+	-- (0.8, the measure of the stands: the session running, the engine making no step at the stop point, this frame's time)
+	pcall(function()
+		local now = os.clock()
+		local S = G.standM or { t = 0, last = now }
+		G.standM = S
+		local st = G.nstopRead and G.nstopRead()
+		if st and st.n == 0 and (G.session.speed or 0) > 0 and G.session.started and not G.session.pauseAt then S.t = S.t + (now - S.last) end
+		S.last = now
+	end)
 	if G.frames % 600 == 0 then
 		local ps = G.pstat
-		log("gui alive frame " .. G.frames .. " t=" .. tostring(gameTime()) .. " | slowed by other clocks " .. ps.barrier .. "/" .. ps.frames .. " frames, by held actions " .. ps.hold)
+		log("gui alive frame " .. G.frames .. " t=" .. tostring(gameTime()) .. " | slowed by other clocks " .. ps.barrier .. "/" .. ps.frames .. " frames, by held actions " .. ps.hold
+			.. string.format(" | stood %.1f s so far", G.standM and G.standM.t or 0))
 		ps.frames, ps.barrier, ps.hold = 0, 0, 0
 	end
 	if not G.started then

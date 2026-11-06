@@ -13,16 +13,17 @@ MPFever - Changelog
     construction's playerEntity, else the owner of what it takes away): a player's own one is sent from their game even
     long after their last build (the mod waits until the construction menu is closed), another company's is left to that
     company's game. MPFEVER_GSOWNER=0: as before. Test: tests/test_modvirtual.py.
-  - EXPERIMENTAL, OFF by default (MPFEVER_GATE=1 on every game): the gate, other players' builds without standing. A build of
-    another player was replayed once this game stood at its step, and the game went on when the engine had answered, a
-    handshake later: about 0.4 s for every build of every other player (85 % of the replays are one command; their stand was
-    exactly that round trip), and more with more players building. Now the replay goes to the engine as soon as it is ready,
-    while the game is still before the step: the native module holds its command (and the replay's events to the
-    simulation) and gives them to the engine at the swap that follows the batch which ended at the step; batches never run
-    past a held command. A construction's conversion (refused on purpose) goes at once and the game waits at the step only
-    if the real build is not held by then; the replays made of several commands one after the other (stops, upgrades
-    segment by segment, two-step builds) keep the game at the step until they are done, as before. Test: tests/test_gate.py
-    (with a model of the native rule over random batches).
+  - EXPERIMENTAL, OFF by default (a session setting of the host, "Other players' builds without waiting", MPFEVER_NOWAIT=1):
+    another player's build was replayed at its step, and this game stood there until the engine's answer came back, a
+    handshake later: about 0.4 s for every build of every other player (a replay of the user's 2026-11-03 session: 109
+    replays, median 447 ms, 70 s stood per game in 13 minutes; 85 % of the replays are one command), more with more players
+    building. The interface and the engine's handshake run on the same thread: a command sent in a frame is in the next swap
+    whatever the stop point does meanwhile. So once the replay's build is handed to the engine, the game goes on. A
+    construction's conversion (refused on purpose) still holds the game at the step until the real build is handed, and the
+    replays made of several commands one after the other (stops, upgrades segment by segment, two-step builds, stops placed
+    again after a street) keep it there until they are done, as before. A refused form whose next one is tried comes after
+    the step (logged "NOWAIT ... after the build's step"). Test: tests/test_nowait.py.
+    (Researched and left out: holding the replay's command in the native module and giving it at the swap crashed the game.)
 
 0.7.1 - 2026-11-06: every company climbs the ranks like the host's, fewer reloads (towns' pollution), a host crash fixed, Advanced Station Builder and Improved Destination Displays made compatible
   - FIX (issue #127, a host's crash): a client's builds made during a pause reached the host all at once at the unpause and

@@ -30,7 +30,7 @@ A mod with a **script** can act on the game by itself. In November 2026 we read 
 | Auto Line Namer | **Seen working** ([Discussion #118](https://github.com/dkdknight/MPFever/discussions/118)). Since 0.4.0 only the host's game renames, and the names apply on every game at the same step ([#58](https://github.com/dkdknight/MPFever/issues/58)). With one company per player, it names the lines of the savegame's first company only. |
 | Auto Color Lines | Same as Auto Line Namer for colours. Since 0.7.0 its first sweep of the existing lines (option 3) is sent by one game only. |
 | Auto Assign Terminals | Same mechanism for the terminals. If you edit a line while it is being updated, your edit may be undone (on every game alike, no desync). |
-| Visual Auto Namer, Improved Destination Displays | Same mechanism (names from the host's game). |
+| Visual Auto Namer | Same mechanism (names from the host's game). |
 | Auto Signals | **Seen working**. Adds signals after you place one: only on your game, and the other games replay them. |
 | Automatic Signal Spacing, Automatisches Gleisvorfeld | Same as Auto Signals. |
 | Parallel Tracks, Parallel Roads | **Seen working** (Parallel Tracks). The parallel track is built by your game and replayed by the others. |
@@ -67,11 +67,11 @@ These mods sent commands **from their interface by themselves** (a timer, a scan
 | Just More Weather | Its people's life rhythm and snow paralysis changed people on one game only (debug commands): they are off in a session. Its clock is set by the host's game. |
 | Organic Towns | Every game created its own towns and buildings. Now one game does. Its growth steps that use the game's town development command are skipped in a session (that command develops towns differently on every PC). |
 
-### Made compatible in 0.7.1 (to confirm in your sessions)
+### Made compatible in 0.7.1 and 0.7.2 (to confirm in your sessions)
 
-| Mod | Before 0.7.1 |
+| Mod | Before |
 |---|---|
-| Advanced Station Builder | After each station it builds the station anew (so that tracks can be joined to it by hand), then joins its throats and puts up their signals, from its game script's interface. Those builds were made on the builder's game only: the other games kept the station as first placed, and the checks reloaded the game a few seconds after every station. They are now shipped to every game like a player's build. |
+| Advanced Station Builder | After each station it builds the station anew (so that tracks can be joined to it by hand), then joins its throats and puts up their signals, from its game script's interface. Those builds were made on the builder's game only: the other games kept the station as first placed, and the checks reloaded the game a few seconds after every station. 0.7.1 shipped such builds to every game, but did not recognise the mod's own files (it loads them by their game path, `advanced_station_builder::/...`): on a server session of 2026-11-06 the game still reloaded after every station. **0.7.2** recognises them: its builds are shipped to every game like a player's. |
 | Improved Destination Displays | Its vehicle names were refused on every game, so it sent them again every 2 s for ever: the game got slower and slower with many vehicles ([#128](https://github.com/dkdknight/MPFever/issues/128)). The names now apply, and a name a vehicle already has is no longer sent. With one company per player, it names the vehicles of the host's company only. |
 
 ### To check, or to avoid
@@ -103,6 +103,7 @@ Something wrong with a mod in this list, or a mod missing? Tell us in the [issue
 - **A build replayed for another player** is announced to the mods' scripts as not made by a player on that game, so a mod that answers a player's build (adds signals, fences...) does it once, on the builder's game (0.4.0). Expert setting: « Replayed builds shown to mods as made elsewhere ».
 - **A command a mod's interface sends by itself** (from its guiUpdate, or from a window's step) goes from one game only: the host's, or the game of the company that owns what it changes. A command sent within 15 s of your own action is still sent by your game, for the mods that finish your own job (Auto Signals adds the signals after you placed one); the mods known to act on the whole world (the list above) never do (0.7.0, `MPFEVER_MODAUTO=0` to turn it off).
 - **A command a mod's game script sends from its interface half** (the guiUpdate or guiHandleEvent of a `.gs.lua` script, which runs in another state than the windows) was applied on that game alone. It now follows the same rule as above and is shipped to every game; its callback is answered once it is applied (0.7.1, `MPFEVER_GSMODS=0` to turn it off).
+- **A mod's file is recognised by its game path too** (`<mod>::/...`, as a mod loads its own files with `ug_require`), not only by its place on the disk; with one company per player, a mod's build belongs to the company it is made for (0.7.2, `MPFEVER_MODVIRTUAL=0`, `MPFEVER_GSOWNER=0`).
 - **A mod's names and colours** go on any entity that has one (a vehicle, a station), not only on lines; a name an entity already has is not sent again, nor the same command while it is on its way, nor a command that changed nothing three times (0.7.1, `MPFEVER_MODANYTARGET=0`, `MPFEVER_MODDEDUP=0`).
 - **A mod's debug command** (a person's state, a stock's cargo...) is refused in a session: the engine applies it on one game only (0.7.0).
 - **A mod's game script is called at the game's steps only** in a session: the engine also calls it with a time of 0 while a game waits, as many times as that game draws frames (0.7.0, `MPFEVER_MODDT0=1` to turn it off).
