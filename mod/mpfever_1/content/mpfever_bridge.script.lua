@@ -3752,7 +3752,25 @@ end
 -- queue an action on this game: simulation queue, or applied between steps while the session is paused
 -- the game time at which an action issued now is applied everywhere
 local function stampFor(t)
-	return math.max(t + G.ahead * STEP, G.stampFloor)
+	local s = math.max(t + G.ahead * STEP, G.stampFloor)
+	-- (0.7.2) A game that leads this one (a tool in hand: BUILDLEAD, or a terrain tool) runs ahead of it by the lead's steps. A
+	-- stamp made from this game's clock alone was then behind that game's clock: an action of a player building while another
+	-- one led landed there late ("MARGIN nat_pending -18 steps", "LATE native build ... 18 step(s) late", the ages apart and the
+	-- games reloaded: the two-builder stress test with computer companies of 2026-11-06, with and without MPFEVER_NOWAIT). The
+	-- stamp is now ahead of every other game's clock too, as it is now (the clock it sent, aged by the session's speed: see
+	-- G.buildLeadState), by the stamp distance. Only clocks heard in the last 2 s (a game gone quiet would push every stamp
+	-- away). MPFEVER_LEADSTAMP=0: this game's clock only, as before
+	if os.getenv("MPFEVER_LEADSTAMP") ~= "0" then
+		local spd = math.max(1, math.min(4, G.session.speed or 1))
+		local nowC = os.clock()
+		for _, pc in pairs(G.peers) do
+			if type(pc.t) == "number" and type(pc.at) == "number" and nowC - pc.at < 2 then
+				local est = pc.t + (math.floor((nowC - pc.at) * 5 * spd) + 1) * STEP
+				if est + G.ahead * STEP > s then s = est + G.ahead * STEP end
+			end
+		end
+	end
+	return s
 end
 
 -- stamp of an action issued while the session is paused: the games may have stopped a batch apart (a speed change
@@ -4701,6 +4719,8 @@ local function replayUpgrade(a, plan, i)
 	ctx.player = api.engine.util.getPlayer()
 	G.refundInto(ctx)
 	toSim("replaying", { tok = a.tsTok })
+	-- (0.8: an upgrade of one segment is one command, see G.gateSingle; of several, one after the other: G.gateGroup)
+	if #plan == 1 then pcall(G.gateSingle) end
 	replaySend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res, success)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
@@ -4773,6 +4793,8 @@ G.replayMergedUpgrade = function(a, plan, probe)
 	if not okk or not cmd then log("NATIVE REPLAY " .. tostring(a.uid) .. " merged upgrade: command " .. shortErr(cmd)) return false end
 	log("NATIVE REPLAY " .. tostring(a.uid) .. ": an upgrade of " .. #plan .. " segments at once, merged")
 	toSim("replaying", { tok = a.tsTok })
+	-- (0.8: one command, a refused one reloads, see G.gateSingle)
+	pcall(G.gateSingle)
 	replaySend(cmd, function(res, success)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
@@ -4929,7 +4951,6 @@ end
 
 local function replayStop(a, plan, variant)
 	variant = variant or 1
-	pcall(G.gateGroup, "a stop replay")
 	local c = api.engine.getComponent(plan.E, api.type.ComponentType.BASE_EDGE)
 	if not c then log("NATIVE REPLAY " .. tostring(a.uid) .. ": stop segment missing"); return end
 	local sp = api.type.SimpleProposal.new()
@@ -5150,6 +5171,8 @@ local function replayStop(a, plan, variant)
 	end
 	local before = stopCount()
 	toSim("replaying", { tok = a.tsTok })
+	-- (0.8: one command: the real sessions' 322 stop replays never needed another try, see G.gateSingle)
+	pcall(G.gateSingle)
 	replaySend(cmd, function(res, success)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
@@ -5158,6 +5181,7 @@ local function replayStop(a, plan, variant)
 		if not success and free then
 			plan.plainCosts = true
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: tried again without the tool's pricing")
+			pcall(G.gateLate, "a refused stop, tried again")
 			G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() replayStop(a, plan, variant) end }
 			return
 		end
@@ -5166,6 +5190,7 @@ local function replayStop(a, plan, variant)
 		if not success and not plan.cleanup then
 			plan.cleanup = true
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: tried again with the street cleanup")
+			pcall(G.gateLate, "a refused stop, tried again")
 			G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() replayStop(a, plan, variant) end }
 			return
 		end
@@ -6012,6 +6037,8 @@ local function replayNativeStreet(a)
 	local edgesBefore = #R.allEdges()
 	local objsBefore = eoUsed and G.eoCount() or nil
 	toSim("replaying", { tok = a.tsTok })
+	-- (0.8: one command, unless the stops are placed again after it, see G.gateSingle)
+	if not (a.stopsAfter and #a.stopsAfter > 0) then pcall(G.gateSingle) end
 	replaySend(cmd, function(res, success)
 		if not success then
 			local why = ""
@@ -6333,7 +6360,6 @@ G.stopNoTown = function(a)
 end
 
 G.replayNativeStop = function(a, plan)
-	pcall(G.gateGroup, "a native stop replay")
 	local uid = tostring(a.uid)
 	local function asBefore(why)
 		log("NATIVE REPLAY " .. uid .. " native stop: " .. why .. ": replayed as before (replayStop)")
@@ -6395,6 +6421,8 @@ G.replayNativeStop = function(a, plan)
 		if not okk or not cmd then return asBefore("no command") end
 		local before = G.eoCount()
 		toSim("replaying", { tok = a.tsTok })
+		-- (0.8: the last command, its dry run went before, see G.gateSingle)
+		pcall(G.gateSingle)
 		replaySend(cmd, function(res, success)
 			if not success then
 				local why = ""
@@ -7047,11 +7075,13 @@ end
 -- simulation) run on the same thread: a command sent in this frame is in the next swap, before any later batch, wherever the
 -- stop point is moved meanwhile. So once the replay's build is handed to the engine, nothing has to hold the game at the step.
 -- Only the replays known to end with that one command skip the wait (G.gateSingle, called just before it is sent): a street or a
--- track rebuilt by the script forms (but one whose stops are placed again after it), an engine's removal or replacement, a
--- construction (its conversions, refused on purpose, go before it). Every other replay waits for its answers as before (the
--- stops, a street upgrade segment by segment, two-step builds...: their next command needs the answer, at the same step). A
--- refused form, whose next form is tried, comes after the step: logged (G.gateLate), the checks then tell whether the games
--- differ.
+-- track by the script forms or as the tool's proposal (but one whose stops are placed again after it), an engine's removal or
+-- replacement, a construction or a stop on a bridge (their conversions, refused on purpose, go before), a stop, an upgrade of
+-- one segment or of several at once. The real sessions' logs of 2026-11-06 back it: 1970 replays by the script forms, all built
+-- with their first form (10 more had every form refused and reloaded anyway), 322 stop replays, none tried again. Every other
+-- replay waits for its answers as before (a street upgrade segment by segment, two-step builds, stops placed again after a
+-- street: their next command needs the answer, at the same step). A refused form or stop, whose next try comes after the
+-- step, is logged (G.gateLate); the checks then tell whether the games differ.
 G.gateWanted = false
 G.gateCap = true
 G.gateStats = { handed = 0, group = 0, replays = 0 }
@@ -7815,6 +7845,8 @@ local function pollNativeEvents()
 				local pt = paused and G.ptOn or nil
 				-- (t0, copy: see G.restale)
 				G.natRelease[#G.natRelease + 1] = { id = id, at = at, paused = pt, frame0 = G.frames, t0 = now, copy = G.takeToolCopy() }
+				-- (0.8, no wait: its copy goes to the other games now, see G.preship)
+				if not paused and G.preship then pcall(G.preship, G.natRelease[#G.natRelease]) end
 				if pt then G.ptIssue(G.me, id) end
 				send("nat_pending", { origin = G.me, at = at, id = id, paused = pt })
 				log("native build " .. id .. " held by the DLL, released at t=" .. at .. " (now " .. now .. ") [frame " .. G.frames .. "]")
@@ -7850,7 +7882,7 @@ G.othersAt = {}
 G.worldFrame = 0
 -- the tool's event when it applies a build ({proposal, data} by position or by name): its compact form, for G.restale
 G.toolApplied = function(param)
-	if not G.restaleOn or not G.session.started or G.cmode == "separate" then return end
+	if not (G.restaleOn or (G.preshipOn and G.preshipOn())) or not G.session.started or G.cmode == "separate" then return end
 	local pr = type(param) == "table" and (param[1] or param.proposal) or nil
 	if pr == nil then return end
 	local ok, compact = pcall(C.compactProposal, pr)
@@ -8035,7 +8067,8 @@ local function deferredSend(cmd, cb, proposal, still)
 	-- (MPFEVER_RESTALETEST=1: kept like a tool's proposal, made again at its release when another player built meanwhile, see
 	-- G.restale)
 	G.natRelease[#G.natRelease + 1] = { id = id, at = at, fn = function() if stillOk(id, still, cb) then O.sendCommand(cmd, cb) end end, paused = pt, frame0 = G.frames,
-		t0 = now, cb = cb, copy = (os.getenv("MPFEVER_RESTALETEST") == "1" and proposal ~= nil) and select(2, pcall(C.compactProposal, proposal)) or nil }
+		t0 = now, cb = cb, copy = ((os.getenv("MPFEVER_RESTALETEST") == "1" or (G.preshipOn and G.preshipOn())) and proposal ~= nil) and select(2, pcall(C.compactProposal, proposal)) or nil }
+	if not pt and G.preship then pcall(G.preship, G.natRelease[#G.natRelease]) end
 	if pt then G.ptIssue(G.me, id) end
 	markPending(id, { x = 0, y = 0 })
 	log("autotest build " .. id .. " held, released at t=" .. at .. " (now " .. now .. ") [frame " .. G.frames .. "]")
@@ -8049,6 +8082,12 @@ end
 -- A released build the engine refused is never shipped: the others, who hold for it, are told at once (they would
 -- wait half a minute), and its id must not be taken by the next build that is shipped.
 local function cancelNativeBuild(entry, why)
+	-- (0.8: shipped ahead, the others built it: the host's game is reloaded everywhere, see G.preship)
+	if entry.pre then
+		log("PRESHIP " .. tostring(entry.pre) .. ": built nowhere here (" .. why .. "), the others have it: resynchronisation")
+		pcall(send, "replay_failed", { uid = tostring(entry.pre), why = "shipped ahead, not built by its builder" })
+		return
+	end
 	-- (its turn, if it was made in a pause: the others skip it, see G.pt)
 	send("nat_cancel", { origin = G.me, id = entry.id, pseq = G.pt.of[G.ptKey(G.me, entry.id)] })
 	if entry.lead then toSim("lead_gone", {}) end   -- (BUILDLEAD: the simulation half no longer waits for its capture)
@@ -8147,7 +8186,8 @@ end
 local function releaseOne(r, at, how)
 	G.natReleased = G.natReleased + 1
 	G.natShipIds = G.natShipIds or {}
-	G.natShipIds[#G.natShipIds + 1] = { id = r.id, at = at, frame = G.frames, combined = how ~= nil, simTick = G.simTick(), handshakes = 0, lead = r.lead }
+	G.natShipIds[#G.natShipIds + 1] = { id = r.id, at = at, frame = G.frames, combined = how ~= nil, simTick = G.simTick(), handshakes = 0, lead = r.lead,
+		pre = r.preshipped, preSig = r.preSig, preAt = r.at }
 	-- (BUILDLEAD: the simulation half is told first, see captureNativeBuild; this command enters the list before the build)
 	if r.lead then toSim("lead_out", { at = at }) end
 	if r.fn then
@@ -9530,6 +9570,57 @@ local function shipTerrain(o)
 	return "sent"
 end
 
+-- (0.8, MPFEVER_NOWAIT; MPFEVER_PRESHIP=0: not) A build of this game held the usual way (two players building at once, or
+-- another player leading) went to the engine at its time, and only then was it captured and shipped: the other games, at that
+-- time too, stood until its data came (0.3 to 1 s per build, "LAG ... ms for its data"; with several builders, most of the
+-- stand left). Now its copy, the tool's proposal as the tool applied it (the compact form a capture ships, see G.toolApplied),
+-- is shipped at once, for its time: the other games have it before they come to that time and replay it there without
+-- standing. This game still gives the tool's own command to the engine at that time, as before; its capture is then compared
+-- with the copy (C.buildSig) instead of being shipped. A capture that differs, or none (the engine refused it here), and the
+-- host's game is reloaded everywhere. One company for everybody only: with one per player the tool's copy names the
+-- savegame's company (the native module gives the command this player's company). Not in a pause (the turns), not for a build
+-- released at once (the others are behind already).
+G.preshipOn = function()
+	return G.gateOn and G.gateOn() and G.cmode ~= "separate" and os.getenv("MPFEVER_PRESHIP") ~= "0"
+end
+G.preship = function(r)
+	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
+	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
+	R.translateOut("makeWorldBuildProposalCmd", args, G.rev or {})
+	args = C.copy(args)
+	if needsEnrich(args[1]) then
+		local oke, erre = pcall(enrichEdgeObjects, args[1])
+		if not oke then log("PRESHIP: edge object enrichment failed: " .. tostring(erre)) return false end
+	end
+	G.oseq = G.oseq + 1
+	local a = { fn = "makeWorldBuildProposalCmd", args = args, at = r.at, origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
+		native = true, natId = r.id, co = G.myCo, lt = G.loadId, pre = true,
+		ctx = G.natCtx and G.natCtx[r.id] or nil, refund = G.natRefund and G.natRefund[r.id] or nil }
+	send("act", a)
+	r.preshipped = a.uid
+	r.preSig = C.buildSig(r.copy)
+	G.preStats = G.preStats or { shipped = 0, same = 0, differ = 0 }
+	G.preStats.shipped = G.preStats.shipped + 1
+	log("PRESHIP native build " .. tostring(r.id) .. " shipped ahead as " .. a.uid .. " for t=" .. r.at .. " [frame " .. G.frames .. "]")
+	return true
+end
+-- the capture of a build shipped ahead (a: the act the capture would ship, a.preOf its release; o: the capture)
+G.preshipSettle = function(a, o)
+	local e = a.preOf
+	local sig = C.buildSig(type(o.args) == "table" and o.args[1] or nil)
+	G.preStats = G.preStats or { shipped = 0, same = 0, differ = 0 }
+	if sig == e.preSig and o.at == e.preAt then
+		G.preStats.same = G.preStats.same + 1
+		log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " as shipped ahead (" .. G.preStats.same .. " alike, " .. G.preStats.differ .. " not)")
+	else
+		G.preStats.differ = G.preStats.differ + 1
+		log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " otherwise than shipped ahead for t=" .. tostring(e.preAt)
+			.. " (" .. tostring(sig) .. " / " .. tostring(e.preSig) .. "): resynchronisation")
+		pcall(send, "replay_failed", { uid = tostring(e.pre), why = "built otherwise than shipped ahead" })
+	end
+	return true
+end
+
 local function shipNativeBuilds(st)
 	G.outFirstSeen = G.outFirstSeen or {}
 	-- (a capture held back here is not shipped yet: see expireShipIds)
@@ -9582,6 +9673,7 @@ local function shipNativeBuilds(st)
 					else cancelNativeBuild(e, "refused before a later build") end
 				end
 				a.natId = G.natShipIds[k].id
+				if ek.pre then a.preOf = ek end
 				if a.paused then a.pseq = G.pt.of[G.ptKey(G.me, a.natId)] end
 				if ek.lead then
 					a.lead = true
@@ -9597,11 +9689,19 @@ local function shipNativeBuilds(st)
 				for i = k + 1, #G.natShipIds do rest[#rest + 1] = G.natShipIds[i] end
 				G.natShipIds = rest
 			end
-			send("act", a)
+			-- (0.8: a build shipped ahead is not shipped again, its capture is compared with it, see G.preship)
+			local preDone = false
+			if a.preOf then
+				local okP, r = pcall(G.preshipSettle, a, o)
+				preDone = okP and r == true
+				if not okP then log("PRESHIP: " .. tostring(r)) end
+			end
+			if not preDone then send("act", a) end
 			-- (0.6: to the game options' modules that keep a copy of the players' builds, see G.featNativeAct)
+			-- (a build shipped ahead too: this game's modules hear it once, here, from its capture)
 			if G.featOn then pcall(G.featNativeAct, a) end
 			G.builtAt = math.max(G.builtAt or -1, o.at)
-			log("native build shipped " .. a.uid .. " (built here at t=" .. o.at .. ", the other games build it at the same time) [frame " .. G.frames .. "]")
+			if not preDone then log("native build shipped " .. a.uid .. " (built here at t=" .. o.at .. ", the other games build it at the same time) [frame " .. G.frames .. "]") end
 		end
 	end
 end

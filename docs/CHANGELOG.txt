@@ -18,11 +18,26 @@ MPFever - Changelog
     handshake later: about 0.4 s for every build of every other player (a replay of the user's 2026-11-03 session: 109
     replays, median 447 ms, 70 s stood per game in 13 minutes; 85 % of the replays are one command), more with more players
     building. The interface and the engine's handshake run on the same thread: a command sent in a frame is in the next swap
-    whatever the stop point does meanwhile. So once the replay's build is handed to the engine, the game goes on. A
-    construction's conversion (refused on purpose) still holds the game at the step until the real build is handed, and the
-    replays made of several commands one after the other (stops, upgrades segment by segment, two-step builds, stops placed
-    again after a street) keep it there until they are done, as before. A refused form whose next one is tried comes after
-    the step (logged "NOWAIT ... after the build's step"). Test: tests/test_nowait.py.
+    whatever the stop point does meanwhile. So once the replay's last command is handed to the engine, the game goes on:
+    streets and tracks, removals and replacements, stops, constructions (whose conversion, refused on purpose, still holds
+    the game at the step until the real build is handed), upgrades of one segment or merged. The real sessions' logs back
+    it: 1970 replays by the script forms all built with their first form, 322 stop replays never tried again. The replays
+    made of several commands one after the other (upgrades segment by segment, two-step builds, stops placed again after a
+    street) keep the game at the step until they are done, as before. A refused try comes after the step (logged
+    "NOWAIT ... after the build's step"). The "LAG" lines now tell the real stand before and during each replay, and the
+    "gui alive" lines the total. Test: tests/test_nowait.py.
+    With it, a build of this game held the usual way (two players building at once, another player leading) is shipped at
+    once, for its time, from the tool's copy (the compact form a capture ships): the others have it before they come to that
+    time and do not stand for its data (0.3 to 1 s per build before). This game still gives the tool's own command to the
+    engine then, and compares its capture with the copy instead of shipping it: another build, or none, and the host's game
+    is reloaded. One company for everybody only (with one per player the tool's copy names the savegame's company).
+    MPFEVER_PRESHIP=0: not. Test: tests/test_preship.py.
+  - FIX (a player's build landing late while another player led, the two-builder stress test with computer companies): a
+    game with a tool in hand leads, it runs ahead of the others by the lead's steps; an action of another player was stamped
+    from that player's clock alone, behind the leader's clock: "MARGIN nat_pending -18 steps", "LATE native build ... 18
+    step(s) late", the ages apart and a reload. A stamp is now ahead of every other game's clock as well (the clock it sent,
+    aged by the session's speed; clocks heard in the last 2 s only), by the stamp distance. MPFEVER_LEADSTAMP=0: as before.
+    Test: tests/test_leadstamp.py.
     (Researched and left out: holding the replay's command in the native module and giving it at the swap crashed the game.)
 
 0.7.1 - 2026-11-06: every company climbs the ranks like the host's, fewer reloads (towns' pollution), a host crash fixed, Advanced Station Builder and Improved Destination Displays made compatible

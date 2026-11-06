@@ -13,7 +13,8 @@ game at the step. The bridge's functions are taken from the real file and run th
   - nativeHoldAt: a replay whose build is in the engine's hands no longer holds the game where it is; one not handed yet holds
     at its step, not at the game's time; without the setting: as before;
   - runNativeReplays marks every native replay but terrain edits, assets, company joins and paused builds;
-  - the replays made of several commands call G.gateGroup; a refused form's next one is logged (G.gateLate).
+  - the replays that end with one command call G.gateSingle; those made of several call G.gateGroup; a refused form's next
+    one is logged (G.gateLate).
 (0.8 research, kept out: holding a replay's Lua command in the native module and adding it again at the swap crashed the game,
 a command destructor called on nothing; the tools' builds are the only ones the module can hold.)
 Run: python tests/test_nowait.py
@@ -106,11 +107,13 @@ check(got == "100000", "setting off: as before, even with a replay marked", got)
 
 check('local nw = G.gateOn() and a.native and not a.paused and not seq and a.fn ~= "terrainEdit" and a.fn ~= "assetBuild" and a.fn ~= "mpfCoJoin"' in src,
       "runNativeReplays: every native replay but terrain edits, assets, company joins and paused builds")
-check(src.count("pcall(G.gateSingle)") == 3 and "if not (a.stopsAfter and #a.stopsAfter > 0) then pcall(G.gateSingle) end" in src,
-      "three replays end with one command: the forms (not when stops follow), the engine's removals and replacements, the constructions")
-for fn, mark in [("replayStop", 'pcall(G.gateGroup, "a stop replay")'), ("replayUpgrade", 'pcall(G.gateGroup, "a street upgrade of "'),
-                 ("placeStopsAfter", 'pcall(G.gateGroup, "stops placed again after the street")'), ("replayTwoStep", 'pcall(G.gateGroup, "a build in two steps")'),
-                 ("replayNativeStop", 'pcall(G.gateGroup, "a native stop replay")')]:
+# (the real sessions' logs, 2026-11-06: 1970 replays by the script forms, every one built with its FIRST form, and 10 with every
+# form refused (reloaded anyway); 322 stop replays, none tried again: a replay ends with one command or fails)
+check(src.count("pcall(G.gateSingle)") == 8 and src.count("if not (a.stopsAfter and #a.stopsAfter > 0) then pcall(G.gateSingle) end") == 2
+      and "if #plan == 1 then pcall(G.gateSingle) end" in src,
+      "the replays that end with one command: forms and native streets (not when stops follow), removals and replacements, constructions, stops, native stops, one-segment and merged upgrades")
+for fn, mark in [("replayUpgrade", 'pcall(G.gateGroup, "a street upgrade of "'), ("placeStopsAfter", 'pcall(G.gateGroup, "stops placed again after the street")'),
+                 ("replayTwoStep", 'pcall(G.gateGroup, "a build in two steps")')]:
     check(mark in src, "%s keeps the game at the step until it is done" % fn)
 check(src.count("G.gateDryNext = true; replaySend(dry") == 4 and src.count("G.gateDryNext = true; replaySend(dry2") == 1, "the four dry runs are marked")
 check('pcall(G.gateLate, "a refused form, the next one tried")' in src, "a refused form's next one is logged")
