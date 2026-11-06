@@ -7425,6 +7425,46 @@ end
 -- (a due company join holds the game until it is applied, see nativeHoldAt)
 G.joinHoldDue = os.getenv("MPFEVER_JOINHOLD") ~= "0"
 
+-- (0.7.3, MPFEVER_HELDNOTPAUSED, part of the host's « several players building » setting) A held build is captured when its
+-- game stands at its time, and the simulation half takes that stop for a pause (its pause_at is the hold's time): the capture
+-- came marked "paused" though the session was not. The other games then took it for a build of a pause: never sent as the
+-- simulation came to its time (it waited until the game stood there), and the game stood there until the engine's answer
+-- (no MPFEVER_NOWAIT for a paused build): 0.4 to 0.6 s for every build of a player whose builds were held, the two-builder
+-- stress test of 2026-11-06 (the diagnostic MPFEVER_STANDLOG: "GATE Host:4: false (... paused true, seq nil ...)"). A build
+-- is taken as one of a pause only when it has its turn of a pause, or the session is paused here.
+G.heldNotPausedOn = false
+G.reallyPaused = function(a, seq)
+	if not a.paused then return false end
+	if not G.heldNotPausedOn then return true end
+	return seq ~= nil or a.pseq ~= nil or G.session.pauseAt ~= nil
+end
+-- (diagnostic, MPFEVER_STANDLOG=1, tests: read at every start) the game stands at the stop point: why
+G.standLog = function()
+	local okT, now = pcall(gameTime)
+	local parts = { "t=" .. tostring(okT and now or "?"), "stop=" .. tostring(G.lastStopAt), "hold=" .. tostring(G.holdAt), "barrier=" .. tostring(G.lastBarrier),
+		"replayOut=" .. tostring(G.replayOut or 0), "quiet=" .. tostring((G.replayQuiet or 0) - G.frames) }
+	if G.gateCur then parts[#parts + 1] = "gate=" .. tostring(G.gateCur.uid) .. (G.gateCur.single and "/single" or "") .. (G.gateCur.group and ("/group:" .. tostring(G.gateCur.group)) or "") .. "/handed" .. tostring(G.gateCur.handed or 0) end
+	local r = {}
+	for _, x in ipairs(G.natRelease or {}) do r[#r + 1] = tostring(x.id) .. "@" .. tostring(x.at) end
+	if #r > 0 then parts[#parts + 1] = "own=" .. table.concat(r, ",") end
+	local w = {}
+	for _, x in ipairs(G.natWait or {}) do w[#w + 1] = tostring(x.origin) .. ":" .. tostring(x.id) .. "@" .. tostring(x.at) .. (x.arrived and "+" or "-") end
+	if #w > 0 then parts[#parts + 1] = "wait=" .. table.concat(w, ",") end
+	local q = {}
+	for _, x in ipairs(G.nativeQueue or {}) do q[#q + 1] = tostring(x.uid) .. "@" .. tostring(x.at) .. (x.stillWait and "/still" or "") end
+	if #q > 0 then parts[#parts + 1] = "queue=" .. table.concat(q, ",") end
+	if G.terrainBusy then parts[#parts + 1] = "terrainBusy" end
+	if G.coBusy then parts[#parts + 1] = "coBusy" end
+	if G.stopsAfterBusy then parts[#parts + 1] = "stopsAfterBusy" end
+	if G.qHold and #G.qHold > 0 then parts[#parts + 1] = "qHold=" .. #G.qHold end
+	if G.leadCapAt then parts[#parts + 1] = "leadCap=" .. tostring(G.leadCapAt) end
+	local line = table.concat(parts, " ")
+	local key = line:gsub("quiet=%-?%d+", "")
+	if key ~= G.standLogLast or G.frames - (G.standLogFrame or 0) >= 30 then
+		G.standLogLast, G.standLogFrame = key, G.frames
+		log("STAND " .. line .. " [frame " .. G.frames .. "]")
+	end
+end
 local function nativeHoldAt()
 	local m = nil
 	local now = gameTime()
@@ -9107,7 +9147,7 @@ local function runNativeReplays()
 		local et = a.uiEdit and G.actTurn(a) or nil
 		if et then seq = et end
 		-- (a native build of the engine's own kind may go as the simulation is about to stand at its time, see G.nstopWillStand)
-		local due = a.at <= now or (a.native and not a.paused and a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and a.fn ~= "assetBuild" and G.nstopWillStand(a.at))
+		local due = a.at <= now or (a.native and not G.reallyPaused(a, seq) and a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and a.fn ~= "assetBuild" and G.nstopWillStand(a.at))
 		if due and ((a.fn == "terrainEdit" and G.terrainBusy) or (a.fn == "mpfCoJoin" and (G.coBusy or jt == false or G.frames - (a.recvFrame or 0) < K.JOIN_GATHER))
 			or (a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and replayBusy()) or et == false) then
 			keep[#keep + 1] = a      -- the previous one is still being handed to the engine (or its turn has not been given yet)
@@ -9123,9 +9163,10 @@ local function runNativeReplays()
 			G.replayAt = a.at
 			-- (0.8, MPFEVER_NOWAIT: once its build is handed to the engine, the game does not wait for the answer, see G.gateHolds;
 			-- not a terrain edit, an asset or a company join, which have their own holds, nor a paused build)
-			local nw = G.gateOn() and a.native and not a.paused and not seq and a.fn ~= "terrainEdit" and a.fn ~= "assetBuild" and a.fn ~= "mpfCoJoin"
+			local nw = G.gateOn() and a.native and not G.reallyPaused(a, seq) and not seq and a.fn ~= "terrainEdit" and a.fn ~= "assetBuild" and a.fn ~= "mpfCoJoin"
 			G.gateCur = nw and { at = a.at, uid = a.uid, frame = G.frames } or nil
 			if nw then G.gateStats.replays = G.gateStats.replays + 1 end
+			if G.standLogOn then log("GATE " .. tostring(a.uid) .. ": " .. tostring(nw) .. " (on " .. tostring(G.gateOn()) .. ", native " .. tostring(a.native) .. ", paused " .. tostring(a.paused) .. ", seq " .. tostring(seq) .. ", fn " .. tostring(a.fn) .. ")") end
 			if a.at > now then log("NATIVE REPLAY " .. tostring(a.uid) .. ": sent as the simulation comes to t=" .. a.at .. " (this interface at " .. now .. ") [frame " .. G.frames .. "]") end
 			if seq then G.ptDone(seq); log("NATIVE REPLAY " .. tostring(a.uid) .. ": paused build, turn " .. seq) end
 			if a.at < now then
@@ -17134,6 +17175,8 @@ local function resumeAfterLoad(state)
 	G.gateWanted = G.featureOn("MPFEVER_NOWAIT")
 	G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")
 	G.leadAckOn = G.featureOn("MPFEVER_LEADACK")
+	G.standLogOn = os.getenv("MPFEVER_STANDLOG") == "1"
+	G.heldNotPausedOn = G.featureOn("MPFEVER_HELDNOTPAUSED")
 	if G.nostopOn then log("several players building without stopping: on (MPFEVER_NOSTOP)") end
 	if G.gateWanted then log("no wait: on (once another player's build is handed to the engine, this game does not wait for its answer)") end
 	if G.preshipWanted then log("builds shipped at the click: on (a held build goes to the others at once and is checked at its time on every game)") end
@@ -18985,7 +19028,11 @@ local function guiUpdate(userParams, state, guiState)
 		local S = G.standM or { t = 0, last = now }
 		G.standM = S
 		local st = G.nstopRead and G.nstopRead()
-		if st and st.n == 0 and (G.session.speed or 0) > 0 and G.session.started and not G.session.pauseAt then S.t = S.t + (now - S.last) end
+		if st and st.n == 0 and (G.session.speed or 0) > 0 and G.session.started and not G.session.pauseAt then
+			S.t = S.t + (now - S.last)
+			-- (diagnostic, MPFEVER_STANDLOG=1: what holds the game while it stands, when that changes or every 30 frames)
+			if G.standLogOn then pcall(G.standLog) end
+		end
 		S.last = now
 	end)
 	if G.frames % 600 == 0 then

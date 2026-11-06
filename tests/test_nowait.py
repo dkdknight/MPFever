@@ -105,7 +105,7 @@ L.execute("G.gateWanted = false; G.gateCur = { at = 102000, handed = 1, single =
 got = run("return tostring(nativeHoldAt())")
 check(got == "100000", "setting off: as before, even with a replay marked", got)
 
-check('local nw = G.gateOn() and a.native and not a.paused and not seq and a.fn ~= "terrainEdit" and a.fn ~= "assetBuild" and a.fn ~= "mpfCoJoin"' in src,
+check('local nw = G.gateOn() and a.native and not G.reallyPaused(a, seq) and not seq and a.fn ~= "terrainEdit" and a.fn ~= "assetBuild" and a.fn ~= "mpfCoJoin"' in src,
       "runNativeReplays: every native replay but terrain edits, assets, company joins and paused builds")
 # (the real sessions' logs, 2026-11-06: 1970 replays by the script forms, every one built with its FIRST form, and 10 with every
 # form refused (reloaded anyway); 322 stop replays, none tried again: a replay ends with one command or fails)
