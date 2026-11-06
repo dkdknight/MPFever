@@ -1,4 +1,4 @@
-"""Offline test of the builds shipped ahead (0.8 work, with MPFEVER_NOWAIT; MPFEVER_PRESHIP=0: not).
+"""Offline test of the builds shipped ahead (0.8 research, MPFEVER_PRESHIP=1 with MPFEVER_NOWAIT; off by default).
 
 Two players building at once: this game's build is held until its time and only then captured and shipped, so the other games,
 at that time too, stood until its data came (the two-builder stress test of 2026-11-06: the client stood 785 ms for the host's
@@ -38,7 +38,7 @@ code = src[i:j]
 
 L = lupa.LuaRuntime(unpack_returned_tuples=True)
 L.execute(r'''
-ENV = {}
+ENV = { MPFEVER_PRESHIP = "1" }
 os.getenv = function(k) return ENV[k] end
 LOGS, SENT = {}, {}
 function log(s) LOGS[#LOGS + 1] = s end
@@ -71,8 +71,8 @@ L.execute("G.cmode = 'separate'; SENT = {}; OKX = G.preship({ id = 9, at = 1, co
 check(L.globals().OKX is False and len(L.eval("SENT")) == 0, "one company per player: not (the copy names the savegame's company)")
 L.execute("WANT = false; SENT = {}; OKX = G.preship({ id = 10, at = 1, copy = %s }); WANT = true" % COPY)
 check(L.globals().OKX is False, "without the no-wait setting: not")
-L.execute('ENV["MPFEVER_PRESHIP"] = "0"; SENT = {}; OKX = G.preship({ id = 11, at = 1, copy = %s }); ENV["MPFEVER_PRESHIP"] = nil' % COPY)
-check(L.globals().OKX is False, "MPFEVER_PRESHIP=0: not")
+L.execute('ENV["MPFEVER_PRESHIP"] = nil; SENT = {}; OKX = G.preship({ id = 11, at = 1, copy = %s }); ENV["MPFEVER_PRESHIP"] = "1"' % COPY)
+check(L.globals().OKX is False, "without MPFEVER_PRESHIP=1 (the default): not")
 
 # the capture
 L.execute("SENT = {}; E = { pre = 'Client#1:1', preSig = '1/road', preAt = 26213600 }")

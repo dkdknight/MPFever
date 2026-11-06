@@ -3759,8 +3759,9 @@ local function stampFor(t)
 	-- games reloaded: the two-builder stress test with computer companies of 2026-11-06, with and without MPFEVER_NOWAIT). The
 	-- stamp is now ahead of every other game's clock too, as it is now (the clock it sent, aged by the session's speed: see
 	-- G.buildLeadState), by the stamp distance. Only clocks heard in the last 2 s (a game gone quiet would push every stamp
-	-- away). MPFEVER_LEADSTAMP=0: this game's clock only, as before
-	if os.getenv("MPFEVER_LEADSTAMP") ~= "0" then
+	-- away). Research, OFF (MPFEVER_LEADSTAMP=1): not enough on its own, the same stress test still had late actions with it
+	-- (a line made by the host just as the client started to lead, 19 steps late), one run out of two desynced either way.
+	if os.getenv("MPFEVER_LEADSTAMP") == "1" then
 		local spd = math.max(1, math.min(4, G.session.speed or 1))
 		local nowC = os.clock()
 		for _, pc in pairs(G.peers) do
@@ -9570,7 +9571,8 @@ local function shipTerrain(o)
 	return "sent"
 end
 
--- (0.8, MPFEVER_NOWAIT; MPFEVER_PRESHIP=0: not) A build of this game held the usual way (two players building at once, or
+-- (0.8, research: MPFEVER_PRESHIP=1, with MPFEVER_NOWAIT; off by default until tried with real tools in real sessions, the
+-- autotests' scripted builds carry no tool copy but in the restale scenario) A build of this game held the usual way (two players building at once, or
 -- another player leading) went to the engine at its time, and only then was it captured and shipped: the other games, at that
 -- time too, stood until its data came (0.3 to 1 s per build, "LAG ... ms for its data"; with several builders, most of the
 -- stand left). Now its copy, the tool's proposal as the tool applied it (the compact form a capture ships, see G.toolApplied),
@@ -9581,7 +9583,7 @@ end
 -- savegame's company (the native module gives the command this player's company). Not in a pause (the turns), not for a build
 -- released at once (the others are behind already).
 G.preshipOn = function()
-	return G.gateOn and G.gateOn() and G.cmode ~= "separate" and os.getenv("MPFEVER_PRESHIP") ~= "0"
+	return G.gateOn and G.gateOn() and G.cmode ~= "separate" and os.getenv("MPFEVER_PRESHIP") == "1"
 end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end

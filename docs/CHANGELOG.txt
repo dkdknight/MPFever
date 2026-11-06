@@ -26,18 +26,20 @@ MPFever - Changelog
     street) keep the game at the step until they are done, as before. A refused try comes after the step (logged
     "NOWAIT ... after the build's step"). The "LAG" lines now tell the real stand before and during each replay, and the
     "gui alive" lines the total. Test: tests/test_nowait.py.
-    With it, a build of this game held the usual way (two players building at once, another player leading) is shipped at
-    once, for its time, from the tool's copy (the compact form a capture ships): the others have it before they come to that
+    Research, off (MPFEVER_PRESHIP=1 with it): a build of this game held the usual way (two players building at once,
+    another player leading) is shipped at once, for its time, from the tool's copy (the compact form a capture ships): the others have it before they come to that
     time and do not stand for its data (0.3 to 1 s per build before). This game still gives the tool's own command to the
     engine then, and compares its capture with the copy instead of shipping it: another build, or none, and the host's game
-    is reloaded. One company for everybody only (with one per player the tool's copy names the savegame's company).
-    MPFEVER_PRESHIP=0: not. Test: tests/test_preship.py.
-  - FIX (a player's build landing late while another player led, the two-builder stress test with computer companies): a
+    is reloaded. One company for everybody only (with one per player the tool's copy names the savegame's company). Off
+    until tried with real tools in real sessions. Test: tests/test_preship.py.
+  - RESEARCH, OFF (MPFEVER_LEADSTAMP=1), an issue found today and already in 0.7.1: a player's build landing late while
+    another player led (the two-builder stress test with computer companies): a
     game with a tool in hand leads, it runs ahead of the others by the lead's steps; an action of another player was stamped
     from that player's clock alone, behind the leader's clock: "MARGIN nat_pending -18 steps", "LATE native build ... 18
     step(s) late", the ages apart and a reload. A stamp is now ahead of every other game's clock as well (the clock it sent,
-    aged by the session's speed; clocks heard in the last 2 s only), by the stamp distance. MPFEVER_LEADSTAMP=0: as before.
-    Test: tests/test_leadstamp.py.
+    aged by the session's speed; clocks heard in the last 2 s only), by the stamp distance. Not enough on its own: the same
+    test still had late actions with it (a line made just as the other player started to lead), one run out of two desynced
+    with or without it. Test: tests/test_leadstamp.py.
     (Researched and left out: holding the replay's command in the native module and giving it at the swap crashed the game.)
 
 0.7.1 - 2026-11-06: every company climbs the ranks like the host's, fewer reloads (towns' pollution), a host crash fixed, Advanced Station Builder and Improved Destination Displays made compatible

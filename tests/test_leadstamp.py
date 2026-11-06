@@ -1,4 +1,4 @@
-"""Offline test of the stamp ahead of every game's clock (0.7.2, MPFEVER_LEADSTAMP=0: as before).
+"""Offline test of the stamp ahead of every game's clock (0.7.2 research, MPFEVER_LEADSTAMP=1; off by default).
 
 The two-builder stress test with computer companies of 2026-11-06 (Test Gameplay, one company per player, x4): the client led
 (a tool in hand), so it ran ahead of the host by the lead's steps; the host's held build was stamped from the host's clock alone,
@@ -35,7 +35,7 @@ m = re.search(r"^local function stampFor\(t\)\n.*?^end\n", src, re.S | re.M)
 check(m is not None, "stampFor found")
 L = lupa.LuaRuntime(unpack_returned_tuples=True)
 L.execute('''
-ENV = {}
+ENV = { MPFEVER_LEADSTAMP = "1" }
 os.getenv = function(k) return ENV[k] end
 CLOCK = 100.0
 os.clock = function() return CLOCK end
@@ -54,9 +54,9 @@ L.execute("G.peers = { Client = { t = %d, at = CLOCK - 0.1 } }" % (NOW - 10 * 20
 check(run("return stampFor(%d)" % NOW) == NOW + 16 * 200, "a game behind: changes nothing")
 L.execute("G.peers = { Client = { t = %d, at = CLOCK - 5 } }" % (NOW + 20 * 200))
 check(run("return stampFor(%d)" % NOW) == NOW + 16 * 200, "a clock heard 5 s ago: ignored")
-L.execute('G.peers = { Client = { t = %d, at = CLOCK - 0.1 } }; ENV["MPFEVER_LEADSTAMP"] = "0"' % (NOW + 20 * 200))
-check(run("return stampFor(%d)" % NOW) == NOW + 16 * 200, "MPFEVER_LEADSTAMP=0: as before")
-L.execute('ENV["MPFEVER_LEADSTAMP"] = nil; G.stampFloor = %d' % (NOW + 100 * 200))
+L.execute('G.peers = { Client = { t = %d, at = CLOCK - 0.1 } }; ENV["MPFEVER_LEADSTAMP"] = nil' % (NOW + 20 * 200))
+check(run("return stampFor(%d)" % NOW) == NOW + 16 * 200, "without MPFEVER_LEADSTAMP=1 (the default): as before")
+L.execute('ENV["MPFEVER_LEADSTAMP"] = "1"; G.stampFloor = %d' % (NOW + 100 * 200))
 check(run("return stampFor(%d)" % NOW) == NOW + 100 * 200, "the stamp floor still holds")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
