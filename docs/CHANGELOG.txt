@@ -1,6 +1,55 @@
 MPFever - Changelog
 ===================
 
+0.7.3 - 2026-11-06 (test build): several players building at once without stopping (a host setting, experimental, OFF by default)
+  - EXPERIMENTAL, OFF by default: a session setting of the host, "Several players building without stopping"
+    (MPFEVER_NOSTOP=1). It turns on the three parts below together; each one can still be set alone (=1 on, =0 off).
+  - Builds shipped at the click (MPFEVER_PRESHIP). When several players build at once, a build of this game is held for a
+    step ahead (another game leads, or this one does not), goes to the engine at that step, and was only then captured and
+    shipped: the other games, at that step too, stood until its data came (0.3 to 1 s for every build: "LAG ... 785 ms for
+    its data", 25 of the 42 s the client stood in the two-builder stress test of 2026-11-06). Now the tool's copy of the
+    build goes to the others at the click, with what it was computed on: every node, segment and construction it names,
+    and how each one stood (a node's place and segments, a segment's ends, objects and kind, a construction's file and
+    parts). At the build's step every game, its builder too, looks at them again at the same point of the step:
+      - nothing changed (the usual case, even with players building elsewhere): the others build the copy at once, without
+        standing; the builder gives the tool's own command to the engine as before, compares its capture with the copy and
+        sends a small confirmation (with its cost, booked on the others as for a capture); a capture that differs is
+        shipped with it and the host's game is reloaded;
+      - something changed (another player built at the very same place in the meantime: in the test of 2026-11-06 the
+        copy was built on the client while the host's engine refused the tool's own command, computed before the client's
+        build, and the games differed): every game waits for the capture, as before, and builds what the builder's engine
+        made of it. No reload.
+    A tool's command refused by its builder's engine: the others are told; a game that built the copy reloads, one whose
+    engine refused it too agrees. With one company per player too, and for the computer companies' builds (shipped a
+    frame later, once their company is known; MPFEVER_PRESHIPSEP=0: not in that mode). Not in a pause, not for a build
+    released at once.
+    The other games apply a copy exactly as the tool made it (the same proposal, the tool's Context flags), never made
+    again from its shape: made again here as an upgrade at its time, the engine gave other new segments and nodes than the
+    builder's tool command and the ids parted (stress test t2c). Streets and tracks only (with their stops and signals):
+    a construction's copy (a station, a depot, a module) is the tool's before the engine applies it, without the frozen
+    parts and the town buildings the engine adds then, which the replays of a construction need: shipped the usual way
+    (MPFEVER_PRESHIPCON=1, tests: shipped too). The capture is compared by its street part (the town buildings the engine
+    moves are the same on every game that applies the same proposal). MPFEVER_PRERAW=0: copies replayed by their shape.
+    The autotests' scripted builds made of an engine proposal carry it too (their simple proposals have another form and
+    are not shipped at the click). Test: tests/test_preship.py.
+  - FIX (lead acknowledged, MPFEVER_LEADACK; the problem exists since BUILDLEAD): a game that leads (a tool in hand) ran
+    ahead of the others by the lead's steps at once, while another game still stamped its actions from its own clock by
+    its stamp distance only: it adds the lead's steps once it knows of the lead. An action stamped in between landed late
+    on the leader ("MARGIN nat_pending -18 steps", "LATE native build ... 18 step(s) late", the ages apart and the games
+    reloaded: the two-builder stress test with computer companies of 2026-11-06, a line of the host made as the client
+    started to lead, 19 steps late). Now the leader runs no further past another game's clock than that game's stamp
+    distance as sent with that clock, less its overshoot and one step: once the other game knows of the lead, the
+    distance it sends has the lead in it and the leader takes its lead. (The research switch of 0.7.2, MPFEVER_LEADSTAMP,
+    stays off: it could not cover a lead that starts after the stamp.) Test: tests/test_leadack.py, with a model of two
+    games: 0 late actions in 300 runs with the cap, 38 without.
+  - MPFEVER_NOWAIT (0.7.2) is part of the setting.
+  - Tests (two games on one PC, x4): the restale scenario (two players editing one junction at once), which desynced with
+    the 0.7.2 research switch (21 desyncs): in sync, 0 desyncs. Two players building at once (Test Knight 14, one company,
+    11 minutes with a reload): in sync, 0 desyncs, the real stand 21.9 / 34.5 s (0.7.2: 28.3 / 39.6 s). One company per
+    player with two computer companies (Test Gameplay): in sync, 0 desyncs (0.7.2: 15 desyncs in one run, desynced in
+    another), no late action in any run. The stops of stations, depots and modules are left: they are not shipped at the
+    click yet. The real tools could not be driven by the autotests: manual tests needed.
+
 0.7.2 - 2026-11-06: Advanced Station Builder for real, and a host setting against the pause at every build of the other players (experimental, off)
   - FIX (Advanced Station Builder, the user's server session of 2026-11-06 with 0.7.1: 17 desyncs, 5 reloads, "conParams" and
     "ages" apart after every station, the client always one or two builds ahead of the server): not one command of the mod

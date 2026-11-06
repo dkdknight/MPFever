@@ -404,7 +404,8 @@ function REFUND.book(st, now)
 	if REFUND.freeBuilds() then st.rcost = nil; return true end
 	local keep = {}
 	for _, rc in ipairs(st.rcost) do
-		if rc.at >= now then
+		-- (0.7.3: a copy shipped at the click waits for its builder's cost, 50 steps at most, see replay_cost_set)
+		if rc.at >= now or (rc.late and rc.cost == nil and now - rc.at <= 50 * STEP) then
 			keep[#keep + 1] = rc
 		elseif (rc.n or 0) > 0 and type(rc.cost) == "number" then
 			local d = math.floor((rc.got or 0) - rc.cost + 0.5)
@@ -3586,11 +3587,17 @@ local function handleEvent(userParams, state, src, id, name, param)
 			-- (BUILDLEAD: the oldest of them was refused, it will not be captured)
 			if st.leadOut and #st.leadOut > 0 then table.remove(st.leadOut, 1) end
 		elseif name == "replay_cost" then
-			-- (a shipped native build about to be replayed here, with what it cost its builder: see REFUND.book)
+			-- (a shipped native build about to be replayed here, with what it cost its builder: see REFUND.book; late: a copy shipped
+			-- at the click, its builder's cost comes after, replay_cost_set)
 			st.rcost = st.rcost or {}
-			st.rcost[#st.rcost + 1] = { at = gameTime(), uid = param.uid, cost = tonumber(param.cost), co = param.co, got = 0, n = 0, kind = param.kind }
+			st.rcost[#st.rcost + 1] = { at = gameTime(), uid = param.uid, cost = tonumber(param.cost), co = param.co, got = 0, n = 0, kind = param.kind, late = param.late == true or nil }
 			-- (0.6.12: 256 kept; the oldest of a long pause's builds were dropped unbooked beyond 8)
 			while #st.rcost > (REFUND.CHECKED and 256 or 8) do table.remove(st.rcost, 1) end
+		elseif name == "replay_cost_set" then
+			-- (0.7.3: the builder's cost of a copy shipped at the click, built here before it came)
+			for _, rc in ipairs(st.rcost or {}) do
+				if rc.uid == param.uid and rc.cost == nil then rc.cost = tonumber(param.cost); break end
+			end
 		elseif name == "replay_stats" then
 			-- (a shipped native build about to be replayed here, with its builder's town statistics: see SIM.townStats)
 			local okT, errT = pcall(SIM.townExpect, st, param)
@@ -3859,6 +3866,40 @@ local function otherLeads()
 	return false
 end
 
+-- (0.7.3, MPFEVER_LEADACK=1, or the host's « several players building » setting) A game that leads (a tool in hand) ran ahead of the
+-- others by the lead's steps at once (pacing), but another game stamps its actions from its own clock by its stamp distance (16
+-- steps at 4x), and adds the lead's steps only once it knows of the lead (from the leader's next clock). An action it stamped in
+-- between was behind the leader's clock and landed there late ("MARGIN nat_pending -18 steps", "LATE native build ... 18 step(s)
+-- late", the ages apart and the games reloaded: the two-builder stress test with computer companies of 2026-11-06, a line of the
+-- host made as the client started to lead). Now the leader runs no further past another game's clock than that game's stamp
+-- distance as it sent it with that clock (its "ah"), less this game's overshoot and one step: once that game knows of the lead, the
+-- distance it sends has the lead in it and the leader takes its lead. That game sends its clock after the actions it stamped
+-- before it, and never stamps short of the distance it sent (G.stampFloor): every action it makes is ahead of the leader. Never
+-- short of the usual barrier.
+G.leadRoom = function(name, pc, limit)
+	local ah = tonumber(pc.ah)
+	if type(pc.t) ~= "number" or not ah then return limit end
+	local cap = pc.t + math.max(G.window or 3, ah - overshootReserve() - 1) * STEP
+	local capped = cap < limit
+	G.leadAckState = G.leadAckState or {}
+	local was = G.leadAckState[name]
+	if capped ~= was then
+		G.leadAckState[name] = capped
+		if capped then
+			log("LEADACK: this game leads, " .. tostring(name) .. " stamps its actions " .. ah .. " steps ahead of its clock: this game stays within "
+				.. ((cap - pc.t) / STEP) .. " steps past it until it follows [frame " .. G.frames .. "]")
+		elseif was ~= nil then
+			log("LEADACK: " .. tostring(name) .. " follows (stamp distance " .. ah .. "): the lead's " .. ((limit - pc.t) / STEP) .. " steps [frame " .. G.frames .. "]")
+		end
+	end
+	if capped then
+		G.leadAckStats = G.leadAckStats or { capped = 0 }
+		G.leadAckStats.capped = G.leadAckStats.capped + 1
+		return cap
+	end
+	return limit
+end
+
 -- ---------------------------------------------------------------- the builder leads (experimental, MPFEVER_BUILDLEAD=1)
 -- A tool's build is held by the native module until a game time 8 steps ahead, and the builder's game stops for it (issue
 -- #34): a build appears about 2 s after the click, and the tool cannot place the next piece before. Here the construction tools
@@ -4074,7 +4115,7 @@ local function pacing()
 	end
 	local barrier, exactBarrier = nil, nil
 	local mine = leadLevel()
-	for _, pc in pairs(G.peers) do
+	for pname, pc in pairs(G.peers) do
 		-- window (see G.ahead): a game that overshoots this limit by its reserve is still before the time stamped on
 		-- the peer's next action
 		local limit = pc.t + (G.window or 3) * STEP
@@ -4097,6 +4138,8 @@ local function pacing()
 		elseif s.pauseAt == nil and mine > theirs then
 			-- this game leads: the others keep that distance behind it
 			limit = pc.t + ((G.window or 3) + terrainLeadSteps()) * STEP
+			-- (0.7.3, MPFEVER_LEADACK: no further past that game's clock than its stamps leave room, see G.leadRoom)
+			if G.leadAckOn then limit = G.leadRoom(pname, pc, limit) end
 			exact = limit
 		end
 		if G.oldHolds then exact = limit end
@@ -4396,6 +4439,11 @@ G.staleDrop = function(kind, p, before)
 end
 
 H.act = function(from, p)
+	-- (0.7.3: the capture of a build shipped at the click, see G.prePost: dropped when its copy was built here)
+	if p.post and G.prePost then
+		local okP, drop = pcall(G.prePost, p)
+		if not okP then log("PRESHIP: " .. tostring(drop)) elseif drop then return end
+	end
 	logMargin(p.native and "act(native)" or "act", p.at, p.origin, p.lead)
 	p.recvFrame = G.frames
 	pcall(G.noteOthers, p)
@@ -5274,6 +5322,13 @@ end
 -- a build this game could not reproduce: the host reloads its game for everybody at once (without waiting for the
 -- next checkpoints to notice the difference)
 local function replayFailed(a, why)
+	-- (0.7.3: a copy shipped at the click, refused here: its builder's engine may have refused it too, see G.prePost and
+	-- G.preCancelled, which decide)
+	if a and a.pre and G.preUsed and G.preUsed[tostring(a.uid)] and G.preVerdict[tostring(a.uid)] ~= "same" then
+		G.preUsed[tostring(a.uid)].refused = true
+		log("PRESHIP " .. tostring(a.uid) .. ": refused here (" .. tostring(why):sub(1, 100) .. "): waiting for what its builder's engine did")
+		return
+	end
 	pcall(send, "replay_failed", { uid = tostring(a.uid), why = tostring(why):sub(1, 120) })
 	-- (0.6.7, issue #113) a player's game that could not reproduce a build differs from the host's for sure: the next builds of
 	-- the others are left out until the host's game reloads it (see G.brokenSkip)
@@ -6734,6 +6789,14 @@ local function replayNative(a, formIndex)
 		if G.lagMark then G.lagMark("copied") end
 		local missing = R.translateIn(probe, G.bind)
 		if G.lagMark then G.lagMark("translated") end
+		-- (0.7.3: a copy shipped at the click is the builder's very proposal: applied as the tool made it, the same proposal the
+		-- same way, never made again here from its shape as an upgrade (the engine's upgrade made here at its time gave other new
+		-- segments and nodes than the builder's tool command, the ids parted: the stress test t2c of 2026-11-06), see G.preship;
+		-- MPFEVER_PRERAW=0: by its shape as a capture)
+		if a.pre and os.getenv("MPFEVER_PRERAW") ~= "0" then
+			log("NATIVE REPLAY " .. tostring(a.uid) .. ": a copy shipped at the click, applied as the tool made it")
+			return replayNativeStreet(a)
+		end
 		-- the edit of a construction sent by a window (a warehouse's goods with the Drive-in Warehouses mod, see G.uiEdit): the
 		-- engine's own replacement with the new settings, made the same way on every game
 		local e1 = probe[1]
@@ -7065,6 +7128,19 @@ local function replayNative(a, formIndex)
 			G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() replayNative(a, formIndex + 1) end }
 		end
 	end)
+end
+
+-- (0.7.3) The host's setting « several players building without stopping » (MPFEVER_NOSTOP=1, a session option of the launcher, off by
+-- default) turns on the three parts of that work: MPFEVER_NOWAIT (below), MPFEVER_PRESHIP (a held build shipped at the click and
+-- checked at its time on every game, see G.preship) and MPFEVER_LEADACK (a game that leads takes its lead only once the others'
+-- stamps leave it room, see G.leadRoom). Each one can still be set alone: =1 on, =0 off. Read at every start of a session (see
+-- resumeAfterLoad: the settings are not known yet when this file is loaded).
+G.nostopOn = false
+G.featureOn = function(name)
+	local v = os.getenv(name)
+	if v == "1" then return true end
+	if v == "0" then return false end
+	return G.nostopOn == true
 end
 
 -- ================================================================== no wait for the answer (0.8, MPFEVER_NOWAIT=1)
@@ -7846,10 +7922,10 @@ local function pollNativeEvents()
 				local pt = paused and G.ptOn or nil
 				-- (t0, copy: see G.restale)
 				G.natRelease[#G.natRelease + 1] = { id = id, at = at, paused = pt, frame0 = G.frames, t0 = now, copy = G.takeToolCopy() }
-				-- (0.8, no wait: its copy goes to the other games now, see G.preship)
-				if not paused and G.preship then pcall(G.preship, G.natRelease[#G.natRelease]) end
 				if pt then G.ptIssue(G.me, id) end
 				send("nat_pending", { origin = G.me, at = at, id = id, paused = pt })
+				-- (0.8, no wait: its copy goes to the other games now, after its announcement, see G.preship)
+				if not paused and G.preship then pcall(G.preship, G.natRelease[#G.natRelease]) end
 				log("native build " .. id .. " held by the DLL, released at t=" .. at .. " (now " .. now .. ") [frame " .. G.frames .. "]")
 				-- (with a tool in hand, the reason it is held the usual way: which test of G.buildLeadState failed)
 				if G.buildLead and why ~= "no tool in hand" then
@@ -7883,7 +7959,8 @@ G.othersAt = {}
 G.worldFrame = 0
 -- the tool's event when it applies a build ({proposal, data} by position or by name): its compact form, for G.restale
 G.toolApplied = function(param)
-	if not (G.restaleOn or (G.preshipOn and G.preshipOn())) or not G.session.started or G.cmode == "separate" then return end
+	local pre = G.preshipOn and G.preshipOn()
+	if not (G.restaleOn or pre) or not G.session.started or (G.cmode == "separate" and not pre) then return end
 	local pr = type(param) == "table" and (param[1] or param.proposal) or nil
 	if pr == nil then return end
 	local ok, compact = pcall(C.compactProposal, pr)
@@ -7957,7 +8034,7 @@ G.restaleBody = function(r, at)
 		log("restale check " .. tostring(r.id) .. ": copy " .. tostring(r.copy ~= nil) .. ", t0 " .. tostring(r.t0) .. ", at " .. tostring(at)
 			.. ", frame0 " .. tostring(r.frame0) .. ", world frame " .. tostring(G.worldFrame) .. ", others " .. C.ser(G.othersAt):sub(1, 200))
 	end
-	if not G.restaleOn or r.lead then return false end
+	if not G.restaleOn or r.lead or r.preshipped then return false end
 	-- One company per player: the tool's copy names the savegame's company (the native module gives the build this player's
 	-- company at the tool's command only), so it cannot be replayed. The build is left out on every game instead, as a refused
 	-- one (the others stop holding for it, its turn of a pause is skipped), and the chat tells its player to make it again:
@@ -8027,6 +8104,23 @@ local function stillOk(id, still, cb)
 	return false
 end
 
+-- (0.7.3, the autotests) a build command made of this proposal: the proposal is kept for the deferred build that takes it next
+-- (see deferredSend)
+-- (by the command itself: a scenario may make a command and hand it over later, after another one)
+G.wbpOf = setmetatable({}, { __mode = "k" })
+G.wbp = function(p, ctx, ...)
+	-- (and its Context's flags, as the native module gives a tool's: 1 gatherBuildings, 2 terrain alignment, 4 street graph
+	-- cleanup, 32 known; a copy shipped at the click is applied with them on the other games, see replayNativeStreet)
+	local bits = nil
+	pcall(function()
+		if ctx ~= nil then
+			bits = 32 + (ctx.gatherBuildings and 1 or 0) + (ctx.checkTerrainAlignment and 2 or 0) + (ctx.cleanupStreetGraph and 4 or 0)
+		end
+	end)
+	local cmd = api.cmd.makeWorldBuildProposalCmd(p, ctx, ...)
+	pcall(function() G.wbpOf[cmd] = { p = p, bits = bits } end)
+	return cmd
+end
 local function deferredSend(cmd, cb, proposal, still)
 	-- (as a tool's build: refused during a resynchronisation, see G.resyncRefuse)
 	if G.resyncRefuse("autotest build") then
@@ -8069,7 +8163,17 @@ local function deferredSend(cmd, cb, proposal, still)
 	-- G.restale)
 	G.natRelease[#G.natRelease + 1] = { id = id, at = at, fn = function() if stillOk(id, still, cb) then O.sendCommand(cmd, cb) end end, paused = pt, frame0 = G.frames,
 		t0 = now, cb = cb, copy = ((os.getenv("MPFEVER_RESTALETEST") == "1" or (G.preshipOn and G.preshipOn())) and proposal ~= nil) and select(2, pcall(C.compactProposal, proposal)) or nil }
-	if not pt and G.preship then pcall(G.preship, G.natRelease[#G.natRelease]) end
+	-- (0.7.3, shipped at the click: a scripted build given without its proposal, the autotests' own: the proposal its command was
+	-- made of (G.wbp), when it is the engine's (an upgrade, a station edit; a script's simple proposal has another form, its copy
+	-- has nothing in it and is not shipped, see G.preship). MPFEVER_PRESHIPCMD=0: none, as before)
+	local mk = nil
+	pcall(function() mk = G.wbpOf[cmd] end)
+	local made, madeCtx = mk and mk.p, mk and mk.bits
+	G.natRelease[#G.natRelease].ctxBits = madeCtx
+	if G.natRelease[#G.natRelease].copy == nil and made ~= nil and not pt and G.preshipOn and G.preshipOn() and os.getenv("MPFEVER_PRESHIPCMD") ~= "0" then
+		local okC, cp = pcall(C.compactProposal, made)
+		if okC and type(cp) == "table" then G.natRelease[#G.natRelease].copy = cp end
+	end
 	if pt then G.ptIssue(G.me, id) end
 	markPending(id, { x = 0, y = 0 })
 	log("autotest build " .. id .. " held, released at t=" .. at .. " (now " .. now .. ") [frame " .. G.frames .. "]")
@@ -8078,15 +8182,22 @@ local function deferredSend(cmd, cb, proposal, still)
 		log("BUILDLEAD autotest build " .. id .. " held the usual way: " .. tostring(why))
 	end
 	send("nat_pending", { origin = G.me, at = at, id = id, paused = pt })
+	-- (after its announcement, as a tool's build; a frame later: a computer company's build is given its company and its tool's
+	-- flags by its caller once this function is done, see mpfever_ai.lua, G.aiNatCo)
+	if not pt and G.preship then
+		local held = G.natRelease[#G.natRelease]
+		G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() pcall(G.preship, held) end }
+	end
 end
 
 -- A released build the engine refused is never shipped: the others, who hold for it, are told at once (they would
 -- wait half a minute), and its id must not be taken by the next build that is shipped.
 local function cancelNativeBuild(entry, why)
-	-- (0.8: shipped ahead, the others built it: the host's game is reloaded everywhere, see G.preship)
+	-- (0.7.3: shipped at the click: the others are told; a game that built its copy reloads, one that refused it too agrees, see
+	-- G.preCancelled)
 	if entry.pre then
-		log("PRESHIP " .. tostring(entry.pre) .. ": built nowhere here (" .. why .. "), the others have it: resynchronisation")
-		pcall(send, "replay_failed", { uid = tostring(entry.pre), why = "shipped ahead, not built by its builder" })
+		log("PRESHIP " .. tostring(entry.pre) .. ": built nowhere here (" .. why .. "): the others are told")
+		send("nat_cancel", { origin = G.me, id = entry.id, pre = entry.pre })
 		return
 	end
 	-- (its turn, if it was made in a pause: the others skip it, see G.pt)
@@ -8170,10 +8281,12 @@ H.nat_cancel = function(from, p)
 	-- (a build left out because another player built at the same place meanwhile, see G.restaleBody)
 	if p.samespot then G.sameSpotSay(p.origin) end
 	if p.origin == G.me then return end
+	-- (0.7.3: a build shipped at the click, see G.preCancelled; its hold goes even though its copy came)
+	if p.pre then pcall(G.preCancelled, p) end
 	if type(p.pseq) == "number" and p.pseq > G.pt.done then G.pt.skip[p.pseq] = true end
 	local keep = {}
 	for _, w in ipairs(G.natWait) do
-		if w.origin == p.origin and w.id == p.id and not w.arrived then
+		if w.origin == p.origin and w.id == p.id and (not w.arrived or p.pre) then
 			log("native build of " .. tostring(w.origin) .. " for t=" .. tostring(w.at) .. " cancelled by its originator: no longer holding")
 		else
 			keep[#keep + 1] = w
@@ -8188,7 +8301,7 @@ local function releaseOne(r, at, how)
 	G.natReleased = G.natReleased + 1
 	G.natShipIds = G.natShipIds or {}
 	G.natShipIds[#G.natShipIds + 1] = { id = r.id, at = at, frame = G.frames, combined = how ~= nil, simTick = G.simTick(), handshakes = 0, lead = r.lead,
-		pre = r.preshipped, preSig = r.preSig, preAt = r.at }
+		pre = r.preshipped, preSig = r.preSig, preAt = r.at, preClean = r.preClean }
 	-- (BUILDLEAD: the simulation half is told first, see captureNativeBuild; this command enters the list before the build)
 	if r.lead then toSim("lead_out", { at = at }) end
 	if r.fn then
@@ -8230,6 +8343,8 @@ local function runNativeRelease()
 		elseif ((now >= r.at and (gameSpeed() == 0 or (now == r.at and G.nstopStanding()))) or (now < r.at and G.nstopWillStand(r.at))) and not (G.eoHoldOwn and G.frames < (G.replayQuiet or 0)) and not G.sameStepWait(r.at, G.me) then
 			-- (the simulation about to stand at its time: released for that time, see G.nstopWillStand)
 			local at = math.max(now, r.at)
+			-- (0.7.3, shipped at the click: what it was computed on is checked now, as every other game checks it, see G.preship)
+			if r.preshipped then pcall(G.preCleanAt, r) end
 			if not G.restale(r, at) then releaseOne(r, at) end
 		else
 			keep[#keep + 1] = r
@@ -9002,6 +9117,8 @@ local function runNativeReplays()
 			keep[#keep + 1] = a      -- a build of a player ranked before this one, at this same step, comes first
 		elseif due and a.fn ~= "mpfCoJoin" and G.sendStillWait(a, now) then
 			keep[#keep + 1] = a      -- the engine may still be making a step (see G.sendStillWait)
+		elseif due and a.pre and G.preUsable and not G.preUsable(a) then
+			-- (0.7.3, shipped at the click: changed here since its builder's click, this game waits for its capture, see G.preship)
 		elseif due then
 			G.replayAt = a.at
 			-- (0.8, MPFEVER_NOWAIT: once its build is handed to the engine, the game does not wait for the answer, see G.gateHolds;
@@ -9016,6 +9133,8 @@ local function runNativeReplays()
 				G.aheadLocked = true
 			end
 			nativeArrived(a)
+			-- (0.7.3: built here from its copy shipped at the click, see G.prePost and G.preCancelled)
+			if a.pre then G.preUsed[tostring(a.uid)] = { sig = a.preSig, t = os.clock(), origin = a.origin } end
 			-- (0.6: to the game options' modules that keep a copy of the players' builds, before the replay translates its references,
 			-- see G.featNativeAct; nothing while no option is on)
 			if G.featOn then pcall(G.featNativeAct, a) end
@@ -9033,7 +9152,9 @@ local function runNativeReplays()
 				log("NATIVE REPLAY " .. tostring(a.uid) .. ": its construction(s) already stand here (in the loaded savegame): not built again")
 				okr = true
 			else
-				if type(a.cost) == "number" then toSim("replay_cost", { uid = a.uid, cost = a.cost, co = a.co, kind = G.costKind(a) }) end
+				if type(a.cost) == "number" then toSim("replay_cost", { uid = a.uid, cost = a.cost, co = a.co, kind = G.costKind(a) })
+				-- (0.7.3, a copy shipped at the click: its builder's cost comes with its confirmation, see H.pre_done and REFUND.book)
+				elseif a.pre then toSim("replay_cost", { uid = a.uid, co = a.co, kind = G.costKind(a), late = true }) end
 				-- (its builder's town statistics, compared with this replay's: see SIM.townStats; MPFEVER_ALIGNCHECK=0: off. The mark of
 				-- the announcement, a.tsTok, goes with every "replaying" event of this replay; none without one)
 				a.tsTok = nil
@@ -9571,56 +9692,342 @@ local function shipTerrain(o)
 	return "sent"
 end
 
--- (0.8, research: MPFEVER_PRESHIP=1, with MPFEVER_NOWAIT; off by default until tried with real tools in real sessions, the
--- autotests' scripted builds carry no tool copy but in the restale scenario) A build of this game held the usual way (two players building at once, or
--- another player leading) went to the engine at its time, and only then was it captured and shipped: the other games, at that
--- time too, stood until its data came (0.3 to 1 s per build, "LAG ... ms for its data"; with several builders, most of the
--- stand left). Now its copy, the tool's proposal as the tool applied it (the compact form a capture ships, see G.toolApplied),
--- is shipped at once, for its time: the other games have it before they come to that time and replay it there without
--- standing. This game still gives the tool's own command to the engine at that time, as before; its capture is then compared
--- with the copy (C.buildSig) instead of being shipped. A capture that differs, or none (the engine refused it here), and the
--- host's game is reloaded everywhere. One company for everybody only: with one per player the tool's copy names the
--- savegame's company (the native module gives the command this player's company). Not in a pause (the turns), not for a build
--- released at once (the others are behind already).
+-- ================================================================== builds shipped at the click (0.7.3, MPFEVER_PRESHIP)
+-- (on with the host's « several players building » setting, MPFEVER_NOSTOP=1, or MPFEVER_PRESHIP=1 with MPFEVER_NOWAIT; off by
+-- default) When several players build at once, a build of this game is held for a step ahead (another game leads, or this one
+-- does not), goes to the engine at that step, and only then was it captured and shipped: the other games, at that step too,
+-- stood until its data came (0.3 to 1 s for each build, "LAG ... ms for its data": most of the stand of the two-builder stress
+-- tests of 2026-11-06). Now its copy, the tool's proposal as the tool applied it (the compact form a capture ships, see
+-- G.toolApplied), goes to the others at once, for its step, with what it was computed on: every node, segment, construction it
+-- names (G.preRefsOf) and how each one stood at the click (G.refSigOf: its place, the segments at a node, the ends and the objects
+-- of a segment...). At that step every game, its builder too, looks at them again, at the same point of the same step:
+--   - nothing changed (the usual case, even with several players building elsewhere): the others build the copy at once, without
+--     standing, and its builder gives the tool's own command to the engine as before. Its capture is compared with the copy: the
+--     same, a small confirmation goes (pre_done, with its cost for the books); otherwise its capture goes with it and the host's
+--     game is reloaded everywhere;
+--   - something changed (another player built at the very same place in the meantime, the case of 2026-11-06: the copy was
+--     built on the client and the host's engine refused the tool's own command, computed before the client's build): every game
+--     waits for its capture, as before, and builds what its builder's engine made of it.
+-- A tool's command the engine refuses here: the others are told (nat_cancel); a game that built the copy reloads, one whose engine
+-- refused it too agrees. Not in a pause (the turns), not for a build released at once (BUILDLEAD: the others are behind already).
+-- One company per player: the copy names this player's company as the savegame's (the interface's), it is given this player's
+-- (MPFEVER_PRESHIPSEP=0: not in that mode, as in 0.7.2).
 G.preshipOn = function()
-	return G.gateOn and G.gateOn() and G.cmode ~= "separate" and os.getenv("MPFEVER_PRESHIP") == "1"
+	if not (G.gateOn and G.gateOn()) or not G.preshipWanted then return false end
+	if G.cmode == "separate" and os.getenv("MPFEVER_PRESHIPSEP") == "0" then return false end
+	return true
+end
+-- (one company per player) the copy's constructions named for the savegame's company are this player's company's
+G.preshipOwn = function(m)
+	local reg = R.CO
+	if type(reg) ~= "table" or not reg.canon or not G.myCo then return 0 end
+	local mine = CO.entityOf(reg, G.myCo)
+	if not mine or mine == reg.canon then return 0 end
+	local n = 0
+	for _, ce in ipairs(m.toAdd or {}) do
+		if type(ce) == "table" and ce.playerEntity == reg.canon then ce.playerEntity = mine; n = n + 1 end
+	end
+	return n
+end
+-- the references a build's shipped arguments hold to what already stands (nodes, segments, constructions...; not the companies),
+-- each once, sorted by kind and the builder's id: what its proposal was computed on
+G.preRefsOf = function(args)
+	local found, list = {}, {}
+	local function walk(t, depth)
+		if type(t) ~= "table" or depth > 14 then return end
+		if t.__ref then
+			if t.k ~= nil and t.k ~= "player" then
+				local key = tostring(t.k) .. ":" .. tostring(t.id)
+				if not found[key] then
+					found[key] = true
+					list[#list + 1] = { key = key, ref = C.copy(t) }
+				end
+			end
+			return
+		end
+		for _, v in pairs(t) do walk(v, depth + 1) end
+	end
+	walk(args, 0)
+	table.sort(list, function(x, y) return x.key < y.key end)
+	return list
+end
+-- how one entity of this game stands: a node (its place, its segments), a segment (its ends, its objects, its kind), anything else
+-- (there or not, and its construction file)
+G.refFp = function(k, e)
+	if type(e) ~= "number" or e < 0 then return "missing" end
+	local function comp(ct)
+		local ok, c = pcall(api.engine.getComponent, e, ct)
+		if ok then return c end
+		return nil
+	end
+	if k == "node" then
+		local n = comp(api.type.ComponentType.BASE_NODE)
+		if not n then return "gone" end
+		local segs = {}
+		pcall(function()
+			local l = api.engine.system.streetSystem.getNodeSegments(e)
+			for i = 1, #l do segs[#segs + 1] = l[i] end
+		end)
+		table.sort(segs)
+		local p = n.position
+		return string.format("%.1f,%.1f,%.1f", p.x, p.y, p.z) .. "|" .. table.concat(segs, ",")
+	elseif k == "edge" then
+		local b = comp(api.type.ComponentType.BASE_EDGE)
+		if not b then return "gone" end
+		local nobj, kind = 0, "?"
+		pcall(function() nobj = #b.objects end)
+		pcall(function() kind = tostring(b.type) .. "/" .. tostring(b.typeIndex) end)
+		local stt = comp(api.type.ComponentType.BASE_EDGE_STREET)
+		local sk = ""
+		if stt then pcall(function() sk = tostring(stt.streetType) end) end
+		return tostring(b.node0) .. "-" .. tostring(b.node1) .. "|" .. nobj .. "|" .. kind .. "|" .. sk
+	end
+	local okE, there = pcall(api.engine.entityExists, e)
+	if okE and there == false then return "gone" end
+	local c = comp(api.type.ComponentType.CONSTRUCTION)
+	if c then
+		local fe, fn = 0, 0
+		pcall(function() fe = #c.frozenEdges end)
+		pcall(function() fn = #c.frozenNodes end)
+		return "con:" .. tostring(c.fileName) .. ":" .. fe .. ":" .. fn
+	end
+	return "there"
+end
+-- the references (G.preRefsOf) as they stand on this game now, one text (resolved as a replay resolves them, in one pass)
+G.refSigOf = function(refs)
+	local t = {}
+	for i, r in ipairs(refs or {}) do t[i] = C.copy(r.ref) end
+	if #t > 0 then R.translateIn(t, G.bind or {}) end
+	local out = {}
+	for i, r in ipairs(refs or {}) do
+		local e = t[i]
+		if type(e) ~= "number" or e == -999999999 then e = nil end
+		out[#out + 1] = r.key .. "=" .. G.refFp(r.ref.k, e)
+	end
+	return table.concat(out, ";")
+end
+-- the first part that differs between two of those texts (for the logs)
+G.refDiff = function(a, b)
+	local la, lb = {}, {}
+	for x in tostring(a):gmatch("[^;]+") do la[#la + 1] = x end
+	for x in tostring(b):gmatch("[^;]+") do lb[#lb + 1] = x end
+	for i = 1, math.max(#la, #lb) do
+		if la[i] ~= lb[i] then return tostring(la[i]) .. " then, " .. tostring(lb[i]) .. " now" end
+	end
+	return "the same"
+end
+-- this game's held build r: its copy to the others now, for its time (false: held and shipped the usual way)
+-- (a copy with nothing in it: never shipped, the others would build nothing and its builder something)
+-- the street part of a build, for the comparison of a capture with its copy (the town buildings the engine moves when it
+-- applies the build are constructions of the capture only, the same on every game that applies the same proposal)
+G.preStreetSig = function(m)
+	if type(m) ~= "table" then return nil end
+	return C.buildSig({ proposal = m.proposal or m.streetProposal })
+end
+G.preHasContent = function(m)
+	if type(m) ~= "table" then return false end
+	if #(m.toAdd or {}) > 0 or #(m.toRemove or {}) > 0 then return true end
+	for _, k in ipairs({ "addedNodes", "addedSegments", "removedNodes", "removedSegments", "edgeObjectsToAdd", "edgeObjectsToRemove" }) do
+		if #((m.proposal or {})[k] or {}) > 0 then return true end
+	end
+	return false
 end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
+	if not G.preHasContent(r.copy) then log("PRESHIP native build " .. tostring(r.id) .. ": its copy has nothing in it: shipped the usual way") return false end
+	-- (streets and tracks only: a construction's copy is the tool's before the engine applies it, without what the engine adds
+	-- then - its frozen parts, the town buildings it moves - that the replays of a construction need; MPFEVER_PRESHIPCON=1, tests:
+	-- constructions too)
+	if (#(r.copy.toAdd or {}) > 0 or #(r.copy.toRemove or {}) > 0) and os.getenv("MPFEVER_PRESHIPCON") ~= "1" then
+		log("PRESHIP native build " .. tostring(r.id) .. ": a construction: shipped the usual way")
+		return false
+	end
 	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
+	-- (a computer company's build: its company, see mpfever_ai.lua)
+	local aiCo = G.aiNatCo and G.aiNatCo[r.id] or nil
+	if G.cmode == "separate" and not aiCo then
+		local okO, nO = pcall(G.preshipOwn, args[1])
+		if okO and nO > 0 then log("PRESHIP: " .. nO .. " construction(s) of the copy named for this player's company (" .. tostring(G.myCo) .. ")") end
+	end
 	R.translateOut("makeWorldBuildProposalCmd", args, G.rev or {})
 	args = C.copy(args)
 	if needsEnrich(args[1]) then
 		local oke, erre = pcall(enrichEdgeObjects, args[1])
 		if not oke then log("PRESHIP: edge object enrichment failed: " .. tostring(erre)) return false end
 	end
+	local refs = G.preRefsOf(args)
+	local okS, sig = pcall(G.refSigOf, refs)
+	if not okS then log("PRESHIP native build " .. tostring(r.id) .. ": what it was computed on could not be read (" .. tostring(sig) .. "): shipped the usual way") return false end
 	G.oseq = G.oseq + 1
 	local a = { fn = "makeWorldBuildProposalCmd", args = args, at = r.at, origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
-		native = true, natId = r.id, co = G.myCo, lt = G.loadId, pre = true,
-		ctx = G.natCtx and G.natCtx[r.id] or nil, refund = G.natRefund and G.natRefund[r.id] or nil }
+		native = true, natId = r.id, co = aiCo or G.myCo, lt = G.loadId, pre = true, refs = refs, refSig = sig, preSig = G.preStreetSig(r.copy),
+		ctx = (G.natCtx and G.natCtx[r.id]) or r.ctxBits, refund = G.natRefund and G.natRefund[r.id] or nil }
 	send("act", a)
 	r.preshipped = a.uid
-	r.preSig = C.buildSig(r.copy)
-	G.preStats = G.preStats or { shipped = 0, same = 0, differ = 0 }
+	r.preSig = a.preSig
+	r.preRefs = refs
+	r.refSig = sig
+	G.preStats = G.preStats or { shipped = 0, same = 0, differ = 0, changed = 0 }
 	G.preStats.shipped = G.preStats.shipped + 1
-	log("PRESHIP native build " .. tostring(r.id) .. " shipped ahead as " .. a.uid .. " for t=" .. r.at .. " [frame " .. G.frames .. "]")
+	log("PRESHIP native build " .. tostring(r.id) .. " shipped at the click as " .. a.uid .. " for t=" .. r.at .. " (" .. #refs .. " reference(s)) [frame " .. G.frames .. "]")
 	return true
 end
--- the capture of a build shipped ahead (a: the act the capture would ship, a.preOf its release; o: the capture)
+-- the builder, at its time, just before the tool's command goes to the engine: the same look as every other game's (G.preUsable)
+G.preCleanAt = function(r)
+	local okS, sig = pcall(G.refSigOf, r.preRefs)
+	r.preClean = okS and sig == r.refSig
+	if r.preClean then
+		log("PRESHIP " .. tostring(r.preshipped) .. ": nothing it was computed on changed since the click: the others build its copy at t=" .. tostring(r.at))
+	else
+		log("PRESHIP " .. tostring(r.preshipped) .. ": what it was computed on changed since the click (" .. G.refDiff(r.refSig, okS and sig or tostring(sig))
+			.. "): built here as the tool made it, the others wait for its capture")
+	end
+end
+-- the capture of a build shipped at the click (a: the act the capture would ship, a.preOf its release; o: the capture): true when
+-- only a confirmation goes, false when the capture goes too (marked as the capture of that copy)
 G.preshipSettle = function(a, o)
 	local e = a.preOf
-	local sig = C.buildSig(type(o.args) == "table" and o.args[1] or nil)
-	G.preStats = G.preStats or { shipped = 0, same = 0, differ = 0 }
-	if sig == e.preSig and o.at == e.preAt then
+	local sig = G.preStreetSig(type(o.args) == "table" and o.args[1] or nil)
+	G.preStats = G.preStats or { shipped = 0, same = 0, differ = 0, changed = 0 }
+	local same = sig == e.preSig and o.at == e.preAt
+	if e.preClean and same then
 		G.preStats.same = G.preStats.same + 1
-		log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " as shipped ahead (" .. G.preStats.same .. " alike, " .. G.preStats.differ .. " not)")
-	else
-		G.preStats.differ = G.preStats.differ + 1
-		log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " otherwise than shipped ahead for t=" .. tostring(e.preAt)
-			.. " (" .. tostring(sig) .. " / " .. tostring(e.preSig) .. "): resynchronisation")
-		pcall(send, "replay_failed", { uid = tostring(e.pre), why = "built otherwise than shipped ahead" })
+		send("pre_done", { uid = e.pre, origin = G.me, id = e.id, at = o.at, cost = o.cost })
+		log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " as shipped at the click, confirmed to the others (" .. G.preStats.same
+			.. " alike, " .. G.preStats.differ .. " not, " .. G.preStats.changed .. " changed since the click)")
+		return true
 	end
-	return true
+	a.post = e.pre
+	a.preClean = e.preClean == true
+	if e.preClean then
+		G.preStats.differ = G.preStats.differ + 1
+		log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " otherwise than shipped at the click for t=" .. tostring(e.preAt)
+			.. " (" .. tostring(sig) .. " / " .. tostring(e.preSig) .. "): its capture shipped, resynchronisation")
+		pcall(send, "replay_failed", { uid = tostring(e.pre), why = "built otherwise than shipped at the click" })
+	else
+		G.preStats.changed = G.preStats.changed + 1
+		log("PRESHIP " .. tostring(e.pre) .. ": changed since the click, its capture shipped for the others, who waited for it")
+	end
+	return false
+end
+-- the others: the copies built here (uid -> { sig, t, refused }), the copies held for their capture, what their builders said
+G.preUsed = {}
+G.preHeld = {}
+G.preVerdict = {}
+-- a copy at its time here: true when it is built now, false when this game waits for its capture (it is dropped from the queue)
+G.preUsable = function(a)
+	local uid = tostring(a.uid)
+	if G.preVerdict[uid] == "same" then
+		log("PRESHIP " .. uid .. ": its builder built it as its copy already: built here from its copy at t=" .. tostring(a.at))
+		return true
+	end
+	local okS, sig = pcall(G.refSigOf, a.refs)
+	if okS and sig == a.refSig then
+		log("PRESHIP " .. uid .. ": nothing it was computed on changed since its builder's click: built here from its copy at t=" .. tostring(a.at))
+		return true
+	end
+	log("PRESHIP " .. uid .. ": what it was computed on changed since its builder's click (" .. G.refDiff(a.refSig, okS and sig or tostring(sig)) .. "): this game waits for its capture")
+	G.preHeld[uid] = a
+	a.heldT = os.clock()
+	for _, w in ipairs(G.natWait) do
+		if w.origin == a.origin and w.id == a.natId then w.arrived = false; w.since = G.frames; w.sinceT = os.clock() end
+	end
+	return false
+end
+-- the copies of a build still in the queue here (this game behind its time): dropped
+G.preDrop = function(uid)
+	local keep, n = {}, 0
+	for _, q in ipairs(G.nativeQueue) do
+		if q.pre and tostring(q.uid) == uid then n = n + 1 else keep[#keep + 1] = q end
+	end
+	if n > 0 then G.nativeQueue = keep end
+	return n > 0
+end
+-- the capture of a copy shipped at the click (its builder's game saw a change since the click, or built otherwise): true to drop it
+G.prePost = function(p)
+	local uid = tostring(p.post)
+	G.preVerdict[uid] = "capture"
+	local u = G.preUsed[uid]
+	if u then
+		G.preUsed[uid] = nil
+		if u.refused then
+			log("PRESHIP " .. uid .. ": refused here, built by its builder: resynchronisation")
+			pcall(send, "replay_failed", { uid = uid, why = "copy refused here, built by its builder" })
+		elseif not p.preClean and G.preStreetSig(type(p.args) == "table" and p.args[1] or nil) ~= u.sig then
+			log("PRESHIP " .. uid .. ": built here from its copy, its builder built otherwise (it saw a change since the click): resynchronisation")
+			pcall(send, "replay_failed", { uid = uid, why = "copy built here, its builder built otherwise" })
+		else
+			log("PRESHIP " .. uid .. ": its capture came, built here from its copy already: not built again")
+		end
+		return true
+	end
+	if G.preDrop(uid) then log("PRESHIP " .. uid .. ": its capture came before its time here: built from the capture") end
+	if G.preHeld[uid] then
+		G.preHeld[uid] = nil
+		log("PRESHIP " .. uid .. ": its capture came: built from it")
+	end
+	return false
+end
+-- its builder's engine refused the tool's command (nat_cancel with pre)
+G.preCancelled = function(p)
+	local uid = tostring(p.pre)
+	G.preVerdict[uid] = "none"
+	if G.preDrop(uid) then log("PRESHIP " .. uid .. ": not built by its builder: its copy is not built here either") end
+	G.preHeld[uid] = nil
+	local u = G.preUsed[uid]
+	if u then
+		G.preUsed[uid] = nil
+		if u.refused then
+			log("PRESHIP " .. uid .. ": refused by its builder's engine as here: the games agree")
+		else
+			log("PRESHIP " .. uid .. ": built here from its copy, refused by its builder's engine: resynchronisation")
+			pcall(send, "replay_failed", { uid = uid, why = "copy built here, refused by its builder" })
+		end
+	end
+end
+-- its builder built it as its copy (with its cost, for the books)
+H.pre_done = function(from, p)
+	if p.origin == G.me then return end
+	local uid = tostring(p.uid)
+	G.preVerdict[uid] = "same"
+	if type(p.cost) == "number" then pcall(toSim, "replay_cost_set", { uid = uid, cost = p.cost }) end
+	local u = G.preUsed[uid]
+	if u then
+		G.preUsed[uid] = nil
+		if u.refused then
+			log("PRESHIP " .. uid .. ": refused here, built by its builder as its copy: resynchronisation")
+			pcall(send, "replay_failed", { uid = uid, why = "copy refused here, built by its builder" })
+		end
+		return
+	end
+	-- held here for its capture (this game saw a change its builder did not see: the games differ already): built from the copy,
+	-- which is what its builder built
+	local h = G.preHeld[uid]
+	if h then
+		G.preHeld[uid] = nil
+		log("PRESHIP " .. uid .. ": built by its builder as its copy: built here from it after all (this game saw a change there was not on its builder's)")
+		G.nativeQueue[#G.nativeQueue + 1] = h
+		pcall(nativeReceived, h)
+	end
+end
+-- (every second) the copies whose builder never said what its engine did: a refused one reloads after 30 s
+G.preTick = function()
+	local nowC = os.clock()
+	for uid, u in pairs(G.preUsed) do
+		if nowC - (u.t or nowC) > 30 then
+			G.preUsed[uid] = nil
+			if u.refused then
+				log("PRESHIP " .. uid .. ": refused here, nothing came from its builder in 30 s: resynchronisation")
+				pcall(send, "replay_failed", { uid = uid, why = "copy refused here, no word from its builder" })
+			end
+		end
+	end
+	for uid, h in pairs(G.preHeld) do
+		if nowC - (h.heldT or nowC) > 90 then G.preHeld[uid] = nil end
+	end
+	local n = 0
+	for _ in pairs(G.preVerdict) do n = n + 1 end
+	if n > 400 then G.preVerdict = {} end
 end
 
 local function shipNativeBuilds(st)
@@ -9691,12 +10098,13 @@ local function shipNativeBuilds(st)
 				for i = k + 1, #G.natShipIds do rest[#rest + 1] = G.natShipIds[i] end
 				G.natShipIds = rest
 			end
-			-- (0.8: a build shipped ahead is not shipped again, its capture is compared with it, see G.preship)
+			-- (0.7.3: a build shipped at the click: built as its copy, a confirmation goes instead of the capture, see G.preshipSettle)
 			local preDone = false
 			if a.preOf then
 				local okP, r = pcall(G.preshipSettle, a, o)
 				preDone = okP and r == true
 				if not okP then log("PRESHIP: " .. tostring(r)) end
+				a.preOf = nil
 			end
 			if not preDone then send("act", a) end
 			-- (0.6: to the game options' modules that keep a copy of the players' builds, see G.featNativeAct)
@@ -9958,7 +10366,7 @@ local function autoStep(name, makeProposal, after)
 		return after(false)
 	end
 	local okc, err = pcall(function()
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, nil, false, true), function(res, success)
+		deferredSend(G.wbp(sp, nil, false, true), function(res, success)
 			AUTO.results[#AUTO.results + 1] = name .. ": " .. (success and "built" or "refused by the engine")
 			log("AUTOTEST " .. name .. ": " .. (success and "built" or "refused by the engine"))
 			G.waits[#G.waits + 1] = { at = G.frames + 40, fn = function() after(success) end }
@@ -10027,7 +10435,7 @@ H.restale = function(from, p)
 		ctx.gatherBuildings = false
 		ctx.gatherFields = true
 		ctx.player = api.engine.util.getPlayer()
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res, success)
+		deferredSend(G.wbp(P, ctx, false, true), function(res, success)
 			local why = ""
 			if not success and res then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			local line = "upgrade of segment " .. E .. " at junction " .. pick.n .. ": " .. (success and "built" or ("refused " .. why))
@@ -10478,7 +10886,7 @@ local function runUpgrade(p)
 				local args, n = C.rebuildArgs("makeWorldBuildProposalCmd", margs, { seed = 7919, variant = "native" })
 				C.appendFile(C.DIR .. BS .. "ab_simple_in.txt", C.dump(args[1]):sub(1, 60000) .. NL)
 				C.appendFile(C.DIR .. BS .. "ab_native_in.txt", C.dump(P):sub(1, 60000) .. NL)
-				deferredSend(api.cmd.makeWorldBuildProposalCmd(table.unpack(args, 1, n)), function(res, success)
+				deferredSend(G.wbp(table.unpack(args, 1, n)), function(res, success)
 					C.appendFile(C.DIR .. BS .. "ab_simple.txt", "success=" .. tostring(success) .. NL .. C.dump(res):sub(1, 60000) .. NL)
 					log("AUTOTEST A/B rebuilt proposal on the originator: " .. tostring(success))
 					G.waits[#G.waits + 1] = { at = G.frames + 5, fn = function() attempt(i) end }
@@ -10489,7 +10897,7 @@ local function runUpgrade(p)
 		local before = C.ser(C.marshal(api.engine.getComponent(pick.e, api.type.ComponentType.BASE_EDGE).roadTemplate))
 		log("AUTOTEST sending the engine's upgrade proposal")
 		local okc, errc = pcall(function()
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(P, playerContext(), false, true), function(res, success)
 
 				local why = ""
 				pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end)
@@ -10586,7 +10994,7 @@ local function runNewRoad(p)
 						.. " warnings " .. C.ser(C.marshal(pd.errorState.warnings)))
 				end)
 			end
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+			deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 				local why = ""
 				if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 				G.waits[#G.waits + 1] = { at = G.frames + 20, fn = function()
@@ -11044,7 +11452,7 @@ H.conedit = function(from, p)
 	ctx.gatherBuildings = true
 	ctx.gatherFields = true
 	ctx.player = api.engine.util.getPlayer()
-	deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+	deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 		G.waits[#G.waits + 1] = { at = G.frames + 20, fn = function()
@@ -11100,7 +11508,7 @@ H.buildlead = function(from, p)
 		ctx.gatherFields = true
 		ctx.player = api.engine.util.getPlayer()
 		local edges0, frame0 = edgeCount(), G.frames
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+		deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			done(success, "from node " .. n .. ": " .. (success and "built" or ("refused " .. why)) .. ", edges " .. edges0 .. " -> " .. edgeCount(),
@@ -11335,7 +11743,7 @@ H.towncross = function(from, p)
 		aim()
 		local f0 = G.frames
 		local okc, err = pcall(function()
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx(), false, true), function(res, success)
+			deferredSend(G.wbp(sp, ctx(), false, true), function(res, success)
 				local why = ""
 				if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 				say(name .. ": " .. (success and "built" or ("refused " .. why)) .. ", answer after " .. (G.frames - f0) .. " frames, edges " .. #R.allEdges())
@@ -11519,7 +11927,7 @@ H.terrainlead = function(from, p)
 			ctx.gatherFields = true
 			ctx.player = api.engine.util.getPlayer()
 			local edges0, frame0 = edgeCount(), G.frames
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+			deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 				local why = ""
 				if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 				answers[#answers + 1] = G.frames - frame0
@@ -11566,7 +11974,7 @@ H.dozenew = function(from, p)
 				tmpl = { roadTemplate = info.c.roadTemplate, roadStyle = info.c.roadStyle, roadType = info.c.roadType } }
 			local sp = buildMatrixProposal(o, n, pn, a)
 			local before = edgeSet()
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(sp, playerContext(), false, true), function(res, success)
 				local new = {}
 				for _, e in ipairs(R.allEdges()) do if not before[e] then new[#new + 1] = e end end
 				local why = ""
@@ -11578,7 +11986,7 @@ H.dozenew = function(from, p)
 					aim()
 					local okr, P = pcall(function() return api.engine.util.proposal.makeSegmentsRemoveProposal(new) end)
 					if not okr or not P then say("road " .. n0 .. ": no removal proposal " .. tostring(P)); return nextOne() end
-					deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res2, success2)
+					deferredSend(G.wbp(P, playerContext(), false, true), function(res2, success2)
 						say("road " .. n0 .. ": " .. (success2 and "demolished" or "demolition refused"))
 						G.waits[#G.waits + 1] = { at = G.frames + 40, fn = nextOne }
 					end)
@@ -11623,7 +12031,7 @@ H.refundprobe = function(from, p)
 				tmpl = { roadTemplate = info.c.roadTemplate, roadStyle = info.c.roadStyle, roadType = info.c.roadType } }
 			local sp = buildMatrixProposal(o, n, pn, a)
 			local before = edgeSet()
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(sp, playerContext(), false, true), function(res, success)
 				local new = {}
 				for _, e in ipairs(R.allEdges()) do if not before[e] then new[#new + 1] = e end end
 				say("road " .. n0 .. ": " .. (success and "built" or "refused") .. ", new segments " .. table.concat(new, ","))
@@ -11645,7 +12053,7 @@ H.refundprobe = function(from, p)
 						say("road " .. n0 .. ": Context.refundableEntities written " .. tostring(okc) .. (okc and "" or (" " .. shortErr(errc)))
 							.. ", reads back " .. C.dump(ctx.refundableEntities):sub(1, 300))
 					end
-					deferredSend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res2, success2)
+					deferredSend(G.wbp(P, ctx, false, true), function(res2, success2)
 						local cost = "?"
 						pcall(function() cost = tostring(res2.resultProposalData.costs) end)
 						say("road " .. n0 .. ": " .. (success2 and "demolished" or "demolition refused") .. (withRefund and " WITH" or " without")
@@ -11872,7 +12280,7 @@ local function runTramStop(p)
 					roadStyle = "::/infrastructure/street/tram/tram_old.street", roadType = info.c.roadType } }
 			local okb, sp = pcall(buildMatrixProposal, o, n, pn, a)
 			if not okb then log("TRAMSTOP road proposal error " .. shortErr(sp)); return build(k + 1) end
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(sp, playerContext(), false, true), function(res, success)
 				log("TRAMSTOP tram road from node " .. n .. ": " .. tostring(success))
 				if success then
 					G.waits[#G.waits + 1] = { at = G.frames + 60, fn = function()
@@ -11969,7 +12377,7 @@ local function runTramStop(p)
 			o.playerEntity = api.engine.util.getPlayer(); o.name = "MPF stop"
 			ssp.edgesToRemove = { T }; ssp.edgesToAdd = { e }; ssp.edgeObjectsToAdd = { o }
 			sp.streetProposal = ssp
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(sp, playerContext(), false, true), function(res, success)
 				log("TRAMSTOP conversion probe on town segment " .. T .. ": success " .. tostring(success))
 				pcall(function()
 					local list2 = res.proposal.proposal.edgeObjectsToAdd
@@ -12238,7 +12646,7 @@ local function runBulldoze(p)
 		if not okp or not P then log("BULLDOZE no proposal " .. tostring(P)); return attempt(k + 1) end
 		local before = edgeCount()
 		local pn = nodePosition(n)
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res, success)
+		deferredSend(G.wbp(P, playerContext(), false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			G.waits[#G.waits + 1] = { at = G.frames + 20, fn = function()
@@ -12656,7 +13064,7 @@ H.stationedit = function(from, p)
 		local okp, errp = pcall(function()
 			local params = C.plain(C.marshal(pc.params))
 			local P = api.engine.util.proposal.createProposalReplaceConstruction(pick, params)
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(P, playerContext(), false, true), function(res, success)
 				log("AUTOTEST stationedit build " .. k .. ": " .. tostring(success))
 			end)
 		end)
@@ -12798,7 +13206,7 @@ H.buymany = function(from, p)
 		log("AUTOTEST buymany: 4 copies of vehicle " .. pick.v .. " requested at once (" .. before .. " vehicles)")
 		-- (an empty build held like a tool's: every game stops around its step, which is right after the purchases')
 		if os.getenv("MPFEVER_BUYBUILD") == "1" then
-			pcall(function() deferredSend(api.cmd.makeWorldBuildProposalCmd(api.type.SimpleProposal.new(), playerContext(), false, true), function() end) end)
+			pcall(function() deferredSend(G.wbp(api.type.SimpleProposal.new(), playerContext(), false, true), function() end) end)
 		end
 		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
 			local line = "buymany: vehicles " .. before .. " -> " .. #R.entitiesWith("TRANSPORT_VEHICLE")
@@ -14217,7 +14625,7 @@ H.assettest = function(from, p)
 		end
 		sp.constructionsToAdd = cons
 		local ctx = playerContext()
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, os.getenv("MPFEVER_ASSETIE") == "1", true), function(res, success)
+		deferredSend(G.wbp(sp, ctx, os.getenv("MPFEVER_ASSETIE") == "1", true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			say("mod construction: " .. (success and "BUILT" or ("refused " .. why)) .. ", result entities " .. C.ser(C.marshal(res.resultEntities)):sub(1, 200) .. ", now " .. assetCount())
@@ -14370,7 +14778,7 @@ H.treeremove = function(from, p)
 		pcall(function() nr = P.toRemove_native:size() end)
 		if nr < 0 then pcall(function() nr = #P.toRemove end) end
 		say("group " .. g .. " (" .. R.assetComponents(g) .. "): the removal proposal removes " .. tostring(nr))
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res, success)
+		deferredSend(G.wbp(P, playerContext(), false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			say("removal of group " .. g .. ": " .. (success and "BUILT" or ("refused " .. why)))
@@ -14531,7 +14939,7 @@ H.treeerase = function(from, p)
 			end)
 			return true
 		end
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), built)
+		deferredSend(G.wbp(P, playerContext(), false, true), built)
 		return true
 	end)
 	if not ok then say("error " .. shortErr(sent)) end
@@ -15183,7 +15591,7 @@ H.dsplitbusy = function(from, p)
 		AUTO.points[#AUTO.points + 1] = M
 		log("DSPLITBUSY segment " .. E .. " (" .. tostring(c.roadTemplate) .. "), " .. #busy .. " busy segments, maps " .. tostring(maps)
 			.. ", removed nodes " .. #P.proposal.removedNodes)
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res, success)
+		deferredSend(G.wbp(P, playerContext(), false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			log("DSPLITBUSY build: " .. (success and "BUILT" or ("refused " .. why)))
@@ -15296,7 +15704,7 @@ H.dnodemove = function(from, p)
 		AUTO.points[#AUTO.points + 1] = PN
 		log("DNODEMOVE node " .. N .. " segments " .. S1 .. "," .. S2 .. " busy " .. pick.busy .. " (" .. tostring(c1.roadTemplate) .. "), maps " .. tostring(maps)
 			.. ", removed nodes " .. #P.proposal.removedNodes)
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res, success)
+		deferredSend(G.wbp(P, playerContext(), false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			log("DNODEMOVE build: " .. (success and "BUILT" or ("refused " .. why)))
@@ -15576,7 +15984,7 @@ H.dsigmulti = function(from, p)
 		AUTO.points[#AUTO.points + 1] = nodePosition(c1.node0)
 		say(k .. " signal(s) on track segments " .. table.concat(chain, ",") .. " (" .. tostring(c1.roadTemplate):match("[^/]*$") .. "), "
 			.. #ncr .. " junction configuration(s) removed, edge objects on the map " .. G.eoCount())
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+		deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			say("build: " .. (success and "BUILT" or ("refused " .. why)) .. ", edge objects on the map " .. G.eoCount())
@@ -15741,7 +16149,7 @@ H.streetcon = function(from, p)
 			pcall(function() ce.name = "" end)
 			sp.constructionsToAdd = { ce }
 			local edges0 = #R.allEdges()
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(sp, playerContext(), false, true), function(res, success)
 				local why = ""
 				if not success then pcall(function() why = " " .. C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 				say(names[i] .. ": " .. (success and "built" or ("refused" .. why)) .. ", edges " .. edges0 .. " -> " .. #R.allEdges())
@@ -16092,7 +16500,7 @@ H.conbulldoze = function(from, p)
 		ctx.gatherBuildings = false
 		ctx.gatherFields = true
 		ctx.player = api.engine.util.getPlayer()
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+		deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			G.waits[#G.waits + 1] = { at = G.frames + 20, fn = function()
@@ -16141,7 +16549,7 @@ H.housebulldoze = function(from, p)
 		ctx.gatherBuildings = false
 		ctx.gatherFields = true
 		ctx.player = api.engine.util.getPlayer()
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+		deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 			local costs = "?"
 			pcall(function() costs = tostring(res.resultProposalData.costs) end)
 			G.waits[#G.waits + 1] = { at = G.frames + 20, fn = function()
@@ -16247,7 +16655,7 @@ H.splitstop = function(from, p)
 		ctx.gatherBuildings = true
 		ctx.gatherFields = true
 		ctx.player = api.engine.util.getPlayer()
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true), function(res, success)
+		deferredSend(G.wbp(sp, ctx, false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			G.waits[#G.waits + 1] = { at = G.frames + 20, fn = function()
@@ -16360,7 +16768,7 @@ local function runRoadTypes(p)
 				ctx.cleanupStreetGraph = true
 				ctx.gatherBuildings = true
 			end
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res, success)
+			deferredSend(G.wbp(P, ctx, false, true), function(res, success)
 				local why = ""
 				if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 				local line = t:match("[^/]+$") .. " on " .. tostring(pick.c.roadTemplate):match("[^/]+$") .. ": " .. (success and "built" or ("refused " .. why))
@@ -16468,7 +16876,7 @@ G.runUpgOwner = function(p)
 		end
 		log("AUTOTEST upgowner " .. k .. " (" .. variant .. "): segment " .. pick.e .. " of " .. tostring(pick.own) .. " to " .. tostring(target))
 		local ctx = playerContext()
-		deferredSend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res, success)
+		deferredSend(G.wbp(P, ctx, false, true), function(res, success)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			G.waits[#G.waits + 1] = { at = G.frames + 60, fn = function()
@@ -16555,7 +16963,7 @@ H.upgburst = function(from, p)
 			end
 			ctx.gatherBuildings = true
 			local okc, errc = pcall(function()
-				deferredSend(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res, success)
+				deferredSend(G.wbp(P, ctx, false, true), function(res, success)
 					local why = ""
 					if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)):sub(1, 200) end) end
 					log("AUTOTEST upgburst segment " .. pick.e .. " " .. pick.t:match("[^/]+$") .. " -> " .. target:match("[^/]+$") .. ": " .. (success and "built" or ("refused " .. why)) .. " [frame " .. G.frames .. "]")
@@ -16720,9 +17128,16 @@ end
 local function resumeAfterLoad(state)
 	-- (the names of the savegame as every game loaded it, for the checks made in a pause, see R.nameSeed)
 	pcall(R.nameSeed, not K.nameSyncOn())
-	-- (0.8, MPFEVER_NOWAIT, at every start: the settings are not known yet when this file is loaded)
-	G.gateWanted = os.getenv("MPFEVER_NOWAIT") == "1"
+	-- (0.8, MPFEVER_NOWAIT, at every start: the settings are not known yet when this file is loaded; 0.7.3: and the other parts of
+	-- the host's « several players building » setting, see G.featureOn)
+	G.nostopOn = os.getenv("MPFEVER_NOSTOP") == "1"
+	G.gateWanted = G.featureOn("MPFEVER_NOWAIT")
+	G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")
+	G.leadAckOn = G.featureOn("MPFEVER_LEADACK")
+	if G.nostopOn then log("several players building without stopping: on (MPFEVER_NOSTOP)") end
 	if G.gateWanted then log("no wait: on (once another player's build is handed to the engine, this game does not wait for its answer)") end
+	if G.preshipWanted then log("builds shipped at the click: on (a held build goes to the others at once and is checked at its time on every game)") end
+	if G.leadAckOn then log("lead acknowledged: on (a game that leads runs ahead of another only as far as that game's stamps leave room)") end
 	-- (0.7.0, diagnostic: the models this game knows; a game of other DLCs or mods knows another number)
 	pcall(function()
 		local n = 0
@@ -18445,7 +18860,7 @@ H.journaltest = function(from, p)
 			local sp = buildMatrixProposal(o, n, pn, a)
 			local before = {}
 			for _, e in ipairs(R.allEdges()) do before[e] = true end
-			deferredSend(api.cmd.makeWorldBuildProposalCmd(sp, playerContext(), false, true), function(res, success)
+			deferredSend(G.wbp(sp, playerContext(), false, true), function(res, success)
 				local new = {}
 				for _, e in ipairs(R.allEdges()) do if not before[e] then new[#new + 1] = e end end
 				if not success or #new == 0 then later(40, road); return end
@@ -18453,7 +18868,7 @@ H.journaltest = function(from, p)
 					say("road built: journal entries 'road' of this player here: " .. count("road", true) .. " (1 expected)")
 					local okr, P = pcall(function() return api.engine.util.proposal.makeSegmentsRemoveProposal(new) end)
 					if not okr or not P then say("no removal proposal: " .. tostring(P)); return view() end
-					deferredSend(api.cmd.makeWorldBuildProposalCmd(P, playerContext(), false, true), function(res2, success2)
+					deferredSend(G.wbp(P, playerContext(), false, true), function(res2, success2)
 						later(300, function()
 							say("road demolished (" .. tostring(success2) .. "): journal entries 'road_del' of this player here: " .. count("road_del", true) .. " (1 expected)")
 							view()
@@ -18563,6 +18978,7 @@ local function guiUpdate(userParams, state, guiState)
 	if G.frames % 15 == 0 then pcall(G.previewTick); pcall(G.pingTick) end
 	if G.frames % 30 == 7 then pcall(G.nameTick) end
 	if G.frames % 60 == 11 then local okA, errA = pcall(G.asbTest); if not okA then log("ASBTEST: " .. tostring(errA)) end end
+	if G.frames % 60 == 23 and G.preTick then local okP, errP = pcall(G.preTick); if not okP then log("PRESHIP: " .. tostring(errP)) end end
 	-- (0.8, the measure of the stands: the session running, the engine making no step at the stop point, this frame's time)
 	pcall(function()
 		local now = os.clock()
