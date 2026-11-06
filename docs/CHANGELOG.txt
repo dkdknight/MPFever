@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.2 - (in progress): Advanced Station Builder made compatible for real
+0.7.2 - 2026-11-06: Advanced Station Builder for real, and a host setting against the pause at every build of the other players (experimental, off)
   - FIX (Advanced Station Builder, the user's server session of 2026-11-06 with 0.7.1: 17 desyncs, 5 reloads, "conParams" and
     "ages" apart after every station, the client always one or two builds ahead of the server): not one command of the mod
     was shipped. Its game script loads its builds with ug_require("advanced_station_builder::/stations/.../links.lua"), and
