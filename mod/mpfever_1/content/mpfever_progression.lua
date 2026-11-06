@@ -17,6 +17,8 @@
 --   of the two a company earns itself on its own lines (the happiness of its passengers, its cargo on time), by the game's
 --   formulas.
 --
+-- (0.7.1: the experience comes from the towns' growth instead, see PG.grow.)
+--
 -- The score is taken four times a game month, at the same game time on every game, from the simulation's state only (the
 -- simulation half of the bridge, in its update). Experience is the highest score reached; the rank it reaches is the
 -- game's own thresholds (company_progression_util.getLevelAndFraction); the rank taken is the company's, when the company
@@ -139,6 +141,7 @@ function PG.game(require_)
 		return (out.progression.getLevelAndFraction(base, experience))
 	end
 	function game.own(entity) return out.progression.getCompanyProgressionState(entity) end
+	function game.base() return out.company.getBasePopulation() end
 	function game.sensitivity(townState, key) return out.towns.getRatingSensitivity(townState, key) end
 	function game.townStates()
 		local state = out.towns.externalGetTownsState()
@@ -339,6 +342,70 @@ local function averaged(prog, index, id, town, count)
 	return entry.value
 end
 
+-- (0.7.1, #125) Every company's experience grows as the game's own does for the savegame's company. The game's experience
+-- is the world's population (the highest seen): it begins at the population of the game's start (its base, the game's first
+-- rank) and grows as the towns grow. Each company's experience was its score instead (population x share x rating, a part
+-- of the world's population, never above it), and the savegame's company alone began at the base: it reached rank 5 while
+-- the others stayed at rank 1, their bar moving by 1 or 2 % an hour (#125 reopened, 0.7.0: 6237 against 1497, base 3427,
+-- world 11368). Now every company begins at the base, as the game begins one, and is credited with the growth of each town
+-- in proportion to its share of what was carried for it (the share its score uses): one company alone gets exactly the
+-- game's own experience. The growth of a town nobody serves goes to every company alike. The first time (a savegame of an
+-- earlier MPFever), the world's growth since its start is shared out by the companies' scores. Experience never goes down;
+-- the game's own experience of the savegame's company, when higher, is kept. Kept in the state: prog.growth = { towns =
+-- { { town =, pop = }, ... } }, each record's start and credit. MPFEVER_RANKGROWTH=0: the scores, as before
+function PG.growthOn() return os.getenv("MPFEVER_RANKGROWTH") ~= "0" end
+
+function PG.grow(prog, list, towns, shareOf, scores, game)
+	local n = #list
+	if n == 0 or type(game.base) ~= "function" then return false end
+	local okB, base = pcall(game.base)
+	if not okB or type(base) ~= "number" or base <= 0 then return false end
+	local pop = 0
+	for _, t in ipairs(towns) do pop = pop + (tonumber(t.population) or 0) end
+	local g = prog.growth
+	if type(g) ~= "table" then
+		-- (the first time: the growth since the game's start shared out by the scores, by count when nobody scored)
+		g = {}
+		prog.growth = g
+		local total = 0
+		for _, e in ipairs(list) do total = total + math.max(0, scores[e.company.id] or 0) end
+		for _, e in ipairs(list) do
+			local r = e.record
+			local part = total > 0 and math.max(0, scores[e.company.id] or 0) / total or 1 / n
+			r.start = base
+			r.credit = math.max(0, pop - base) * part
+		end
+	else
+		local last = {}
+		for _, x in ipairs(type(g.towns) == "table" and g.towns or {}) do
+			if type(x) == "table" and x.town ~= nil then last[x.town] = tonumber(x.pop) end
+		end
+		for _, t in ipairs(towns) do
+			local before = last[t.town]
+			local d = before and ((tonumber(t.population) or 0) - before) or 0
+			if d ~= 0 then
+				local sh = shareOf[t.town]
+				for _, e in ipairs(list) do
+					local r = e.record
+					local part = sh and (sh[e.company.id] or 0) or 1 / n
+					if part ~= 0 then r.credit = (tonumber(r.credit) or 0) + d * part end
+				end
+			end
+		end
+	end
+	for _, e in ipairs(list) do
+		local r = e.record
+		-- (a company that came later begins as the game begins one)
+		if type(r.start) ~= "number" then r.start = base; r.credit = 0 end
+		local x = math.floor(r.start + (tonumber(r.credit) or 0))
+		if x > (tonumber(r.experience) or 0) then r.experience = x end
+	end
+	local keep = {}
+	for _, t in ipairs(towns) do keep[#keep + 1] = { town = t.town, pop = tonumber(t.population) or 0 } end
+	g.towns = keep
+	return true
+end
+
 -- one sample: every company's parts of every town, its score, its experience and the rank that reaches; say(line) gets
 -- one line per company (the same numbers on every game: compare them to find a difference)
 function PG.tally(prog, reg, towns, game, say, now)
@@ -350,6 +417,7 @@ function PG.tally(prog, reg, towns, game, say, now)
 		index[tostring(e.company) .. ":" .. tostring(e.town)] = e
 	end
 	local scores = {}
+	local shareOf = {}
 	-- (the detail line: per company, the towns where it carried cargo, passengers, and where it scored)
 	local detail = {}
 	for _, entry in ipairs(list) do scores[entry.company.id] = 0; detail[entry.company.id] = { cargo = 0, passengers = 0, scored = 0, own0 = 0 } end
@@ -367,6 +435,16 @@ function PG.tally(prog, reg, towns, game, say, now)
 		end
 		local shared = sharedRating(t.state)
 		if shared == nil then noShared = noShared + 1 end
+		-- (0.7.1, #125: each company's share of what was carried for the town, for its growth, see PG.grow)
+		if cargoAll > 0 or passengersAll > 0 then
+			local sh = {}
+			for _, entry in ipairs(list) do
+				local id = entry.company.id
+				local c = t.carried[id] or { cargo = 0, late = 0, passengers = 0, unhappy = 0 }
+				sh[id] = PG.share(c.cargo, cargoAll, averages[id], passengersAll, weights) or 0
+			end
+			shareOf[t.town] = sh
+		end
 		for _, entry in ipairs(list) do
 			local c = t.carried[entry.company.id]
 			if c and c.cargo > 0 then detail[entry.company.id].cargo = detail[entry.company.id].cargo + 1 end
@@ -410,10 +488,11 @@ function PG.tally(prog, reg, towns, game, say, now)
 		if e.seen and e.value > 1e-6 then e.seen = nil; keep[#keep + 1] = e end
 	end
 	prog.passengers = keep
+	local grown = PG.growthOn() and PG.grow(prog, list, towns, shareOf, scores, game)
 	for _, entry in ipairs(list) do
 		local r, id = entry.record, entry.company.id
 		local experience = math.floor(scores[id])
-		if experience > r.experience then r.experience = experience end
+		if not grown and experience > r.experience then r.experience = experience end
 		-- the savegame's company began with the game's own experience (the highest world population), far above its score:
 		-- it then stood still (issue #63: 9332, the bar stuck at 3332 of 3600) while the game's own progression went on and
 		-- announced a new headquarters level that the company could not take. It follows the game's own experience while
@@ -422,7 +501,7 @@ function PG.tally(prog, reg, towns, game, say, now)
 		-- company rose with the others' work (supervisor while the others stayed near junior). It now keeps where it began
 		-- (r.base: its experience less its score, taken once, saved with the game) and adds its own score only, so its bar
 		-- still moves (#63) and its rank never goes down. MPFEVER_RANK1BASE=0: follows the game's own experience, as 0.6.2.
-		if id == 1 and os.getenv("MPFEVER_RANK1OWN") ~= "0" then
+		if id == 1 and not grown and os.getenv("MPFEVER_RANK1OWN") ~= "0" then
 			if os.getenv("MPFEVER_RANK1BASE") == "0" then
 				local okO, own = pcall(game.own, entry.company.ent)
 				local x = okO and type(own) == "table" and tonumber(own.experience) or nil

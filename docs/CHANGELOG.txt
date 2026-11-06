@@ -24,6 +24,16 @@ MPFever - Changelog
     The rating is now kept in steps of 1/64: the same on every game, unless two games fall on either side of a step (about
     once in 3300 computations of a town whose grid differs). Pollution keeps its effect on the towns. In a session only.
     MPFEVER_POLLUTIONQ=0: the engine's value, as before; MPFEVER_POLLUTIONQ=<n>: steps of 1/n. Test: tests/test_pollutionq.py.
+  - FIX (issue #125 reopened, one company per player): the host's company reached rank 5 while the others stayed at rank 1,
+    their bar moving by 1 or 2 % an hour (6237 against 1497 experience, base population 3427, world 11368). The game's own
+    experience is the world's population: it begins at the game's start population (the first rank) and grows as the towns
+    grow. A company's experience was its score (a part of the world's population, never above it), and only the savegame's
+    company began at the base. Now every company begins at the base, as the game begins one, and each town's growth is
+    credited to the companies by their share of what was carried for it (the share their score uses): one company alone gets
+    exactly the game's own experience; a town nobody serves grows for every company alike. A savegame of an earlier MPFever:
+    the world's growth since its start is shared out by the companies' scores the first time (the report's numbers: the
+    client's company from rank 1 to rank 5, the host's from 5 to 7 reached). Experience never goes down. MPFEVER_RANKGROWTH=0:
+    the scores, as before. Test: tests/test_rankgrowth.py.
 
 0.7.0 - 2026-11-05: more mods made compatible, what to do when the DLCs differ, mods and DLCs seen before joining a running game, the dedicated server's settings window, computer companies renew their vehicles
   - CHANGE (lobby, players of other DLCs): the lobby's warning now says what to do: the host can switch the DLCs off in the
