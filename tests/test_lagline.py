@@ -34,7 +34,7 @@ def main():
           "pcall(G.lagStart, a)\n\t\t\t\tokr, errr = pcall(withActor, PL(a), replayNative, a, 1)" in src
           and "if G.lagCommand then pcall(G.lagCommand) end" in src and "if G.lagCur then pcall(G.lagLine) end" in src)
     check("the wait records when this game came to the build's time and when its data came",
-          "if okN and not w.reachedT and type(w.at) == \"number\" and nowN >= w.at then w.reachedT = os.clock() end" in src
+          "if okN and not w.reachedT and type(w.at) == \"number\" and nowN >= w.at then w.reachedT = os.clock(); w.stand0 = G.standM and G.standM.t end" in src
           and "w.gotT = w.gotT or os.clock()" in src)
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
     L.execute("""

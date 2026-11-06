@@ -8223,7 +8223,7 @@ local function expireNativeWaits()
 	-- (0.6.12, the lag line: the moment this game came to the build's time, see G.lagLine)
 	local okN, nowN = pcall(gameTime)
 	for _, w in ipairs(G.natWait) do
-		if okN and not w.reachedT and type(w.at) == "number" and nowN >= w.at then w.reachedT = os.clock() end
+		if okN and not w.reachedT and type(w.at) == "number" and nowN >= w.at then w.reachedT = os.clock(); w.stand0 = G.standM and G.standM.t end
 		if not w.arrived and G.frames - w.since > 1800 and (secs <= 0 or not w.sinceT or os.clock() - w.sinceT > secs) then
 			log("NATIVE build of " .. tostring(w.origin) .. " for t=" .. tostring(w.at) .. " never arrived: no longer holding (desync risk)")
 		else
@@ -8264,7 +8264,7 @@ G.lagStart = function(a)
 	if w and not matchesWait(w, a) then w = nil end
 	local bytes = nil
 	pcall(function() bytes = a.lagBytes end)
-	G.lagCur = { uid = a.uid, at = a.at, sentT = os.clock(), sentF = G.frames, w = w, bytes = bytes, cmds = 0 }
+	G.lagCur = { uid = a.uid, at = a.at, sentT = os.clock(), sentF = G.frames, w = w, bytes = bytes, cmds = 0, stand1 = G.standM and G.standM.t }
 end
 G.lagCommand = function()
 	if G.lagCur then
@@ -8302,6 +8302,14 @@ G.lagLine = function()
 			local mk = {}
 			for _, x in ipairs(L.marks or {}) do mk[#mk + 1] = x[1] .. " +" .. ms(L.sentT, x[2]) end
 			return (#t > 0 and ("; commands sent>answered at " .. table.concat(t, ", ") .. " ms") or "") .. (#mk > 0 and ("; " .. table.concat(mk, ", ")) or "")
+		end)()
+		-- (0.8: the real stand, frames where the session ran and the engine made no step, see G.standM: before the replay, while
+		-- this game waited for its data or for the replay before it, and during the replay)
+		.. (function()
+			local now = G.standM and G.standM.t
+			if not (now and L.stand1) then return "" end
+			local before = (w.stand0 and L.stand1 >= w.stand0) and (L.stand1 - w.stand0) or 0
+			return string.format("; really stood %.0f ms before the replay, %.0f ms during it", before * 1000, (now - L.stand1) * 1000)
 		end)())
 end
 
