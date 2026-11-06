@@ -34,6 +34,16 @@ MPFever - Changelog
     the world's growth since its start is shared out by the companies' scores the first time (the report's numbers: the
     client's company from rank 1 to rank 5, the host's from 5 to 7 reached). Experience never goes down. MPFEVER_RANKGROWTH=0:
     the scores, as before. Test: tests/test_rankgrowth.py.
+  - FIX (Advanced Station Builder, the user's dedicated server session of 2026-11-05): after every station of this mod the
+    checks found "conParams" apart 5 s later and reloaded the game. The mod's game script builds the station anew without the
+    setting that keeps it from snapping while it is placed, then joins its throats and puts up their signals, all from its
+    interface half (guiUpdate). MPFever's interface hook wraps the commands of the windows' state only; a game script's
+    interface half runs in another state, where nothing was wrapped: those builds went to the builder's engine alone (no act
+    in the player's log, nothing on the server). The bridge now wraps the commands there too: a mod's command is shipped like
+    the interface's (stamped, applied by every game at the same step) when mpfever_modauto.lua says this game sends it (the
+    player's own job within 15 s of their build, else the host's game or the owner company's), and its callback is answered
+    once it is applied here, with the engine's verdict. The game's own scripts and MPFever's are left as they are.
+    MPFEVER_GSMODS=0: as before. Test: tests/test_gsmods.py.
 
 0.7.0 - 2026-11-05: more mods made compatible, what to do when the DLCs differ, mods and DLCs seen before joining a running game, the dedicated server's settings window, computer companies renew their vehicles
   - CHANGE (lobby, players of other DLCs): the lobby's warning now says what to do: the host can switch the DLCs off in the

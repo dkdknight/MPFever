@@ -5187,6 +5187,8 @@ G.replayFailedFn = replayFailed
 -- is missing here means the games already differ, so the host's game is reloaded at once (issue #12: the next action
 -- of the same player crashed the game before the next state check)
 function G.reportResult(r)
+	-- (0.7.1: the answer to a mod's game script command shipped from this game, see G.installGsMods)
+	pcall(G.gsAnswer, r)
 	if r.success then return end
 	send("act_refused", { uid = r.uid, fn = r.fn, err = r.err })
 	if tostring(r.err or ""):find("^DESYNC") then replayFailed(r, r.err) end
@@ -7278,6 +7280,142 @@ G.modSkip = function(p, now, nameOf)
 	end
 	G.modSlots[key] = { val = val, t = now, fails = 0 }
 	return false
+end
+
+-- (0.7.1) The commands that the mods' GAME SCRIPTS send from their interface half (guiUpdate, guiHandleEvent of a *.gs.lua's
+-- script). MPFever's interface hook (mpfever_ui.script.lua) wraps the commands of the interface's own state (windows, react
+-- plugins), but a game script's interface half runs in the game scripts' interface state, with this bridge's: there nothing
+-- was wrapped and such a command went to the engine of that game alone. Advanced Station Builder builds every station of
+-- its anew after the player's build (links.unmark: without the setting that keeps it from snapping while it is placed), then
+-- joins its throats and puts up their signals, all from its game script's guiUpdate on the builder's game: the player's
+-- station lost the setting, the other games' kept it, and the checks found "conParams" apart 5 s after every station (the
+-- user's dedicated server, 2026-11-05: 6 stations, every one). Such a command of a mod is now held here and shipped as the
+-- interface's commands are (an "act_req" of ui.log, stamped and applied by every game at the same step), when
+-- mpfever_modauto.lua says this game sends it (this player's own job within 15 s of their build, else the host's or the
+-- owner company's game); else it is not sent here. Its callback is answered when the command is applied here, with the
+-- engine's verdict (a mod that goes on with the next part of its job then sees the world with the first part in it). Only
+-- commands from a mod's file are held: the game's own scripts and MPFever's are left as they are. In a session only.
+-- MPFEVER_GSMODS=0: as before
+G.gsHook = function()
+	local okH, h = pcall(function()
+		local t = package.loaded["mpfever_gs_hook"]
+		if type(t) ~= "table" then t = { pending = {}, seq = 0 }; package.loaded["mpfever_gs_hook"] = t end
+		return t
+	end)
+	return okH and h or nil
+end
+-- the mods' files on the stack of a command being sent (getinfo: debug.getinfo; isMod(source): a mod's file)
+G.gsSources = function(getinfo, isMod)
+	local mods = {}
+	for lv = 3, 40 do
+		local info = getinfo(lv, "S")
+		if not info then break end
+		local src = tostring(info.source or "")
+		if info.what ~= "C" and isMod(src) then mods[#mods + 1] = src end
+	end
+	return mods
+end
+-- what to do with a game script's command (tag: { name, args }; mods: the mods' files on the stack; ctx: this bridge's facts;
+-- MA: mpfever_modauto.lua; idle: seconds since this player's own last build): "send", "drop" or "resync", and why
+G.gsVerdict = function(tag, mods, ctx, MA, idle)
+	local facts = { auto = true, mod = true, role = ctx.role, separate = ctx.separate, strict = MA.strictOf(mods), idle = idle }
+	if ctx.separate and type(tag.args[1]) == "number" and ctx.reg and ctx.myCo then
+		pcall(function()
+			local co = CO.idOfEntity(ctx.reg, R.ownerOf(tag.args[1]))
+			if co then facts.owner = (co == ctx.myCo) and "mine" or "theirs" end
+		end)
+	end
+	local verdict, why = MA.decide(facts)
+	if verdict == "send" and ctx.resync then return "resync", "the resynchronisation is under way" end
+	return verdict, why
+end
+G.installGsMods = function()
+	local h = G.gsHook()
+	if not h then return end
+	-- (this bridge's facts for the wrapper, which a reload in the same state keeps: refreshed by every bridge)
+	h.log = log
+	h.ctx = function()
+		local reg = R.CO
+		return { role = C.ROLE, separate = type(reg) == "table" and reg.mode == "separate", myCo = G.myCo, reg = reg,
+			resync = G.session and G.session.resync, rev = G.rev }
+	end
+	if h.installed or os.getenv("MPFEVER_GSMODS") == "0" or not C.ACTIVE then return end
+	local okD, getinfo = pcall(function() return debug.getinfo end)
+	if not okD or type(getinfo) ~= "function" then log("game scripts' interface commands: no debug library here, not watched"); h.installed = true; return end
+	local okM, MA = pcall(ug_require, "mpfever_modauto.lua")
+	if not (okM and type(MA) == "table") then okM, MA = pcall(ug_require, "mpfever_1::/mpfever_modauto.lua") end
+	if not (okM and type(MA) == "table") then log("game scripts' interface commands: mpfever_modauto.lua not reachable, not watched"); h.installed = true; return end
+	local orig = C.origCmds()
+	if orig.sendCommand and api.cmd.sendCommand ~= orig.sendCommand then
+		h.installed = true
+		log("game scripts' interface commands: this state's commands are watched by the interface's hook already")
+		return
+	end
+	local origSend = orig.sendCommand or api.cmd.sendCommand
+	local tags = setmetatable({}, { __mode = "k" })
+	local wrapped = 0
+	for _, name in ipairs(C.FACTORIES) do
+		local fn = nil
+		pcall(function() fn = api.cmd[name] end)
+		if fn ~= nil and name ~= "makeGameSetSpeedCmd" then
+			local okW = pcall(function()
+				api.cmd[name] = function(...)
+					local cmd = fn(...)
+					if cmd ~= nil then tags[cmd] = { name = name, args = { n = select("#", ...), ... } } end
+					return cmd
+				end
+			end)
+			if okW then wrapped = wrapped + 1 end
+		end
+	end
+	h.tok = "gsmod-" .. tostring(os.time()) .. "-" .. C.NAME
+	h.seen = {}
+	local okS = pcall(function()
+		api.cmd.sendCommand = function(cmd, cb, progress)
+			local tag = cmd ~= nil and tags[cmd] or nil
+			local ctx = tag and h.ctx and h.ctx() or nil
+			if tag == nil or not ctx or (ctx.role ~= "host" and ctx.role ~= "client") then return origSend(cmd, cb, progress) end
+			local mods = G.gsSources(getinfo, MA.isModSource)
+			if #mods == 0 then return origSend(cmd, cb, progress) end
+			local L = h.log or log
+			local label = MA.label(mods[1])
+			local okP, tb = pcall(function() return package.loaded["mpfever_local_activity"] end)
+			local verdict, why = G.gsVerdict(tag, mods, ctx, MA, (okP and type(tb) == "number") and (os.clock() - tb) or nil)
+			local key = label .. "/" .. tag.name .. "/" .. verdict
+			h.seen[key] = (h.seen[key] or 0) + 1
+			local n = h.seen[key]
+			if verdict ~= "send" then
+				if n <= 3 or n % 200 == 0 then L("mods: " .. tag.name .. " of the game script " .. label .. " not sent from this game: " .. tostring(why) .. " x" .. n) end
+				return
+			end
+			local okm, margs = pcall(function()
+				local r = { n = tag.args.n }
+				for i = 1, tag.args.n do r[i] = C.marshal(tag.args[i]) end
+				return r
+			end)
+			if not okm then
+				L("mods: " .. tag.name .. " of the game script " .. label .. " cannot be shipped (" .. tostring(margs):sub(1, 100) .. "): applied here only (desync risk)")
+				return origSend(cmd, cb, progress)
+			end
+			pcall(R.translateOut, tag.name, margs, ctx.rev or {})
+			h.seq = h.seq + 1
+			C.appendFile(C.DIR .. BS .. "ui.log", C.line("act_req", { tok = h.tok, id = h.seq, fn = tag.name, args = margs }))
+			if cb then h.pending[h.seq] = { cb = cb, at = os.clock(), name = tag.name } end
+			if n <= 5 or n % 100 == 0 then L("mods: " .. tag.name .. " of the game script " .. label .. " shipped as " .. h.tok .. "#" .. h.seq .. " (" .. tostring(why) .. ") x" .. n) end
+		end
+	end)
+	h.installed = true
+	log("game scripts' interface commands: " .. (okS and ("watched (" .. wrapped .. " factories); a mod's command is shipped as the interface's") or "NOT watched (sendCommand could not be replaced)"))
+end
+-- the answer to a game script's command shipped above: its callback, when it was applied here (r: a result of the simulation)
+G.gsAnswer = function(r)
+	local h = package.loaded["mpfever_gs_hook"]
+	if type(h) ~= "table" or type(r) ~= "table" or r.tok == nil or r.tok ~= h.tok then return end
+	local w = h.pending[r.id]
+	if not w then return end
+	h.pending[r.id] = nil
+	local ok, err = pcall(w.cb, nil, r.success == true, {})
+	if not ok and h.log then h.log("mods: the answer to " .. tostring(w.name) .. " #" .. tostring(r.id) .. " failed in the mod: " .. tostring(err):sub(1, 160)) end
 end
 
 -- Builds made while the session is paused all have the same time: each game applied its own at once and the others' when they
@@ -18140,6 +18278,9 @@ local function guiUpdate(userParams, state, guiState)
 		end
 		O.sendCommand, O.setSpeed, O.event = orig.sendCommand, orig.setSpeed, orig.event
 		O.steps = api.cmd.debug and api.cmd.debug.makeGamePerformSimulationStepsCmd
+		-- (0.7.1: the mods' game scripts' commands from this interface state, see G.installGsMods)
+		local okGs, errGs = pcall(G.installGsMods)
+		if not okGs then log("game scripts' interface commands: " .. tostring(errGs)) end
 		pcall(function() guiState:subscribeToAllEvents() end)
 		log("bridge v0.17 started: name=" .. C.NAME .. " role=" .. C.ROLE .. " dir=" .. C.DIR)
 		local okr, errr = pcall(resumeAfterLoad, state)
