@@ -63,7 +63,23 @@ namespace MPFever
         static DateTime LastWrite(string f) { try { return File.Exists(f) ? File.GetLastWriteTimeUtc(f) : DateTime.MinValue; } catch { return DateTime.MinValue; } }
 
         /// <summary>The game's log as it is now (the newest stdout.txt), or null.</summary>
-        public static string GameLog() => CrashDumpDirs().Select(d => Path.Combine(d, "stdout.txt")).FirstOrDefault(File.Exists);
+        /// <summary>(0.7.3) Waits (at most `seconds`) until a file the game is writing is done: not empty, and the same size for a
+        /// second.</summary>
+        public static void WaitWritten(string path, int seconds)
+        {
+            var end = DateTime.UtcNow.AddSeconds(seconds);
+            long last = -1;
+            while (DateTime.UtcNow < end)
+            {
+                long len = 0;
+                try { len = new FileInfo(path).Length; } catch { return; }
+                if (len > 0 && len == last) return;
+                last = len;
+                System.Threading.Thread.Sleep(1000);
+            }
+        }
+
+        public static string GameLog() =>CrashDumpDirs().Select(d => Path.Combine(d, "stdout.txt")).FirstOrDefault(File.Exists);
 
         /// <summary>Before the game starts: the log of its previous run is kept (logs\stdout-previous.txt), the game
         /// rewrites stdout.txt at its start.</summary>
@@ -202,6 +218,10 @@ namespace MPFever
                 try
                 {
                     var dmp = Directory.GetFiles(d, "*.dmp").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+                    // (0.7.3) a report made right after the crash got the dump while the game was still writing it: 0 bytes in
+                    // issue #130. Waited for until its size is not 0 and stays the same for a second (15 s at most).
+                    // MPFEVER_DUMPWAIT=0: as before
+                    if (dmp != null && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);
                     if (dmp != null && File.GetLastWriteTime(dmp) > DateTime.Now.AddDays(-2)) Add(dmp, "game/" + Path.GetFileName(dmp));
                 }
                 catch { }
