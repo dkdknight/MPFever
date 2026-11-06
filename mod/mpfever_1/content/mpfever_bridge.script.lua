@@ -1738,6 +1738,45 @@ function DET.installModCmds()
 	log("mod commands intercepted in the simulation (" .. C.ROLE .. ")")
 end
 
+-- (0.7.1, issue #126) A town's pollution rating comes from the engine's emission grid (api.engine.util.town.getTownEmissionDB),
+-- whose sums are made on the engine's thread pool and come out a little different on PCs of other thread counts (32 and 24
+-- threads: 0.7808833144 here, 0.7808838594 there for the same town, the same step). The towns' script keeps the rating in its
+-- state (cachedRatings.pollution), and the checks found "script:towns" apart: 11 reloads in one session, 2 towns of 21 each
+-- time. The rating is kept in steps of 1/64 (rating.getRating of town_util, which the towns' script and its parallel helper
+-- call): the same on every game unless two games fall on either side of a step (about once in 3600 computations of a town
+-- whose grid differs). Pollution keeps its effect on the towns (MPFever turned it off before 0.6.9: the players asked for it
+-- back). In a session only. MPFEVER_POLLUTIONQ=0: the engine's value as it comes, as before; MPFEVER_POLLUTIONQ=<n>: steps of
+-- 1/n
+DET.townQ = function()
+	local v = os.getenv("MPFEVER_POLLUTIONQ")
+	if v == "0" then return nil end
+	local n = tonumber(v or "")
+	return (n and n >= 2) and math.floor(n) or 64
+end
+DET.quantRating = function(v, q)
+	if type(v) ~= "number" or v ~= v or not q then return v end
+	return math.floor(v * q + 0.5) / q
+end
+function DET.installTownRatings()
+	if DET.townRatings or not C.ACTIVE then return end
+	local q = DET.townQ()
+	DET.townRatings = true
+	if not q then log("town ratings: pollution as the engine computes it (MPFEVER_POLLUTIONQ=0)") return end
+	local tu
+	for _, path in ipairs({ "/game_mechanics/towns/town_util.tl", "::/game_mechanics/towns/town_util.tl" }) do
+		local ok, m = pcall(ug_require, path)
+		if ok and type(m) == "table" and type(m.getRatingPollution) == "function" then tu = m break end
+	end
+	if not tu then log("town ratings: the towns' module is not reachable, pollution as the engine computes it (desync risk)") return end
+	if not tu.__mpfPollution then
+		local orig = tu.getRatingPollution
+		tu.__mpfPollution = orig
+		tu.getRatingPollution = function(...) return DET.quantRating(orig(...), q) end
+	end
+	local okG, same = pcall(function() return tu.GetRating("pollution").getRating == tu.getRatingPollution end)
+	log("town ratings: pollution kept in steps of 1/" .. q .. (okG and same and "" or " (the towns' ratings list was not seen using it)"))
+end
+
 -- A build replayed here for another player is announced by the engine to every script as made by a player (the replays
 -- pass playerInitiated, as the tools do). Mods that answer a player's build with builds of their own (Auto Signals adds
 -- signals after a signal is placed) then did it on every game, and each game shipped its own: the signals were built
@@ -2213,6 +2252,7 @@ local function update(userParams, state, dt)
 	pcall(function() if DET.seed and math.randomseed == DET.seed then DET.origSeed(gameTime()) else math.randomseed(gameTime()) end end)
 	installRandom()
 	pcall(DET.installModCmds)
+	pcall(DET.installTownRatings)
 	SIM.evTick = (SIM.evTick or 0) + 1
 	if SIM.evTick % 50 == 1 then pcall(DET.wrapModEvents) end
 	-- (how many engine events this script receives, every one of them: see subscribeToAllEvents below)

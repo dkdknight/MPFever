@@ -18,6 +18,12 @@ MPFever - Changelog
     always shipped). MPFEVER_MODDEDUP=0: every command shipped, as before. With one company per player a mod's name on another
     company's vehicle is still refused (the host's mod speaks for the host's company): it stops after 3 tries.
     Test: tests/test_moddedup.py (a fake renaming mod, 200 vehicles, one hour: 2600 commands instead of 360000).
+  - FIX (issue #126, reloads "script:towns"): a town's pollution rating comes from the engine's emission grid, whose sums
+    come out a little different on PCs of other thread counts (0.7808833144 on one, 0.7808838594 on the other, the same town
+    and step): the towns' script keeps the rating in its state, and the checks reloaded the games 11 times in one session.
+    The rating is now kept in steps of 1/64: the same on every game, unless two games fall on either side of a step (about
+    once in 3300 computations of a town whose grid differs). Pollution keeps its effect on the towns. In a session only.
+    MPFEVER_POLLUTIONQ=0: the engine's value, as before; MPFEVER_POLLUTIONQ=<n>: steps of 1/n. Test: tests/test_pollutionq.py.
 
 0.7.0 - 2026-11-05: more mods made compatible, what to do when the DLCs differ, mods and DLCs seen before joining a running game, the dedicated server's settings window, computer companies renew their vehicles
   - CHANGE (lobby, players of other DLCs): the lobby's warning now says what to do: the host can switch the DLCs off in the
