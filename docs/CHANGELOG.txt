@@ -42,6 +42,11 @@ MPFever - Changelog
     distance it sends has the lead in it and the leader takes its lead. (The research switch of 0.7.2, MPFEVER_LEADSTAMP,
     stays off: it could not cover a lead that starts after the stamp.) Test: tests/test_leadack.py, with a model of two
     games: 0 late actions in 300 runs with the cap, 38 without.
+  - FIX (the user's dedicated server, 2026-11-06 20:44): a resynchronisation made for a player who joins waited only for
+    the games already in the session. The newcomer's game (still downloading the host's game) was not waited for: the
+    resynchronisation ended once the others had reloaded, the game on its way to the newcomer was cancelled half sent, and
+    the newcomer never got in (twice in a row, then left). The players the game is sent to who are not playing yet are now
+    waited for too (600 s at most, as the others). MPFEVER_WAITJOINERS=0: as before. Test: tests/test_waitjoiners.py.
   - MPFEVER_NOWAIT (0.7.2) is part of the setting. FIX for it (MPFEVER_HELDNOTPAUSED, part of the setting): a held build is
     captured when its game stands at its time, and the simulation half takes that stop for a pause, so the capture came
     marked "paused" though the session was not. The other games took it for a build of a pause: its replay was never sent

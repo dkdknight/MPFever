@@ -20930,6 +20930,19 @@
       "ko": "여러 플레이어가 동시에 건설할 때 게임이 서로의 건설을 기다리며 멈추지 않습니다. 각 건설은 클릭할 때 전송되고, 각 게임은 그 시각에 건설 위치에서 아무것도 바뀌지 않았는지 확인합니다. 기다리지 않음 옵션을 포함합니다.",
       "zh-CN": "多名玩家同时建造时，游戏不再停下来等待彼此的建造：每项建造在点击时即发出，每个游戏在其时刻检查建造处没有任何变化。包含无需等待选项。",
       "zh-TW": "多名玩家同時建造時，遊戲不再停下來等待彼此的建造：每項建造在點擊時即發出，每個遊戲在其時刻檢查建造處沒有任何變化。包含無需等待選項。"
+    },
+    "Resynchronisation: also waiting for {0}, who is joining": {
+      "de": "Resynchronisierung: es wird auch auf {0} gewartet, der beitritt",
+      "es": "Resincronización: también se espera a {0}, que se está uniendo",
+      "it": "Risincronizzazione: si attende anche {0}, che si sta unendo",
+      "nl": "Hersynchronisatie: er wordt ook gewacht op {0}, die meedoet",
+      "pl": "Ponowna synchronizacja: czekamy też na {0}, który dołącza",
+      "pt-BR": "Ressincronização: também aguardando {0}, que está entrando",
+      "ru": "Повторная синхронизация: также ожидается {0}, который присоединяется",
+      "ja": "再同期: 参加中の {0} も待機しています",
+      "ko": "재동기화: 참가 중인 {0}도 기다립니다",
+      "zh-CN": "重新同步：同时等待正在加入的 {0}",
+      "zh-TW": "重新同步：同時等待正在加入的 {0}"
     }
   }
 }

@@ -4350,6 +4350,21 @@ namespace MPFever
                 var all = relay?.PeerNames() ?? new string[0];
                 // (0.7.0: not to a player still looking at the game's mods and DLCs: it gets the game when it joins, see joinready)
                 lock (reviewing) all = all.Where(n => !reviewing.Contains(n)).ToArray();
+                // (0.7.3) The players who are joining are waited for too: the list above holds the games already in the session
+                // only, so a joining player (a dedicated server's newcomer, not in its world yet) was not waited for. The
+                // resynchronisation made for them ended as soon as the others had reloaded, the game still on its way to them was
+                // cancelled half sent (saveCancel), and they never loaded it: Roman on the user's server, 2026-11-06 20:44 and
+                // 20:46, twice "il rejoint la partie", the game sent to Knight-HD2 only, done in 35 s, then Roman left.
+                // MPFEVER_WAITJOINERS=0: as before
+                if (Environment.GetEnvironmentVariable("MPFEVER_WAITJOINERS") != "0")
+                {
+                    string[] joining; lock (players) joining = all.Where(n => !players.Contains(n)).ToArray();
+                    if (joining.Length > 0)
+                    {
+                        lock (resyncWaiting) foreach (var n in joining) resyncWaiting.Add(n);
+                        Log.W(F("Resynchronisation : on attend aussi {0}, qui rejoint la partie", "Resynchronisation: also waiting for {0}, who is joining", string.Join(", ", joining)));
+                    }
+                }
                 // (the whole game to the others at once; the differences worked out meanwhile)
                 var viaDelta = DeltaPeers(all);
                 SendSave(id, bytes, sha, all.Where(n => !viaDelta.Contains(n)));
