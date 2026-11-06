@@ -821,11 +821,20 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		return result
 	end
 	-- a mod's automatic command (see DET.installModCmds) names, colours or updates a line: on anything else (an id that is
-	-- another entity here) the engine asserts and the game closes. Skipped instead, the same on every game
+	-- another entity here) the engine asserts and the game closes. Skipped instead, the same on every game. (0.7.1, issue #128:
+	-- a name or a colour goes on any entity that has one here, a vehicle's too: Improved Destination Displays names the
+	-- vehicles after their destination, every name was skipped, the mod saw the old name 2 s later and sent it again, without
+	-- end: 206000 commands in a session, the game at half its speed. A line update still needs a line. MPFEVER_MODANYTARGET=0:
+	-- lines only, as before)
 	if a.tok == "mod" and type(a.args) == "table" then
-		local okL, isLine = pcall(function() return api.engine.getComponent(a.args[1], api.type.ComponentType.LINE) ~= nil end)
-		if not (okL and isLine) then
-			result.err = "mod command on entity " .. tostring(a.args[1]) .. ", which is not a line here"
+		local need, what = api.type.ComponentType.LINE, "a line"
+		if os.getenv("MPFEVER_MODANYTARGET") ~= "0" then
+			if a.fn == "makeEntitySetNameCmd" then need, what = api.type.ComponentType.NAME, "something with a name"
+			elseif a.fn == "makeEntitySetColorCmd" then need, what = api.type.ComponentType.COLOR, "something with a colour" end
+		end
+		local okL, has = pcall(function() return api.engine.getComponent(a.args[1], need) ~= nil end)
+		if not (okL and has) then
+			result.err = "mod command on entity " .. tostring(a.args[1]) .. ", which is not " .. what .. " here"
 			log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " SKIPPED, " .. result.err)
 			return result
 		end
@@ -1651,6 +1660,7 @@ end
 -- are written to sim_mods.log, the interface half ships them like a player's (applied at the same step everywhere, the host
 -- too), and the other games drop their own. (MPFEVER_MODHOST=0: as before, every game applies its own)
 DET.mod = { hostOnly = { makeEntitySetNameCmd = true, makeEntitySetColorCmd = true, makeLineUpdateCmd = true } }
+
 function DET.installModCmds()
 	local MODCMD = DET.mod
 	if MODCMD.installed or os.getenv("MPFEVER_MODHOST") == "0" or not C.ACTIVE then return end
@@ -1691,6 +1701,18 @@ function DET.installModCmds()
 		local file = src:match("([^/]*)$") or src
 		local okT, now = pcall(gameTime)
 		now = okT and now or 0
+		-- (0.7.1, issue #128: a name the entity already has changes nothing: neither shipped nor written down. MPFEVER_MODDEDUP=0:
+		-- shipped, as before)
+		if tag.name == "makeEntitySetNameCmd" and type(tag.args[2]) == "string" and os.getenv("MPFEVER_MODDEDUP") ~= "0" then
+			local okN, same = pcall(function()
+				local nc = api.engine.getComponent(tag.args[1], api.type.ComponentType.NAME)
+				return nc ~= nil and nc.name == tag.args[2]
+			end)
+			if okN and same then
+				if cb then pcall(cb, nil, true, {}) end
+				return
+			end
+		end
 		if not seen[file .. tag.name] then
 			seen[file .. tag.name] = true
 			log("mod command " .. tag.name .. " from " .. file .. " (" .. src:sub(1, 120) .. ") at t=" .. tostring(now) .. ": "
@@ -4531,7 +4553,11 @@ local function replayUpgrade(a, plan, i)
 		local okn, errn = pcall(function()
 			local sp = P.proposal
 			sp.nodeConfigsToAdd = C.nodeConfigs(step.nc)
-			if #step.ncr > 0 then sp.nodeConfigsToRemove = step.ncr end
+			-- (0.7.1, issue #127: a node configured here already gets its configuration replaced, never a second one)
+			local ncr = {}
+			for k, n in ipairs(step.ncr) do ncr[k] = n end
+			ncr = C.cfgGuard(step.nc, ncr)
+			if #ncr > 0 then sp.nodeConfigsToRemove = ncr end
 			P.proposal = sp
 		end)
 		if not okn then log("NATIVE REPLAY " .. tostring(a.uid) .. " upgrade of " .. tostring(step.edge) .. ": the tool's junctions not applied (" .. shortErr(errn) .. ")") end
@@ -4618,6 +4644,7 @@ G.replayMergedUpgrade = function(a, plan, probe)
 			sp.nodeConfigsToAdd = C.nodeConfigs(st.nodeConfigsToAdd)
 			local ncr = {}
 			for _, n in ipairs(st.nodeConfigsToRemove or {}) do if type(n) == "number" and n >= 0 then ncr[#ncr + 1] = n end end
+			ncr = C.cfgGuard(st.nodeConfigsToAdd, ncr)
 			if #ncr > 0 then sp.nodeConfigsToRemove = ncr end
 		end
 		P.proposal = sp
@@ -4958,6 +4985,8 @@ local function replayStop(a, plan, variant)
 	ssp.edgesToAdd = { e }
 	ssp.edgeObjectsToAdd = eos
 	if #removeIds > 0 then ssp.edgeObjectsToRemove = removeIds end
+	-- (0.7.1, issue #127: the configurations put back on other nodes configured here replace theirs)
+	if variant < 3 then ncr = C.cfgGuard(plan.nodeConfigs, ncr) end
 	if #ncr > 0 then ssp.nodeConfigsToRemove = ncr end
 	-- and the configurations the stop tool puts back on them (lane connections, crosswalks): without them the junctions of the
 	-- replaced segment were left without, unlike the player's game, and a later build there differed (variant 3: without)
@@ -7166,6 +7195,51 @@ local function nativeHoldAt()
 	return m
 end
 
+-- (0.7.1, issue #128) The host's mod commands that are not shipped: a mod that sends the same command again and again (it reads
+-- the old value back until the command is applied, or forever when the command is refused) made one action per command for every
+-- game. Improved Destination Displays names each vehicle after its destination every 2 s while the name differs: with the names
+-- refused, 206000 commands for 60 vehicles in one session (176 different names), the logs above 100 MB, the game at half speed.
+-- Left out: a name the entity already has on the host's game; the same command again within 10 s of game time (still on its
+-- way); the same command a 4th time when the earlier ones changed nothing (refused on every game: a log line, then quiet until
+-- the mod asks for something else on that entity). Another value for the same entity is always shipped (a vehicle's name going
+-- back and forth between its two terminals). p: { fn, args, mod }; nameOf(entity): its name here (nil if none). Returns true to
+-- leave it out. MPFEVER_MODDEDUP=0: every command shipped, as before
+G.modSlots = {}
+G.modSkip = function(p, now, nameOf)
+	if os.getenv("MPFEVER_MODDEDUP") == "0" or type(p) ~= "table" or type(p.args) ~= "table" then return false end
+	local e = p.args[1]
+	if type(e) ~= "number" then return false end
+	local okS, val = pcall(C.ser, { p.args[2], p.args[3], p.args[4] })
+	val = okS and val or tostring(p.args[2])
+	local key = tostring(p.fn) .. "|" .. e
+	local slot = G.modSlots[key]
+	if p.fn == "makeEntitySetNameCmd" and nameOf and type(p.args[2]) == "string" then
+		local okN, cur = pcall(nameOf, e)
+		if okN and cur == p.args[2] then
+			if slot and slot.val == val then slot.fails = 0 end
+			G.modSkipped = (G.modSkipped or 0) + 1
+			return true
+		end
+	end
+	now = tonumber(now) or 0
+	if slot and slot.val == val then
+		if now - slot.t < 10000 and now >= slot.t then G.modSkipped = (G.modSkipped or 0) + 1 return true end
+		slot.fails = slot.fails + 1
+		if slot.fails >= 3 then
+			if not slot.told then
+				slot.told = true
+				log("mod command " .. tostring(p.fn) .. " of " .. tostring(p.mod) .. " on " .. e .. " changed nothing 3 times: no longer shipped until the mod asks for something else there")
+			end
+			G.modSkipped = (G.modSkipped or 0) + 1
+			return true
+		end
+		slot.t = now
+		return false
+	end
+	G.modSlots[key] = { val = val, t = now, fails = 0 }
+	return false
+end
+
 -- Builds made while the session is paused all have the same time: each game applied its own at once and the others' when they
 -- came, so two players building within the network's delay built in a different order on each game (a session of the friends:
 -- a station and a bulldozing, one segment more on one game, a resync). Each paused build now takes a turn from the host
@@ -8953,7 +9027,8 @@ local function stampHeld()
 			if not okF then log("options: request failed: " .. tostring(errF)) end
 		end
 	end
-	-- the host's automatic mod commands, written by its simulation (see DET.installModCmds): shipped like a player's. Their
+	-- the host's automatic mod commands, written by its simulation (see DET.installModCmds): shipped like a player's (but not
+	-- those G.modSkip leaves out). Their
 	-- line goes to the other games as a player's command names it: a line made during the session by its creation key (the
 	-- ids of new entities differ between games; the command waits up to 30 frames for the simulation to bind it), a line of
 	-- the savegame by its id, the same everywhere. (A wrong id is skipped by the other games, see executeActionOnce)
@@ -8972,6 +9047,8 @@ local function stampHeld()
 		elseif G.session.resync then
 			-- (during a resynchronisation the launcher keeps no command: applied here only, the games would differ)
 			log("resynchronisation under way: mod command " .. tostring(p.fn) .. " of " .. tostring(p.mod) .. " dropped")
+		elseif G.modSkip(p, gameTime(), function(x) local n = api.engine.getComponent(x, api.type.ComponentType.NAME) return n and n.name end) then
+			-- (0.7.1, issue #128: a name it already has, the same command still on its way, or one that never takes, see G.modSkip)
 		else
 			pcall(R.translateOut, p.fn, p.args, G.rev)
 			local now = gameTime()

@@ -837,6 +837,30 @@ function C.nodeConfigs(list)
 	return cfgs
 end
 
+-- (0.7.1, issue #127) the node configurations a build adds to nodes that already have one on this game: replaced (the node is
+-- also put in the list of configurations the build removes, as the native tools do for a junction they change), never added a
+-- second time. A client's builds made during a pause reached the host all at once at the unpause; one of them (a junction's
+-- configuration only) added one to a node the host had already configured: ecs::Engine::AddComponent assertion, the host
+-- crashed (0.6.12, Malle355). add: the configurations to add ({ entity = node, ... }); remove: the nodes whose configuration
+-- the build removes (a list, completed in place and returned); skip(node), if given: a node the build removes (left as it is);
+-- has(node), if given: this game's node has a configuration (default: the engine's BASE_NODE_CONFIG). Returns the list and the
+-- number of nodes put in. MPFEVER_CFGREPLACE=0: nothing changed, as before
+function C.cfgGuard(add, remove, skip, has)
+	remove = remove or {}
+	if os.getenv("MPFEVER_CFGREPLACE") == "0" then return remove, 0 end
+	has = has or function(n) return api.engine.getComponent(n, api.type.ComponentType.BASE_NODE_CONFIG) ~= nil end
+	local inRemove, n = {}, 0
+	for _, r in ipairs(remove) do inRemove[r] = true end
+	for _, c in ipairs(add or {}) do
+		local e = type(c) == "table" and c.entity or nil
+		if type(e) == "number" and e >= 0 and not inRemove[e] and not (skip and skip(e)) then
+			local ok, h = pcall(has, e)
+			if ok and h then remove[#remove + 1] = e; inRemove[e] = true; n = n + 1 end
+		end
+	end
+	return remove, n
+end
+
 -- (0.6.9) what a script's copy of a segment keeps of it, as the stop tool and the replays of its stops keep it (replayStop): its
 -- decorations (a town street's trees: the copy had none on the builder's game, both rows on the replaying games: "edges" apart,
 -- then the towns, test fe3 of 2026-11-02) and a track's distance. rev: the copy runs the other way round (a decoration's side
@@ -1092,6 +1116,7 @@ function C.rebuildProposal(m, opts)
 		ssp.edgesToRemove = entityList(st.edgesToRemove or st.removedSegments)
 		-- the lane connections of the existing nodes a build touches refer to the old segments: their node
 		-- configurations must go (the native tools do the same), or the engine fails a lookup (map_util Get assert)
+		local cfgKeep = {}
 		pcall(function()
 			local touched, list = {}, {}
 			local function touch(n)
@@ -1125,6 +1150,7 @@ function C.rebuildProposal(m, opts)
 				end
 			end
 			if #keep > 0 then ssp.nodeConfigsToRemove = keep end
+			cfgKeep = keep
 		end)
 		-- and the configurations it added (lane connections, crosswalks, traffic lights), with the native ids: for the raw
 		-- forms, and for a build that only changes configurations (a node window's double slip switch, issue #26), where
@@ -1134,6 +1160,16 @@ function C.rebuildProposal(m, opts)
 		if (opts.raw or onlyConfigs) and #(st.nodeConfigsToAdd or {}) > 0 then
 			local okc, errc = pcall(function() ssp.nodeConfigsToAdd = C.nodeConfigs(st.nodeConfigsToAdd) end)
 			if not okc then C.errors[#C.errors + 1] = "node configs: " .. tostring(errc):sub(1, 120) end
+			-- (0.7.1, issue #127: a node configured here already gets its configuration replaced, never a second one)
+			if okc then
+				local gone = {}
+				for _, r in ipairs(entityList(st.nodesToRemove or st.removedNodes)) do gone[r] = true end
+				local rm, nput = C.cfgGuard(st.nodeConfigsToAdd, cfgKeep, function(e) return gone[e] end)
+				if nput > 0 then
+					local okr, errr = pcall(function() ssp.nodeConfigsToRemove = rm end)
+					C.errors[#C.errors + 1] = "node configs replaced: " .. nput .. (okr and "" or " (" .. tostring(errr):sub(1, 80) .. ")")
+				end
+			end
 		end
 		-- (the removed stops carry the originator's ids: this game's are found by their rank on the removed segments)
 		do
@@ -1554,6 +1590,13 @@ function C.rebuildNativeWithConstruction(m, conv, rm, opts)
 	for _, n in ipairs(opts.noConfigs and {} or entityList(st.nodeConfigsToRemove)) do
 		local okn, nc = pcall(function() return api.engine.getComponent(n, api.type.ComponentType.BASE_NODE_CONFIG) end)
 		if okn and nc then cfgRemove[#cfgRemove + 1] = n end
+	end
+	-- (0.7.1, issue #127: the configurations it adds to nodes configured here already replace theirs, see C.cfgGuard)
+	if not opts.noConfigs and #(st.nodeConfigsToAdd or {}) > 0 then
+		local gone = {}
+		for _, r in ipairs(entityList(st.nodesToRemove or st.removedNodes)) do gone[r] = true end
+		local _, nput = C.cfgGuard(st.nodeConfigsToAdd, cfgRemove, function(e) return gone[e] end)
+		if nput > 0 then C.errors[#C.errors + 1] = "node configs replaced: " .. nput end
 	end
 	if #cfgRemove > 0 then
 		local okc, ec = pcall(function() sp.nodeConfigsToRemove = cfgRemove end)
