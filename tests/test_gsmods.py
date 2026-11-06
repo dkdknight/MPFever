@@ -40,7 +40,8 @@ check(i > 0 and j > i, "G.installGsMods found")
 code = bridge[i:j]
 modauto = open(os.path.join(CONTENT, "mpfever_modauto.lua"), encoding="utf-8").read()
 
-ASB = "@C:/Users/Public/mod.io/10640/mods/6484902/content/stations/advanced_station_builder/links.lua"
+# (0.7.2: the mod loads its builds by their game path, so debug.getinfo names them so; see tests/test_modvirtual.py)
+ASB = "@advanced_station_builder::/stations/advanced_station_builder/links.lua"
 BASE = "@::/game_mechanics/towns/town_notification.script.lua"
 MPF = "@E:/Steam/userdata/x/3493540/local/mods/mpfever_1/content/mpfever_bridge.script.lua"
 

@@ -47,10 +47,27 @@ function M.norm(src)
 	return tostring(src or ""):gsub("\\", "/"):lower()
 end
 
+-- (0.7.2) A mod's file loaded by its game path names the mod before "::/": Advanced Station Builder's game script loads its
+-- builds with ug_require("advanced_station_builder::/stations/advanced_station_builder/links.lua"), and debug.getinfo then
+-- gives that name, not the file's place on the disk. Such a file was not taken for a mod's (no "/mods/" in it): its commands
+-- went to the builder's engine alone, as if MPFever had no hook there (the user's server session of 2026-11-06: 17 desyncs,
+-- 5 reloads, "conParams" and "ages" apart after every station, no command of the mod shipped). The base game's own files have
+-- no mod before "::/" ("::/game_mechanics/..."), MPFever's are left out. MPFEVER_MODVIRTUAL=0: the disk paths only, as before.
+M.VIRTUAL = true
+pcall(function() if os.getenv("MPFEVER_MODVIRTUAL") == "0" then M.VIRTUAL = false end end)
+
+-- the mod named before "::/" in a game path ("advanced_station_builder::/stations/..."), or nil (none, the base game's)
+function M.virtualMod(s)
+	local id = s:gsub("^[@=]", ""):match("^([^:/]+)::/")
+	if id == nil or id == "" then return nil end
+	return id
+end
+
 -- is this a mod's file (not the game's own, not MPFever's)?
 function M.isModSource(src)
 	local s = M.norm(src)
 	if s == "" or s:find("mpfever", 1, true) then return false end
+	if M.VIRTUAL and M.virtualMod(s) then return true end
 	return s:find("/mods/", 1, true) ~= nil or s:find("/mod.io/", 1, true) ~= nil or s:find("/workshop/content/", 1, true) ~= nil
 		or s:find("staging_area", 1, true) ~= nil
 end
@@ -58,7 +75,7 @@ end
 -- a short name for the logs: the mod's folder (its id, or its mod.io number) and the file
 function M.label(src)
 	local s = M.norm(src)
-	local mod = s:match("/mods/([^/]+)/") or s:match("/workshop/content/%d+/([^/]+)/")
+	local mod = s:match("/mods/([^/]+)/") or s:match("/workshop/content/%d+/([^/]+)/") or M.virtualMod(s)
 	local file = s:match("([^/]*)$") or s
 	return mod and (mod .. ":" .. file) or file
 end

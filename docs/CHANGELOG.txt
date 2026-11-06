@@ -1,6 +1,29 @@
 MPFever - Changelog
 ===================
 
+0.7.2 - (in progress): Advanced Station Builder made compatible for real
+  - FIX (Advanced Station Builder, the user's server session of 2026-11-06 with 0.7.1: 17 desyncs, 5 reloads, "conParams" and
+    "ages" apart after every station, the client always one or two builds ahead of the server): not one command of the mod
+    was shipped. Its game script loads its builds with ug_require("advanced_station_builder::/stations/.../links.lua"), and
+    debug.getinfo then names the file by that game path, not by its place on the disk: with no "/mods/" in it, the hook of
+    0.7.1 did not take it for a mod's file and sent the command to the builder's engine alone (0.7.1 had been checked with a
+    test mod loaded from its folder). A file named "<mod>::/..." is now a mod's (the base game's "::/..." and MPFever's own
+    are not), for the game scripts' hook and the interface's. MPFEVER_MODVIRTUAL=0: the disk paths only, as before.
+    With one company per player, a mod's build is the company's it is made for (the Context's player, its first
+    construction's playerEntity, else the owner of what it takes away): a player's own one is sent from their game even
+    long after their last build (the mod waits until the construction menu is closed), another company's is left to that
+    company's game. MPFEVER_GSOWNER=0: as before. Test: tests/test_modvirtual.py.
+  - EXPERIMENTAL, OFF by default (MPFEVER_GATE=1 on every game): the gate, other players' builds without standing. A build of
+    another player was replayed once this game stood at its step, and the game went on when the engine had answered, a
+    handshake later: about 0.4 s for every build of every other player (85 % of the replays are one command; their stand was
+    exactly that round trip), and more with more players building. Now the replay goes to the engine as soon as it is ready,
+    while the game is still before the step: the native module holds its command (and the replay's events to the
+    simulation) and gives them to the engine at the swap that follows the batch which ended at the step; batches never run
+    past a held command. A construction's conversion (refused on purpose) goes at once and the game waits at the step only
+    if the real build is not held by then; the replays made of several commands one after the other (stops, upgrades
+    segment by segment, two-step builds) keep the game at the step until they are done, as before. Test: tests/test_gate.py
+    (with a model of the native rule over random batches).
+
 0.7.1 - 2026-11-06: every company climbs the ranks like the host's, fewer reloads (towns' pollution), a host crash fixed, Advanced Station Builder and Improved Destination Displays made compatible
   - FIX (issue #127, a host's crash): a client's builds made during a pause reached the host all at once at the unpause and
     were rebuilt from their capture; one of them only changed a junction's configuration and added one to a node the host had

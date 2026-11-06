@@ -586,6 +586,11 @@ static HANDLE KeptHandle(KeptFile& k, const char* name)
     return k.h;
 }
 
+// (the gate's control lines, see GateRelease)
+static long g_gateLineTok = 0, g_gateLineStep = -1, g_gateLineKind = -1;   // the last "gate" line of native_ctl.txt
+static long g_gateDropTok = 0, g_gateDropSeen = 0;     // "gatedrop <token>": the held commands go (a game loaded)
+static bool g_gateOn = false;
+static void GateDropAll(const char* why);
 static KeptFile g_ctlFile = { 0, 0 };
 static void ReadControl()
 {
@@ -676,12 +681,27 @@ static void ReadControl()
             for (int k = 7; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
             if (v > 0 && !IsDropped((int)v)) { long n = g_nDropIds; g_dropIds[n % 16] = v; if (n < 16) g_nDropIds = n + 1; }
         }
+        else if (len >= 7 && memcmp(l, "gate ", 5) == 0) {
+            // "gate <token> <step> <kind>": the next command the interface adds is held until that step (the last line wins)
+            int k = 5; long tok = 0, st = 0, kd = -1;
+            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
+            k++;
+            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) st = st * 10 + (l[k] - '0');
+            if (k < len && l[k] == ' ') { kd = 0; for (k++; k < len && l[k] >= '0' && l[k] <= '9'; k++) kd = kd * 10 + (l[k] - '0'); }
+            g_gateLineTok = tok; g_gateLineStep = st; g_gateLineKind = kd;
+        }
+        else if (len >= 10 && memcmp(l, "gatedrop ", 9) == 0) {
+            long tok = 0;
+            for (int k = 9; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
+            g_gateDropTok = tok;
+        }
         else if (len >= 11 && memcmp(l, "releaseid ", 10) == 0) {
             for (int k = 10; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
             if (v > g_releaseUpTo) g_releaseUpTo = v;
         }
         i = j + 1;
     }
+    if (g_gateDropTok && g_gateDropTok != g_gateDropSeen) { g_gateDropSeen = g_gateDropTok; if (g_gateOn) GateDropAll("the mod started with a game"); }
     { long want = g_tinWant; if (want && _InterlockedExchange(&g_tinLoaded, want) != want) TerrainLoadIn(want); }
     // (written into the game state by the simulation thread only, at its next iteration: from here, the state known last may be the
     // one of a game just unloaded, freed memory - writing there corrupted the heap and crashed the game after a resynchronisation)
@@ -821,9 +841,119 @@ extern "C" void* LinesDetour(void* out, void* a2, void* a3, void* a4, void* a5, 
     return g_linesOrig(out, a2, a3, a4, a5, player, a7, a8);
 }
 
+// ---------------------------------------------------------------- gate (0.8, MPFEVER_GATE=1)
+// Another player's build replayed here needed this game STANDING exactly at the build's step: the mod waited for the simulation
+// to stand there, sent the replay, the engine applied it at the start of the next batch, and the answer came back a handshake
+// later before the mod let the game go on: about 0.4 s for every build of every other player (the "LAG" lines, one round trip of
+// the main thread's 200 ms handshake). With the gate the mod sends the replay as soon as it is ready, while this game is still
+// before the step, and writes "gate <token> <step> <kind>" in native_ctl.txt just before: the next command the interface adds is
+// that replay, held here (as a tool's build is held, see AddDetour), and added again at the swap that follows the batch which
+// ended at that step. The engine applies it at the start of the batch at that step, exactly as before, with no stand: batches
+// never run past the step of a held command (StepsForBatch), and the step is reached on the batch's own clock.
+// (a held command of a game unloaded since is never added: the mod writes "gatedrop" when it starts, and a held command
+// remembers the game time component it was held under)
+typedef void (*GDtor)(void*);
+typedef void* (*GMove)(void*, void*);
+static bool Readable(const void* p, u64 n);
+struct Gate { Held h; long step; long tok; void* timeObj; u64 at; };
+static Gate* g_gates[64];
+static int g_gateHead = 0, g_gateTail = 0;
+static long g_gateUsedTok = 0;                         // the token of the last line a command was held (or refused) for
+static volatile long g_gateMin = -1;                   // the step of the oldest held command (-1: none), read by StepsForBatch
+static volatile long g_gbS = -1, g_gbN = 0;            // the latest batch: its first step and its number of steps
+static void* volatile g_gbTime = 0;                    // its game time component (another one: another game)
+static long g_gateStats[4];                            // held, released at their step, released late, dropped
+// (the smallest step of every held command: a replay gated after another one for a later step must not be passed either)
+static void GateMinUpdate()
+{
+    long m = -1;
+    for (int i = g_gateHead; i != g_gateTail; i++) { long st = g_gates[i % 64]->step; if (m < 0 || st < m) m = st; }
+    g_gateMin = m;
+}
+static void GateDropAll(const char* why)
+{
+    int n = 0;
+    while (g_gateHead != g_gateTail) { HeapFree(GetProcessHeap(), 0, g_gates[g_gateHead % 64]); g_gateHead++; n++; }
+    GateMinUpdate();
+    g_gateStats[3] += n;
+    if (n) { Buf b; b.str("gate: ").dec(n).str(" held command(s) dropped (").str(why).str(")"); LogLine(b); Buf e; e.str("gatedropped ").dec(n); AppendEvent(e); }
+}
+// (main thread, at the swap: the held commands whose step the simulation stands at go to the engine, in their order)
+static void GateRelease()
+{
+    if (g_gateHead == g_gateTail) return;
+    long S = g_gbS, E = S >= 0 ? S + g_gbN : -1;
+    void* tobj = g_gbTime;
+    if (E < 0) return;
+    // (every held command whose step has come, in the order they were held; the others keep their order)
+    for (int i = g_gateHead; i != g_gateTail; i++) if (g_gates[i % 64]->timeObj && tobj && g_gates[i % 64]->timeObj != tobj) { GateDropAll("another game time: a game was loaded"); return; }
+    int keep = g_gateHead;
+    for (int i = g_gateHead; i != g_gateTail; i++) {
+        Gate* g = g_gates[i % 64];
+        if (g->step > E) { g_gates[keep % 64] = g; keep++; continue; }
+        bool late = g->step < E;
+        alignas(16) u8 out[0x10];
+        memset(out, 0, sizeof(out));
+        g_inRelease = 1;
+        g_addOrig(g->h.list, out, g->h.cmd, g->h.done, g->h.progress);
+        g_inRelease = 0;
+        ((GDtor)(g_base + RVA_HANDLE_DTOR))(out);
+        ((GDtor)(g_base + RVA_CMD_DTOR))(g->h.cmd);
+        g_gateStats[late ? 2 : 1]++;
+        u64 ms = GetTickCount64() - g->at;
+        long shown = g_gateStats[1] + g_gateStats[2];
+        if (late || shown <= 60 || shown % 50 == 0) {
+            Buf b; b.str("gate: command ").dec(g->tok).str(" for step ").dec(g->step).str(late ? " LATE at step " : " given at step ").dec(E)
+                .str(" (held ").dec((long)ms).str(" ms; ").dec(g_gateStats[1]).str(" at their step, ").dec(g_gateStats[2]).str(" late)"); LogLine(b);
+        }
+        Buf e; e.str("gaterel ").dec(g->tok).str(" ").dec(g->step).str(" ").dec(E); AppendEvent(e);
+        HeapFree(GetProcessHeap(), 0, g);
+    }
+    // (the ones kept move to the end of the ring, in their order)
+    {
+        int n = keep - g_gateHead;
+        Gate* tmp[64];
+        for (int k = 0; k < n; k++) tmp[k] = g_gates[(g_gateHead + k) % 64];
+        g_gateHead = g_gateTail - n;
+        for (int k = 0; k < n; k++) g_gates[(g_gateHead + k) % 64] = tmp[k];
+    }
+    GateMinUpdate();
+}
+static bool GateHold(void* list, void* out, void* cmd, void* done, void* progress, u32 caller)
+{
+    long tok = g_gateLineTok, step = g_gateLineStep, kind = g_gateLineKind;
+    g_gateUsedTok = tok;
+    u8* pay = cmd ? *(u8**)cmd : 0;
+    long k = (pay && Readable(pay + 0x9b8, 1)) ? (long)*(u8*)(pay + 0x9b8) : -1;
+    if (kind >= 0 && k != kind) { Buf b; b.str("gate: line ").dec(tok).str(" for a command of kind ").dec(kind).str(", the next one added is of kind ").dec(k).str(" from ").hex(caller).str(": not held"); LogLine(b); return false; }
+    if (g_gateTail - g_gateHead >= 60) { Buf b; b.str("gate: 60 commands held already, ").dec(tok).str(" goes to the engine at once"); LogLine(b); return false; }
+    long E = g_gbS >= 0 ? g_gbS + g_gbN : -1;
+    if (E >= 0 && step < E) { Buf b; b.str("gate: command ").dec(tok).str(" for step ").dec(step).str(" came when the simulation is at ").dec(E).str(": to the engine at once (late)"); LogLine(b); g_gateStats[2]++; Buf e; e.str("gatelate ").dec(tok).str(" ").dec(step).str(" ").dec(E); AppendEvent(e); return false; }
+    Gate* g = (Gate*)HeapAlloc(GetProcessHeap(), 8, sizeof(Gate));
+    if (!g) return false;
+    g->h.list = list; g->h.site = caller; g->h.id = 0;
+    ((GMove)(g_base + RVA_CMD_MOVE))(g->h.cmd, cmd);
+    MoveFunction(g->h.done, (u8*)done);
+    memcpy(g->h.progress, progress, 0x10);
+    memset(progress, 0, 0x10);
+    memset(out, 0, 0x10);
+    g->step = step; g->tok = tok; g->timeObj = g_gbTime; g->at = GetTickCount64();
+    g_gates[g_gateTail % 64] = g;
+    g_gateTail++;
+    g_gateStats[0]++;
+    GateMinUpdate();
+    if (g_gateStats[0] <= 60 || g_gateStats[0] % 50 == 0) { Buf b; b.str("gate: command ").dec(tok).str(" of kind ").dec(k).str(" held for step ").dec(step).str(" (the simulation at ").dec(E).str(")"); LogLine(b); }
+    Buf e; e.str("gated ").dec(tok).str(" ").dec(step); AppendEvent(e);
+    return true;
+}
+
 extern "C" u64 SwapDetour(void* a, void* b)
 {
     TimingLine("swap", (u64)a, (u64)b);
+    if (g_gateOn) {
+        { static long once = 0; if (!once && g_gateHead != g_gateTail) { once = 1; Buf l; l.str("gate: swap of list ").hex((u64)a).str(", commands held for list ").hex((u64)g_gates[g_gateHead % 64]->h.list); LogLine(l); } }
+        GateRelease();
+    }
     return g_swapOrig(a, b);
 }
 
@@ -1799,6 +1929,9 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
     if (g_timing) TimingLine("add", caller, g_released);
     if (BatchLog()) { u8* pay = cmd ? *(u8**)cmd : 0; u32 k = pay && Readable(pay + 0x9b8, 1) ? *(u8*)(pay + 0x9b8) : 255; if (k != 27) { Buf l; l.str("bl add kind ").dec(k).str(" from ").hex(caller).str(" batch ").dec(g_batchN).str(" us ").dec(NowUs()); LogLine(l); } }
     if (!g_inRelease) ReadControl();
+    if (g_gateOn && !g_inRelease && g_gateLineTok && g_gateLineTok != g_gateUsedTok && !IsUiSite(caller)) {
+        if (GateHold(list, out, cmd, done, progress, caller)) return out;
+    }
     if (g_tin.ready) TerrainInject(cmd);
     else if (g_tPattern > 0) TerrainPattern(cmd);
     {   // (diagnostic, MPFEVER_PAYDUMP: the vectors of a build command, offset and size, to find where the constructions are)
@@ -4629,6 +4762,29 @@ extern "C" u32 StepsForBatch(void* time, u32 speed, u32 asked)
         sp = 1 + (S0 * 7 + S0 / 3) % sp;
     }
     ReadStop();
+    if (g_gateOn && g_getUpdRva && time) {
+        // (the gate: never past the step of a held command; and this batch's step, for the swap that gives it, see GateRelease)
+        u32 S0 = ((u32(*)(u64))(g_base + g_getUpdRva))((u64)time);
+        bool lua = g_stopSeq >= 0 && StopAlive();
+        u32 n0 = sp;
+        if (lua && g_stopAt >= 0) {
+            if ((long)S0 >= g_stopAt) n0 = 0;
+            else if ((long)(S0 + sp) > g_stopAt) n0 = (u32)(g_stopAt - (long)S0);
+        }
+        long gm = g_gateMin;
+        if (gm >= 0 && n0 > 0) {
+            if ((long)S0 >= gm) n0 = 0;
+            else if ((long)(S0 + n0) > gm) n0 = (u32)(gm - (long)S0);
+        }
+        g_gbTime = time; g_gbS = (long)S0; g_gbN = (long)n0;
+        if (!lua) return n0;
+        if (n0 != sp && sp > 0) {
+            long c = _InterlockedIncrement(&g_stopClamps);
+            if (c <= 40 || c % 500 == 0) { Buf l; l.str("stop point: batch at step ").dec((long)S0).str(" makes ").dec((long)n0).str(" step(s) instead of ").dec((long)sp).str(" (stop point ").dec(g_stopAt).str(", gate ").dec(gm).str(", ").dec(c).str(" so far)"); LogLine(l); }
+        }
+        WriteStopState(S0, n0);
+        return n0;
+    }
     if (g_stopSeq < 0 || !g_getUpdRva || !time || !StopAlive()) return sp;
     u32 S = ((u32(*)(u64))(g_base + g_getUpdRva))((u64)time);
     u32 n = sp;
@@ -5040,6 +5196,14 @@ static DWORD WINAPI Init(void*)
     }
     InstallSmoothPacing();
     InstallNativeStop();
+    {   // (0.8) the gate needs the stop point's thunk (StepsForBatch) and the swap
+        char gv[4] = {};
+        if (GetEnvironmentVariableA("MPFEVER_GATE", gv, 3) > 0 && gv[0] == '1') {
+            if (!g_speedGet) { Buf b; b.str("gate: off (no stop point)"); LogLine(b); }
+            else if (!g_swapOrig && !InstallDetour(RVA_SWAP, P_SWAP, sizeof(P_SWAP), (void*)&SwapDetour, (void**)&g_swapOrig)) { Buf b; b.str("gate: off (the swap could not be hooked)"); LogLine(b); }
+            else { g_gateOn = true; Buf b; b.str("gate: on (replays held until their step, given at the swap)"); LogLine(b); Buf e; e.str("gatecap 1"); AppendEvent(e); }
+        }
+    }
     InstallStepSnap();
     HookWordReads();
     // (found by their own signatures, on any build where those match exactly once)
