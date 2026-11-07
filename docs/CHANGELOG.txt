@@ -1,7 +1,12 @@
 MPFever - Changelog
 ===================
 
-0.7.5 - (in progress)
+0.7.5 - 2026-11-07: the game at full speed again in multiplayer, lighter checks, no more crash after a session of one company per player, computer companies share the players' stops
+  - FIX (reloads with "several players building without stopping", AMD and keviK 2026-11-07: 6 in 10 minutes): a bus stop
+    shipped at the click was rebuilt on the other games as a street proposal: the segment replaced, its stop lost. The host
+    had fewer stops and stations, and every line through those stops was refused there ("DESYNC unresolved: sg#..."). A build
+    that adds or removes stops or signals is shipped the usual way again (the stop replays of a capture build it), and such
+    a copy coming anyway is replayed as a capture. MPFEVER_PRESHIPOBJ=1: as 0.7.4. Test: tests/test_preshipstops075.py.
   - FIX (crash, the user's of 2026-10-28, known since 0.5.12: "restart the game after a session of one company per player"):
     a game that played a session of one company per player, then joined a session of one company for everybody without
     closing the game, crashed right after the load ("it != components.end()" from UI::CSelector). Reproduced at every try by

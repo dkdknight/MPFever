@@ -6876,6 +6876,12 @@ local function replayNative(a, formIndex)
 		-- engine's conversion of its constructions, then the build with them; as a street proposal its constructions were lost)
 		local preCon = a.pre and type(a.args[1]) == "table" and (#(a.args[1].toAdd or {}) > 0 or #(a.args[1].toRemove or {}) > 0)
 		if a.pre and preCon then log("NATIVE REPLAY " .. tostring(a.uid) .. ": a copy shipped at the click, with constructions: replayed as a capture") end
+		-- ((0.7.5) and a copy with stops or signals: applied as a street proposal, its stop was lost (see G.preship);
+		-- MPFEVER_PRESHIPOBJ=1: as 0.7.4)
+		if a.pre and not preCon and G.preHasObjects(a.args[1]) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then
+			preCon = true
+			log("NATIVE REPLAY " .. tostring(a.uid) .. ": a copy shipped at the click, with stops or signals: replayed as a capture")
+		end
 		if a.pre and not preCon and os.getenv("MPFEVER_PRERAW") ~= "0" then
 			log("NATIVE REPLAY " .. tostring(a.uid) .. ": a copy shipped at the click, applied as the tool made it")
 			return replayNativeStreet(a)
@@ -10073,9 +10079,23 @@ G.preHasContent = function(m)
 	end
 	return false
 end
+-- (0.7.5) whether a copy adds or removes edge objects (a stop, a signal, a waypoint on a segment)
+G.preHasObjects = function(m)
+	local st = type(m) == "table" and (m.proposal or m.streetProposal) or nil
+	if type(st) ~= "table" then return false end
+	return #(st.edgeObjectsToAdd or {}) > 0 or #(st.edgeObjectsToRemove or {}) > 0
+end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
 	if not G.preHasContent(r.copy) then log("PRESHIP native build " .. tostring(r.id) .. ": its copy has nothing in it: shipped the usual way") return false end
+	-- (0.7.5) A stop or a signal: shipped the usual way. The other games applied such a copy as a street proposal, which
+	-- rebuilt the segment without its stop (AMD and keviK, 2026-11-07, "several players building without stopping": keviK's
+	-- first bus stop built on its game only, every line through it refused on the host, 6 reloads in 10 minutes); the stop
+	-- replays of a capture build it. MPFEVER_PRESHIPOBJ=1: shipped at the click, as 0.7.4
+	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then
+		log("PRESHIP native build " .. tostring(r.id) .. ": a stop or a signal: shipped the usual way")
+		return false
+	end
 	-- (0.7.4: constructions too - stations, depots, modules. The tool's proposal it hands over at proposalPrepareForApply carries
 	-- the station's own tracks and the construction's frozen nodes, as a capture does (the manual test x1 of 2026-11-07: a
 	-- modular station, 25 nodes, 24 segments, 23 frozen nodes); the other games replay it as they replay a capture, see
