@@ -8,6 +8,10 @@ MPFever - Changelog
     pollution in issue #126) and traffic from its traffic speed map, both summed on the engine's thread pool. They are now
     kept in steps of 1/64, as pollution is since 0.7.1. MPFEVER_NOISEQ=0 / MPFEVER_TRAFFICQ=0: the engine's value, as
     before; =<n>: steps of 1/n. Test: tests/test_townratingsq075.py.
+  - FIX (players): the Multiplayer page's « Host » tab lost its title row, the « New game… » button and the filter with it,
+    when the box « Show the resynchronisation savegames » (0.7.4) was shown: the page grew taller than the game's card and the
+    game squeezed that row out. The savegames' list now gives the box its room. MPFEVER_RESYNCROWOLD=1: as 0.7.4.
+    Test: tests/test_menuresync075.py.
 
 0.7.4 - 2026-11-07: the auction of every lot at once, the MPFever window redone in the game's style, the launcher waits for its launch
   - FIX (issue #130): a report made right after a crash carried the game's crash dump with 0 bytes, the game was still

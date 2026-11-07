@@ -2187,7 +2187,10 @@ local function setup()
 			})
 			body[#body + 1] = gap(1, 6)
 			-- (0.7.4) the resynchronisations' copies, hidden unless asked, with what they are
-			if nResync > 0 or showResync:old() then
+			-- (0.7.5) its row takes room from the list below: the page kept its height, and the game squeezed out the row above
+			-- (the title, « New game… » and the filter: players found the button gone). MPFEVER_RESYNCROWOLD=1: as 0.7.4
+			local resyncRow = nResync > 0 or showResync:old()
+			if resyncRow then
 				body[#body + 1] = box(H, {
 					builtin.CheckBox{
 						value = showResync:old() and 1 or 0,
@@ -2206,7 +2209,8 @@ local function setup()
 					or T("Aucune sauvegarde ne correspond au filtre.", "No savegame matches the filter."), "font-scale-title-4", PAGE_W - 40) }, nil, { padding = { 24, 12, 24, 12 } })
 			else
 				body[#body + 1] = builtin.ScrollArea{
-					meta = { class = "tile-list-scroll", styleSheet = style{ size = { PAGE_W - 16, hasError and 440 or 500 } } },
+					meta = { class = "tile-list-scroll", styleSheet = style{ size = { PAGE_W - 16, (hasError and 440 or 500)
+						- ((resyncRow and os.getenv("MPFEVER_RESYNCROWOLD") ~= "1") and 64 or 0) } } },
 					content = builtin.Component{ layout = guiUtil.makeVerticalBox{ tiles.TileList{ elements = list, numRows = -1, numCols = 5 } } },
 					horizontalPolicy = builtin.type.ScrollBarPolicy.AlwaysOff,
 					verticalPolicy = builtin.type.ScrollBarPolicy.AsNeeded,
