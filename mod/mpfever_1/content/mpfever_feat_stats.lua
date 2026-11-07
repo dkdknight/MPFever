@@ -111,6 +111,13 @@ local TX = {
 	colMoney = { "Argent", "Money" },
 	colVeh = { "Véhicules", "Vehicles" },
 	colTenders = { "Appels", "Tenders" },
+	colTrend = { "Sur un mois", "Over a month" },
+	help1 = { "Le classement compare les entreprises par leur valeur : leur argent, moins leurs prêts, plus ce que rapporterait la revente de leurs véhicules. L'hôte la mesure au début de chaque mois de jeu, la même pour tout le monde.",
+		"The ranking compares the companies by their value: their money, less their loans, plus what their vehicles would fetch if sold. The host measures it at the start of each game month, the same for everybody." },
+	help2 = { "« Sur un mois » montre comment la valeur a changé depuis le mois d'avant. Cliquez sur le titre d'une colonne pour trier le tableau par elle ; un second clic revient au classement.",
+		"« Over a month » shows how the value changed since the month before. Click a column's title to sort the table by it; a second click goes back to the ranking." },
+	help3 = { "Avec l'objectif de partie, la première entreprise qui atteint le but (ou la meilleure à la fin du temps donné) gagne ; la partie continue ensuite.",
+		"With the game's goal, the first company to reach the target (or the best one when the time is up) wins; the game goes on afterwards." },
 	you = { "(vous)", "(you)" },
 	aiTag = { "(IA)", "(AI)" },
 	company = { "Entreprise %s", "Company %s" },
@@ -832,8 +839,15 @@ function M.fileLines(st, s, env)
 	local cos = M.guiCompanies(st, env)
 	for _, c in ipairs(cos) do
 		local r, g, bl = M.rgb(c.color)
+		-- (0.7.4: the company's name as the other pages show it, the game's name of its player (env.coName): the host's first
+		-- company has no name of its own in the registry and showed as "Company 1". MPFEVER_STATSNAMES=0: the registry's, as before)
+		local name = c.name
+		if type(env.coName) == "function" and os.getenv("MPFEVER_STATSNAMES") ~= "0" then
+			local okN, n = pcall(env.coName, c.id)
+			if okN and type(n) == "string" and n ~= "" and n:sub(1, 1) ~= "#" then name = n end
+		end
 		L[#L + 1] = "co\t" .. c.id .. "\t" .. string.format("%.2f,%.2f,%.2f", r, g, bl) .. "\t" .. b(c.ai) .. "\t" .. b(c.gone) .. "\t"
-			.. (tostring(c.name or ""):gsub("%c", " "))
+			.. (tostring(name or ""):gsub("%c", " "))
 	end
 	if type(s) ~= "table" then return L end
 	local g = s.goal
@@ -1150,7 +1164,74 @@ function M.ui(u)
 				{ lead = x[3], leadW = math.floor(W * 0.3), labelW = 120 }))
 		end
 	end
+	-- (0.7.4, the menus redone: the ranking with a podium of the first three, each company's trend since the month before (an arrow
+	-- and %), sorted by a click on a column's head; the window's old pages asked: as before)
+	local function rankingNode(t)
+		local prev = md.m[#md.m - 1]
+		local function prevValue(id)
+			for _, r in ipairs(prev and prev.rows or {}) do if r.id == id then return M.value(r) end end
+			return nil
+		end
+		local items = {}
+		for i, id in ipairs(t.ids) do
+			local r = rowsOf(id)
+			if r then
+				local v, pv = M.value(r), prevValue(id)
+				local trend = nil
+				if pv and pv ~= 0 then trend = (v - pv) / math.abs(pv) * 100 end
+				items[#items + 1] = { rank = i, id = id, row = t.rows[i], value = v, money = M.money(r), veh = r.vv, trend = trend, tw = md.tw[id] or 0 }
+			end
+		end
+		-- the podium
+		local pod = {}
+		for i = 1, math.min(3, #items) do
+			local x = items[i]
+			pod[#pod + 1] = { tostring(i) .. ". " .. coLabel(md, x.id, T), x.row[3] or M.fmt(x.value), i == 1 and "success" or nil }
+		end
+		if #pod > 0 and u.stats then add(call("stats", pod, math.floor((W - 20) / 3))); add(call("gap", 8)) end
+		-- the table, sorted as asked
+		local key = M.sel.sort
+		if key == "value" or key == "money" or key == "veh" or key == "trend" or key == "tw" then
+			table.sort(items, function(a, b)
+				local x, y = a[key] or -math.huge, b[key] or -math.huge
+				if x ~= y then return x > y end
+				return a.rank < b.rank
+			end)
+		end
+		local function head(label, k)
+			return call("button", label, function() M.sel.sort = (M.sel.sort == k) and nil or k end, M.sel.sort == k)
+		end
+		local hl = { "#", tr(T, TX.colCo), head(tr(T, TX.colValue), "value"), head(tr(T, TX.colMoney), "money"), head(tr(T, TX.colVeh), "veh"),
+			head(tr(T, TX.colTrend), "trend") }
+		if md.opts.tenders then hl[#hl + 1] = head(tr(T, TX.colTenders), "tw") end
+		local lines = { hl }
+		local ids = {}
+		for _, x in ipairs(items) do
+			local tn = "–"
+			if x.trend then
+				local s = string.format("%+.1f %%", x.trend)
+				tn = call("text", s, x.trend > 0.05 and "success" or (x.trend < -0.05 and "error" or nil)) or s
+			end
+			local line = { tostring(x.rank), coLabel(md, x.id, T), M.fmt(x.value), M.fmt(x.money), M.fmt(x.veh), tn }
+			if md.opts.tenders then line[#line + 1] = tostring(x.tw) end
+			lines[#lines + 1] = line
+			ids[#ids + 1] = x.id
+		end
+		local widths = md.opts.tenders and { 30, 170, 95, 95, 85, 85, 70 } or { 30, 190, 105, 105, 95, 95 }
+		local n = call("table", lines, widths, true, { highlight = function(i) return md.me ~= 0 and ids[i] == md.me end })
+		if n then add(n) end
+		-- (the values as bars in the companies' colours, the first one's the longest)
+		local list = {}
+		for _, x in ipairs(items) do list[#list + 1] = { x.id, x.value, coLabel(md, x.id, T) } end
+		if #list > 0 then add(call("gap", 6)); bars(list) end
+		return nil
+	end
 	local function tableNode(t)
+		if u.rich and not u.oldMenus and t.ids and t.head[1] == "#" and u.stats and u.button then
+			local okR, errR = pcall(rankingNode, t)
+			if okR then return nil end
+			add(textNode("muted", "stats: " .. tostring(errR)))
+		end
 		local lines = { t.head }
 		for _, r in ipairs(t.rows) do lines[#lines + 1] = r end
 		-- (the Hub: this player's company on a band of its own)
@@ -1205,6 +1286,12 @@ function M.ui(u)
 		else
 			add(textNode(it.kind, it.text))
 		end
+	end
+	-- (0.7.4: « How does it work? »)
+	if u.rich and not u.oldMenus and u.help then
+		for _, n in ipairs(nodes) do if u.add then u.add(n) end end
+		if u.add then nodes = {} end
+		pcall(u.help, "stats", { TX.help1, TX.help2, TX.help3 })
 	end
 	return nodes
 end

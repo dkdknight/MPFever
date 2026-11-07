@@ -5,7 +5,7 @@ mpfever_co.lua and mpfever_eco.lua are loaded whole; G.coEco and the first lines
 bridge file. All run through lupa (Lua 5.2) with a mocked game. Cases:
   - mpfever_eco.lua's co_rules event: from the host only, months among the choices, the sharing rules switched off kept (and
     kept when an event says nothing of them), the start money kept from 0 to 10 billion only (floored), the computer
-    companies' text checked (digits, ':', ',' and '-', 300 characters at most), the "mpfrules:" text MPFever.exe reads back;
+    companies' text checked (digits, ':', ',' and '-', 300 characters at most), the "mpfrules:" text MPFever.exe reads back (0.7.4: with the auction's rule, auction=mode:minutes);
   - E.sharingOff: every track, station, stop and depot open and free whatever the companies set, their settings counting
     again once the rules are back on;
   - the bridge's sender (G.coEco on the host's game): the sharing rules switched off are sent ("newRules and false or nil"
@@ -97,10 +97,10 @@ end
     check("a player's game cannot set the rules", run('return rules({ bankrupt = 6, share = false }, "Bob#1")') == "nil nil nil nil | nil")
     check("months not among the choices: refused", run('return rules({ bankrupt = 5 })') == "nil nil nil nil | nil")
     got = run('return rules({ bankrupt = 12 })')
-    check("the bankruptcy only: the text MPFever.exe reads back", got == "12 nil nil nil | mpfrules:bankrupt=12;share=1;start=;ai=;", got)
+    check("the bankruptcy only: the text MPFever.exe reads back", got == "12 nil nil nil | mpfrules:bankrupt=12;share=1;start=;ai=;auction=assets:5;", got)
     got = run('return rules({ bankrupt = 6, share = false, start = 5000000, ai = "1:7:3:1000000,2:3:1:-1" })')
     check("sharing off, start money, computer companies", got ==
-          "6 false 5000000 1:7:3:1000000,2:3:1:-1 | mpfrules:bankrupt=6;share=0;start=5000000;ai=1:7:3:1000000,2:3:1:-1;", got)
+          "6 false 5000000 1:7:3:1000000,2:3:1:-1 | mpfrules:bankrupt=6;share=0;start=5000000;ai=1:7:3:1000000,2:3:1:-1;auction=assets:5;", got)
     check("the log says the sharing rules are off", any("OFF" in str(s) for s in L.globals().LOGS.values()))
     got = run('return rules({ bankrupt = 6 })')
     check("an event that says nothing of them keeps them (sharing still off)", got.startswith("6 false 5000000 1:7:3:1000000,2:3:1:-1"), got)

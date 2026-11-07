@@ -996,6 +996,85 @@ local function lineFor(E, lines, groups)
 	return nil
 end
 
+-- (0.7.4) Every stop of a line lists every cargo type, as the game's line window makes a stop (gui line_util.makeNewStop: load
+-- false and maxLoad 1 for each cargo type, the passengers loaded at a passenger station). A freight line's unloading stop had empty
+-- lists: when the engine computes a line again (its owner changed at an auction, au1 to au6 of 2026-11-07) it reads, at every
+-- stop, the maxLoad of each cargo the line loads, read past the end of the empty list (a null pointer + the cargo's id, 33 for
+-- bricks) and crashed on every game. s: a stop as a table (C.marshal); passengers: whether a stop that listed nothing loads the
+-- passengers (a bus line), else nothing. MPFEVER_AISTOPFULL=0: the lists as before
+M.cargoCount = function(E)
+	local n = 0
+	pcall(function() for id in pairs(E.api.res.cargoTypeRep.getAll(true)) do if id + 1 > n then n = id + 1 end end end)
+	return n
+end
+M.fullStop = function(E, s, passengers, n)
+	if os.getenv("MPFEVER_AISTOPFULL") == "0" or type(s) ~= "table" then return false end
+	n = n or M.cargoCount(E)
+	if n <= 0 then return false end
+	local cfg = {}
+	if type(s.stopConfig) == "table" then for k, v in pairs(s.stopConfig) do cfg[k] = v end end
+	local oldL = type(cfg.load) == "table" and cfg.load or {}
+	local oldM = type(cfg.maxLoad) == "table" and cfg.maxLoad or {}
+	local full = true
+	for k = 1, n do if oldL[k] == nil or oldM[k] == nil then full = false; break end end
+	if full then return false end
+	local listed = false
+	for k = 1, n do if oldL[k] ~= nil then listed = true; break end end
+	local pid = nil
+	if passengers and not listed then
+		pcall(function() pid = E.api.res.cargoTypeRep.getPassengerCargoTypeId() end)
+	end
+	local load, maxLoad = {}, {}
+	for k = 1, n do
+		if oldL[k] ~= nil then load[k] = oldL[k] == true else load[k] = (type(pid) == "number" and k == pid + 1) end
+		maxLoad[k] = tonumber(oldM[k]) or 1
+	end
+	cfg.load, cfg.maxLoad = load, maxLoad
+	if cfg.forceUnload == nil then cfg.forceUnload = false end
+	cfg.__ud = true
+	s.stopConfig = cfg
+	return true
+end
+-- (0.7.4) the lines a computer company made before: their stops' lists filled, through a line update shipped as its other
+-- actions (once per line and session, at most one line per look)
+M.fixStops = function(E, co, act)
+	if os.getenv("MPFEVER_AISTOPFULL") == "0" or not (co and co.ent) then return end
+	local A = E.G.AI
+	A.stopsFixed = A.stopsFixed or {}
+	if E.G.frames < (A.stopsFixAt or 0) then return end
+	A.stopsFixAt = E.G.frames + 600
+	local api, C = E.api, E.C
+	local n = M.cargoCount(E)
+	local okL, lines = pcall(api.engine.system.lineSystem.getLinesForPlayer, co.ent)
+	if not okL then return end
+	for i = 1, #lines do
+		local l = lines[i]
+		if not A.stopsFixed[l] then
+			A.stopsFixed[l] = true
+			local m = nil
+			pcall(function() m = C.marshal(api.engine.getComponent(l, api.type.ComponentType.LINE)) end)
+			if type(m) == "table" and type(m.stops) == "table" then
+				-- (a line whose stops load nothing at all is a bus line: its stops that listed nothing load the passengers)
+				local any = false
+				for _, s in ipairs(m.stops) do
+					local ld = type(s) == "table" and type(s.stopConfig) == "table" and s.stopConfig.load
+					if type(ld) == "table" then for k = 1, n do if ld[k] == true then any = true end end end
+				end
+				local changed = 0
+				for _, s in ipairs(m.stops) do if M.fullStop(E, s, not any, n) then changed = changed + 1 end end
+				if changed > 0 then
+					act(E, co.id, "makeLineUpdateCmd", { n = 2, [1] = l, [2] = m })
+					L(E, "line " .. l .. ": " .. changed .. " stop(s) given the full cargo lists (" .. n .. " cargo types)")
+					return
+				end
+			else
+				L(E, "line " .. l .. ": its stops could not be read (" .. type(m) .. ")")
+			end
+		end
+	end
+	if not A.stopsSaid then A.stopsSaid = true; L(E, #lines .. " line(s), every stop with the full cargo lists (" .. n .. " cargo types)") end
+end
+
 local function createLine(E, co, groups, town, name)
 	local api, C, R = E.api, E.C, E.R
 	-- (a bus line of the savegame as the template of the line's fields, its stops replaced)
@@ -1046,6 +1125,7 @@ local function createLine(E, co, groups, town, name)
 		s.alternativeTerminals = alt
 		s.waypoints = {}
 		s.__ud = true
+		M.fullStop(E, s, true)
 		stops[i] = s
 	end
 	template.stops = stops
@@ -1359,6 +1439,24 @@ local function cargoName(E, id)
 	local n = tostring(id)
 	pcall(function() n = E.api.res.cargoTypeRep.getName(id) end)
 	return n
+end
+-- (0.7.4) a cargo's name as the players read it, for a line's name: its own name (in the host's language: the line is made on the
+-- host's game and shipped as it is), else its file's name without the folder (« bricks » for ::/cargos/bricks/bricks.cargo). The
+-- lines were named with the whole file path (« ::/cargos/bricks/bricks.cargo »). MPFEVER_AICARGOPATH=1: the path, as before
+local function cargoLabel(E, id)
+	local file = cargoName(E, id)
+	if os.getenv("MPFEVER_AICARGOPATH") == "1" then return file end
+	local n = nil
+	pcall(function()
+		local ct = E.api.res.cargoTypeRep.get(id)
+		n = ct and ct.name
+		if type(n) == "string" and n ~= "" and type(_) == "function" then
+			local okT, tr = pcall(_, n)
+			if okT and type(tr) == "string" and tr ~= "" then n = tr end
+		end
+	end)
+	if type(n) == "string" and n ~= "" and not n:find("/", 1, true) then return n end
+	return (tostring(file):match("([^/]+)%.cargo$") or tostring(file))
 end
 
 -- (0.6.4) Whether a line may be destroyed now: no person or cargo travels on it and none waits at its stops (each stop, each
@@ -2416,6 +2514,8 @@ local function freightStop(E, road, stop0, loadCargo)
 	s.alternativeTerminals = alt
 	s.waypoints = {}
 	s.__ud = true
+	-- (0.7.4: the unloading stop too, every list full, see M.fullStop)
+	M.fullStop(E, s, false)
 	return s
 end
 
@@ -2438,7 +2538,7 @@ local function createFreightLine(E, co, f, extra)
 	template.stops = { freightStop(E, f.from.road, stop0, f.cargo), freightStop(E, f.to.road, stop0) }
 	-- (a round: a second producer of the same cargo on the way, see collectFrom)
 	if extra then table.insert(template.stops, 2, freightStop(E, extra.road, stop0, f.cargo)) end
-	local name = AINAME .. " " .. cargoName(E, f.cargo) .. " " .. math.floor(dist(f.from.pos, f.to.pos) / 100) / 10 .. " km"
+	local name = AINAME .. " " .. cargoLabel(E, f.cargo) .. " " .. math.floor(dist(f.from.pos, f.to.pos) / 100) / 10 .. " km"
 	act(E, co.id, "makeLineCreateCmd", { n = 4, [1] = name, [2] = C.marshal(api.type.Vec3f.new(0.8, 0.5, 0.1)), [3] = co.ent, [4] = template })
 	-- (its growth waits until this line had time to fill, see mayExpand)
 	E.G.AI.lastNewAt = E.gameTime()
@@ -5178,7 +5278,21 @@ function M.tick(E, st)
 	-- (its start money, the host's choice for it; else the players')
 	AIMONEY = cur.money
 	local known = aiCompany(E)
+	-- (0.7.4) Its company changed (it went bankrupt and starts again with a new one): what it knew of the old one's lines, depots and
+	-- stops goes. It kept it: it bought trucks at the old company's depot and sent them to the old company's line, which the auction
+	-- then put up for sale (au3, 2026-11-07). MPFEVER_AIKEEPMEMORY=1: kept, as before
+	if known and G.AI.coId and G.AI.coId ~= known.id and os.getenv("MPFEVER_AIKEEPMEMORY") ~= "1" then
+		L(E, "its company changed (" .. tostring(G.AI.coId) .. " -> " .. tostring(known.id) .. ", a bankruptcy?): it starts again from nothing")
+		G.AIS[cur.n] = { lookAt = G.AI.lookAt, levelSaid = G.AI.levelSaid }
+		G.AI = G.AIS[cur.n]
+	end
+	if known then G.AI.coId = known.id end
 	AINAME = known and known.name ~= "" and known.name or newName(E, cur.n)
+	-- (0.7.4: its lines made before this version, their stops' cargo lists filled, see M.fullStop)
+	if known then
+		local okF, errF = pcall(M.fixStops, E, known, act)
+		if not okF and not G.AI.stopsErr then G.AI.stopsErr = true; L(E, "its lines' stops not checked: " .. tostring(errF)) end
+	end
 	-- (what a step costs this game's interface: the slowest one of each minute is logged)
 	local t0 = os.clock()
 	local busyBefore = G.AI.busy

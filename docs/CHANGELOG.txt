@@ -1,6 +1,110 @@
 MPFever - Changelog
 ===================
 
+0.7.4 - (in progress)
+  - FIX (issue #130): a report made right after a crash carried the game's crash dump with 0 bytes, the game was still
+    writing it. The report now waits until it is written (not empty, the same size for a second; 15 s at most).
+    MPFEVER_DUMPWAIT=0: as before. Test: tests/test_dumpwait.py.
+  - FIX (dedicated server, a player joining, the user's server 2026-11-06 23:13): a player who left during a
+    resynchronisation was waited for until its end, 600 s, every game frozen (0.7.3 waits for the players who join, and
+    dickj left while the game was on its way). A player not back within 20 s is no longer waited for.
+    MPFEVER_RESYNCLEFT=0: as before.
+  - FIX: a player's connection replaced by a newer one started a reconnection of its own, which replaced the newer one,
+    and so on (a new connection every 5 s for two minutes). A superseded connection no longer reconnects, and only one
+    reconnection runs at a time. MPFEVER_RECONNECTOLD=1: as before.
+  - FIX: a player's MPFever reads nothing while it handles a message (putting the host's game together and writing it,
+    82 MB): it heard nothing from the host for more than 15 s and cut itself. No silence cut while a message is handled;
+    the silence counts from the end of that handling. MPFEVER_BUSYCUT=1: as before.
+  - FIX: a dedicated server whose world needs a published mod the game did not see yet (mod.io was updating "PYT - Mega
+    Warehouse" at 23:20) ended its session at once and stayed down. It now starts its game again after 30 s, three
+    times, before giving up (a local mod of the host: at once, as before). MPFEVER_MODRETRY=0: as before.
+    Tests: tests/test_serverjoin074.py and the launcher's self-test.
+  - EXPERIMENTAL (in "Several players building without stopping", off by default): builds shipped at the click now work
+    with the real tools. A manual test with the real station, depot and street tools (2026-11-07) showed that the tool's
+    builder.proposalApply event, where 0.7.3 took the copy, comes once the engine has APPLIED the build, after the held
+    build was announced: a real tool's build was never shipped at the click (only the autotests' builds were). The copy
+    is now the proposal the tool prepares (builder.proposalPrepareForApply, before its command), and for the street
+    tool, which prepares nothing, its last preview (builder.proposalCreate; one taking more than 8 ms to read is skipped).
+    MPFEVER_TOOLCOPYAPPLY=1: at proposalApply as before; MPFEVER_PRECREATE=0: no preview copies.
+  - EXPERIMENTAL (same setting): stations, depots and other constructions shipped at the click too (0.7.3: streets and
+    tracks only). The tool's prepared proposal carries the station's own tracks and frozen nodes, as a capture does; the
+    other games replay it as a capture (the engine's conversion, then the build). The copy and the capture are compared
+    by their street part and the players' constructions (file and place), not the town buildings the engine puts back.
+    In the manual test: a modular station, a depot and a street built from their copies on the other game, "really stood
+    0 ms before the replay" (instead of 65 to 960 ms waiting for the data), and confirmed alike by the builder.
+    MPFEVER_PRESHIPCON=0: streets only; MPFEVER_PRECONSIG=0: the street part only. Not for the station configuration
+    tool (modules): it sends no event a script can read, its edits still wait for their data (0.1 to 0.3 s).
+  - EXPERIMENTAL (same setting, MPFEVER_ACTLEAD alone): vehicles and lines at the click. A vehicle bought, sold,
+    replaced, sent to a line or a depot, a line made, edited or taken away starts the player's lead, as a construction
+    tool in hand does, and is stamped as close as that game's overshoot allows instead of 7 steps ahead (16 at 4x); the
+    vehicle store open starts the lead before the first purchase. (0.7.0's MPFEVER_LINELEAD did it for line edits only.)
+    Tests: tests/test_preship.py, tests/test_linelead.py.
+  - NEW (one company per player): the auction of a bankrupt company sells everything at once. Each line (with its
+    vehicles), each station and each depot is a lot with its own price, all on the new "Auctions" page of the MPFever
+    window, with one clock for all (5 minutes by default; the host chooses 3, 5 or 10 in the lobby or the game's rules).
+    A bid in the last 30 seconds adds 30 seconds. Each lot has its detail (stops, vehicles, the other companies' lines
+    that stop at a station) and a "Show" button; the page counts what your best bids hold back. The host can also sell
+    the whole company as one lot, or keep the auction of 0.7.3 (one lot after the other). MPFEVER_AUCTION=mode:minutes
+    (assets, company, serial), MPFEVER_OLDAUCTION=1: one lot after the other. A station or a depot sold goes with its
+    own tracks (MPFEVER_LOTFROZEN=0: as before).
+  - NEW: what nobody bought is removed from the game: its vehicles sold, its lines taken away, its stations and depots
+    demolished. A station where other companies' lines stop is not demolished (that would break their lines): it goes,
+    with the company's tracks and roads, to an heir: a computer company first (it may sell it), else a company that
+    bid, else any company with players, picked the same way on every game. The chat tells each sale and each heir.
+    MPFEVER_UNSOLDHEIR=0: demolished, nothing to an heir.
+  - FIX (crash of every game at the end of an auction, found with the new auction, 2026-11-07): a computer company's
+    freight line had a stop (where its trucks unload) without the per-cargo load lists every stop of the game has. The
+    engine reads them when a line changes hands and crashed (in line_util, 0x25c2451). Every new stop of a computer
+    company now lists every cargo type, as the game's line window makes a stop; its older lines are filled once (a line
+    update, as any other action), and any line is filled before its owner changes (auction, sale between companies,
+    merger, heir). MPFEVER_AISTOPFULL=0 and MPFEVER_LINEFIX=0: as before. Test: tests/test_stopfull074.py.
+  - FIX: a computer company that went bankrupt and started again kept what it knew of its old company (it bought a truck
+    at the old company's depot for the old company's line). It now starts again from nothing (MPFEVER_AIKEEPMEMORY=1: as
+    before). A line sold at an auction goes with the vehicles bought for it that have not reached it yet
+    (MPFEVER_LINEVEH=0: as before). A computer company's freight line is named after its cargo ("Briques 4.6 km"), not
+    its file's path (MPFEVER_AICARGOPATH=1: as before). An unnamed station or depot is "Unnamed station (lot 4)" on the
+    page and in the chat (MPFEVER_STOPLOTNAME=0: "(unnamed)" in a line's detail).
+    Tests: tests/test_auction074.py, tests/test_companies.py. Host test button: MPFEVER_AUCTIONTEST=1 (the host's PC),
+    MPFEVER_AUCTIONSECONDS=s (the host's clock, tests).
+  - NEW: the MPFever window's "Company" page shows a card per company (colour, players, money, lines, vehicles, rank),
+    sorted by money, rank or lines; a click opens its sheet (its numbers, its players, its lines with "Show", what you
+    can do: join, merge, give money, leave, your colour). The window's old
+    pages are one click away: Settings, "Use the window's old pages (MPFever 0.7.3)" (this PC, kept across launches;
+    MPFEVER_OLDMENUS=1 too).
+  - NEW (the MPFever window, its pages redone in the game's style; the window's old pages with the Settings box above):
+      - every page ends with « How does it work? », a card that explains it, folded by a click;
+      - Sharing rules: the other companies' rules in a table, a row a company, each rule in colour (open green, toll
+        amber, private red); earnings and fees in tables, with what each company paid to you and what you paid to it;
+      - Trade: two tabs, Sales and Supply contracts; the offers received and sent as cards; a sale in three steps (the
+        asset in a list by kind, the buyer, the price typed in a field instead of ±100 k buttons); the running contracts
+        in a table; a new contract in a form of lists (the other company, the station, the cargo) and fields;
+      - Ranking: a podium of the first three, each company's change over a month in colour, the table sorted by a click
+        on a column's title; the host's first company named as on the other pages (it showed as "Company 1",
+        MPFEVER_STATSNAMES=0: as before);
+      - Stock market: each company shown once, a card with its value, share price and change, dividend and your shares,
+        and its buttons (0.7.3 showed each one three times);
+      - Competition: the totals' table sorted by a click on a column's title;
+      - Company: a company's sheet shows its vehicles by kind (road, trains, trams, ships, aircraft) and its result of
+        the year so far (MPFEVER_COSHEETMORE=0: not shown); a computer company shows as "computer", and its sheet offers
+        no join and no merger (its chief, the computer, never answers); the computer companies' journal names a cargo
+        ("Bricks"), not its file's path;
+      - the host's auction test buttons sorted by company number (they were sorted by balance and moved under the mouse).
+    Tests: tests/test_menus074.py, tests/test_hub.py, the options' tests.
+  - FIX (launcher): with the new launch button and its box, the speed controls pushed x2 and x4 out of the bar; they
+    are hidden until the game is started (they are of no use before).
+  - CHANGE (launcher): MPFever no longer starts Transport Fever 3 by itself as soon as it opens: the first run lets you
+    set it up ("Start Transport Fever 3" button), and a box on the main page, "Start the game by itself when MPFever
+    opens", does it at the next runs (unticked for
+    everyone after this update). Joining from Steam still starts the game. MPFEVER_AUTOLAUNCH=1: always, as before.
+  - CHANGE (launcher): while the mod is put in place (the game's files read and written, several seconds), the window
+    no longer "stops responding": it shows a bar and "Please wait" and the work runs in the background.
+    MPFEVER_INITSYNC=1: all at once, as before.
+  - NEW (main menu, Multiplayer): a box "Show the resynchronisation savegames" lists the saves MPFever writes during a
+    resynchronisation (they were hidden, players asked where the game they had just played was), with a word on what
+    they are. MPFEVER_MENU_RESYNC=1: ticked at first (tests).
+  - NEW (in game): the players' list shows how much of the host's game a joining player has received ("receives the
+    host's game: 45 %"). MPFEVER_SENDPCT=0: not shown. Tests: tests/test_launcher074.py and the launcher's self-test.
+
 0.7.3 - 2026-11-06: several players building at once without stopping (a host setting, experimental, OFF by default), and joining players waited for
   - EXPERIMENTAL, OFF by default: a session setting of the host, "Several players building without stopping"
     (MPFEVER_NOSTOP=1). It turns on the three parts below together; each one can still be set alone (=1 on, =0 off).

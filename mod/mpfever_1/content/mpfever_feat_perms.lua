@@ -85,6 +85,13 @@ M.EVENTS = {
 }
 
 M.TAB = { id = "team", title = { "Équipe", "Team" } }
+-- (0.7.4) the page's « How does it work? », at its end in the Hub (see the window's U.featTabRows)
+M.HELP = {
+	{ "Le chef de l'équipe (l'hôte en coopération, le chef d'une entreprise à plusieurs joueurs) décide de ce que chaque joueur a le droit de faire et du budget qu'il peut dépenser par an.",
+		"The team's chief (the host in co-op, the chief of a company with several players) decides what each player may do and the budget each one may spend a year." },
+	{ "Une action interdite ou au-delà du budget est refusée sur tous les jeux, et le joueur voit pourquoi. Les plans partagés (tracés du mode plan et notes sur la carte) sont vus par toute l'équipe.",
+		"An action that is not allowed or beyond the budget is refused on every game, and the player sees why. The shared plans (plan mode layouts and notes on the map) are seen by the whole team." },
+}
 -- the tab's data: feat_perms_team.txt of the session folder (env.write on the bridge's side, u.read in the window)
 M.FILE = "team"
 

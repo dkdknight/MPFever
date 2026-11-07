@@ -39,8 +39,12 @@ local E = {}
 E.EVENTS = {
 	co_rules = true, co_join_ask = true, co_join_answer = true, co_leave = true, co_cancel = true, co_merge_ask = true,
 	co_merge_answer = true, co_bid = true, co_lot_close = true, co_track_rule = true, co_depot_rule = true, co_test = true, co_month = true,
-	co_stop_rule = true, co_depot_default = true, co_road_rule = true,
+	co_stop_rule = true, co_depot_default = true, co_road_rule = true, co_auction_close = true,
 }
+-- (0.7.4) the smallest bid a lot takes: its reserve, or the best bid and 5 %
+function E.minBid(lot)
+	return math.max(lot.reserve or 0, lot.best and math.ceil(lot.best * (1 + E.MIN_RAISE)) or 0)
+end
 E.BANKRUPT_DEFAULT = 12        -- months in debt
 E.BANKRUPT_CHOICES = { 0, 3, 6, 12, 24 }
 E.LOT_SECONDS = tonumber(os.getenv("MPFEVER_LOTSECONDS") or "") or 60   -- a lot stays open that long (real time, on the host)
@@ -63,6 +67,32 @@ E.PRIVATE_FEE = os.getenv("MPFEVER_PRIVATEFEE") ~= "0"
 -- (MPFEVER_TRACKTYPE=0: as before)
 E.TRACK_STREET = os.getenv("MPFEVER_TRACKTYPE") ~= "0"
 E.RESERVE = { line = 50000, vehicle = 50000, station = 100000, depot = 50000 }
+-- (0.7.4) The auction of a bankrupt company, as the host chooses it (reg.rules.auction, "mode:minutes"; the lobby, the Rules tab):
+--   assets   every lot (each line with its vehicles, each station, each depot) for sale at once, one clock for all of them
+--            (0.7.3: one lot after the other, a minute each: an advanced company's twenty lines took twenty minutes, and the
+--            window showed one at a time);
+--   company  one lot, the whole company: its lines, vehicles, stations, depots, tracks and roads; its reserve the sum of theirs;
+--   serial   the auction of 0.7.3, one lot after the other (an auction of a savegame of 0.7.3 under way goes on that way).
+-- The clock: E.AUCTION_MINUTES (5 by default), a bid in its last E.SNIPE_SECONDS gives every lot that much more. What nobody
+-- bought is demolished (a line, a depot, a station no other company's line stops at); a station another company's lines still
+-- stop at, the tracks and roads and whatever the company still owns go to an heir instead of breaking the others' lines: a
+-- computer company if there is one (it may sell them), else a company that took part in the auction, else any company, chosen
+-- by the auction's number (the same on every game).
+E.AUCTION_MODES = { assets = true, company = true, serial = true }
+E.AUCTION_MINUTES = { 3, 5, 10 }
+E.AUCTION_DEFAULT = "assets:5"
+E.SNIPE_SECONDS = 30
+-- the host's choice, read from the registry: mode and minutes
+function E.auctionRule(reg)
+	local v = tostring(((reg or {}).rules or {}).auction or E.AUCTION_DEFAULT)
+	local mode, mins = v:match("^(%a+):(%d+)$")
+	mins = tonumber(mins)
+	local okM = false
+	for _, m in ipairs(E.AUCTION_MINUTES) do if m == mins then okM = true end end
+	if not (mode and E.AUCTION_MODES[mode]) then mode = "assets" end
+	if not okM then mins = 5 end
+	return mode, mins
+end
 -- (0.6) A computer company never goes bankrupt, whatever its level (the owner's rule of 2026-10-30): its months in debt are not
 -- counted, so no bankruptcy and no "in debt" notice for it; it keeps itself solvent instead (mpfever_ai.lua: its reserve, its
 -- floor, its sales and its loan). Read once, every game is started with the same value (MPFEVER_AINOBANKRUPT=0: as before, a
@@ -163,13 +193,77 @@ function E.hasAssets(env, c)
 end
 
 -- the entities of `list` that `from` owns become `to`'s (the others are left alone: an entity without an owner has none)
+-- (0.7.4: E.handing, while an auction closes: the entities already handed over, sold or demolished in this step. The commands
+-- are applied after this step, so the owners read here are still the bankrupt company's: without it the line just sold went to
+-- the heir with the rest, two owner changes of one entity in one step, au1 2026-11-07)
+-- (0.7.4) A line's stops given every cargo type's load and maxLoad, as the game's line window makes a stop (gui line_util.makeNewStop).
+-- The computer companies' freight lines had an unloading stop with empty lists; the engine computes a line again when its owner
+-- changes and reads, at each stop, the maxLoad of every cargo the line loads: past the end of the empty list, a crash on every game
+-- (au1 to au6 of 2026-11-07, the line sold at an auction; reproduced with the owner change alone). A stop that listed nothing
+-- loads nothing, or the passengers on a line that loads nothing at all (a bus line). Sends the line's update (before the owner
+-- change, in the same step); returns whether it did. MPFEVER_LINEFIX=0: as before
+function E.fullLineStops(l)
+	if os.getenv("MPFEVER_LINEFIX") == "0" then return false end
+	local n = 0
+	pcall(function() for id in pairs(api.res.cargoTypeRep.getAll(true)) do if id + 1 > n then n = id + 1 end end end)
+	if n <= 0 then return false, "the cargo types could not be read" end
+	local ok, sent = pcall(function()
+		local lc = api.engine.getComponent(l, api.type.ComponentType.LINE)
+		if not lc then return false end
+		local lineData = api.type.Line.new(lc)
+		local stops, short, any = {}, false, false
+		for _, s in ipairs(lineData.stops) do
+			stops[#stops + 1] = s
+			local nl, nm = 0, 0
+			for _, v in ipairs(s.stopConfig.load) do nl = nl + 1; if v then any = true end end
+			for _ in ipairs(s.stopConfig.maxLoad) do nm = nm + 1 end
+			if nl < n or nm < n then short = true end
+		end
+		if not short then return "full" end
+		local pid = nil
+		if not any then pcall(function() pid = api.res.cargoTypeRep.getPassengerCargoTypeId() end) end
+		for _, s in ipairs(stops) do
+			local old = s.stopConfig
+			local oldL, oldM = {}, {}
+			for k, v in ipairs(old.load) do oldL[k] = v end
+			for k, v in ipairs(old.maxLoad) do oldM[k] = v end
+			if #oldL < n or #oldM < n then
+				local cfg = api.type.Line.StopConfig.new()
+				local load, maxLoad = {}, {}
+				for k = 1, n do
+					if oldL[k] ~= nil then load[k] = oldL[k] == true else load[k] = (#oldL == 0 and type(pid) == "number" and k == pid + 1) end
+					maxLoad[k] = tonumber(oldM[k]) or 1
+				end
+				cfg.load, cfg.maxLoad = load, maxLoad
+				cfg.forceUnload = old.forceUnload
+				cfg.destroyForConfigChange = old.destroyForConfigChange
+				cfg.destroyForRefresh = old.destroyForRefresh
+				s.stopConfig = cfg
+			end
+		end
+		lineData.stops = stops
+		api.cmd.sendCommand(api.cmd.makeLineUpdateCmd(l, lineData))
+		return true
+	end)
+	if not ok then return false, tostring(sent) end
+	if sent == "full" then return false, "full" end
+	return sent == true, sent == true and "filled" or tostring(sent)
+end
+
 local function setOwner(list, from, to)
 	local n = 0
 	for _, e in ipairs(list) do
 		local okc, po = pcall(api.engine.getComponent, e, api.type.ComponentType.PLAYER_OWNED)
-		if okc and po and po.player == from then
+		if okc and po and po.player == from and not (E.handing and E.handing[e]) then
+			-- (0.7.4: a line's stops filled first, see E.fullLineStops)
+			local okL, lc = pcall(api.engine.getComponent, e, api.type.ComponentType.LINE)
+			if okL and lc then
+				local filled, why = E.fullLineStops(e)
+				if E.env and why ~= "full" then E.env.log("companies: line " .. e .. " changes hands: its stops' cargo lists " .. (filled and "filled first" or ("not filled (" .. tostring(why) .. ")"))) end
+			end
 			local ok = pcall(function() api.cmd.sendCommand(api.cmd.makeEntitySetPlayerCmd(e, to)) end)
 			if ok then n = n + 1 end
+			if E.handing then E.handing[e] = true end
 		end
 	end
 	return n
@@ -270,6 +364,18 @@ function E.lotsOf(env, c)
 	return lots
 end
 
+-- (0.7.4) the whole company as one lot: what it holds, its reserve the sum of its assets' reserves (at least a line's)
+function E.companyLot(env, c, lots, label)
+	local reserve, n = 0, { line = 0, station = 0, depot = 0, vehicles = 0 }
+	for _, l in ipairs(lots) do
+		reserve = reserve + (l.reserve or 0)
+		n[l.kind] = (n[l.kind] or 0) + 1
+		n.vehicles = n.vehicles + (l.vehicles or 0)
+	end
+	return { kind = "company", key = "C:" .. tostring(c.id), label = label or ("#" .. tostring(c.id)), reserve = math.max(E.RESERVE.line, reserve),
+		lines = n.line, stations = n.station, depots = n.depot, vehicles = n.vehicles }
+end
+
 -- the entities of a lot in this game, found again by its key
 local function lotEntities(env, c, lot)
 	local ents, vehicles, cons = {}, {}, {}
@@ -278,7 +384,21 @@ local function lotEntities(env, c, lot)
 			for _, l in ipairs(api.engine.system.lineSystem.getLinesForPlayer(c.ent)) do
 				if lineKey(env, l) == lot.key then
 					ents[#ents + 1] = l
-					for _, v in ipairs(api.engine.system.transportVehicleSystem.getLineVehicles(l)) do vehicles[#vehicles + 1] = v end
+					local seenV = {}
+					for _, v in ipairs(api.engine.system.transportVehicleSystem.getLineVehicles(l)) do vehicles[#vehicles + 1] = v; seenV[v] = true end
+					-- (0.7.4) and the company's vehicles sent to that line that are not on it yet (bought, still leaving their depot):
+					-- the line changed hands without them, a vehicle of one company left on another one's line (au5, 2026-11-07; that
+					-- game's crash itself came from the line's stops, see E.fullLineStops). MPFEVER_LINEVEH=0: the line's vehicles only
+					if os.getenv("MPFEVER_LINEVEH") ~= "0" then
+						pcall(function()
+							for _, v in ipairs(api.engine.system.transportVehicleSystem.getVehiclesForPlayer(c.ent)) do
+								if not seenV[v] then
+									local okT, tv = pcall(api.engine.getComponent, v, api.type.ComponentType.TRANSPORT_VEHICLE)
+									if okT and tv and tv.line == l then vehicles[#vehicles + 1] = v; seenV[v] = true end
+								end
+							end
+						end)
+					end
 					break
 				end
 			end
@@ -317,6 +437,7 @@ end
 -- refuses to remove stays, with no player of its own: see E.openOwners)
 local function demolish(env, c, lot)
 	local ents, vehicles, cons = lotEntities(env, c, lot)
+	if E.handing then for _, list in ipairs({ ents, vehicles, cons }) do for _, e in ipairs(list) do E.handing[e] = true end end end
 	for _, v in ipairs(vehicles) do pcall(function() api.cmd.sendCommand(api.cmd.makeVehicleSellCmd({ v })) end) end
 	if lot.kind == "line" then
 		for _, l in ipairs(ents) do pcall(function() api.cmd.sendCommand(api.cmd.makeLineDestroyCmd(l)) end) end
@@ -403,6 +524,21 @@ function E.transferLot(env, from, to, lot, opts)
 			end
 		end
 	end
+	-- (0.7.4, diagnostic: vehicles of another company than `from` sent to a line that changes hands, which the engine does not take)
+	if lot.kind == "line" then
+		pcall(function()
+			local lineSet, odd = {}, {}
+			for _, l in ipairs(ents) do lineSet[l] = true end
+			api.engine.forEachEntityWithComponent(function(v)
+				local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+				if tv and lineSet[tv.line] and not seen[v] then
+					local po = api.engine.getComponent(v, api.type.ComponentType.PLAYER_OWNED)
+					odd[#odd + 1] = tostring(v) .. "(owner " .. tostring(po and po.player) .. ")"
+				end
+			end, api.type.ComponentType.TRANSPORT_VEHICLE)
+			if #odd > 0 then env.log("companies: lot '" .. tostring(lot.label) .. "': vehicles of other owners on the line: " .. table.concat(odd, ", ")) end
+		end)
+	end
 	local nFrozen = #all
 	if opts.frozen then frozenOf(cons, all, seen) end
 	nFrozen = #all - nFrozen
@@ -420,11 +556,146 @@ function E.transferLot(env, from, to, lot, opts)
 	return n, { stations = stations, vehicles = #vehicles, frozen = nFrozen }
 end
 
-local function sell(env, c, lot, winner, amount)
-	local n = E.transferLot(env, c, winner, lot)
+local function sell(env, c, lot, winner, amount, reg)
+	local n
+	if lot.kind == "company" then
+		-- (0.7.4: the whole company, everything it owns; its money and its debt are not part of it. The own settings of its
+		-- stations and depots are the buyer's now, as in a merger)
+		n = setOwner(E.ownedBy(env, c.ent), c.ent, winner.ent)
+		if reg then
+			for _, o in pairs(reg.stationRule or {}) do if type(o) == "table" and o.co == c.id then o.co = winner.id end end
+			for _, d in pairs(reg.depots or {}) do if type(d) == "table" and d.co == c.id then d.co = winner.id end end
+		end
+	else
+		-- (0.7.4: a station's or a depot's own tracks go with it, as in a sale between companies: the buyer's trains paid the
+		-- bankrupt company's toll inside a station they bought. MPFEVER_LOTFROZEN=0: as before)
+		n = E.transferLot(env, c, winner, lot, os.getenv("MPFEVER_LOTFROZEN") ~= "0" and { frozen = true } or nil)
+	end
 	book(winner.ent, -amount, function(x) x.category.type = api.type.JournalEntry.Type.ACQUISITION end)
 	env.log("companies: auction: lot '" .. tostring(lot.label) .. "' (" .. lot.kind .. ") of company " .. c.id .. " sold to company "
 		.. winner.id .. " for " .. amount .. " (" .. n .. " entities change hands)")
+end
+E.lotEntities = function(env, c, lot) return lotEntities(env, c, lot) end
+
+-- (0.7.4) whether a line of another company than c stops at station group sg
+local function usedByOthers(env, c, sg)
+	local used = false
+	pcall(function()
+		for _, l in ipairs(env.R.entitiesWith("LINE")) do
+			local po = api.engine.getComponent(l, api.type.ComponentType.PLAYER_OWNED)
+			if not (po and po.player == c.ent) then
+				local lc = api.engine.getComponent(l, api.type.ComponentType.LINE)
+				for i = 1, #lc.stops do if lc.stops[i].stationGroup == sg then used = true; return end end
+			end
+		end
+	end)
+	return used
+end
+
+-- (0.7.4) the heir of what a bankrupt company keeps unsold: a computer company, else a company that bid at its auction, else any
+-- company with players, sorted by number and picked by the auction's number (the same on every game); nil when there is none
+function E.heirOf(reg, au, env)
+	local function pick(list)
+		if #list == 0 then return nil end
+		table.sort(list, function(a, b) return a.id < b.id end)
+		return list[(math.floor(tonumber(au.seq) or 1) % #list) + 1]
+	end
+	local ai, bidders, any = {}, {}, {}
+	local bid = {}
+	for _, l in ipairs(au.lots or {}) do if l.bidder then bid[l.bidder] = true end end
+	for id in pairs(au.bidders or {}) do bid[tonumber(id) or -1] = true end
+	for _, c in ipairs(reg.list or {}) do
+		if live(c) and c.ent and c.id ~= au.co then
+			if E.isAi(c) then ai[#ai + 1] = c end
+			if bid[c.id] then bidders[#bidders + 1] = c end
+			if #env.CO.members(c) > 0 then any[#any + 1] = c end
+		end
+	end
+	return pick(ai) or pick(bidders) or pick(any)
+end
+
+-- (0.7.4) a lot nobody bought: demolished, but a station another company's lines stop at goes to the heir (demolished, it broke
+-- their lines); returns whether it went to the heir
+local function unsold(env, c, lot, heir)
+	if lot.kind == "station" and heir and os.getenv("MPFEVER_UNSOLDHEIR") ~= "0" then
+		local sgs = {}
+		for _, sg in ipairs(stationsOf(env, c.ent)) do if env.R.sgKey(sg) == lot.key then sgs[#sgs + 1] = sg end end
+		for _, sg in ipairs(sgs) do
+			if usedByOthers(env, c, sg) then
+				local n = E.transferLot(env, c, heir, lot, { frozen = true })
+				env.log("companies: auction: station '" .. tostring(lot.label) .. "' of company " .. c.id .. " unsold, other companies' lines stop there: to company "
+					.. heir.id .. " (" .. n .. " entities)")
+				return true
+			end
+		end
+	end
+	demolish(env, c, lot)
+	return false
+end
+
+-- (0.7.4) the end of an auction of every lot at once (or of the whole company): each lot sold to its best bidder, or unsold; then
+-- what the company still owns (its tracks and roads, a station kept for the others' lines...) goes to the heir
+function E.closeAll(st, env)
+	local reg = st.co
+	local au = reg.auction
+	if not (au and au.v == 2) then return end
+	local c = env.CO.find(reg, au.co)
+	local heir = E.heirOf(reg, au, env)
+	local sold, gone, kept = 0, 0, 0
+	E.handing = {}
+	local okC, errC = pcall(function()
+	if c and c.ent then
+		for i, lot in ipairs(au.lots) do
+			local w = lot.bidder and env.CO.find(reg, lot.bidder) or nil
+			if w and (w.gone == "merged" or w.gone == "taken") and w.mergedInto then w = env.CO.find(reg, w.mergedInto) end
+			if w and live(w) and w.ent then
+				sell(env, c, lot, w, lot.best, reg)
+				sold = sold + 1
+				news(reg, { kind = "lot_sold", co = au.co, lot = i, lk = lot.kind, label = lot.label, to = w.id, amount = lot.best })
+			elseif lot.kind == "company" then
+				-- (the whole company unsold: its lines, depots and stations nobody else uses go, as lots of their own would)
+				for _, sub in ipairs(E.lotsOf(env, c)) do
+					if unsold(env, c, sub, heir) then kept = kept + 1 else gone = gone + 1 end
+					dropLotRule(reg, sub)
+				end
+				news(reg, { kind = "lot_unsold", co = au.co, lot = i, label = lot.label })
+			else
+				local toHeir = unsold(env, c, lot, heir)
+				if toHeir then kept = kept + 1 else gone = gone + 1 end
+				news(reg, { kind = "lot_unsold", co = au.co, lot = i, lk = lot.kind, label = lot.label, heir = (toHeir and heir) and heir.id or nil })
+			end
+			if lot.kind ~= "company" then dropLotRule(reg, lot) end
+		end
+		-- (whatever it still owns and nothing handed over yet: its tracks, roads, a station kept for the others' lines go to the heir;
+		-- a vehicle or a line left over is sold or taken away, as an unsold lot's)
+		if heir and heir.ent and os.getenv("MPFEVER_UNSOLDHEIR") ~= "0" then
+			local left, sellV, dropL = {}, 0, 0
+			for _, e in ipairs(E.ownedBy(env, c.ent)) do
+				if not E.handing[e] then
+					local okV, tv = pcall(api.engine.getComponent, e, api.type.ComponentType.TRANSPORT_VEHICLE)
+					local okL, ln = pcall(api.engine.getComponent, e, api.type.ComponentType.LINE)
+					if okV and tv then
+						E.handing[e] = true; sellV = sellV + 1
+						pcall(function() api.cmd.sendCommand(api.cmd.makeVehicleSellCmd({ e })) end)
+					elseif okL and ln then
+						E.handing[e] = true; dropL = dropL + 1
+						pcall(function() api.cmd.sendCommand(api.cmd.makeLineDestroyCmd(e)) end)
+					else
+						left[#left + 1] = e
+					end
+				end
+			end
+			local n = setOwner(left, c.ent, heir.ent)
+			if n > 0 then news(reg, { kind = "heir", co = au.co, to = heir.id, n = n }) end
+			env.log("companies: auction of company " .. c.id .. ": " .. n .. " entities left (tracks, roads...) to company " .. heir.id
+				.. ", " .. sellV .. " vehicle(s) left sold, " .. dropL .. " line(s) left taken away")
+		end
+	end
+	end)
+	E.handing = nil
+	if not okC then env.log("companies: auction close failed: " .. tostring(errC)) end
+	env.log("companies: auction of company " .. tostring(au.co) .. " closed: " .. sold .. " lot(s) sold, " .. gone .. " demolished, " .. kept .. " to the heir")
+	E.finishAuction(st, env)
 end
 
 -- ---------------------------------------------------------------- bankruptcy
@@ -442,11 +713,21 @@ function E.bankrupt(st, c, env, maxLots)
 	-- (autotests: the first lots only)
 	if maxLots then while #lots > maxLots do table.remove(lots) end end
 	reg.auctionSeq = (reg.auctionSeq or 0) + 1
-	reg.auction = { seq = reg.auctionSeq, co = c.id, lots = lots, idx = 1, openAt = gt() }
-	news(reg, { kind = "bankrupt", co = c.id, lots = #lots })
+	-- (0.7.4: the host's choice, see E.auctionRule; "serial" is the auction of 0.7.3)
+	local mode, mins = E.auctionRule(reg)
+	if mode == "serial" then
+		reg.auction = { seq = reg.auctionSeq, co = c.id, lots = lots, idx = 1, openAt = gt() }
+	else
+		if mode == "company" and #lots > 0 then lots = { E.companyLot(env, c, lots, c.ent and nameOf(c.ent) or nil) } end
+		reg.auction = { v = 2, seq = reg.auctionSeq, co = c.id, mode = mode, minutes = mins, lots = lots, openAt = gt(), bids = 0, bidders = {} }
+	end
+	news(reg, { kind = "bankrupt", co = c.id, lots = #lots, mode = mode, minutes = mode ~= "serial" and mins or nil })
 	env.log("companies: company " .. c.id .. " is BANKRUPT (in debt for " .. tostring((reg.rules or {}).bankrupt or E.BANKRUPT_DEFAULT)
-		.. " months): " .. #lots .. " lot(s) at auction; its players get a new company")
-	if #lots == 0 then E.finishAuction(st, env) end
+		.. " months): " .. #lots .. " lot(s) at auction (" .. mode .. (mode ~= "serial" and (", " .. mins .. " min") or "") .. "); its players get a new company")
+	if #lots == 0 then
+		-- (0.7.4: nothing to sell, its tracks and roads still go to the heir)
+		if reg.auction.v == 2 then E.closeAll(st, env) else E.finishAuction(st, env) end
+	end
 end
 
 function E.finishAuction(st, env)
@@ -1020,11 +1301,21 @@ function E.event(st, name, param, env)
 		if s and s >= 0 and s <= 1e10 then reg.rules.start = math.floor(s) end
 		-- (the computer companies' colours, levels and start money, "n:colour:level[:money],...": digits, ':', ',' and '-' only)
 		if type(param.ai) == "string" and #param.ai <= 300 and not param.ai:find("[^%d:,%-]") then reg.rules.ai = param.ai end
+		-- (0.7.4) the auction of a bankrupt company, "mode:minutes" (see E.auctionRule)
+		if type(param.auction) == "string" then
+			local m, mi = param.auction:match("^(%a+):(%d+)$")
+			if m and E.AUCTION_MODES[m] then
+				local okM = false
+				for _, x in ipairs(E.AUCTION_MINUTES) do if x == tonumber(mi) then okM = true end end
+				if okM then reg.rules.auction = m .. ":" .. mi end
+			end
+		end
 		-- (one text MPFever.exe finds in the savegame, to show this game's rules again in a lobby opened on it)
 		reg.rules.cfg = "mpfrules:bankrupt=" .. b .. ";share=" .. (reg.rules.share == false and "0" or "1") .. ";start=" .. tostring(reg.rules.start or "")
-			.. ";ai=" .. tostring(reg.rules.ai or "") .. ";"
+			.. ";ai=" .. tostring(reg.rules.ai or "") .. ";auction=" .. tostring(reg.rules.auction or E.AUCTION_DEFAULT) .. ";"
 		env.log("companies: rules: bankruptcy after " .. b .. " month(s) in debt" .. (b == 0 and " (never)" or "")
-			.. ", sharing rules " .. (reg.rules.share == false and "OFF (everything open and free)" or "on") .. ", start money " .. tostring(reg.rules.start))
+			.. ", sharing rules " .. (reg.rules.share == false and "OFF (everything open and free)" or "on") .. ", start money " .. tostring(reg.rules.start)
+			.. ", auction " .. tostring(reg.rules.auction or E.AUCTION_DEFAULT))
 	elseif name == "co_join_ask" then
 		local t = env.CO.find(reg, tonumber(param.to))
 		local cur = env.CO.memberOf(reg, key)
@@ -1075,6 +1366,32 @@ function E.event(st, name, param, env)
 		dropOffers(reg, from.id)
 		if param.accept then E.merge(st, from, mine, env)
 		else news(reg, { kind = "merge_refused", co = from.id, to = mine.id }) end
+	elseif name == "co_bid" and reg.auction and reg.auction.v == 2 then
+		-- (0.7.4) any lot of an auction of every lot at once
+		local au = reg.auction
+		local idx = tonumber(param.lot)
+		local lot = au.seq == tonumber(param.seq) and idx and au.lots[idx] or nil
+		if not lot then return refuse("no such lot") end
+		if not (live(mine) and mine.ent) or mine.id == au.co then return refuse("company " .. tostring(param.mpfCo)) end
+		local amount = math.floor(tonumber(param.amount) or 0)
+		local min = E.minBid(lot)
+		if amount < min then return refuse("bid " .. amount .. " below " .. min) end
+		-- (no balance read here, as before: a game's own balance may lag a step behind the host's. The window offers only what the
+		-- company has left once its other best bids are counted; a winner short of money is in debt)
+		lot.best, lot.bidder, lot.lastBidAt = amount, mine.id, gt()
+		lot.bids = (lot.bids or 0) + 1
+		au.bids = (au.bids or 0) + 1
+		au.lastBidAt = gt()
+		au.bidders = au.bidders or {}
+		au.bidders[tostring(mine.id)] = true
+		news(reg, { kind = "bid", co = au.co, lot = idx, label = lot.label, by = mine.id, amount = amount })
+		env.log("companies: auction: company " .. mine.id .. " bids " .. amount .. " on lot " .. idx .. " (" .. tostring(lot.label) .. ")")
+	elseif name == "co_auction_close" then
+		-- (0.7.4) the host's clock of an auction of every lot at once is over
+		if not fromHost(param.mpfFrom) then return refuse("not the host") end
+		local au = reg.auction
+		if not (au and au.v == 2 and au.seq == tonumber(param.seq)) then return refuse("auction already closed") end
+		E.closeAll(st, env)
 	elseif name == "co_bid" then
 		local au = reg.auction
 		if not (au and au.seq == tonumber(param.seq) and au.idx == tonumber(param.lot)) then return refuse("not the lot under the hammer") end
@@ -1136,8 +1453,9 @@ function E.event(st, name, param, env)
 			end
 		end
 	elseif name == "co_test" then
-		-- (autotests only, MPFEVER_SCENARIO set: a company goes bankrupt at once, with its first lots only)
-		if not os.getenv("MPFEVER_SCENARIO") then return refuse("not a test") end
+		-- (autotests only, MPFEVER_SCENARIO set: a company goes bankrupt at once, with its first lots only. 0.7.4: or the host's
+		-- test button, MPFEVER_AUCTIONTEST=1 on the host's PC, hostTest: taken from the host only, by every game alike)
+		if not (os.getenv("MPFEVER_SCENARIO") or (param.hostTest == true and fromHost(param.mpfFrom) and param.op == "bankrupt")) then return refuse("not a test") end
 		local c = env.CO.find(reg, tonumber(param.co))
 		if param.op == "bankrupt" and live(c) and not reg.auction then E.bankrupt(st, c, env, tonumber(param.maxLots)) end
 		-- (a company spends all its money and 100000 more: the months in debt then count)

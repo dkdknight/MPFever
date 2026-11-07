@@ -65,7 +65,8 @@ def module_alone():
     check("loads without the game's API", M is not None)
     check("module id", M["ID"] == "public", M["ID"])
     keys = sorted(str(k) for k in M.keys())
-    check("options and a window tab only (no simulation code)", keys == ["ID", "OPTIONS", "TAB", "ui"], keys)
+    # (0.7.4: and its page's « How does it work? », HELP)
+    check("options and a window tab only (no simulation code)", keys == ["HELP", "ID", "OPTIONS", "TAB", "ui"], keys)
     check("its tab", M["TAB"]["id"] == "public" and M["TAB"]["title"][1] and M["TAB"]["title"][2])
     T = L.eval("function(fr, en) return '[' .. en .. ']' end")
     ids = []

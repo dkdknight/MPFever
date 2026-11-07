@@ -1316,12 +1316,269 @@ end
 -- (u.row of u.button(label, fn, primary, enabled)), each put in the tab with u.add. The window draws it again after a button and
 -- about once a second. Drawing it tells the GUI half that the player looks at it (at most every 15 s): the lists of the world are
 -- read only then.
+-- (0.7.4, the menus redone) the page in the Hub: two tabs (sales, supply contracts); the offers as cards; a sale in three steps (what,
+-- to whom, the price typed in a field, no more ±100 k buttons); the contracts in a table and a form of lists and fields. The same
+-- requests as M.view's buttons (M.request checks them). Used when the Hub draws the page (u.rich) and the player did not ask for
+-- the window's old pages (u.oldMenus); else M.view's rows, as before.
+M.TX2 = {
+	tab_sales = { "Ventes", "Sales" },
+	tab_contracts = { "Contrats de livraison", "Supply contracts" },
+	got_title = { "Offres reçues", "Offers received" },
+	sent_title = { "Mes offres envoyées", "My offers sent" },
+	none_got = { "Aucune offre reçue pour l'instant.", "No offer received yet." },
+	none_sent = { "Vous n'avez envoyé aucune offre.", "You sent no offer." },
+	from = { "Proposé par %s, pour %s", "Offered by %s, for %s" },
+	to = { "Proposé à %s, pour %s", "Offered to %s, for %s" },
+	sell_title = { "Vendre un bien à une autre entreprise", "Sell an asset to another company" },
+	step1 = { "1. Ce que vous vendez", "1. What you sell" },
+	step2 = { "2. L'acheteur", "2. The buyer" },
+	step3 = { "3. Votre prix", "3. Your price" },
+	k_line = { "Lignes, avec leurs véhicules et les gares de leurs arrêts", "Lines, with their vehicles and the stations of their stops" },
+	k_station = { "Gares", "Stations" },
+	k_depot = { "Dépôts", "Depots" },
+	h_asset = { "Bien", "Asset" },
+	h_value = { "Valeur indicative", "Indicative value" },
+	pick = { "Choisir", "Pick" },
+	chosen = { "Vous vendez %s.", "You sell %s." },
+	change = { "Changer", "Change" },
+	price_field = { "Prix en dollars", "Price in dollars" },
+	price_is = { "Prix proposé : %s (valeur indicative %s)", "Price offered: %s (indicative value %s)" },
+	price_bad = { "Tapez un prix entre 0 et 10 milliards de dollars.", "Type a price between 0 and 10 billion dollars." },
+	ct_running = { "Contrats en cours", "Running contracts" },
+	ct_none = { "Aucun contrat en cours.", "No running contract." },
+	ct_pending = { "Offres de contrat", "Contract offers" },
+	h_who = { "Livre → paie", "Delivers → pays" },
+	h_cargo = { "Marchandise", "Cargo" },
+	h_station = { "Gare", "Station" },
+	h_month = { "Ce mois / prévu", "This month / due" },
+	h_last = { "Mois dernier", "Last month" },
+	h_price = { "Prix · pénalité", "Price · penalty" },
+	h_end = { "Fin", "End" },
+	ct_form = { "Proposer un contrat", "Offer a contract" },
+	f_role = { "Votre rôle", "Your role" },
+	f_other = { "L'autre entreprise", "The other company" },
+	f_station = { "Gare de livraison (de %s)", "Delivery station (of %s)" },
+	f_cargo = { "Marchandise", "Cargo" },
+	f_per = { "Quantité par mois", "Quantity per month" },
+	f_price = { "Prix par unité ($)", "Price per unit ($)" },
+	f_pen = { "Pénalité par unité manquante ($)", "Penalty per missing unit ($)" },
+	f_months = { "Durée", "Length" },
+	f_sum = { "Résumé : %s livre %s %s par mois à %s, gare « %s », %s par unité, pénalité %s, %s.",
+		"Summary: %s delivers %s %s a month to %s, station « %s », %s per unit, penalty %s, %s." },
+	f_bad = { "Quantité de 1 à 100 000 par mois, prix et pénalité de 0 à 1 000 000 $ par unité.", "Quantity from 1 to 100 000 a month, price and penalty from $0 to $1 000 000 per unit." },
+	help1 = { "Le commerce se fait entre les entreprises des joueurs (pas celles de l'ordinateur), et seul le chef d'une entreprise vend, achète ou signe.",
+		"Trade takes place between the players' companies (not the computer's), and only a company's chief sells, buys or signs." },
+	help2 = { "Vendre : choisissez un bien (une ligne part avec ses véhicules et les gares de ses arrêts), l'acheteur et votre prix. L'acheteur accepte ou refuse ; une offre sans réponse expire après deux mois de jeu. L'argent passe d'une entreprise à l'autre à l'acceptation.",
+		"Sell: pick an asset (a line goes with its vehicles and the stations of its stops), the buyer and your price. The buyer accepts or refuses; an offer without an answer expires after two game months. The money changes hands when it is accepted." },
+	help3 = { "Un contrat de livraison : une entreprise livre chaque mois une quantité d'une marchandise à une gare de l'autre, qui paie un prix par unité livrée. Un mois non tenu est payé au prorata et le livreur paie la pénalité pour chaque unité manquante.",
+		"A supply contract: one company delivers every month a quantity of a cargo to a station of the other, which pays a price per unit delivered. A month not met is paid pro rata and the deliverer pays the penalty for each missing unit." },
+}
+
+function M.uiRich(u, m, T)
+	local X, Y = M.TX, M.TX2
+	local f = M.form
+	local function tr(pair, ...) return M.tr(T, pair, ...) end
+	local function name(id) return m.names[id] or ("#" .. tostring(id)) end
+	local function digits(s) return tonumber((tostring(s or ""):gsub("[^%d]", ""))) end
+	local function req(kind, t) u.request(kind, M.encode(t)); for k in pairs(f) do if k ~= "tab" then f[k] = nil end end end
+	if not m.me then u.add(u.text(tr(m.known and X.no_company or X.only_separate))); return end
+	local others = {}
+	for _, c in ipairs(m.cos) do if c.ok and c.id ~= m.me then others[#others + 1] = c end end
+	local off = not m.chief
+	-- (the tabs: only those of the options the host turned on)
+	local tab = f.tab
+	if tab ~= "sales" and tab ~= "contracts" then tab = m.sales and "sales" or "contracts" end
+	if tab == "sales" and not m.sales then tab = "contracts" end
+	if tab == "contracts" and not m.contracts then tab = "sales" end
+	if m.sales and m.contracts then
+		u.add(u.row({ u.button(tr(Y.tab_sales), function() f.tab = "sales" end, tab == "sales"),
+			u.button(tr(Y.tab_contracts), function() f.tab = "contracts" end, tab == "contracts") }))
+		u.add(u.gap(8))
+	end
+	if off then u.add(u.text(tr(X.only_chief), "warning")) end
+	if #others == 0 then u.add(u.muted(tr(X.no_other))) end
+	if tab == "sales" then
+		-- the offers received and sent, a card each
+		local got, sent = {}, {}
+		for _, o in ipairs(m.offers) do if o.to == m.me then got[#got + 1] = o elseif o.from == m.me then sent[#sent + 1] = o end end
+		u.add(u.title(tr(Y.got_title)))
+		if #got == 0 then u.add(u.muted(tr(Y.none_got))) end
+		for _, o in ipairs(got) do
+			local id = o.id
+			u.add(u.card(M.lotText(T, { kind = o.kind, label = o.label, nveh = o.nveh }), {
+				u.text(tr(Y.from, name(o.from), M.money(o.price))),
+				u.row({ u.button(tr(X.accept), function() req("answer", { id = id, accept = true }) end, true, not off),
+					u.button(tr(X.refuse), function() req("answer", { id = id, accept = false }) end, false, not off) }),
+			}, { color = u.coColor(o.from) }))
+			u.add(u.gap(6))
+		end
+		u.add(u.title(tr(Y.sent_title)))
+		if #sent == 0 then u.add(u.muted(tr(Y.none_sent))) end
+		for _, o in ipairs(sent) do
+			local id = o.id
+			u.add(u.card(M.lotText(T, { kind = o.kind, label = o.label, nveh = o.nveh }), {
+				u.text(tr(Y.to, name(o.to), M.money(o.price))),
+				u.row({ u.button(tr(X.cancel), function() req("cancel", { id = id }) end, false, not off) }),
+			}, { color = u.coColor(o.to) }))
+			u.add(u.gap(6))
+		end
+		-- the sale, in three steps
+		if m.chief and #others > 0 then
+			u.add(u.title(tr(Y.sell_title)))
+			local lot = nil
+			for _, l in ipairs(m.lots) do if f.lot and l.key == f.lot and l.kind == f.lotKind then lot = l end end
+			u.add(u.text(tr(Y.step1)))
+			if not lot then
+				if #m.lots == 0 then u.add(u.muted(tr(X.sell_none))) end
+				for _, kind in ipairs({ "line", "station", "depot" }) do
+					local lines = {}
+					for _, l in ipairs(m.lots) do
+						if l.kind == kind then
+							local key, k2, res = l.key, l.kind, l.reserve
+							lines[#lines + 1] = { M.lotText(T, l), M.money(l.reserve),
+								u.button(tr(Y.pick), function() f.lot, f.lotKind, f.price = key, k2, res end, false, true) }
+						end
+					end
+					if #lines > 0 then
+						u.add(u.muted(tr(Y["k_" .. kind])))
+						table.insert(lines, 1, { tr(Y.h_asset), tr(Y.h_value), "" })
+						u.add(u.table(lines, { 60, 22, 18 }, true))
+						u.add(u.gap(6))
+					end
+				end
+			else
+				u.add(u.row({ u.text(tr(Y.chosen, M.lotText(T, lot))), u.button(tr(Y.change), function() f.lot, f.lotKind, f.price = nil, nil, nil end) }))
+				u.add(u.gap(6))
+				u.add(u.text(tr(Y.step2)))
+				local buyer = pick(others, "id", f.buyer)
+				local bs = {}
+				for _, c in ipairs(others) do
+					local cid = c.id
+					bs[#bs + 1] = u.button(c.name, function() f.buyer = cid end, c.id == buyer.id)
+				end
+				u.add(u.row(bs))
+				u.add(u.gap(6))
+				u.add(u.text(tr(Y.step3)))
+				u.add(u.input(tr(Y.price_field), function(v) f.price = digits(v) end, "sale_price", 260))
+				local price = math.floor(tonumber(f.price) or lot.reserve or 0)
+				local ok = price >= 0 and price <= M.MAX_PRICE
+				u.add(ok and u.muted(tr(Y.price_is, M.money(price), M.money(lot.reserve))) or u.text(tr(Y.price_bad), "error"))
+				local kind, key, to = lot.kind, lot.key, buyer.id
+				u.add(u.row({ u.button(tr(X.propose), function() req("offer", { to = to, kind = kind, key = key, price = price }) end, true, ok),
+					u.button(tr(X.cancel), function() f.lot, f.lotKind, f.price = nil, nil, nil end) }))
+			end
+		end
+	else
+		-- the contracts: those offered (a card each), those running (a table), the form
+		local pending, running = {}, {}
+		for _, c in ipairs(m.ct) do
+			if c.state == "active" or c.state == "ending" then running[#running + 1] = c else pending[#pending + 1] = c end
+		end
+		if #pending > 0 then
+			u.add(u.title(tr(Y.ct_pending)))
+			for _, c in ipairs(pending) do
+				local id = c.id
+				if c.by ~= m.me then
+					u.add(u.card(nil, {
+						u.text(tr(X.ct_got, name(c.by), name(c.supplier), c.per, c.cargo, name(c.payer), c.label, M.money(c.price), M.money(c.penalty), M.monthsText(T, c.months))),
+						u.row({ u.button(tr(X.accept), function() req("ct_answer", { id = id, accept = true }) end, true, not off),
+							u.button(tr(X.refuse), function() req("ct_answer", { id = id, accept = false }) end, false, not off) }),
+					}, { color = u.coColor(c.by) }))
+				else
+					u.add(u.card(nil, {
+						u.text(tr(X.ct_mine, name(c.supplier), c.per, c.cargo, name(c.payer), c.label, M.money(c.price), M.money(c.penalty), M.monthsText(T, c.months))),
+						u.row({ u.button(tr(X.cancel), function() req("ct_cancel", { id = id }) end, false, not off) }),
+					}))
+				end
+				u.add(u.gap(6))
+			end
+		end
+		u.add(u.title(tr(Y.ct_running)))
+		if #running == 0 then
+			u.add(u.muted(tr(Y.ct_none)))
+		else
+			local lines = { { tr(Y.h_who), tr(Y.h_cargo), tr(Y.h_station), tr(Y.h_month), tr(Y.h_last), tr(Y.h_price), tr(Y.h_end), "" } }
+			for _, c in ipairs(running) do
+				local left = c.state == "ending" and tr(X.ct_ends) or (c.months > 0 and tr(X.ct_left, math.max(0, c.months - c.done)) or M.monthsText(T, 0))
+				local id = c.id
+				lines[#lines + 1] = { name(c.supplier) .. " → " .. name(c.payer), c.cargo, c.label, c.cur .. " / " .. c.per, tostring(c.last or 0),
+					M.money(c.price) .. " · " .. M.money(c.penalty), left,
+					c.state == "active" and u.button(tr(X.ct_end_btn), function() req("ct_cancel", { id = id }) end, false, not off) or "" }
+			end
+			u.add(u.table(lines, { 22, 12, 14, 10, 8, 14, 10, 10 }, true))
+		end
+		if m.chief and #others > 0 then
+			u.add(u.title(tr(Y.ct_form)))
+			local role = f.role == "pay" and "pay" or "supply"
+			local other = pick(others, "id", f.other)
+			local payer = role == "supply" and other.id or m.me
+			local supplier = role == "supply" and m.me or other.id
+			local sts = m.st[payer] or {}
+			local stn = pick(sts, "key", f.station)
+			local cargo = pick(m.cargos, "name", f.cargo)
+			-- (a label and its field a line, the fields in one column)
+			local form = {}
+			form[#form + 1] = { tr(Y.f_role), u.row({ u.button(tr(X.ct_supply), function() f.role = "supply"; f.station = nil end, role == "supply"),
+				u.button(tr(X.ct_pay), function() f.role = "pay"; f.station = nil end, role == "pay") }) }
+			local cos = {}
+			for _, c in ipairs(others) do cos[#cos + 1] = { value = c.id, label = c.name } end
+			form[#form + 1] = { tr(Y.f_other), u.choice(cos, other.id, function(v) f.other = v; f.station = nil end, 300) }
+			local sl = {}
+			for _, x in ipairs(sts) do sl[#sl + 1] = { value = x.key, label = x.label } end
+			if stn then
+				form[#form + 1] = { tr(Y.f_station, name(payer)), u.choice(sl, stn.key, function(v) f.station = v end, 300) }
+			else
+				form[#form + 1] = { tr(Y.f_station, name(payer)), u.text(tr(X.ct_nostation, name(payer)), "warning") }
+			end
+			local cl = {}
+			for _, x in ipairs(m.cargos) do cl[#cl + 1] = { value = x.name, label = x.label } end
+			if cargo then form[#form + 1] = { tr(Y.f_cargo), u.choice(cl, cargo.name, function(v) f.cargo = v end, 300) } end
+			local per = math.floor(tonumber(f.per) or 100)
+			local price = math.floor(tonumber(f.cprice) or 50)
+			local pen = math.floor(tonumber(f.penalty) or 0)
+			form[#form + 1] = { tr(Y.f_per), u.input("100", function(v) f.per = digits(v) end, "ct_per", 160) }
+			form[#form + 1] = { tr(Y.f_price), u.input("50", function(v) f.cprice = digits(v) end, "ct_price", 160) }
+			form[#form + 1] = { tr(Y.f_pen), u.input("0", function(v) f.penalty = digits(v) end, "ct_pen", 160) }
+			local months = oneOf(tonumber(f.months), M.CT_MONTHS) and tonumber(f.months) or 12
+			local ms = {}
+			for _, x in ipairs(M.CT_MONTHS) do
+				local v = x
+				ms[#ms + 1] = u.button(M.monthsText(T, x), function() f.months = v end, x == months)
+			end
+			form[#form + 1] = { tr(Y.f_months), u.row(ms) }
+			u.add(u.table(form, { 34, 66 }, false))
+			local ok = per >= 1 and per <= M.CT_MAX_PER and price >= 0 and price <= M.CT_MAX_PRICE and pen >= 0 and pen <= M.CT_MAX_PRICE
+			if not ok then u.add(u.text(tr(Y.f_bad), "error")) end
+			if stn and cargo and ok then
+				u.add(u.muted(tr(Y.f_sum, name(supplier), per, cargo.label, name(payer), stn.label, M.money(price), M.money(pen), M.monthsText(T, months))))
+			end
+			local to, rl = other.id, role
+			u.add(u.row({ u.button(tr(X.ct_propose), function()
+				req("ct_offer", { to = to, role = rl, station = stn and stn.key or "", cargo = cargo and cargo.name or "", per = per, price = price, penalty = pen, months = months })
+			end, true, (stn and cargo and ok) and true or false) }))
+			u.add(u.muted(tr(X.ct_how)))
+		end
+	end
+	if #m.news > 0 then
+		u.add(u.title(tr(X.news)))
+		for _, t in ipairs(m.news) do u.add(u.muted(t)) end
+	end
+	u.help("trade", { Y.help1, Y.help2, Y.help3 })
+end
+
 function M.ui(u)
 	local T = u.T or function(fr, en) return en end
 	local now = os.clock()
 	if not M.lookAt or now - M.lookAt >= 15 or now < M.lookAt then
 		M.lookAt = now
 		u.request("look", "")
+	end
+	-- (0.7.4: the Hub's page, see M.uiRich; the old pages asked, or a kit without its helpers: as before)
+	if u.rich and not u.oldMenus and u.choice and u.help and u.input and u.table and u.card then
+		local okR, errR = pcall(M.uiRich, u, M.parse(u.read(M.FILE) or {}), T)
+		if okR then return {} end
+		if u.add then u.add(u.text("trade: " .. tostring(errR), "error")) end
+		return {}
 	end
 	local rows = M.view(M.parse(u.read(M.FILE) or {}), T, M.form)
 	local nodes = {}

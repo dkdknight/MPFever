@@ -58,6 +58,13 @@ M.EVENTS = { f_tenders_new = true, f_tenders_win = true, f_tenders_expire = true
 -- the engine events the module counts with: the options host may leave the others out before it reads the state
 M.GAME_EVENTS = { OnCalcTicketPrice = true }
 M.TAB = { id = "tenders", title = { "Appels d'offres", "Tenders" } }
+-- (0.7.4) the page's « How does it work? », at its end in the Hub (see the window's U.featTabRows)
+M.HELP = {
+	{ "De temps en temps, une ville ou une industrie lance un appel d'offres : transporter une quantité de voyageurs ou de marchandises avant une date. Il est ouvert à toutes les entreprises, celles de l'ordinateur comprises.",
+		"Now and then a town or an industry calls for tenders: carry a quantity of passengers or goods before a date. It is open to every company, the computer's included." },
+	{ "La première entreprise qui atteint l'objectif avant la date touche la prime ; les autres ne gagnent rien. La barre de chaque appel montre où en est chaque entreprise, et « Voir » amène la caméra sur la ville ou l'industrie.",
+		"The first company to reach the goal before the date gets the bonus; the others win nothing. Each tender's bar shows where every company stands, and « Show » takes the camera to the town or industry." },
+}
 -- the window's file: env.write("list") writes feat_tenders_list.txt in the session folder, u.read("list") reads it back
 M.FILE = "list"
 

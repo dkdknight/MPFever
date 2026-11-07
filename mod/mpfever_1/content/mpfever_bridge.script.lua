@@ -4058,10 +4058,25 @@ end
 -- far enough behind, get them before their time. The first command of an edit keeps the usual stamp (the others do not follow
 -- yet). Off: as before.
 G.LINE_LEAD_FNS = { makeLineCreateCmd = true, makeLineUpdateCmd = true }
+-- (0.7.4, ACTLEAD, part of the host's « several players building » setting, MPFEVER_ACTLEAD=1 alone) the same for a vehicle bought,
+-- sold, replaced, sent to a line or a depot, and a line made, edited or taken away: a player buying ten buses or making a line
+-- stop by stop saw each one 1.4 s (7 steps at 1x) after the click. And the vehicle store open (its buy button shown) starts the
+-- lead before the first purchase, as a construction tool in hand does. The stamp is never short of the overshoot of this game's
+-- own simulation and one step: the others, kept behind, get it before their time
+G.ACT_LEAD_FNS = { makeLineCreateCmd = true, makeLineUpdateCmd = true, makeLineDestroyCmd = true, makeVehicleBuyCmd = true,
+	makeVehicleSellCmd = true, makeVehicleReplaceCmd = true, makeVehicleSetLineCmd = true, makeVehicleSendToDepotCmd = true,
+	makeVehicleReverseCmd = true, makeVehicleSetStoppedByUserCmd = true }
+G.actLeadOn = false
+G.actLeadWindow = function(what)
+	if not G.actLeadOn or not G.buildLead or not G.session.started or G.session.pauseAt ~= nil or not G.buildLeadPeers() then return end
+	terrainLead(what, "ACTLEAD: " .. what)
+end
 G.lineLeadStamp = function(a, now)
-	if not G.LINE_LEAD_FNS[a.fn] or os.getenv("MPFEVER_LINELEAD") ~= "1" or not G.buildLead then return end
+	local act = G.actLeadOn and G.ACT_LEAD_FNS[a.fn]
+	if not act and (not G.LINE_LEAD_FNS[a.fn] or os.getenv("MPFEVER_LINELEAD") ~= "1") then return end
+	if not G.buildLead then return end
 	if not G.buildLeadPeers() then return end
-	terrainLead("line window", "LINELEAD: a line edited")
+	terrainLead(act and "vehicle or line window" or "line window", act and "ACTLEAD: a vehicle or a line" or "LINELEAD: a line edited")
 	local ok, why = G.buildLeadState()
 	if not ok then
 		log("LINELEAD: " .. tostring(a.fn) .. " stamped as usual (" .. tostring(why) .. ")")
@@ -4295,7 +4310,7 @@ end
 H.chat = function(from, p) log("chat " .. tostring(from) .. ": " .. tostring(p.text)) end
 
 H.session = function(from, p)
-	if p.cmode ~= nil then G.cmode = p.cmode; G.coStart = p.cstart; G.coOwner = p.owner; G.coBankrupt = p.bankrupt end
+	if p.cmode ~= nil then G.cmode = p.cmode; G.coStart = p.cstart; G.coOwner = p.owner; G.coBankrupt = p.bankrupt; G.coAuction = p.auction end
 	-- (0.5.14: the sharing rules between companies on or off, the host's choice; none: on)
 	if p.cmode ~= nil then G.coShare = p.share ~= false and p.share ~= 0 end
 	-- (the computer companies the host chose in its lobby, "n:colour,...": run by the host's game, see mpfever_ai.lua)
@@ -6793,7 +6808,11 @@ local function replayNative(a, formIndex)
 		-- same way, never made again here from its shape as an upgrade (the engine's upgrade made here at its time gave other new
 		-- segments and nodes than the builder's tool command, the ids parted: the stress test t2c of 2026-11-06), see G.preship;
 		-- MPFEVER_PRERAW=0: by its shape as a capture)
-		if a.pre and os.getenv("MPFEVER_PRERAW") ~= "0" then
+		-- (0.7.4: a copy that adds or replaces constructions - a station, a depot, a module - goes the way of a capture below: the
+		-- engine's conversion of its constructions, then the build with them; as a street proposal its constructions were lost)
+		local preCon = a.pre and type(a.args[1]) == "table" and (#(a.args[1].toAdd or {}) > 0 or #(a.args[1].toRemove or {}) > 0)
+		if a.pre and preCon then log("NATIVE REPLAY " .. tostring(a.uid) .. ": a copy shipped at the click, with constructions: replayed as a capture") end
+		if a.pre and not preCon and os.getenv("MPFEVER_PRERAW") ~= "0" then
 			log("NATIVE REPLAY " .. tostring(a.uid) .. ": a copy shipped at the click, applied as the tool made it")
 			return replayNativeStreet(a)
 		end
@@ -7998,7 +8017,53 @@ G.restaleOn = os.getenv("MPFEVER_RESTALE") == "1"
 G.othersAt = {}
 G.worldFrame = 0
 -- the tool's event when it applies a build ({proposal, data} by position or by name): its compact form, for G.restale
+-- (0.7.4) The tool's events in the order a real tool sends them (a station, a depot, a street: the manual test x1 of 2026-11-07):
+-- builder.proposalPrepareForApply, then the tool's command (held by the native module: "deferred", read a frame or two later),
+-- and builder.proposalApply only once the engine has APPLIED the build (its new entities already have their ids), after the
+-- held build was released. The copy taken at proposalApply (0.7.3) came after the held build had been announced: a real tool's
+-- build was never shipped at the click (only the autotests' builds, whose copy is their command's proposal), and a copy left over
+-- could be taken by the player's next build within 5 frames (shipped with the wrong copy: a reload). The copy is now taken at
+-- proposalPrepareForApply, the very proposal the tool sends next. MPFEVER_TOOLCOPYAPPLY=1: at proposalApply, as before
+G.toolCopyAtApply = function() return os.getenv("MPFEVER_TOOLCOPYAPPLY") == "1" end
+G.toolPrepares = {}
+G.toolPrepared = function(param, id)
+	if id then G.toolPrepares[tostring(id)] = true end
+	if os.getenv("MPFEVER_TOOLDUMP") == "1" then pcall(G.toolDump, param, "prepare") end
+	if G.toolCopyAtApply() then return end
+	G.toolCopyFrom(param)
+	if G.toolCopy then G.toolCopy.at = "prepare"; G.toolCopy.tool = id and tostring(id) end
+end
+-- The street tool (and the tools like it) prepares nothing: it applies the proposal it shows, the last one of its
+-- builder.proposalCreate events (its preview, sent again at every move of the mouse). That one is the copy of its build. Only for
+-- the tools never seen preparing their builds (the construction tool's copy is its prepared proposal), only while builds are
+-- shipped at the click, and never one that took more than 8 ms to read (then not for the next second: a big preview at every move
+-- of the mouse would slow the interface down). Its builder compares its capture with it and reloads the host's game when they differ:
+-- the share of copies alike is in the PRESHIP lines. MPFEVER_PRECREATE=0: none, as before
+G.toolCreated = function(id, param)
+	local tool = tostring(id)
+	G.lastCreate = { frame = G.frames, tool = tool }
+	if G.toolPrepares[tool] or G.toolCopyAtApply() or os.getenv("MPFEVER_PRECREATE") == "0" then return end
+	if not (G.preshipOn and G.preshipOn()) or not G.session.started then return end
+	if (G.createSlowUntil or 0) > os.clock() then return end
+	local crit = false
+	pcall(function() crit = param[2].errorState.critical == true end)
+	if crit then return end
+	local c0 = os.clock()
+	G.toolCopyFrom(param)
+	local dt = os.clock() - c0
+	if dt > 0.008 then
+		G.createSlowUntil = os.clock() + 1
+		if (G.createSlowN or 0) < 5 then G.createSlowN = (G.createSlowN or 0) + 1; log("held builds: the " .. tool .. " tool's preview took " .. string.format("%.0f", dt * 1000) .. " ms to read: not read for a second") end
+	end
+	if G.toolCopy then G.toolCopy.at = "create"; G.toolCopy.tool = tool end
+end
 G.toolApplied = function(param)
+	-- (0.7.4 research, MPFEVER_TOOLDUMP=1: the tool's proposal as the tool hands it over, to tool_builds.txt, see G.toolDump)
+	if os.getenv("MPFEVER_TOOLDUMP") == "1" then pcall(G.toolDump, param, "apply") end
+	if not G.toolCopyAtApply() then return end
+	G.toolCopyFrom(param)
+end
+G.toolCopyFrom = function(param)
 	local pre = G.preshipOn and G.preshipOn()
 	if not (G.restaleOn or pre) or not G.session.started or (G.cmode == "separate" and not pre) then return end
 	local pr = type(param) == "table" and (param[1] or param.proposal) or nil
@@ -8022,12 +8087,75 @@ G.toolApplied = function(param)
 		end
 	end
 end
+-- (research) the tool's proposal and its data, then a clone of it after makeProposalData (does the engine's computation fill the
+-- constructions' frozen nodes, the street part of their tracks, the town buildings it takes away?)
+G.toolDump = function(param, tag)
+	G.toolDumps = (G.toolDumps or 0) + 1
+	if G.toolDumps > 24 then return end
+	local pr = type(param) == "table" and (param[1] or param.proposal) or nil
+	local data = type(param) == "table" and (param[2] or param.data) or nil
+	if pr == nil then return end
+	local f = C.DIR .. BS .. "tool_builds.txt"
+	local function sizes(p)
+		local t = {}
+		pcall(function() t[#t + 1] = "toAdd " .. #p.toAdd end)
+		pcall(function() t[#t + 1] = "toRemove " .. #p.toRemove end)
+		pcall(function()
+			local sp = p.proposal
+			t[#t + 1] = "+nodes " .. #sp.addedNodes .. " -nodes " .. #sp.removedNodes .. " +segs " .. #sp.addedSegments .. " -segs " .. #sp.removedSegments
+				.. " +eo " .. #sp.edgeObjectsToAdd .. " cfg+ " .. #sp.nodeConfigsToAdd
+		end)
+		pcall(function()
+			for i = 1, #p.toAdd do
+				local ce = p.toAdd[i]
+				local c = ce.construction
+				local fz, fe, tb, ns = "?", "?", "?", "?"
+				pcall(function() fz = #c.frozenNodes end)
+				pcall(function() fe = #c.frozenEdges end)
+				pcall(function() tb = #c.townBuildings end)
+				pcall(function() ns = #c.subconstructions end)
+				local direct = "?"
+				pcall(function() direct = tostring(ce.frozenNodes and #ce.frozenNodes) end)
+				t[#t + 1] = "con" .. i .. " " .. tostring(ce.fileName) .. " frozenNodes " .. fz .. " frozenEdges " .. fe .. " townBuildings " .. tb
+					.. " subcons " .. ns .. " ce.frozenNodes " .. direct
+			end
+		end)
+		return table.concat(t, "; ")
+	end
+	local out = { "==== tool build " .. G.toolDumps .. " (" .. tostring(tag) .. ") frame " .. G.frames .. " t=" .. tostring(gameTime()), "tool: " .. sizes(pr) }
+	pcall(function()
+		out[#out + 1] = "data: costs " .. tostring(data.costs) .. " old2new " .. C.ser(C.marshal(data.old2new)):sub(1, 200)
+			.. " buildings " .. #data.collisionInfo.buildingEntities .. " collisions " .. #data.collisionInfo.collisionEntities
+			.. " critical " .. tostring(data.errorState.critical)
+	end)
+	local c0 = os.clock()
+	local okc, compact = pcall(C.compactProposal, pr)
+	out[#out + 1] = "compact (" .. string.format("%.3f", os.clock() - c0) .. " s): " .. (okc and C.ser(compact):sub(1, 12000) or tostring(compact))
+	if okc then
+		out[#out + 1] = "toAdd: " .. C.ser(compact.toAdd or {}):sub(1, 4000)
+		out[#out + 1] = "toRemove: " .. C.ser(compact.toRemove or {}) .. " old2newByRank " .. C.ser(compact.old2newByRank or {})
+		out[#out + 1] = "sig: " .. tostring(G.preStreetSig(compact))
+	end
+	C.appendFile(f, table.concat(out, NL) .. NL)
+	log("TOOLDUMP " .. G.toolDumps .. " (" .. tostring(tag) .. ") [frame " .. G.frames .. "]: " .. sizes(pr))
+end
 -- the copy of the build the tool applied in this frame or just before (the native module reports a held build a frame or two
 -- after the tool's event)
 G.takeToolCopy = function()
 	local t = G.toolCopy
 	G.toolCopy = nil
-	if t and G.frames - t.frame <= 5 then return t.compact end
+	-- (a copy taken when the tool prepares its build comes before its command, which the native module reports a few frames
+	-- later: 6 frames in the manual test x2 of 2026-11-07; every build of a tool is prepared first, so the last one prepared is
+	-- the one held now)
+	if t and G.frames - t.frame <= ((t.at == "prepare" or t.at == "create") and 120 or 5) then
+		G.toolCopyN = (G.toolCopyN or 0) + 1
+		if G.toolCopyN <= 40 then
+			log("held build: the tool's copy taken (" .. tostring(t.at or "apply") .. " of " .. tostring(t.tool) .. ", " .. (G.frames - t.frame) .. " frame(s) before; the last preview "
+				.. (G.lastCreate and ((G.frames - G.lastCreate.frame) .. " frame(s) before, " .. tostring(G.lastCreate.tool)) or "none") .. ")")
+		end
+		return t.compact
+	end
+	if t then log("held build: the tool's copy is " .. (G.frames - t.frame) .. " frames old: not taken") end
 	return nil
 end
 -- an action of another player that changes the world (a build, an industry extension, a terrain edit, a mod's command), at its
@@ -9863,7 +9991,15 @@ end
 -- applies the build are constructions of the capture only, the same on every game that applies the same proposal)
 G.preStreetSig = function(m)
 	if type(m) ~= "table" then return nil end
-	return C.buildSig({ proposal = m.proposal or m.streetProposal })
+	-- (0.7.4: and the players' constructions it adds, by file and place; not the town buildings the engine puts back, whose
+	-- owner is -1: those are the capture's only. MPFEVER_PRECONSIG=0: the street part only, as in 0.7.3)
+	local cons = {}
+	if os.getenv("MPFEVER_PRECONSIG") ~= "0" then
+		for _, ce in ipairs(type(m.toAdd) == "table" and m.toAdd or {}) do
+			if type(ce) == "table" and ce.playerEntity ~= -1 then cons[#cons + 1] = ce end
+		end
+	end
+	return C.buildSig({ proposal = m.proposal or m.streetProposal, toAdd = #cons > 0 and cons or nil })
 end
 G.preHasContent = function(m)
 	if type(m) ~= "table" then return false end
@@ -9876,10 +10012,11 @@ end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
 	if not G.preHasContent(r.copy) then log("PRESHIP native build " .. tostring(r.id) .. ": its copy has nothing in it: shipped the usual way") return false end
-	-- (streets and tracks only: a construction's copy is the tool's before the engine applies it, without what the engine adds
-	-- then - its frozen parts, the town buildings it moves - that the replays of a construction need; MPFEVER_PRESHIPCON=1, tests:
-	-- constructions too)
-	if (#(r.copy.toAdd or {}) > 0 or #(r.copy.toRemove or {}) > 0) and os.getenv("MPFEVER_PRESHIPCON") ~= "1" then
+	-- (0.7.4: constructions too - stations, depots, modules. The tool's proposal it hands over at proposalPrepareForApply carries
+	-- the station's own tracks and the construction's frozen nodes, as a capture does (the manual test x1 of 2026-11-07: a
+	-- modular station, 25 nodes, 24 segments, 23 frozen nodes); the other games replay it as they replay a capture, see
+	-- replayNative. 0.7.3 shipped streets and tracks only. MPFEVER_PRESHIPCON=0: streets and tracks only, as before)
+	if (#(r.copy.toAdd or {}) > 0 or #(r.copy.toRemove or {}) > 0) and os.getenv("MPFEVER_PRESHIPCON") == "0" then
 		log("PRESHIP native build " .. tostring(r.id) .. ": a construction: shipped the usual way")
 		return false
 	end
@@ -13908,10 +14045,12 @@ H.coeco = function(from, p)
 		function() local c1 = CO.find(G.co, 1); return c1 and c1.gone == "bankrupt" and G.co.auction ~= nil end)
 	step("bid on lot 1", function()
 			local au = G.co.auction
-			local lot = au and au.lots[au.idx]
-			if lot then ev("co_bid", { seq = au.seq, lot = au.idx, amount = lot.reserve }) end
+			-- (0.7.4: every lot at once, its first lot; one after the other: the lot under the hammer)
+			local idx = au and (au.v == 2 and 1 or au.idx)
+			local lot = au and au.lots[idx]
+			if lot then ev("co_bid", { seq = au.seq, lot = idx, amount = lot.reserve }) end
 		end,
-		function() local au = G.co.auction; return au and au.bidder == G.myCo end)
+		function() local au = G.co.auction; if au and au.v == 2 then return au.lots[1] and au.lots[1].bidder == G.myCo end return au and au.bidder == G.myCo end)
 	step("auction over", function() end, function() return G.co.auction == nil end)
 	-- MPFEVER_COECO_UNTIL=join or merge: the client stops once it is a member of company 1 again, right after its join or after
 	-- its merger, so that a resynchronisation chained after it (MPFEVER_SCENARIO=coeco,resync,cocheck) reloads a company 1 with
@@ -17177,6 +17316,9 @@ local function resumeAfterLoad(state)
 	G.leadAckOn = G.featureOn("MPFEVER_LEADACK")
 	G.standLogOn = os.getenv("MPFEVER_STANDLOG") == "1"
 	G.heldNotPausedOn = G.featureOn("MPFEVER_HELDNOTPAUSED")
+	-- (0.7.4: vehicles and lines at the click, see G.ACT_LEAD_FNS)
+	G.actLeadOn = G.featureOn("MPFEVER_ACTLEAD")
+	if G.actLeadOn then log("vehicles and lines at the click: on (a player buying vehicles or editing a line leads, its commands are stamped close)") end
 	if G.nostopOn then log("several players building without stopping: on (MPFEVER_NOSTOP)") end
 	if G.gateWanted then log("no wait: on (once another player's build is handed to the engine, this game does not wait for its answer)") end
 	if G.preshipWanted then log("builds shipped at the click: on (a held build goes to the others at once and is checked at its time on every game)") end
@@ -17530,6 +17672,8 @@ G.coEco = function(st, reg, c)
 	local L = { "mykey\t" .. G.coMyKey(), "rules\t" .. tostring((reg.rules or {}).bankrupt or E.BANKRUPT_DEFAULT),
 		-- (0.5.14: the sharing rules on or off, the start money of a new company)
 		"share\t" .. (E.sharingOff(reg) and "0" or "1"), "start\t" .. tostring(math.floor(tonumber((reg.rules or {}).start) or tonumber(reg.start) or 0)) }
+	-- (0.7.4: the auction of a bankrupt company, "mode:minutes")
+	if E.auctionRule then local m, mi = E.auctionRule(reg); L[#L + 1] = "auctionrule\t" .. m .. ":" .. mi end
 	local function num(t, id) return math.floor(tonumber(t and t[tostring(id)]) or 0) end
 	local rulesSig = {}
 	for _, co in ipairs(reg.list) do
@@ -17566,7 +17710,27 @@ G.coEco = function(st, reg, c)
 	local au = reg.auction
 	-- (when this game saw the lot open: the time left it shows)
 	local nowT = os.time()
-	if au and au.lots[au.idx] then
+	if au and au.v == 2 then
+		-- (0.7.4) every lot at once: one clock, as this game sees it (the host's decides, see below), a bid in its last seconds
+		-- gives everybody that much more; then each lot with its best bid and the next one it takes
+		local S2 = G.coAuSeen2
+		if not S2 or S2.seq ~= au.seq then S2 = { seq = au.seq, endT = nowT + G.auSeconds(au) }; G.coAuSeen2 = S2 end
+		if au.lastBidAt and S2.bidAt ~= au.lastBidAt then
+			S2.bidAt = au.lastBidAt
+			if S2.endT - nowT < E.SNIPE_SECONDS then S2.endT = nowT + E.SNIPE_SECONDS end
+		end
+		L[#L + 1] = "auction2\t" .. au.seq .. "\t" .. au.co .. "\t" .. tostring(au.mode) .. "\t" .. tostring(au.minutes) .. "\t" .. math.max(0, S2.endT - nowT)
+			.. "\t" .. #au.lots .. "\t" .. tostring(au.bids or 0)
+		for i, lot in ipairs(au.lots) do
+			L[#L + 1] = "lot\t" .. i .. "\t" .. tostring(lot.kind) .. "\t" .. clean(lot.label) .. "\t" .. tostring(lot.reserve or 0) .. "\t" .. tostring(lot.best or 0)
+				.. "\t" .. tostring(lot.bidder or 0) .. "\t" .. E.minBid(lot) .. "\t" .. tostring(lot.vehicles or 0) .. "\t" .. tostring(lot.bids or 0)
+				.. "\t" .. clean(lot.key) .. "\t" .. tostring(lot.lines or 0) .. "\t" .. tostring(lot.stations or 0) .. "\t" .. tostring(lot.depots or 0)
+			-- (what exactly is for sale: the window's detail of the lot, read here where the lots' entities can be found)
+			local okD, d = pcall(G.coLotDetail, reg, au, i, lot)
+			if okD and d then L[#L + 1] = "lotd\t" .. i .. "\t" .. tostring(d.focus or -1) .. "\t" .. clean(table.concat(d.lines, "||")) end
+		end
+		G.coAuSeen = nil
+	elseif au and au.lots[au.idx] then
 		if not G.coAuSeen or G.coAuSeen.seq ~= au.seq or G.coAuSeen.idx ~= au.idx then G.coAuSeen = { seq = au.seq, idx = au.idx, t = nowT } end
 		if au.lastBidAt and G.coAuSeen.bidAt ~= au.lastBidAt then G.coAuSeen.bidAt = au.lastBidAt; G.coAuSeen.bidT = nowT end
 		local left = math.max(0, E.LOT_SECONDS - (nowT - G.coAuSeen.t))
@@ -17625,13 +17789,16 @@ G.coEco = function(st, reg, c)
 	-- (the computer companies with their colour, level and start money, "n:colour:level[:money],...": a lobby on this savegame
 	-- gives them their level and money again)
 	local aiWant = newRules and type(G.coAi) == "string" and G.coAi or nil
+	-- (0.7.4: the auction of a bankrupt company, "mode:minutes", see mpfever_eco.lua's E.auctionRule)
+	local auWant = newRules and type(G.coAuction) == "string" and G.coAuction:match("^%a+:%d+$") and G.coAuction or nil
 	local differs = (want and want ~= tonumber(rules.bankrupt))
 		or (shareWant ~= nil and shareWant ~= (rules.share ~= false))
 		or (startWant ~= nil and startWant ~= tonumber(rules.start))
 		or (aiWant ~= nil and aiWant ~= (rules.ai or ""))
+		or (auWant ~= nil and auWant ~= (rules.auction or E.AUCTION_DEFAULT))
 	if differs and G.frames - (G.coRulesAt or -100000) > 600 then
 		G.coRulesAt = G.frames
-		G.coEvent("co_rules", { bankrupt = want or tonumber(rules.bankrupt) or E.BANKRUPT_DEFAULT, share = shareWant, start = startWant, ai = aiWant })
+		G.coEvent("co_rules", { bankrupt = want or tonumber(rules.bankrupt) or E.BANKRUPT_DEFAULT, share = shareWant, start = startWant, ai = aiWant, auction = auWant })
 	end
 	-- each new month: the companies in debt on this game (the host's money is every game's), applied by all at the same step
 	if reg.month and reg.month ~= (reg.monthSeen or -1) and (G.coMonthSent ~= reg.month or G.frames - (G.coMonthAt or 0) > 900) then
@@ -17647,7 +17814,38 @@ G.coEco = function(st, reg, c)
 		G.coEvent("co_month", { month = reg.month, debt = debt })
 	end
 	-- the auction's clock (the host's real time: the game may be paused, its speed may change)
-	if au and au.lots[au.idx] then
+	if au and au.v == 2 then
+		-- (0.7.4) one clock for every lot: the minutes of the host's rule, 30 s more after a bid in the last 30 s
+		local A = G.coAu2
+		if not A or A.seq ~= au.seq then
+			A = { seq = au.seq, endT = nowT + G.auSeconds(au), sent = -1000 }
+			G.coAu2 = A
+			G.coNewsSay(reg)
+			G.coSay(au.mode == "company"
+				and C.Tf("Enchères : %s entière est à vendre (mise à prix %s), pendant %s min. Ouvrez la page Enchères de la fenêtre MPFever pour voir ce qu'elle possède et enchérir.",
+					"Auction: the whole of %s is for sale (reserve %s), for %s min. Open the Auctions page of the MPFever window to see what it owns and bid.",
+					G.coName(reg, au.co), G.coMoney(au.lots[1] and au.lots[1].reserve or 0), au.minutes)
+				or C.Tf("Enchères de %s : %s lot(s) à vendre en même temps, pendant %s min. Ouvrez la page Enchères de la fenêtre MPFever pour les voir et enchérir.",
+					"Auction of %s: %s lot(s) for sale at once, for %s min. Open the Auctions page of the MPFever window to see them and bid.",
+					G.coName(reg, au.co), #au.lots, au.minutes))
+		end
+		if au.lastBidAt ~= A.bidAt then
+			A.bidAt = au.lastBidAt
+			if au.lastBidAt and A.endT - nowT < E.SNIPE_SECONDS then
+				A.endT = nowT + E.SNIPE_SECONDS
+				log("companies: auction " .. au.seq .. ": a bid in the last seconds, " .. E.SNIPE_SECONDS .. " s more")
+			end
+		end
+		if not A.warned and A.endT - nowT <= 60 and A.endT - nowT > 0 then
+			A.warned = true
+			G.coSay(C.Tf("Enchères de %s : plus qu'une minute.", "Auction of %s: one minute left.", G.coName(reg, au.co)))
+		end
+		if nowT >= A.endT and nowT - A.sent >= 10 then
+			A.sent = nowT
+			G.coEvent("co_auction_close", { seq = au.seq })
+		end
+		G.coAu = nil
+	elseif au and au.lots[au.idx] then
 		local A = G.coAu
 		if not A or A.seq ~= au.seq or A.idx ~= au.idx then
 			A = { seq = au.seq, idx = au.idx, start = nowT, sent = -1000 }
@@ -17667,6 +17865,138 @@ G.coEco = function(st, reg, c)
 		G.coAu = nil
 	end
 	G.coNewsSay(reg)
+end
+
+-- (0.7.4) What a lot of an auction holds, for the window's detail: { focus = an entity the camera goes to, lines = { text... } }.
+-- A line: its stops in order, its vehicles by model; a station: the lines of other companies that stop there; a depot: the
+-- vehicles in it by model; the whole company: its lines, stations, depots and vehicles. Read again every 10 s at most.
+G.coLotDetailCache = {}
+G.coVehModel = function(v)
+	local name = nil
+	pcall(function()
+		local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+		local id = tv.transportVehicleConfig.vehicles[1].part.modelId
+		local m = api.res.modelRep.get(id)
+		name = m and m.metadata and m.metadata.description and m.metadata.description.name
+		if type(name) ~= "string" or name == "" then name = tostring(api.res.modelRep.getName(id)):match("([^/]+)%.mdl$") end
+	end)
+	if type(name) ~= "string" or name == "" then return C.T("véhicule", "vehicle") end
+	local okT, tr = pcall(function() return _(name) end)
+	return (okT and type(tr) == "string" and tr ~= "") and tr or name
+end
+G.coByModel = function(vehicles)
+	local n, order = {}, {}
+	for _, v in ipairs(vehicles) do
+		local m = G.coVehModel(v)
+		if not n[m] then n[m] = 0; order[#order + 1] = m end
+		n[m] = n[m] + 1
+	end
+	table.sort(order, function(a, b) if n[a] ~= n[b] then return n[a] > n[b] end return a < b end)
+	local out = {}
+	for i, m in ipairs(order) do
+		if i > 6 then out[#out + 1] = C.Tf("… et %s autres modèles", "… and %s more models", #order - 6); break end
+		out[#out + 1] = n[m] .. " × " .. m
+	end
+	return out
+end
+G.coLotDetail = function(reg, au, i, lot)
+	local key = tostring(au.seq) .. ":" .. i
+	local cached = G.coLotDetailCache[key]
+	if cached and os.clock() - cached.t < 10 then return cached.d end
+	local E = C.eco()
+	local c = CO.find(reg, au.co)
+	if not (E and E.lotEntities and c and c.ent) then return nil end
+	local function nm(e)
+		local n = nil
+		pcall(function() n = api.engine.getComponent(e, api.type.ComponentType.NAME).name end)
+		return type(n) == "string" and n ~= "" and n or C.T("(sans nom)", "(unnamed)")
+	end
+	local env = { R = R, CO = CO, log = log }
+	local d = { lines = {} }
+	if lot.kind == "company" then
+		local lines, stations, depots = {}, 0, 0
+		pcall(function() for _, l in ipairs(api.engine.system.lineSystem.getLinesForPlayer(c.ent)) do lines[#lines + 1] = l end end)
+		for _, sub in ipairs(E.lotsOf(env, c)) do
+			if sub.kind == "station" then stations = stations + 1 elseif sub.kind == "depot" then depots = depots + 1 end
+		end
+		local nv = 0
+		pcall(function() nv = #api.engine.system.transportVehicleSystem.getVehiclesForPlayer(c.ent) end)
+		d.lines[#d.lines + 1] = C.Tf("%s ligne(s), %s gare(s), %s dépôt(s), %s véhicule(s), ses voies et ses routes.", "%s line(s), %s station(s), %s depot(s), %s vehicle(s), its tracks and roads.", #lines, stations, depots, nv)
+		for k, l in ipairs(lines) do
+			if k > 8 then d.lines[#d.lines + 1] = C.Tf("… et %s autres lignes", "… and %s more lines", #lines - 8); break end
+			local n = 0
+			pcall(function() n = #api.engine.system.transportVehicleSystem.getLineVehicles(l) end)
+			d.lines[#d.lines + 1] = C.Tf("Ligne « %s » : %s véhicule(s)", "Line « %s »: %s vehicle(s)", nm(l), n)
+		end
+		if lines[1] then d.focusLine = lines[1] end
+	else
+		local ents, vehicles = E.lotEntities(env, c, lot)
+		if lot.kind == "line" then
+			local l = ents[1]
+			if l then
+				local stops = {}
+				-- (an unnamed stop of the company: the label of its own lot, as the page shows it)
+				local function stopName(sg)
+					local n = nm(sg)
+					if n ~= C.T("(sans nom)", "(unnamed)") or os.getenv("MPFEVER_STOPLOTNAME") == "0" then return n end
+					local okK, key = pcall(R.sgKey, sg)
+					if okK and key then
+						for j, lt in ipairs(au.lots or {}) do
+							if lt.kind == "station" and lt.key == key then return C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", j) end
+						end
+					end
+					return n
+				end
+				pcall(function()
+					local lc = api.engine.getComponent(l, api.type.ComponentType.LINE)
+					for s = 1, #lc.stops do stops[#stops + 1] = stopName(lc.stops[s].stationGroup) end
+				end)
+				d.lines[#d.lines + 1] = C.Tf("Arrêts (%s) : %s", "Stops (%s): %s", #stops, table.concat(stops, " → "))
+				d.focusLine = l
+			end
+			d.lines[#d.lines + 1] = #vehicles > 0 and C.Tf("Véhicules (%s) : %s", "Vehicles (%s): %s", #vehicles, table.concat(G.coByModel(vehicles), ", "))
+				or C.T("Aucun véhicule sur la ligne.", "No vehicle on the line.")
+			d.lines[#d.lines + 1] = C.T("Les gares de ses arrêts ne sont pas comprises : chacune est un lot à part.", "The stations of its stops are not included: each one is a lot of its own.")
+		elseif lot.kind == "station" then
+			local sg = ents[1]
+			if sg then
+				local others = {}
+				pcall(function()
+					for _, l in ipairs(R.entitiesWith("LINE")) do
+						local po = api.engine.getComponent(l, api.type.ComponentType.PLAYER_OWNED)
+						if not (po and po.player == c.ent) then
+							local lc = api.engine.getComponent(l, api.type.ComponentType.LINE)
+							for s = 1, #lc.stops do if lc.stops[s].stationGroup == sg then others[#others + 1] = nm(l); break end end
+						end
+					end
+				end)
+				d.lines[#d.lines + 1] = #others > 0 and C.Tf("Lignes d'autres entreprises qui s'y arrêtent (%s) : %s", "Other companies' lines that stop there (%s): %s", #others, table.concat(others, ", "))
+					or C.T("Aucune ligne d'une autre entreprise ne s'y arrête.", "No other company's line stops there.")
+				pcall(function() d.focus = api.engine.getComponent(sg, api.type.ComponentType.STATION_GROUP).stations[1] end)
+			end
+			d.lines[#d.lines + 1] = C.T("Avec ses quais et ses voies.", "With its platforms and tracks.")
+		elseif lot.kind == "depot" then
+			d.lines[#d.lines + 1] = #vehicles > 0 and C.Tf("Véhicules dans le dépôt (%s) : %s", "Vehicles in the depot (%s): %s", #vehicles, table.concat(G.coByModel(vehicles), ", "))
+				or C.T("Aucun véhicule dans le dépôt.", "No vehicle in the depot.")
+			d.focus = ents[1]
+		end
+	end
+	if d.focusLine and not d.focus then
+		pcall(function()
+			local lc = api.engine.getComponent(d.focusLine, api.type.ComponentType.LINE)
+			d.focus = api.engine.getComponent(lc.stops[1].stationGroup, api.type.ComponentType.STATION_GROUP).stations[1]
+		end)
+	end
+	G.coLotDetailCache[key] = { t = os.clock(), d = d }
+	return d
+end
+
+-- (0.7.4) how long an auction of every lot at once lasts, in real seconds: its minutes (MPFEVER_AUCTIONSECONDS=s, tests: s seconds;
+-- only the host's clock closes it, the other games show the time left)
+G.auSeconds = function(au)
+	local s = tonumber(os.getenv("MPFEVER_AUCTIONSECONDS") or "")
+	if s and s > 0 then return s end
+	return (tonumber(au.minutes) or 5) * 60
 end
 
 -- what happened, in the chat (from the host only: one message for everybody)
@@ -17717,9 +18047,22 @@ G.coNewsText = function(reg, n)
 		if (n.limit or 0) <= 0 then return nil end
 		return C.Tf("%s est endettée depuis %s mois (faillite à %s mois de dette).", "%s has been in debt for %s month(s) (bankruptcy after %s months).", nm(n.co), n.months, n.limit)
 	end
-	if k == "bid" then return C.Tf("%s offre %s.", "%s bids %s.", nm(n.by), G.coMoney(n.amount)) end
+	if k == "bid" then
+		-- (0.7.4: the lot it is for, at an auction of every lot at once)
+		if n.label then return C.Tf("%s offre %s pour « %s ».", "%s bids %s for « %s ».", nm(n.by), G.coMoney(n.amount), n.label) end
+		return C.Tf("%s offre %s.", "%s bids %s.", nm(n.by), G.coMoney(n.amount))
+	end
+	-- (0.7.4: a station or a depot the game never named)
+	if (k == "lot_sold" or k == "lot_unsold") and (n.label or "") == "" then
+		n = C.copy(n)
+		if n.lk == "station" and n.lot then n.label = C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", n.lot)
+		elseif n.lk == "depot" and n.lot then n.label = C.Tf("Dépôt sans nom (lot %s)", "Unnamed depot (lot %s)", n.lot)
+		else n.label = C.T("sans nom", "unnamed") end
+	end
 	if k == "lot_sold" then return C.Tf("Adjugé : « %s » à %s pour %s.", "Sold: « %s » to %s for %s.", n.label, nm(n.to), G.coMoney(n.amount)) end
+	if k == "lot_unsold" and n.heir then return C.Tf("« %s » : aucune offre ; d'autres lignes s'y arrêtent, il revient à %s.", "« %s »: no bid; other lines stop there, it goes to %s.", n.label, nm(n.heir)) end
 	if k == "lot_unsold" then return C.Tf("« %s » : aucune offre, démoli.", "« %s »: no bid, demolished.", n.label) end
+	if k == "heir" then return C.Tf("Ce qui restait à %s (voies, routes...) revient à %s.", "What %s still had (tracks, roads...) goes to %s.", nm(n.co), nm(n.to)) end
 	if k == "auction_end" then return C.Tf("Fin des enchères de %s.", "The auction of %s is over.", nm(n.co)) end
 	if k == "ask" then return C.Tf("%s demande à rejoindre %s (son chef répond dans la fenêtre MPFever).", "%s asks to join %s (its chief answers in the MPFever window).", n.name or n.key, nm(n.co)) end
 	if k == "joined" then return C.Tf("%s rejoint %s.", "%s joins %s.", n.key, nm(n.co)) end
@@ -19329,7 +19672,13 @@ local function guiHandleEvent(userParams, state, guiState, src, id, name, param)
 	-- (a map signal armed in the MPFever window: the next click on the map places it, see G.pingArm)
 	if G.pingArmed and id == "mainView" and (name == "select-world" or name == "select") then pcall(G.pingClick, name, param) end
 	-- (what this player's tool shows, for the others' games: see G.previewOut)
-	if name == "builder.proposalCreate" then pcall(G.previewOut, tostring(id), param)
+	if name == "builder.proposalCreate" then
+		pcall(G.previewOut, tostring(id), param)
+		-- (0.7.4: a tool that applies its preview, the street tool: its copy, see G.toolCreated)
+		pcall(G.toolCreated, id, param)
+	elseif name == "builder.proposalPrepareForApply" then
+		-- (0.7.4: the copy of a build shipped at the click, the proposal the tool sends next, see G.toolPrepared)
+		pcall(G.toolPrepared, param, id)
 	elseif name == "builder.proposalApply" then
 		pcall(G.previewGone); pcall(G.toolApplied, param)
 		-- (0.7.0: this player's own build, for the mods that finish it from their guiUpdate, see mpfever_modauto.lua)
@@ -19337,6 +19686,19 @@ local function guiHandleEvent(userParams, state, guiState, src, id, name, param)
 		-- (0.6: the build the tool applies, for a game option that checks this player's builds, see G.featRefuse)
 		if G.featOn and G.featAllow then pcall(G.featTool, param) end
 	end
+	-- (research, MPFEVER_EVLOG=1: every interface event of this game, its first time and then every 50th, with its parameter's kind)
+	if os.getenv("MPFEVER_EVLOG") == "1" then
+		G.evAll = G.evAll or {}
+		local key = tostring(id) .. "/" .. tostring(name)
+		G.evAll[key] = (G.evAll[key] or 0) + 1
+		if G.evAll[key] == 1 or G.evAll[key] % 50 == 0 then
+			local pk = type(param)
+			pcall(function() if pk == "table" then pk = "table{" .. tostring(type(param[1])) .. "," .. tostring(type(param[2])) .. "}" end end)
+			log("EVLOG " .. key .. " #" .. G.evAll[key] .. " " .. pk .. " [frame " .. G.frames .. "]")
+		end
+	end
+	-- (0.7.4, ACTLEAD: the vehicle store open, its buy button shown: this game leads before the first purchase)
+	if G.actLeadOn and id == "vehicleStore" then pcall(G.actLeadWindow, "vehicle store") end
 	if type(name) == "string" and name:find("^builder%.") then
 		G.evSeen = G.evSeen or {}
 		local key = tostring(id) .. "/" .. name

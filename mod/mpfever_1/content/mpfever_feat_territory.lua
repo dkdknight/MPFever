@@ -67,6 +67,13 @@ M.OPTIONS = {
 }
 M.EVENTS = { f_territory_claim = true, f_territory_drop = true }
 M.TAB = { id = "territory", title = { "Territoires", "Territories" } }
+-- (0.7.4) the page's « How does it work? », at its end in the Hub (see the window's U.featTabRows)
+M.HELP = {
+	{ "Pendant sa première année, chaque entreprise peut revendiquer une ville. Dans le cercle autour de cette ville, les autres entreprises, celles de l'ordinateur comprises, ne peuvent construire ni gare, ni arrêt, ni dépôt tant que dure la protection.",
+		"During its first year each company may claim a town. Within the circle around that town, the other companies, the computer's included, can build no station, stop or depot while the protection lasts." },
+	{ "Le rayon du cercle et la durée de la protection sont des réglages de l'hôte. Les voies et les routes des autres peuvent toujours traverser un territoire.",
+		"The circle's radius and how long the protection lasts are the host's settings. The others' tracks and roads may still cross a territory." },
+}
 
 -- Texts: the env's T when the options host gives one (env.T, the bridge's C.T), else English. The integration may set M.T = C.T.
 M.T = function(fr, en) return en end

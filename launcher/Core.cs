@@ -1715,7 +1715,14 @@ namespace MPFever
                         ResumeRefused?.Invoke();
                     }
                     Link.Received();
-                    Received?.Invoke(m);
+                    // (0.7.4, BUSYCUT: no silence cut while a message is handled, see LinkLoop)
+                    Interlocked.Exchange(ref handlingSince, DateTime.UtcNow.Ticks);
+                    try { Received?.Invoke(m); }
+                    finally
+                    {
+                        Interlocked.Exchange(ref handlingSince, 0);
+                        Interlocked.Exchange(ref lastRecvTicks, DateTime.UtcNow.Ticks);
+                    }
                 }
             }
             catch (Exception e) { if (!stop) Log.W("client : " + e.Message); }
@@ -1726,6 +1733,9 @@ namespace MPFever
 
         static int connections;
         bool viaSteam;
+        /// <summary>(0.7.4, BUSYCUT) When the message being handled was read (ticks), 0 when none.</summary>
+        long handlingSince;
+        internal static bool BusyHolds(long handlingSince) => handlingSince != 0 && Environment.GetEnvironmentVariable("MPFEVER_BUSYCUT") != "1";
 
         /// <summary>(0.6.8, #115) How long the host may stay silent before the connection is cut: 15 s, 40 s through Steam.
         /// The Steam tunnel lives in the host's game, which can stay busy longer than 15 s with a world of 300 MB and more
@@ -1760,6 +1770,10 @@ namespace MPFever
                     try { lock (gate) SessionLink.AckMsg(rx).WriteTo(writer); } catch { }
                 }
                 int silent = SilentLimit(viaSteam);
+                // (0.7.4) Nothing is read while a message is handled: a player's MPFever that puts the host's game together and writes
+                // it (82 MB on the user's server, 2026-11-06) heard nothing for more than 15 s and cut itself, then joined again and
+                // again. The silence counts from the end of that handling. MPFEVER_BUSYCUT=1: as before
+                if (BusyHolds(Interlocked.Read(ref handlingSince))) continue;
                 if (hostAcks && (now.Ticks - Interlocked.Read(ref lastRecvTicks)) / TimeSpan.TicksPerSecond > silent)
                 {
                     Log.Warn(L.F("Client : plus rien reçu de l'hôte depuis {0} s, connexion coupée", "Client: nothing received from the host for {0} s, connection cut", silent));

@@ -117,7 +117,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.7.3";
+        public const string Version = "0.7.4";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -226,6 +226,15 @@ namespace MPFever
         // (issue #94: shown in place of startBtn once the game is closed)
         readonly ModernButton againBtn = new ModernButton(ButtonKind.Primary) { Visible = false };
         bool gameClosed, updateInstalled;
+        // (0.7.4) The game no longer starts by itself: the player sets MPFever up first, then clicks « Start Transport Fever 3 »;
+        // the box makes it start by itself next time (off for everybody at first, autolaunch=1 in mpfever_settings.txt once
+        // ticked). A Steam invitation and « Start Transport Fever 3 again » start it at once, as before.
+        readonly ModernButton launchBtn = new ModernButton(ButtonKind.Primary) { Visible = false };
+        readonly CheckBox autoLaunchBox = new CheckBox { Visible = false, AutoSize = true };
+        // (0.7.4) The mod put into the game (InstallMod and the rest of Init) runs beside the window now: the window said "not
+        // responding" for those seconds. A moving bar says to wait meanwhile.
+        readonly ProgressBar busyBar = new ProgressBar { Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 30, Visible = false };
+        volatile bool waitingLaunch, installing;
         readonly ModernButton pauseBtn = new ModernButton(ButtonKind.Segment) { Enabled = false };
         readonly ModernButton x1Btn = new ModernButton(ButtonKind.Segment) { Text = "x1", Enabled = false };
         readonly ModernButton x2Btn = new ModernButton(ButtonKind.Segment) { Text = "x2", Enabled = false };
@@ -375,6 +384,8 @@ namespace MPFever
             localBtn.Click += (s, e) => Guard(StartLocalTest);
             startBtn.Click += (s, e) => StartSession();
             againBtn.Click += (s, e) => StartAgain(updateInstalled);
+            launchBtn.Click += (s, e) => LaunchFromButton();
+            autoLaunchBox.CheckedChanged += (s, e) => { if (autoLaunchShown) SaveSetting("autolaunch", autoLaunchBox.Checked ? "1" : "0"); };
             pauseBtn.Click += (s, e) => Pause(T("hôte", "host"));
             x1Btn.Click += (s, e) => SetSpeed(1, T("hôte", "host"));
             x2Btn.Click += (s, e) => SetSpeed(2, T("hôte", "host"));
@@ -401,10 +412,18 @@ namespace MPFever
             localBtn.Text = T("Test local (2 jeux)", "Local test (2 games)");
             startBtn.Text = T("▶  Démarrer la partie", "▶  Start the game");
             againBtn.Text = T("Relancer Transport Fever 3", "Start Transport Fever 3 again");
+            launchBtn.Text = T("▶  Lancer Transport Fever 3", "▶  Start Transport Fever 3");
+            autoLaunchShown = false;
+            autoLaunchBox.Text = T("Lancer le jeu automatiquement à l'ouverture de MPFever", "Start the game by itself when MPFever opens");
+            autoLaunchBox.Checked = AutoLaunchSetting();
+            autoLaunchShown = true;
+            autoLaunchBox.Font = Theme.Ui(9.5f);
+            autoLaunchBox.ForeColor = Theme.Text;
+            autoLaunchBox.BackColor = Color.Transparent;
             pauseBtn.Text = "❚❚  " + T("Pause", "Pause");
             detBtn.Text = T("Test déterminisme", "Determinism test");
             langBtn.Text = L.Name + "  ▾";
-            foreach (var b in new[] { hostBtn, joinBtn, localBtn, startBtn, againBtn, pauseBtn, x1Btn, x2Btn, x4Btn, detBtn, langBtn }) b.ResetFont();
+            foreach (var b in new[] { hostBtn, joinBtn, localBtn, startBtn, againBtn, launchBtn, pauseBtn, x1Btn, x2Btn, x4Btn, detBtn, langBtn }) b.ResetFont();
             logBox.Font = Theme.Mono(9f);
 
             header = new HeaderBar(T("Multijoueur pour Transport Fever 3", "Multiplayer for Transport Fever 3"), "v" + Version, langBtn);
@@ -445,12 +464,14 @@ namespace MPFever
             var bar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = Padding.Empty };
             startBtn.Fit(40); startBtn.Margin = new Padding(0, 0, S(18), 0);
             againBtn.Fit(40); againBtn.Margin = new Padding(0, 0, S(18), 0);
-            var speedLabel = new Label { Text = T("VITESSE", "SPEED"), AutoSize = true, Font = Theme.Semibold(8f), ForeColor = Theme.Muted, Margin = new Padding(0, S(12), S(10), 0) };
+            launchBtn.Fit(40); launchBtn.Margin = new Padding(0, 0, S(14), 0);
+            autoLaunchBox.Margin = new Padding(0, S(10), S(14), 0);
+            busyBar.Width = S(160); busyBar.Height = S(14); busyBar.Margin = new Padding(0, S(13), S(14), 0);
+            speedLabel = new Label { Text = T("VITESSE", "SPEED"), AutoSize = true, Font = Theme.Semibold(8f), ForeColor = Theme.Muted, Margin = new Padding(0, S(12), S(10), 0) };
             pauseBtn.Fit(30); pauseBtn.Margin = new Padding(0, 0, S(4), 0);
             foreach (var b in new[] { x1Btn, x2Btn, x4Btn }) { b.Width = S(52); b.Margin = new Padding(0, 0, S(4), 0); }
-            bar.Controls.AddRange(new Control[] { startBtn, againBtn, speedLabel, pauseBtn, x1Btn, x2Btn, x4Btn });
-            startBtn.Visible = !ServerMode && !gameClosed;   // (a server starts its world by itself)
-            againBtn.Visible = !ServerMode && gameClosed;
+            bar.Controls.AddRange(new Control[] { busyBar, launchBtn, autoLaunchBox, startBtn, againBtn, speedLabel, pauseBtn, x1Btn, x2Btn, x4Btn });
+            ShowLaunchControls();
             if (Dev) { detBtn.Height = S(38); detBtn.Fit(); detBtn.Margin = new Padding(S(14), 0, 0, 0); bar.Controls.Add(detBtn); }
             session.Controls.Add(bar);
 
@@ -797,6 +818,10 @@ namespace MPFever
             else if (ServerMode) h = (menuText ?? "") + T("\n\nTapez help sous le journal pour les commandes du serveur.", "\n\nType help under the log for the server commands.");
             else if (gameClosed) h = T("Transport Fever 3 est fermé. Cliquez sur « Relancer Transport Fever 3 » pour jouer à nouveau.",
                                        "Transport Fever 3 is closed. Click « Start Transport Fever 3 again » to play again.");
+            else if (installing) h = T("MPFever met son mod en place dans le jeu. Patientez quelques secondes : la barre bouge tant que ce n'est pas fini.",
+                                       "MPFever is putting its mod into the game. Wait a few seconds: the bar moves until it is done.");
+            else if (waitingLaunch) h = T("Le jeu ne se lance plus tout seul : réglez d'abord MPFever si vous le souhaitez (⚙ Réglages, en bas à droite), puis cliquez sur « Lancer Transport Fever 3 ».\n\nCochez « Lancer le jeu automatiquement » pour que le jeu démarre tout seul à l'ouverture de MPFever les prochaines fois.",
+                                          "The game no longer starts by itself: set MPFever up first if you wish (⚙ Settings, bottom right), then click « Start Transport Fever 3 ».\n\nTick « Start the game by itself » to have the game start as soon as MPFever opens next time.");
             else if (menuMode && !string.IsNullOrEmpty(menuText)) h = menuText;
             else if (menuMode) h = T("Le jeu démarre. Choisissez « Multijoueur (MPFever) » dans son menu principal pour héberger ou rejoindre une partie.",
                                      "The game is starting. Choose « Multiplayer (MPFever) » in its main menu to host or join a game.");
@@ -976,7 +1001,8 @@ namespace MPFever
             {
                 var exe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MPFever.exe");
                 Log.W(T("Relance de MPFever et de Transport Fever 3...", "Starting MPFever and Transport Fever 3 again..."));
-                Process.Start(new ProcessStartInfo(exe, updated ? "--updated" : "") { UseShellExecute = false, WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory });
+                // (0.7.4: --launch, the game starts at once, whatever the box « start the game by itself » says)
+                Process.Start(new ProcessStartInfo(exe, updated ? "--updated --launch" : "--launch") { UseShellExecute = false, WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory });
                 Close();
             }
             catch (Exception e)
@@ -1086,21 +1112,87 @@ namespace MPFever
                 T("MPFever : confidentialité", "MPFever: privacy"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
+        /// <summary>(0.7.4) The box « start the game by itself » is set (autolaunch=1): off until the player ticks it.</summary>
+        internal static bool AutoLaunchSetting() => LoadSettings().TryGetValue("autolaunch", out var v) && v == "1";
+        bool autoLaunchShown;
+        // (0.7.4) the speed controls' title: hidden with them while the game waits for its launch (see ShowLaunchControls)
+        Label speedLabel;
+
+        /// <summary>(0.7.4) Whether the game starts by itself now: the box ticked, a Steam invitation (the game started MPFever
+        /// for it), « Start Transport Fever 3 again » (--launch). MPFEVER_AUTOLAUNCH=1: always, as before 0.7.4.</summary>
+        internal static bool LaunchAtStart(bool boxTicked, bool steamJoin, string[] args) =>
+            boxTicked || steamJoin || args.Contains("--launch") || Environment.GetEnvironmentVariable("MPFEVER_AUTOLAUNCH") == "1";
+
+        /// <summary>(0.7.4) The launch controls as the state says: the moving bar while the mod is put in the game, the button and
+        /// its box while the game waits for the player.</summary>
+        void ShowLaunchControls()
+        {
+            bool player = !ServerMode && !autotest;
+            busyBar.Visible = player && installing;
+            launchBtn.Visible = player && waitingLaunch && !gameClosed;
+            launchBtn.Enabled = !installing;
+            autoLaunchBox.Visible = player && MenuModeDefault && (waitingLaunch || installing) && !gameClosed;
+            startBtn.Visible = !ServerMode && !gameClosed && !waitingLaunch && !installing;   // (a server starts its world by itself)
+            againBtn.Visible = !ServerMode && gameClosed;
+            // (0.7.4: no game yet, the speed controls (off until a session starts) leave the room to the launch button and its box;
+            // with them the bar was too long and x2 and x4 went out of it)
+            bool speed = !(player && (waitingLaunch || installing) && !gameClosed);
+            if (speedLabel != null) speedLabel.Visible = speed;
+            pauseBtn.Visible = x1Btn.Visible = x2Btn.Visible = x4Btn.Visible = speed;
+        }
+
+        void LaunchFromButton()
+        {
+            if (!waitingLaunch || installing) return;
+            waitingLaunch = false;
+            ShowLaunchControls();
+            StartMenuMode();
+        }
+
         void Init()
+        {
+            // (0.7.4) the slow part (the mod put into the game, the native module, the mods' check) beside the window, the bar
+            // moving; the rest back on the window's thread. MPFEVER_INITSYNC=1 (and the autotests): all at once, as before
+            if (!autotest && !ServerMode && Environment.GetEnvironmentVariable("MPFEVER_INITSYNC") != "1")
+            {
+                if (!InitFindGame()) return;
+                installing = true;
+                ShowLaunchControls();
+                status.Text = T("Mise en place du mod dans le jeu, patientez…", "Putting the mod into the game, please wait…");
+                Log.W(T("Mise en place du mod dans le jeu : patientez quelques secondes.", "Putting the mod into the game: wait a few seconds."));
+                new Thread(() =>
+                {
+                    try { InitInstall(); }
+                    catch (Exception e) { Log.Warn(T("Installation du mod : ", "Mod installation: ") + e.Message); }
+                    try { BeginInvoke((Action)(() => { installing = false; status.Text = T("Prêt.", "Ready."); InitFinish(); })); } catch { }
+                }) { IsBackground = true, Name = "Mod install" }.Start();
+                return;
+            }
+            if (!InitFindGame()) return;
+            InitInstall();
+            InitFinish();
+        }
+
+        /// <summary>The game's folder (asked when not found): false when there is none.</summary>
+        bool InitFindGame()
         {
             // (0.6.3) the folder the player chose for a game MPFever does not find itself (GOG, a folder of its own)
             try { if (LoadSettings().TryGetValue("gamedir", out var gd)) GameInstall.ChosenDir = gd; } catch { }
             gameDir = GameInstall.FindGameDir();
             if (gameDir == null && !autotest && !ServerMode) gameDir = AskGameDir();
-            if (gameDir == null) { gameMissing = true; Log.Err(T("Transport Fever 3 introuvable.", "Transport Fever 3 not found.")); status.Text = T("Jeu introuvable", "Game not found"); return; }
+            if (gameDir == null) { gameMissing = true; Log.Err(T("Transport Fever 3 introuvable.", "Transport Fever 3 not found.")); status.Text = T("Jeu introuvable", "Game not found"); return false; }
             Log.W(T("Jeu : ", "Game: ") + gameDir);
+            return true;
+        }
+
+        /// <summary>The files put into the game: the Steam id, the native module, the mod (beside the window since 0.7.4).</summary>
+        void InitInstall()
+        {
             if (GameInstall.NotSteamCopy(gameDir))
                 Log.Warn(T("Copie du jeu hors Steam (GOG ?) : prise en charge expérimentale. Rejoindre par Steam n'y est pas possible, utilisez l'adresse de l'hôte.",
                            "A copy of the game not installed by Steam (GOG?): experimental support. Joining through Steam is not possible there, use the host's address."));
             else try { GameInstall.EnsureSteamAppId(gameDir); } catch (Exception e) { Log.W("steam_appid.txt : " + e.Message); }
             try { GameInstall.InstallNative(gameDir); } catch (Exception e) { Log.W("winhttp.dll: " + e.Message); }
-            if (!autotest) WarnNativeMissing();
-            if (!autotest) WarnSmartAppControl();
             if (GameInstall.DiagOn())
                 Log.Warn(T("Version de diagnostic : journaux détaillés (file des identifiants, état à chaque contrôle). Après une resynchronisation, envoyez le rapport de chaque joueur.",
                            "Diagnostic build: detailed logs (the free-id queue, the state at every check). After a resynchronisation, send every player's report."));
@@ -1108,6 +1200,14 @@ namespace MPFever
             try { GameInstall.InstallMod(); } catch (Exception e) { Log.Warn(T("Installation du mod : ", "Mod installation: ") + e.Message); }
             if (!autotest && !ServerMode) WarnIncompatibleMods();
             try { if (LoadSettings().TryGetValue("savedirs", out var sd)) GameInstall.AddGameSaveDirs(sd.Split('|')); } catch { }
+        }
+
+        /// <summary>Back on the window's thread: the warnings, then the server's window, the game started (or waiting for the
+        /// player's click, 0.7.4), or the autotest.</summary>
+        void InitFinish()
+        {
+            if (!autotest) WarnNativeMissing();
+            if (!autotest) WarnSmartAppControl();
             if (ServerMode)
             {
                 OpenServerWindow();
@@ -1115,9 +1215,14 @@ namespace MPFever
             }
             if (MenuModeDefault && !autotest)
             {
-                StartMenuMode();
+                if (LaunchAtStart(AutoLaunchSetting(), JoinAtStart != null, Program.Args)) { ShowLaunchControls(); StartMenuMode(); return; }
+                waitingLaunch = true;
+                ShowLaunchControls();
+                Log.Ok(T("Prêt : réglez MPFever si besoin (⚙ Réglages en bas), puis cliquez sur « Lancer Transport Fever 3 ».",
+                         "Ready: set MPFever up if needed (⚙ Settings at the bottom), then click « Start Transport Fever 3 »."));
                 return;
             }
+            ShowLaunchControls();
             if (autotest)
             {
                 Guard(StartLocalTest);
@@ -1499,6 +1604,27 @@ namespace MPFever
 
         /// <summary>The host's game was not loaded: mods of it are missing on this PC (missing_mods.txt, written by
         /// mpfever_auto.lua). The session ends and the MPFever page of the menu lists them.</summary>
+        /// <summary>(0.7.4, RESYNCLEFT) The seconds a player gone during a resynchronisation has to come back.</summary>
+        internal const int ResyncLeftSeconds = 20;
+
+        /// <summary>(0.7.4, RESYNCLEFT) A player gone during a resynchronisation is no longer waited for, unless a connection of
+        /// the same player (its base name: dickj#55 for dickj#53) is there again. Returns how many names were dropped.</summary>
+        internal static int DropDeparted(HashSet<string> waiting, string gone, IEnumerable<string> connected)
+        {
+            string b = BaseName(gone);
+            if (connected.Any(n => BaseName(n) == b)) return 0;
+            return waiting.RemoveWhere(w => w == gone || BaseName(w) == b);
+        }
+
+        /// <summary>(0.7.4, MODRETRY) A dedicated server whose own world needs a mod the game does not see yet tries again: the
+        /// user's server, 2026-11-06 23:20, "PYT - Mega Warehouse (mod.io)" missing 2 s after the menu, there at 21:04 (mod.io was
+        /// updating it). Its game is started again after 30 s, three times at most, before giving up. MPFEVER_MODRETRY=0: as
+        /// before (the session ends at once).</summary>
+        int serverModRetries;
+        internal const int ServerModRetryMax = 3, ServerModRetrySeconds = 30;
+        internal static bool ServerModRetry(bool serverMode, bool anyLocal, int done) =>
+            serverMode && !anyLocal && done < ServerModRetryMax && Environment.GetEnvironmentVariable("MPFEVER_MODRETRY") != "0";
+
         void CheckMissingMods()
         {
             var f = Path.Combine(menuGame.Dir, "missing_mods.txt");
@@ -1515,6 +1641,21 @@ namespace MPFever
                     ? T(". Certains sont des mods locaux de l'hôte, publiés nulle part : l'hôte doit vous les envoyer (bouton Envoyer de sa page Multijoueur, avant de lancer la partie), les autres s'installent depuis le Steam Workshop ou mod.io. Puis rejoignez à nouveau.",
                         ". Some are the host's local mods, published nowhere: the host must send them to you (Send button of its Multiplayer page, before it starts the game); install the others from the Steam Workshop or mod.io. Then join again.")
                     : T(". Installez-les (Steam Workshop ou mod.io), puis rejoignez à nouveau.", ". Install them (Steam Workshop or mod.io), then join again."));
+            if (ServerModRetry(ServerMode, anyLocal, serverModRetries))
+            {
+                int k = ++serverModRetries;
+                Log.Warn(F("Le monde du serveur n'a pas été chargé : mods introuvables pour l'instant ({0}). Steam ou mod.io les met peut-être à jour : nouvel essai dans {1} s ({2}/{3}).",
+                    "The server's world was not loaded: mods not found yet ({0}). Steam or mod.io may be updating them: trying again in {1} s ({2}/{3}).",
+                    string.Join(", ", names), ServerModRetrySeconds, k, ServerModRetryMax));
+                new Thread(() =>
+                {
+                    Thread.Sleep(ServerModRetrySeconds * 1000);
+                    if (serverStopping) return;
+                    if (menuGame.GameRunning) { restartRequested = true; menuGame.Kill(); }
+                    else { EndSession(); BeginServerWorld(true); }
+                }) { IsBackground = true, Name = "Server mod retry" }.Start();
+                return;
+            }
             // (and the host hears why this player is gone)
             try { clients.FirstOrDefault()?.Send(Msg.Make("modmissing", menuGame.Name, "{[\"mods\"]=" + LuaLit.Quote(string.Join(", ", names)) + "}")); } catch { }
             Log.Err(T("La partie de l'hôte n'a pas été chargée. ", "The host's game was not loaded. ") + text);
@@ -1941,6 +2082,17 @@ namespace MPFever
                 Log.W(mo == 0 ? T("Faillite : jamais", "Bankruptcy: never") : F("Faillite après {0} mois de dette", "Bankruptcy after {0} months in debt", mo));
                 if (relay != null) BroadcastSession();
                 // (the players' lobbies show the rules too: their summary kept the old months)
+                BroadcastLobby();
+                MenuStatus();
+            }
+            else if (cmd == "auction")
+            {
+                // (0.7.4, the host, in the lobby or in its game's MPFever page) the auction of a bankrupt company: every game takes it
+                // with the session (the host's game puts it into the game, see mpfever_eco.lua's co_rules)
+                if (!ValidAuction(arg)) return;
+                SaveSetting("auction", arg);
+                Log.W(F("Enchères d'une faillite : {0}", "Auction of a bankruptcy: {0}", arg));
+                if (relay != null) BroadcastSession();
                 BroadcastLobby();
                 MenuStatus();
             }
@@ -2398,7 +2550,7 @@ namespace MPFever
         }
 
         /// <summary>The game's rules for the menus (0.5.14, one company per player): "start money|share 1/0|bankruptcy months".</summary>
-        string LobbyRulesView() => StartMoney() + "|" + ShareRules() + "|" + BankruptMonths();
+        string LobbyRulesView() => StartMoney() + "|" + ShareRules() + "|" + BankruptMonths() + "|" + AuctionRule();
 
         /// <summary>The host starts the game from its lobby: every player in it receives the host's savegame and every game
         /// (the host's too) loads it at once; the session starts when they are all ready, as after a resynchronisation. A
@@ -2816,6 +2968,25 @@ namespace MPFever
                 HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));
                 // (a player gone from the lobby, or while the lobby's games load: nobody waits for it)
                 lock (resyncWaiting) if (lobbyStarting) resyncWaiting.Remove(p.Name);
+                // (0.7.4) A player gone during a resynchronisation was waited for until its end, 600 s, every game frozen: dickj on the
+                // user's server, 2026-11-06 23:17 (0.7.3 waits for the players who join, and dickj left while the game was on its
+                // way). Now one that is not back within 20 s (back, under another name, it says so with "hello" or "resync_have")
+                // is no longer waited for. MPFEVER_RESYNCLEFT=0: as before
+                if (!lobbyStarting && resyncing && Environment.GetEnvironmentVariable("MPFEVER_RESYNCLEFT") != "0")
+                {
+                    bool waited; lock (resyncWaiting) waited = resyncWaiting.Contains(p.Name);
+                    if (waited)
+                    {
+                        var gone = p.Name;
+                        var r = relay;
+                        new Thread(() =>
+                        {
+                            Thread.Sleep(ResyncLeftSeconds * 1000);
+                            int n; lock (resyncWaiting) n = DropDeparted(resyncWaiting, gone, r?.PeerNames() ?? new string[0]);
+                            if (n > 0) Log.Warn(F("Resynchronisation : {0} n'est pas revenu depuis {1} s, on ne l'attend plus", "Resynchronisation: {0} has not come back for {1} s, no longer waited for", BaseName(gone), ResyncLeftSeconds));
+                        }) { IsBackground = true, Name = "Resync left" }.Start();
+                    }
+                }
                 if (lobbyOpen) { BroadcastLobby(); MenuStatus(); }
                 if (server != null) ServerPlayerLeft(p);
             };
@@ -2912,6 +3083,8 @@ namespace MPFever
             bool CanResume() => SessionLink.Grace > 0 && !string.IsNullOrEmpty(link.Token) && !link.Broken && game.InGame;
             // (the game's messages while cut, for the connection that takes over: sent in order before any newer one)
             var waiting = new List<Msg>();
+            // (0.7.4: 1 while a reconnection runs, see Closed)
+            int reconnecting = 0;
             clientCancelled = false;
             leftSession = null;   // (a report describes this session now)
             // a reconnect thread of an earlier session must not wake up in this one (issue #13)
@@ -3165,8 +3338,19 @@ namespace MPFever
                 };
                 client.Closed += () =>
                 {
+                    // (0.7.4) A connection replaced by a newer one (the host closes the older connection of a player who comes back,
+                    // "ancienne connexion fermée (reconnexion)") started a reconnection of its own, which replaced the newer one, and so
+                    // on: dickj on the user's server, 2026-11-06 23:17, a new connection every 5 s for two minutes. Now a superseded
+                    // connection does not reconnect, and only one reconnection runs at a time. MPFEVER_RECONNECTOLD=1: as before
+                    bool oldWay = Environment.GetEnvironmentVariable("MPFEVER_RECONNECTOLD") == "1";
+                    bool superseded = current != null && current != client;
                     lock (clients) clients.Remove(client);
                     if (current == client) current = null;   // nothing is sent until reconnected
+                    if (!oldWay && superseded)
+                    {
+                        Log.W(F("[{0}] ancienne connexion à l'hôte fermée (une plus récente la remplace)", "[{0}] older connection to the host closed (a newer one replaces it)", name));
+                        return;
+                    }
                     Log.Warn(F("[{0}] connexion à l'hôte perdue", "[{0}] connection to the host lost", name));
                     ClientStatus(deniedText != null ? "denied" : "lost", 0);
                     game.ToGame(Msg.Make("session", "MPFever", "{[\"started\"]=false,[\"speed\"]=0}"));
@@ -3182,6 +3366,11 @@ namespace MPFever
                     // the connection dropped: try again for 5 minutes; back with the host, the session goes on if the host still
                     // waits for this player (soon: after 1 s, 2 s, then every 5 s), else this game receives its game again like
                     // any player who joins
+                    if (!oldWay && Interlocked.CompareExchange(ref reconnecting, 1, 0) != 0)
+                    {
+                        Log.W(F("[{0}] une reconnexion est déjà en cours", "[{0}] a reconnection is already under way", name));
+                        return;
+                    }
                     Interlocked.Increment(ref clientJoins);
                     new Thread(() =>
                     {
@@ -3212,7 +3401,7 @@ namespace MPFever
                             }
                             if (!clientCancelled && gen == sessionGen) { menuPhase = "error"; menuText = T("Connexion à l'hôte perdue (reconnexion impossible).", "Connection to the host lost (could not reconnect)."); MenuStatus(); ClientStatus("gone", 0); }
                         }
-                        finally { Interlocked.Decrement(ref clientJoins); }
+                        finally { Interlocked.Decrement(ref clientJoins); Interlocked.Exchange(ref reconnecting, 0); }
                     }) { IsBackground = true, Name = "Reconnect" }.Start();
                 };
             };
@@ -3327,8 +3516,11 @@ namespace MPFever
             void P(string id, string state, long lag)
             {
                 present.Add(BaseName(id));
+                // (0.7.4: and the percent of the host's game it has received, while one is on its way; empty otherwise)
+                int pct = (state == "joining" || state == "loading") ? SendPctOf(id) : -1;
                 sb.Append("p=").Append(id).Append('\t').Append(BaseName(id)).Append('\t').Append(state).Append('\t')
-                  .Append(lag).Append('\t').Append(id == hostName ? (server != null ? "server" : "host") : "").Append('\n');
+                  .Append(lag).Append('\t').Append(id == hostName ? (server != null ? "server" : "host") : "")
+                  .Append('\t').Append(pct >= 0 ? pct.ToString(CultureInfo.InvariantCulture) : "").Append('\n');
             }
             if (hostName != null && !ready.Contains(hostName)) P(hostName, "joining", 0);   // the host's own game is loading
             foreach (var n in ready.OrderBy(n => n == hostName ? 0 : 1).ThenBy(n => n, StringComparer.OrdinalIgnoreCase))
@@ -3500,6 +3692,29 @@ namespace MPFever
                 ? n.ToString(CultureInfo.InvariantCulture) : "12";
         }
 
+        /// <summary>(0.7.4) The auction of a bankrupt company (one company per player), "mode:minutes": every lot at once
+        /// ("assets", the default), the whole company in one lot ("company"), or one lot after the other as in 0.7.3 ("serial");
+        /// 3, 5 or 10 minutes. MPFEVER_AUCTION, else the host's choice (setting auction=), else "assets:5"; MPFEVER_OLDAUCTION=1:
+        /// "serial", as before.</summary>
+        internal static string AuctionRuleOf(string env, string old, string saved)
+        {
+            if (old == "1") return "serial:5";
+            foreach (var v in new[] { env, saved })
+                if (ValidAuction(v)) return v;
+            return "assets:5";
+        }
+        internal static bool ValidAuction(string v)
+        {
+            if (string.IsNullOrEmpty(v)) return false;
+            var p = v.Split(':');
+            return p.Length == 2 && (p[0] == "assets" || p[0] == "company" || p[0] == "serial") && (p[1] == "3" || p[1] == "5" || p[1] == "10");
+        }
+        string AuctionRule()
+        {
+            LoadSettings().TryGetValue("auction", out var saved);
+            return AuctionRuleOf(Environment.GetEnvironmentVariable("MPFEVER_AUCTION"), Environment.GetEnvironmentVariable("MPFEVER_OLDAUCTION"), saved);
+        }
+
         /// <summary>Starting capital of a new company: MPFEVER_COMPANY_START, else (dedicated server) start-money in
         /// mpfever_server.properties, else companystart=N in mpfever_settings.txt, else 2,000,000.</summary>
         string StartMoney()
@@ -3582,6 +3797,9 @@ namespace MPFever
             var said = new List<string>();
             if (r.TryGetValue("bankrupt", out var b) && int.TryParse(b, NumberStyles.Integer, CultureInfo.InvariantCulture, out int mo) && (mo == 0 || mo == 3 || mo == 6 || mo == 12 || mo == 24))
             { SaveSetting("bankrupt", b); said.Add(F("faillite {0}", "bankruptcy {0}", mo == 0 ? T("jamais", "never") : mo + T(" mois", " months"))); }
+            // (0.7.4) the auction of a bankrupt company
+            if (r.TryGetValue("auction", out var au) && ValidAuction(au))
+            { SaveSetting("auction", au); said.Add(F("enchères {0}", "auction {0}", au)); }
             if (r.TryGetValue("share", out var sh) && (sh == "0" || sh == "1"))
             { SaveSetting("share", sh); said.Add(sh == "1" ? T("règles de partage activées", "sharing rules on") : T("règles de partage désactivées", "sharing rules off")); }
             if (r.TryGetValue("start", out var s0) && long.TryParse(s0, NumberStyles.Integer, CultureInfo.InvariantCulture, out long st0) && st0 >= 0)
@@ -3610,7 +3828,8 @@ namespace MPFever
                 return "{[\"started\"]=" + (started ? "true" : "false") + ",[\"speed\"]=" + speed +
                        (pauseAt.HasValue ? ",[\"pauseAt\"]=" + pauseAt.Value : "") +
                        ",[\"cmode\"]=\"" + companyMode + "\"" +
-                       (companyMode == "separate" ? ",[\"cstart\"]=" + StartMoney() + ",[\"bankrupt\"]=" + BankruptMonths() + ",[\"share\"]=" + (ShareRules() == "1" ? "true" : "false") : "") +
+                       (companyMode == "separate" ? ",[\"cstart\"]=" + StartMoney() + ",[\"bankrupt\"]=" + BankruptMonths() + ",[\"share\"]=" + (ShareRules() == "1" ? "true" : "false")
+                           + ",[\"auction\"]=" + LuaLit.Quote(AuctionRule()) : "") +
                        // the computer companies the host's game runs (its lobby's choice, "n:colour,...")
                        (AiPayload() != "" ? ",[\"ai\"]=" + LuaLit.Quote(AiPayload()) : "") +
                        // a dedicated server plays no company: the savegame's company goes to its owner (owner=, else nobody)
@@ -3755,6 +3974,8 @@ namespace MPFever
             {
                 case "hello":
                     lock (players) players.Add(m.From);
+                    // (0.7.4, MODRETRY: the server's world is loaded, its mods were all there)
+                    if (m.From == hostName) serverModRetries = 0;
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));
                     WarnUnknownBuild(m.Payload);
                     WarnOtherBuild(m.From, m.Payload);
@@ -4501,9 +4722,34 @@ namespace MPFever
         /// has some (all at once, each taking the next part: Steam limits each connection's rate), else over its connection. A part
         /// a dying bulk connection could not send goes over the others, then over the main connection. The player puts the parts
         /// together by their numbers. False when the sending stopped (a newer game, this one's wait over, the player gone).</summary>
+        /// <summary>(0.7.4) How much of the host's game each player has received so far, in percent (by its name): the in-game
+        /// window shows it next to a player who joins or reloads ("receiving the host's game: 45 %").</summary>
+        readonly Dictionary<string, int> sendPct = new Dictionary<string, int>();
+
+        /// <summary>The percent of the game sent to a player, -1 when none is on its way.</summary>
+        internal int SendPctOf(string name) { lock (sendPct) return sendPct.TryGetValue(name, out int v) ? v : -1; }
+
+        /// <summary>(0.7.4) The percent of a game of `parts` parts once `done` of them are sent (never 100 before the last).</summary>
+        internal static int PartsPct(int done, int parts) => parts <= 0 ? 100 : done >= parts ? 100 : Math.Min(99, done * 100 / parts);
+
         bool SendParts(Peer p, int id, int size, Func<int, Msg> part, out int linksUsed)
         {
+            bool shown = Environment.GetEnvironmentVariable("MPFEVER_SENDPCT") != "0";
+            try { return SendPartsCounted(p, id, size, part, out linksUsed, shown); }
+            finally { if (shown) lock (sendPct) sendPct.Remove(p.Name); }
+        }
+
+        bool SendPartsCounted(Peer p, int id, int size, Func<int, Msg> part, out int linksUsed, bool shown)
+        {
             int parts = (size + ResyncChunk - 1) / ResyncChunk;
+            int done = 0;
+            void Tick()
+            {
+                if (!shown) return;
+                int pct = PartsPct(Interlocked.Increment(ref done), parts);
+                lock (sendPct) sendPct[p.Name] = pct;
+            }
+            if (shown) lock (sendPct) sendPct[p.Name] = 0;
             bool Stopped() => saveCancel >= id || resyncBytesId != id || relay == null;
             var links = relay?.BulkOf(p) ?? new BulkLink[0];
             linksUsed = links.Length;
@@ -4516,7 +4762,7 @@ namespace MPFever
                     while (!Stopped() && !b.Dead)
                     {
                         if (!again.TryDequeue(out int i)) { i = Interlocked.Increment(ref next); if (i >= parts) return; }
-                        try { lock (b.Gate) part(i).WriteTo(b.Writer); }
+                        try { lock (b.Gate) part(i).WriteTo(b.Writer); Tick(); }
                         catch { again.Enqueue(i); b.Dead = true; return; }
                     }
                 }) { IsBackground = true, Name = "Parts to " + p.Name + " #" + b.Index }).ToList();
@@ -4531,6 +4777,7 @@ namespace MPFever
             {
                 if (Stopped()) return false;
                 if (!relay.TrySend(p, part(i))) return false;
+                Tick();
             }
             return true;
         }

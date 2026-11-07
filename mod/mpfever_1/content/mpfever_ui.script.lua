@@ -420,6 +420,7 @@ U.pollEco = function()
 		elseif k == "rules" then e.bankrupt = tonumber(f1[2])
 		elseif k == "share" then e.share = f1[2] ~= "0"
 		elseif k == "start" then e.start = tonumber(f1[2])
+		elseif k == "auctionrule" then e.auctionRule = f1[2]
 		elseif k == "member" then local id = tonumber(f1[2]); e.members[id] = e.members[id] or {}; table.insert(e.members[id], f1[3])
 		elseif k == "chief" then e.chief[tonumber(f1[2])] = f1[3]
 		elseif k == "gone" then e.gone[tonumber(f1[2])] = f1[3]
@@ -433,6 +434,20 @@ U.pollEco = function()
 		elseif k == "auction" then
 			e.auction = { seq = tonumber(f1[2]), co = tonumber(f1[3]), idx = tonumber(f1[4]), n = tonumber(f1[5]), kind = f1[6], label = f1[7],
 				reserve = tonumber(f1[8]) or 0, best = tonumber(f1[9]) or 0, bidder = tonumber(f1[10]) or 0, left = tonumber(f1[11]) or 0, min = tonumber(f1[12]) or 0 }
+		elseif k == "auction2" then
+			-- (0.7.4) every lot at once, one clock (see the bridge's G.coEco); its lots follow as "lot" lines
+			e.auction2 = { seq = tonumber(f1[2]), co = tonumber(f1[3]), mode = f1[4], minutes = tonumber(f1[5]) or 5, left = tonumber(f1[6]) or 0,
+				n = tonumber(f1[7]) or 0, bids = tonumber(f1[8]) or 0, lots = {}, at = os.clock() }
+		elseif k == "lotd" and e.auction2 then
+			-- (what the lot holds, its lines of text separated by "||", and an entity the camera goes to)
+			local d = { focus = tonumber(f1[3]), lines = {} }
+			for x in ((f1[4] or "") .. "||"):gmatch("(.-)||") do if x ~= "" then d.lines[#d.lines + 1] = x end end
+			e.auction2.detail = e.auction2.detail or {}
+			e.auction2.detail[tonumber(f1[2]) or -1] = d
+		elseif k == "lot" and e.auction2 then
+			e.auction2.lots[#e.auction2.lots + 1] = { idx = tonumber(f1[2]), kind = f1[3], label = f1[4], reserve = tonumber(f1[5]) or 0, best = tonumber(f1[6]) or 0,
+				bidder = tonumber(f1[7]) or 0, min = tonumber(f1[8]) or 0, vehicles = tonumber(f1[9]) or 0, bids = tonumber(f1[10]) or 0, key = f1[11],
+				lines = tonumber(f1[12]) or 0, stations = tonumber(f1[13]) or 0, depots = tonumber(f1[14]) or 0 }
 		elseif k == "depot" then e.depots[f1[2]] = { rule = f1[3], toll = tonumber(f1[4]) or 0, co = tonumber(f1[5]) }
 		elseif k == "stops" then e.stops[tonumber(f1[2])] = { rule = f1[3], fee = tonumber(f1[4]) or 0, own = tonumber(f1[5]) or 0 }
 		elseif k == "depotco" then e.depotco[tonumber(f1[2])] = { rule = f1[3], toll = tonumber(f1[4]) or 0 }
@@ -1349,8 +1364,10 @@ local function pollStatus()
 		line = line:gsub(C.CR, "")
 		local k, v = line:match("^([%w_]+)=(.*)$")
 		if k == "p" then
-			local f1, f2, f3, f4, f5 = v:match("^([^" .. C.TAB .. "]*)" .. C.TAB .. "([^" .. C.TAB .. "]*)" .. C.TAB .. "([^" .. C.TAB .. "]*)" .. C.TAB .. "([^" .. C.TAB .. "]*)" .. C.TAB .. "?(.*)$")
-			if f1 then st.players[#st.players + 1] = { id = f1, name = f2, state = f3, lag = tonumber(f4) or 0, role = f5 } end
+			-- (id, name, state, lag, role, and since 0.7.4 the percent of the host's game it has received while one is on its way)
+			local f = {}
+			for x in (v .. C.TAB):gmatch("([^" .. C.TAB .. "]*)" .. C.TAB) do f[#f + 1] = x end
+			if #f >= 3 then st.players[#st.players + 1] = { id = f[1], name = f[2], state = f[3], lag = tonumber(f[4] or "") or 0, role = f[5] or "", pct = tonumber(f[6] or "") } end
 		elseif k then
 			st[k] = v
 		end
@@ -1396,8 +1413,15 @@ local PLAYER_STATES = {
 	ok = function() return T("connecté", "connected"), nil end,
 	slow = function(pl) return C.Tf("%s pas de retard", "%s steps behind", pl.lag), "warning" end,
 	noresp = function() return T("ne répond plus", "not responding"), "error" end,
-	loading = function() return T("charge la partie de l'hôte…", "loading the host's game…"), "info" end,
-	joining = function() return T("se connecte…", "connecting…"), "info" end,
+	-- (0.7.4: the percent of the host's game it has received, while it is on its way)
+	loading = function(pl)
+		if pl.pct then return C.Tf("reçoit la partie de l'hôte : %s %", "receiving the host's game: %s %", pl.pct), "info" end
+		return T("charge la partie de l'hôte…", "loading the host's game…"), "info"
+	end,
+	joining = function(pl)
+		if pl.pct then return C.Tf("reçoit la partie de l'hôte : %s %", "receiving the host's game: %s %", pl.pct), "info" end
+		return T("se connecte…", "connecting…"), "info"
+	end,
 	left = function() return T("a quitté la partie", "left the game"), "negative" end,
 	-- (its connection dropped: every game waits for it to come back, lag = the seconds since)
 	away = function(pl) return C.Tf("connexion perdue, la partie l'attend (%s s)", "connection lost, the game waits for them (%s s)", pl.lag), "warning" end,
@@ -1770,12 +1794,25 @@ U.aiCoName = function(id)
 end
 
 -- what an entry says, in this game's language
+-- (0.7.4) a cargo's name as the game shows it ("Bricks"), not its file's path (::/cargos/bricks/bricks.cargo), as the computer
+-- companies' line names (mpfever_ai.lua's cargoLabel). MPFEVER_AICARGOPATH=1: the path, as before
+U.cargoLabel = function(id)
+	local file, n = tostring(id or ""), nil
+	pcall(function() file = api.res.cargoTypeRep.getName(tonumber(id)) end)
+	if os.getenv("MPFEVER_AICARGOPATH") == "1" then return file end
+	pcall(function()
+		local ct = api.res.cargoTypeRep.get(tonumber(id))
+		n = ct and ct.name
+		if type(n) == "string" and n ~= "" and type(_) == "function" then
+			local okT, tr = pcall(_, n)
+			if okT and type(tr) == "string" and tr ~= "" then n = tr end
+		end
+	end)
+	if type(n) == "string" and n ~= "" and not n:find("/", 1, true) then return n end
+	return tostring(file):match("([^/]+)%.cargo$") or tostring(file)
+end
 U.aiText = function(x)
-	local function cargo(id)
-		local n = tostring(id or "")
-		pcall(function() n = api.res.cargoTypeRep.getName(tonumber(id)) end)
-		return n
-	end
+	local function cargo(id) return U.cargoLabel(id) end
 	if x.kind == "stop" then return T("a construit un arrêt", "built a stop") end
 	if x.kind == "garage" then return T("construit un garage", "is building a garage") end
 	if x.kind == "road" then return T("a construit une route vers une industrie", "built a road to an industry") end
@@ -2022,8 +2059,8 @@ U.companyRows = function(ui)
 		out[#out + 1] = muted(lim > 0 and C.Tf("Règle de la partie : faillite après %s mois de dette.", "Game rule: bankruptcy after %s months in debt.", lim)
 			or T("Règle de la partie : pas de faillite.", "Game rule: no bankruptcy."))
 	end
-	-- the auction of a bankrupt company
-	local au = eco.auction
+	-- the auction of a bankrupt company (0.7.4: on the Auctions page, see U.TABS.auction; MPFEVER_OLDMENUS=1: here, as before)
+	local au = U.oldMenus() and eco.auction or nil
 	if au then
 		local seller = "#" .. tostring(au.co)
 		for ent, id in pairs(U.coMap) do if id == au.co then seller = companyName(ent) end end
@@ -2272,7 +2309,7 @@ U.loadPrefs = function()
 		end
 	end
 	read(C.DIR .. C.BS .. "ui_prefs.txt", { open = true, tab = true, compact = true, pinned = true, hubpage = true, hubsize = true })
-	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true, vdots = true })
+	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true, vdots = true, oldmenus = true })
 	U.prefs = p
 	U.tab = U.tab or p.tab or "session"
 	U.compact = p.compact == "1"
@@ -2292,7 +2329,7 @@ U.saveGlobalPrefs = function()
 	local p = U.loadPrefs()
 	local f = C.IO.open(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", "wb")
 	if f then f:write("autoopen=" .. tostring(p.autoopen or "1") .. C.NL .. "aichat=" .. tostring(p.aichat or "1") .. C.NL .. "dots=" .. tostring(p.dots or "1") .. C.NL
-		.. (p.vdots ~= nil and ("vdots=" .. tostring(p.vdots) .. C.NL) or "")); f:close() end
+		.. (p.vdots ~= nil and ("vdots=" .. tostring(p.vdots) .. C.NL) or "") .. (p.oldmenus == "1" and ("oldmenus=1" .. C.NL) or "")); f:close() end
 end
 U.saveAutoOpen = function(on)
 	local p = U.loadPrefs()
@@ -2302,7 +2339,21 @@ U.saveAutoOpen = function(on)
 end
 
 -- ---------------------------------------------------------------- tabs, opening and closing
-U.TAB_IDS = { "session", "chat", "company", "ai", "rules", "game", "settings" }
+U.TAB_IDS = { "session", "chat", "company", "auction", "ai", "rules", "game", "settings" }
+-- (0.7.4, the menus redone: new pages by default; the Settings tab's box (oldmenus=1, kept across launches) or MPFEVER_OLDMENUS=1,
+-- this player's PC only: the pages of 0.7.3)
+U.oldMenus = function()
+	if os.getenv("MPFEVER_OLDMENUS") == "1" then return true end
+	local okP, p = pcall(U.loadPrefs)
+	return okP and type(p) == "table" and p.oldmenus == "1"
+end
+-- (0.7.4) the Auctions page: while an auction runs, and for the rest of the session once one was seen
+U.auctionShown = function(separate)
+	if not separate or U.oldMenus() then return false end
+	local eco = U.eco
+	if eco and (eco.auction or eco.auction2) then U.auctionSeen = true end
+	return U.auctionSeen == true or os.getenv("MPFEVER_AUCTIONTEST") == "1"
+end
 -- (the French names, for MPFEVER_SHOWTAB)
 U.TAB_ALIAS = { entreprise = "company", regles = "rules", reglages = "settings", discussion = "chat", ia = "ai", partie = "game" }
 U.tabName = function(tab)
@@ -2317,8 +2368,9 @@ U.tabsFor = function(st)
 	-- (0.6) the Game tab in the co-op too when it has game options to show (see U.featGameTab)
 	local game06 = not separate and U.featGameTab(st)
 	local t = {}
+	local auction = U.auctionShown(separate)
 	for _, id in ipairs(U.TAB_IDS) do
-		if (separate or (id ~= "company" and id ~= "rules" and id ~= "game") or (id == "game" and game06)) and (id ~= "ai" or ai) then t[#t + 1] = id end
+		if (separate or (id ~= "company" and id ~= "rules" and id ~= "game") or (id == "game" and game06)) and (id ~= "ai" or ai) and (id ~= "auction" or auction) then t[#t + 1] = id end
 	end
 	-- (0.6) a game option's module with a tab of its own while one of its options is on (before Settings, the last one)
 	for _, tb in ipairs(U.featTabs(st)) do table.insert(t, #t, tb.key) end
@@ -2344,6 +2396,10 @@ U.tabLabel = function(id)
 		return T("Chat", "Chat") .. (n > 0 and ("  (" .. n .. ")") or "")
 	end
 	if id == "company" then return T("Entreprise", "Company") end
+	if id == "auction" then
+		local on = U.eco and (U.eco.auction or U.eco.auction2)
+		return T("Enchères", "Auctions") .. (on and T("  (en cours)", "  (live)") or "")
+	end
 	if id == "ai" then return T("IA", "AI") end
 	if id == "rules" then return T("Règles", "Rules") end
 	if id == "game" then return T("Partie", "Game") end
@@ -2443,7 +2499,7 @@ end
 U.hubOn = function() return U.newWindow ~= false and not U.hubOff end
 U.HUB_GROUPS = {
 	{ key = "game", pages = { "session", "chat", "game", "f_public", "settings" } },
-	{ key = "company", pages = { "company", "rules", "f_team", "f_trade", "f_stock" } },
+	{ key = "company", pages = { "company", "auction", "rules", "f_team", "f_trade", "f_stock" } },
 	{ key = "competition", pages = { "f_stats", "f_market", "f_tenders", "f_territory", "f_journal", "ai" } },
 }
 U.hubGroupTitle = function(key)
@@ -2995,7 +3051,319 @@ end
 
 -- Company (one company per player): this player's company, the answers its chief gives, every company (best first) with
 -- joining and merging, a gift of money, the company's colour, the auction of a bankrupt company
+-- ---------------------------------------------------------------- the Companies page (0.7.4)
+-- The companies as cards in a grid, in the game's colours: each one's colour band, name, money (red when negative), rank, lines,
+-- vehicles, stations, players and the months in debt; this company first. A card's « Open » shows its sheet: its figures, its
+-- lines with « Show », its players, its sharing rules and what this player can do with it (join, merge, give money). The requests
+-- and offers to answer come first. MPFEVER_OLDMENUS=1: the list of 0.7.3.
+U.coSort = "value"
+U.coStatsCache = {}
+-- a company's stations and depots (counted at most every 10 s: a loop over the game's entities)
+U.coStats = function(ent)
+	local c = U.coStatsCache[ent]
+	if c and os.clock() - c.at < 10 then return c end
+	c = { at = os.clock(), stations = 0, depots = 0 }
+	pcall(function()
+		api.engine.forEachEntityWithComponent(function(e)
+			local po = api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED)
+			if po and po.player == ent then c.stations = c.stations + 1 end
+		end, api.type.ComponentType.STATION_GROUP)
+	end)
+	pcall(function()
+		api.engine.forEachEntityWithComponent(function(e)
+			local po = api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED)
+			if po and po.player == ent then
+				local cc = api.engine.getComponent(e, api.type.ComponentType.CONSTRUCTION)
+				if cc and #cc.depots > 0 then c.depots = c.depots + 1 end
+			end
+		end, api.type.ComponentType.CONSTRUCTION)
+	end)
+	-- (0.7.4, the company's sheet: its vehicles by kind of transport and its result since the year began, as the game's
+	-- finance window counts it; MPFEVER_COSHEETMORE=0: not read)
+	-- (only for a company known for a few seconds that still exists, as U.companyList reads the balances: the engine asserts
+	-- when the interface reads the account of a player entity the simulation is still adding)
+	local seen = U.coSeenAt and U.coSeenAt[ent]
+	local settled = seen ~= nil and os.clock() - seen >= 5
+	if settled then local okE, ex = pcall(api.engine.entityExists, ent); settled = okE and ex == true end
+	if settled and os.getenv("MPFEVER_COSHEETMORE") ~= "0" then
+		c.byCarrier = {}
+		local okV, errV = pcall(function()
+			-- (compared one by one, as the bridge's SIM.journalCarrier does: the enum's values are not plain table keys)
+			local CR = api.type["enum"].Carrier
+			local kinds = { { "road", CR.ROAD }, { "rail", CR.RAIL }, { "tram", CR.TRAM }, { "air", CR.AIR }, { "water", CR.WATER } }
+			-- (every vehicle, as U.vehicleCounts reads them: its owner, then its carrier, each read kept before the next one)
+			api.engine.forEachEntityWithComponent(function(v)
+				local po = api.engine.getComponent(v, api.type.ComponentType.PLAYER_OWNED)
+				local owner = po and po.player
+				if owner ~= ent then return end
+				local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+				local car = tv and tv.carrier
+				for _, kv in ipairs(kinds) do
+					if car == kv[2] then c.byCarrier[kv[1]] = (c.byCarrier[kv[1]] or 0) + 1; break end
+				end
+			end, api.type.ComponentType.TRANSPORT_VEHICLE)
+		end)
+		if not okV and not U.coKindsFailed then U.coKindsFailed = true; log("company sheet: vehicles by kind not read: " .. tostring(errV)) end
+		pcall(function() c.earn = api.engine.util.finance.calculateEarnings(ent) end)
+	end
+	U.coStatsCache[ent] = c
+	return c
+end
 U.TABS.company = function(K, st, ctx)
+	if U.oldMenus() then return U.TABS.companyOld(K, st, ctx) end
+	local builtin = K.builtin
+	local W = K.TEXT_W
+	if not U.coMap then return { K.muted(T("En attente des entreprises…", "Waiting for the companies…"), W) } end
+	pcall(U.pollEco)
+	local eco = U.eco or U.ECO_EMPTY()
+	local list, myBal = U.companyList(eco)
+	local myKey = eco.myKey
+	local amChief = U.myCo ~= nil and eco.chief[U.myCo] ~= nil and eco.chief[U.myCo] == myKey
+	local asked, offered = nil, nil
+	for _, r in ipairs(eco.requests) do if r.key == myKey then asked = r.to end end
+	for _, o in ipairs(eco.merges) do if o.from == U.myCo then offered = o.to end end
+	local count = {}
+	for _, c in ipairs(list) do count[c.name] = (count[c.name] or 0) + 1 end
+	local function label(c) return c.name .. ((count[c.name] or 0) > 1 and ("  #" .. c.id) or "") end
+	local function playerNames(id)
+		local names, done = {}, {}
+		for _, k in ipairs(eco.members[id] or {}) do
+			if not done[k] then done[k] = true; names[#names + 1] = k .. (eco.chief[id] == k and T(" (chef)", " (chief)") or "") end
+		end
+		return names
+	end
+	local rows = {}
+	-- the requests and offers this company's chief answers
+	if amChief then
+		for _, r in ipairs(eco.requests) do
+			if r.to == U.myCo then
+				rows[#rows + 1] = K.card {
+					K.text(C.Tf("%s demande à rejoindre votre entreprise.", "%s asks to join your company.", r.name ~= "" and r.name or r.key), "font-scale-title-4", "warning", K.CARD_TEXT_W),
+					K.row { K.btn(T("Accepter", "Accept"), nil, function() U.coSend("co_join_answer", { key = r.key, accept = true }) end, true), K.gap(8, 1),
+						K.btn(T("Refuser", "Refuse"), nil, function() U.coSend("co_join_answer", { key = r.key, accept = false }) end) },
+				}
+				rows[#rows + 1] = K.gap(1, 6)
+			end
+		end
+		for _, o in ipairs(eco.merges) do
+			if o.to == U.myCo then
+				local from = "#" .. tostring(o.from)
+				for _, c in ipairs(list) do if c.id == o.from then from = label(c) end end
+				rows[#rows + 1] = K.card {
+					K.text(C.Tf("%s propose de fusionner avec la vôtre : ses biens, son argent et ses joueurs vous rejoignent.", "%s offers to merge into yours: its assets, money and players join you.", from), "font-scale-title-4", "warning", K.CARD_TEXT_W),
+					K.row { K.btn(T("Accepter", "Accept"), nil, function() U.coSend("co_merge_answer", { from = o.from, accept = true }) end, true), K.gap(8, 1),
+						K.btn(T("Refuser", "Refuse"), nil, function() U.coSend("co_merge_answer", { from = o.from, accept = false }) end) },
+				}
+				rows[#rows + 1] = K.gap(1, 6)
+			end
+		end
+	end
+	-- one company's sheet
+	local open = nil
+	for _, c in ipairs(list) do if c.id == U.coDetail then open = c end end
+	if open then
+		local c = open
+		local isMine = c.id == U.myCo
+		local s = U.coStats(c.ent)
+		rows[#rows + 1] = K.row { K.btn(T("← Toutes les entreprises", "← All the companies"), nil, function() U.coDetail = nil; U.winChanged() end) }
+		rows[#rows + 1] = K.gap(1, 8)
+		rows[#rows + 1] = K.row { U.swatch(K, c.id, 26), K.gap(10, 1), K.text(label(c) .. (isMine and T("  (votre entreprise)", "  (your company)") or ""), "font-scale-title-2", isMine and "success" or nil, W - 40) }
+		rows[#rows + 1] = K.gap(1, 6)
+		local fig = {
+			K.row { K.icon(K.ICON_MONEY, 18), K.gap(6, 1), K.text(money(c.bal), "font-scale-title-4", c.bal < 0 and "negative" or "positive", 220),
+				K.gap(12, 1), K.muted(c.rank and C.Tf("Rang %s", "Rank %s", c.rank) or "", 120) },
+			K.muted(C.Tf("%s ligne(s)  ·  %s véhicule(s)  ·  %s gare(s)  ·  %s dépôt(s)", "%s line(s)  ·  %s vehicle(s)  ·  %s station(s)  ·  %s depot(s)", c.lines, c.veh, s.stations, s.depots), K.CARD_TEXT_W),
+		}
+		-- (0.7.4) its vehicles by kind, its result of the year so far
+		local kinds = {}
+		local bc = s.byCarrier or {}
+		if (bc.road or 0) > 0 then kinds[#kinds + 1] = C.Tf("%s par la route", "%s by road", bc.road) end
+		if (bc.rail or 0) > 0 then kinds[#kinds + 1] = C.Tf("%s trains", "%s trains", bc.rail) end
+		if (bc.tram or 0) > 0 then kinds[#kinds + 1] = C.Tf("%s trams", "%s trams", bc.tram) end
+		if (bc.water or 0) > 0 then kinds[#kinds + 1] = C.Tf("%s navires", "%s ships", bc.water) end
+		if (bc.air or 0) > 0 then kinds[#kinds + 1] = C.Tf("%s avions", "%s aircraft", bc.air) end
+		if #kinds > 0 then fig[#fig + 1] = K.muted(C.Tf("Véhicules : %s", "Vehicles: %s", table.concat(kinds, "  ·  ")), K.CARD_TEXT_W) end
+		if tonumber(s.earn) then
+			fig[#fig + 1] = K.row { K.muted(T("Résultat de l'année en cours :", "Result of the year so far:"), 220), K.gap(6, 1),
+				K.text(money(s.earn), nil, s.earn < 0 and "negative" or "positive", 200) }
+		end
+		if eco.debt[c.id] then
+			local lim = eco.bankrupt or 12
+			fig[#fig + 1] = K.text(lim > 0 and C.Tf("Endettée depuis %s mois : faillite à %s mois de dette.", "In debt for %s month(s): bankruptcy at %s months in debt.", eco.debt[c.id], lim)
+				or C.Tf("Endettée depuis %s mois.", "In debt for %s month(s).", eco.debt[c.id]), nil, "error", K.CARD_TEXT_W)
+		end
+		local names = playerNames(c.id)
+		fig[#fig + 1] = K.muted((eco.ai and eco.ai[c.id]) and T("Gérée par l'ordinateur", "Run by the computer") or (#names > 0 and C.Tf("Joueurs : %s", "Players: %s", table.concat(names, ", ")) or T("Aucun joueur : elle continue seule", "No player: it goes on by itself")), K.CARD_TEXT_W)
+		rows[#rows + 1] = K.card(fig)
+		-- its lines
+		rows[#rows + 1] = K.gap(1, 10)
+		rows[#rows + 1] = K.section(U.AU_ICON.line, C.Tf("Lignes (%s)", "Lines (%s)", c.lines))
+		local okL, lines = pcall(function() return api.engine.system.lineSystem.getLinesForPlayer(c.ent) end)
+		local lcard = {}
+		if okL and type(lines) == "table" and #lines > 0 then
+			for i, l in ipairs(lines) do
+				if i > 20 then lcard[#lcard + 1] = K.muted(C.Tf("… et %s autres lignes", "… and %s more lines", #lines - 20), K.CARD_TEXT_W); break end
+				local name, nv = tostring(l), 0
+				pcall(function() name = api.engine.getComponent(l, api.type.ComponentType.NAME).name end)
+				pcall(function() nv = #api.engine.system.transportVehicleSystem.getLineVehicles(l) end)
+				local line = l
+				lcard[#lcard + 1] = K.row { K.text(name, nil, nil, K.CARD_TEXT_W - 220), K.gap(6, 1), K.muted(C.Tf("%s véhicule(s)", "%s vehicle(s)", nv), 120), K.gap(6, 1),
+					K.btn(T("Voir", "Show"), T("Amener la caméra sur sa première gare", "Take the camera to its first station"), function() U.focusLine(line) end) }
+			end
+		else
+			lcard[#lcard + 1] = K.muted(T("Aucune ligne pour l'instant.", "No line yet."), K.CARD_TEXT_W)
+		end
+		rows[#rows + 1] = K.card(lcard)
+		-- its sharing rules
+		rows[#rows + 1] = K.gap(1, 10)
+		rows[#rows + 1] = K.section(K.ICON_TRACKS, T("Ses règles de partage", "Its sharing rules"))
+		local tr, rd, sp, dp = eco.track[c.id] or {}, eco.road[c.id] or {}, eco.stops[c.id] or {}, eco.depotco[c.id] or {}
+		rows[#rows + 1] = K.card {
+			K.muted(C.Tf("Voies : %s  ·  routes : %s  ·  gares et arrêts : %s  ·  dépôts : %s", "Tracks: %s  ·  roads: %s  ·  stations and stops: %s  ·  depots: %s",
+				U.ruleWords(tr.rule, tr.toll), U.ruleWords(rd.rule), U.ruleWords(sp.rule, sp.fee), U.ruleWords(dp.rule, dp.toll)), K.CARD_TEXT_W) }
+		-- what this player can do with it
+		if not isMine and U.myCo then
+			local acts = {}
+			-- (0.7.4: a computer company takes nobody in and no merger: its chief, the computer, never answers)
+			local isAiCo = eco.ai and eco.ai[c.id]
+			if isAiCo then
+				acts[#acts + 1] = K.muted(T("Une entreprise de l'ordinateur n'accueille personne et ne fusionne pas.", "A computer company takes nobody in and does not merge."), K.CARD_TEXT_W)
+			elseif asked == c.id then
+				acts[#acts + 1] = K.btn(T("Annuler la demande", "Cancel the request"), nil, function() U.coSend("co_cancel", { what = "join" }) end)
+			else
+				acts[#acts + 1] = K.btn(T("Rejoindre", "Join"), T("Demander au chef de cette entreprise de vous y accueillir (vous quittez la vôtre, qui continue sans vous)", "Ask this company's chief to take you in (you leave yours, which goes on without you)"),
+					function() U.coSend("co_join_ask", { to = c.id }) end)
+			end
+			if amChief and not isAiCo then
+				acts[#acts + 1] = K.gap(8, 1)
+				if offered == c.id then
+					acts[#acts + 1] = K.btn(T("Annuler la fusion", "Cancel the merger"), nil, function() U.coSend("co_cancel", { what = "merge" }) end)
+				else
+					acts[#acts + 1] = K.btn(T("Fusionner", "Merge"), T("Proposer à son chef que votre entreprise rejoigne la sienne : tous vos biens, votre argent et vos joueurs y passent", "Offer its chief that your company joins theirs: all your assets, your money and your players go to it"),
+						function() U.coSend("co_merge_ask", { to = c.id }) end)
+				end
+			end
+			rows[#rows + 1] = K.gap(1, 10)
+			rows[#rows + 1] = K.section(K.ICON_PLAYERS, T("Actions", "Actions"))
+			local acard = { K.row(acts) }
+			if asked == c.id then acard[#acard + 1] = K.muted(T("Votre demande attend la réponse de son chef.", "Your request is waiting for its chief's answer."), K.CARD_TEXT_W) end
+			if offered == c.id then acard[#acard + 1] = K.muted(T("Votre proposition de fusion attend la réponse de son chef.", "Your merger offer is waiting for its chief's answer."), K.CARD_TEXT_W) end
+			-- a gift of money to it
+			acard[#acard + 1] = K.gap(1, 8)
+			acard[#acard + 1] = K.row {
+				K.muted(T("Lui donner :", "Give it:"), 110),
+				builtin.TextInputField {
+					meta = { class = "font-scale-body", localKey = "mpfever-give2-" .. tostring(ctx.giveGen:old()) .. "-" .. c.id, styleSheet = K.style { size = { 180, -1 } } },
+					value = "", placeholderText = "100000", maxLength = 15, acceptOnFocusLoss = true,
+					onTyping = function(v) ctx.amount:set(v or "") end, onValueChange = function(v) ctx.amount:set(v or "") end,
+				},
+				K.gap(8, 1),
+				K.btn(T("Donner", "Give"), T("Donner ce montant à cette entreprise ; le don est annoncé dans la discussion", "Give this amount to this company; the gift is announced in the chat"), function() U.give(c, ctx, myBal) end, true),
+			}
+			if U.giveMsg then acard[#acard + 1] = K.muted(U.giveMsg, K.CARD_TEXT_W) end
+			rows[#rows + 1] = K.card(acard)
+		elseif isMine then
+			local nPl = #names
+			if nPl > 1 then
+				rows[#rows + 1] = K.gap(1, 10)
+				rows[#rows + 1] = K.card { K.muted(T("Vous pouvez quitter cette entreprise : vous fondez la vôtre (argent de départ), elle continue avec ses autres joueurs.", "You can leave this company: you start your own (start money), it goes on with its other players."), K.CARD_TEXT_W),
+					K.row { K.btn(T("Quitter l'entreprise", "Leave the company"), nil, function() U.coSend("co_leave", {}) end) } }
+			end
+			-- this company's colour: the palette, the other companies' colours greyed
+			local CO = U.coLib()
+			if CO and CO.PALETTE then
+				local taken = {}
+				for id, ix in pairs(U.coColors or {}) do if id ~= U.myCo then taken[ix] = true end end
+				local mineIx = U.coColors and U.coColors[U.myCo] or nil
+				rows[#rows + 1] = K.gap(1, 10)
+				rows[#rows + 1] = K.section(K.ICON_COLOR, T("Votre couleur", "Your colour"))
+				local sw = {}
+				for ix = 1, #CO.PALETTE do
+					local p = CO.PALETTE[ix]
+					local col = nil
+					pcall(function() col = api.type.Vec4f.new(p[1], p[2], p[3], taken[ix] and 0.25 or 1) end)
+					if ix > 1 then sw[#sw + 1] = K.gap(6, 1) end
+					local pick = ix
+					sw[#sw + 1] = builtin.Button {
+						meta = { class = ix == mineIx and "primary" or "secondary", enabled = not taken[ix] and ix ~= mineIx,
+							tooltip = taken[ix] and T("Déjà prise par une autre entreprise", "Already taken by another company") or nil },
+						content = builtin.Component { meta = { styleSheet = K.style { size = { 16, 16 }, image = K.DISC, bg = col } } },
+						onClick = function()
+							local ok, err = pcall(function() api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("mpfever", "mpfever", "recolor", { color = pick })) end)
+							log("companies: colour " .. pick .. " requested" .. (ok and "" or (": " .. tostring(err))))
+						end,
+					}
+				end
+				rows[#rows + 1] = K.row(sw)
+			end
+		end
+		return rows
+	end
+	-- the grid of cards: the sort, then this company first and the others
+	rows[#rows + 1] = K.row {
+		K.text(C.Tf("%s entreprise(s)", "%s company(ies)", #list), "font-scale-title-4", nil, 240), K.gap(12, 1), K.muted(T("Trier par :", "Sort by:"), 90),
+		K.btn(T("Argent", "Money"), nil, function() U.coSort = "money"; U.winChanged() end, U.coSort == "money"), K.gap(4, 1),
+		K.btn(T("Rang", "Rank"), nil, function() U.coSort = "value"; U.winChanged() end, U.coSort == "value"), K.gap(4, 1),
+		K.btn(T("Lignes", "Lines"), nil, function() U.coSort = "lines"; U.winChanged() end, U.coSort == "lines"),
+	}
+	rows[#rows + 1] = K.gap(1, 8)
+	local sorted = {}
+	for _, c in ipairs(list) do sorted[#sorted + 1] = c end
+	table.sort(sorted, function(a, b)
+		if (a.id == U.myCo) ~= (b.id == U.myCo) then return a.id == U.myCo end
+		if U.coSort == "lines" and a.lines ~= b.lines then return a.lines > b.lines end
+		if U.coSort == "value" and (a.rank or 0) ~= (b.rank or 0) then return (a.rank or 0) > (b.rank or 0) end
+		if a.bal ~= b.bal then return a.bal > b.bal end
+		return a.id < b.id
+	end)
+	local cols = W >= 900 and 3 or 2
+	local cw = math.floor((W - (cols - 1) * 10) / cols)
+	local rowItems = {}
+	local function flush()
+		if #rowItems == 0 then return end
+		rows[#rows + 1] = K.row(rowItems)
+		rows[#rows + 1] = K.gap(1, 10)
+		rowItems = {}
+	end
+	for _, c in ipairs(sorted) do
+		local isMine = c.id == U.myCo
+		local s = U.coStats(c.ent)
+		local names = playerNames(c.id)
+		local CO = U.coLib()
+		local band = { 0.5, 0.5, 0.5, 1 }
+		if CO then pcall(function() local r, g, b = CO.rgb(U.coColors and U.coColors[c.id] or c.id); band = { r, g, b, 1 } end) end
+		local tw = cw - 20
+		local body = {
+			K.rect(tw, 5, band),
+			K.gap(1, 6),
+			K.text(U.short(label(c), 34), "font-scale-title-4", isMine and "success" or nil, tw),
+			K.text(money(c.bal), nil, c.bal < 0 and "negative" or "positive", tw),
+			K.muted(C.Tf("%s ligne(s) · %s véhicule(s) · %s gare(s)", "%s line(s) · %s vehicle(s) · %s station(s)", c.lines, c.veh, s.stations), tw),
+			K.muted((c.rank and (C.Tf("Rang %s", "Rank %s", c.rank) .. "  ·  ") or "") .. ((eco.ai and eco.ai[c.id]) and T("ordinateur", "computer") or (#names > 0 and C.Tf("%s joueur(s)", "%s player(s)", #names) or T("sans joueur", "no player"))), tw),
+		}
+		if eco.debt[c.id] then body[#body + 1] = K.text(C.Tf("Endettée depuis %s mois", "In debt for %s month(s)", eco.debt[c.id]), nil, "error", tw) end
+		if asked == c.id then body[#body + 1] = K.text(T("Demande envoyée", "Request sent"), nil, "info", tw) end
+		body[#body + 1] = K.gap(1, 6)
+		local id = c.id
+		body[#body + 1] = K.row { K.btn(isMine and T("Ma fiche", "My sheet") or T("Ouvrir la fiche", "Open the sheet"), T("Ses chiffres, ses lignes, ses joueurs, ses règles et les actions", "Its figures, lines, players, rules and actions"),
+			function() U.coDetail = id; U.winChanged() end, isMine) }
+		if #rowItems > 0 then rowItems[#rowItems + 1] = K.gap(10, 1) end
+		rowItems[#rowItems + 1] = K.box(body, { size = { cw, -1 }, padding = { 8, 10, 8, 10 }, background = isMine and { 0.25, 0.55, 0.85, 0.16 } or { 1, 1, 1, 0.06 } })
+		if #rowItems >= cols * 2 - 1 then flush() end
+	end
+	flush()
+	U.helpCard(K, rows, "company", {
+		T("Chaque joueur dirige une entreprise ; plusieurs joueurs peuvent en partager une. Chaque carte montre une entreprise : son argent, ses lignes, ses véhicules, ses gares, son rang et ses joueurs. Votre entreprise est en bleu.",
+			"Each player runs a company; several players may share one. Each card shows a company: its money, lines, vehicles, stations, rank and players. Your company is in blue."),
+		T("« Ouvrir la fiche » montre tout le détail d'une entreprise et ce que vous pouvez faire avec elle : demander à la rejoindre, proposer une fusion à son chef, lui donner de l'argent. Le chef de votre entreprise répond aux demandes en haut de cette page.",
+			"« Open the sheet » shows a company in detail and what you can do with it: ask to join it, offer its chief a merger, give it money. Your company's chief answers the requests at the top of this page."),
+		T("Une entreprise dont l'argent reste sous zéro trop de mois (règle de la partie) fait faillite : ses joueurs repartent avec une nouvelle entreprise et ses biens sont vendus aux enchères (page « Enchères »).",
+			"A company whose money stays below zero for too many months (the game's rule) goes bankrupt: its players start again with a new company and its assets are auctioned (« Auctions » page)."),
+	})
+	return rows
+end
+
+U.TABS.companyOld = function(K, st, ctx)
 	local builtin = K.builtin
 	local W, CW = K.TEXT_W, K.CARD_TEXT_W
 	if not U.coMap then return { K.muted(T("En attente des entreprises…", "Waiting for the companies…"), W) } end
@@ -3224,6 +3592,182 @@ U.TABS.company = function(K, st, ctx)
 	return rows
 end
 
+-- ---------------------------------------------------------------- the Auctions page (0.7.4)
+-- A bankrupt company's assets for sale: every lot at once with one clock (or its whole company in one lot), each lot a card with
+-- what it holds (its detail: the stops of a line and its vehicles by model, the other companies' lines at a station, the vehicles in
+-- a depot), its reserve, its best bid and who holds it, the bids this company can make (never more than it has left once its
+-- other best bids are counted), "Show" on the map. The auction of 0.7.3 (one lot after the other) shows here too. With
+-- MPFEVER_AUCTIONTEST=1 the host can make a company bankrupt to try it out.
+U.AU_ICON = { line = "::/gui/context_helper/icons/window_line.tga", station = "::/gui/context_helper/icons/window_station_group.tga",
+	depot = "::/gui/context_helper/icons/window_depot.tga", company = "::/gui/context_helper/icons/menu_headquarter.tga" }
+U.auOpen = {}
+U.auTime = function(s)
+	s = math.max(0, math.floor(s or 0))
+	return string.format("%d:%02d", math.floor(s / 60), s % 60)
+end
+U.auLotTitle = function(lot)
+	-- (a station or a depot the game never named, as a computer company's truck stops: its number in the sale)
+	if (lot.label or "") == "" then
+		if lot.kind == "station" then return C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", lot.idx or "?") end
+		if lot.kind == "depot" then return C.Tf("Dépôt sans nom (lot %s)", "Unnamed depot (lot %s)", lot.idx or "?") end
+	end
+	if lot.kind == "line" then return C.Tf("Ligne « %s »", "Line « %s »", lot.label) end
+	if lot.kind == "station" then return C.Tf("Gare « %s »", "Station « %s »", lot.label) end
+	if lot.kind == "depot" then return C.Tf("Dépôt « %s »", "Depot « %s »", lot.label) end
+	return C.Tf("L'entreprise entière : %s", "The whole company: %s", lot.label)
+end
+U.auLotSub = function(lot)
+	if lot.kind == "line" then return C.Tf("avec ses %s véhicule(s)", "with its %s vehicle(s)", lot.vehicles) end
+	if lot.kind == "company" then return C.Tf("%s ligne(s), %s gare(s), %s dépôt(s), %s véhicule(s), voies et routes", "%s line(s), %s station(s), %s depot(s), %s vehicle(s), tracks and roads", lot.lines, lot.stations, lot.depots, lot.vehicles) end
+	if lot.kind == "station" then return T("avec ses quais et ses voies", "with its platforms and tracks") end
+	return T("avec les véhicules qu'il contient", "with the vehicles in it")
+end
+U.auHelp = function(K, rows, W)
+	U.helpCard(K, rows, "auction", {
+		T("Une entreprise endettée trop longtemps fait faillite : ses joueurs repartent avec une nouvelle entreprise et ses biens sont vendus ici aux autres entreprises. Selon la règle de l'hôte, chaque ligne (avec ses véhicules), chaque gare et chaque dépôt est vendu à part, tous en même temps, ou bien l'entreprise entière d'un coup.",
+		"A company in debt for too long goes bankrupt: its players start again with a new company and its assets are sold here to the other companies. By the host's rule, each line (with its vehicles), each station and each depot is sold on its own, all at once, or else the whole company in one go."),
+		T("Une offre doit dépasser la meilleure d'au moins 5 %. Tous les lots se terminent ensemble ; une offre dans les 30 dernières secondes ajoute 30 s pour tout le monde. Vous ne pouvez pas promettre plus que votre argent : vos meilleures offres en cours sont déduites. « Détail » montre exactement ce que contient un lot, « Voir » l'amène à l'écran.",
+		"A bid must beat the best one by 5 % at least. All the lots end together; a bid in the last 30 seconds gives everybody 30 s more. You cannot promise more than your money: your best bids under way are taken off it. « Detail » shows exactly what a lot holds, « Show » brings it on screen."),
+		T("À la fin, chaque lot va à sa meilleure offre, qui est payée. Ce que personne n'a acheté est démoli ; une gare où s'arrêtent les lignes d'autres entreprises, ainsi que les voies et les routes, reviennent à une autre entreprise (de l'ordinateur d'abord, sinon une qui a enchéri) pour ne rien casser. L'argent de la vente ne va à personne et les dettes de l'entreprise disparaissent avec elle.",
+		"At the end each lot goes to its best bid, which is paid. What nobody bought is demolished; a station other companies' lines stop at, and the tracks and roads, go to another company (a computer one first, else one that bid) so that nothing breaks. The money of the sale goes to nobody and the company's debts go with it."),
+	})
+end
+U.TABS.auction = function(K, st, ctx)
+	local W, CW = K.TEXT_W, K.CARD_TEXT_W
+	pcall(U.pollEco)
+	local eco = U.eco or U.ECO_EMPTY()
+	local list, myBal = U.companyList(eco)
+	local rows = {}
+	local function coLabel(id)
+		for _, c in ipairs(list) do if c.id == id then return c.name end end
+		for ent, cid in pairs(U.coMap or {}) do if cid == id then return companyName(ent) end end
+		return "#" .. tostring(id)
+	end
+	local au = eco.auction2
+	if not au then
+		if eco.auction then
+			-- (an auction of 0.7.3 under way, one lot after the other: its lot as before)
+			local a1 = eco.auction
+			rows[#rows + 1] = K.section(K.ICON_MONEY, C.Tf("Enchères : biens de %s", "Auction: assets of %s", coLabel(a1.co)))
+			local card = { K.text(C.Tf("Lot %s/%s : %s", "Lot %s/%s: %s", a1.idx, a1.n, U.auLotTitle(a1)), "font-scale-title-4", nil, CW),
+				K.muted(C.Tf("Mise à prix %s  ·  meilleure offre %s  ·  encore %s s", "Reserve %s  ·  best bid %s  ·  %s s left",
+					money(a1.reserve), a1.best > 0 and (money(a1.best) .. " (" .. coLabel(a1.bidder) .. ")") or T("aucune", "none"), a1.left), CW) }
+			if U.myCo and a1.bidder ~= U.myCo and a1.co ~= U.myCo then
+				local r = {}
+				for _, f in ipairs({ 1, 1.1, 1.25, 1.5 }) do
+					local v = math.ceil(a1.min * f / 1000) * 1000
+					if #r > 0 then r[#r + 1] = K.gap(6, 1) end
+					r[#r + 1] = K.btn(money(v), T("Offrir : ", "Bid: ") .. money(v), function() U.coSend("co_bid", { seq = a1.seq, lot = a1.idx, amount = v }) end, f == 1, myBal == nil or myBal >= v)
+				end
+				card[#card + 1] = K.gap(1, 4)
+				card[#card + 1] = K.row(r)
+			elseif a1.bidder == U.myCo then
+				card[#card + 1] = K.text(T("Vous avez la meilleure offre.", "You have the best bid."), nil, "success", CW)
+			end
+			rows[#rows + 1] = K.card(card)
+		else
+			rows[#rows + 1] = K.section(K.ICON_MONEY, T("Ventes aux enchères", "Auctions"))
+			rows[#rows + 1] = K.muted(T("Aucune vente en cours. Quand une entreprise fait faillite, tous ses biens sont mis en vente sur cette page, et la discussion vous prévient.",
+				"No sale under way. When a company goes bankrupt, all its assets are put up for sale on this page, and the chat tells you."), W)
+		end
+		-- (tests, MPFEVER_AUCTIONTEST=1 on the host's PC: a company made bankrupt at once, every game takes it from the host)
+		if os.getenv("MPFEVER_AUCTIONTEST") == "1" and U.isHost(st) and not eco.auction then
+			rows[#rows + 1] = K.gap(1, 10)
+			rows[#rows + 1] = K.section(K.ICON_ALERT, T("Test (MPFEVER_AUCTIONTEST)", "Test (MPFEVER_AUCTIONTEST)"))
+			-- (by number, not by balance: the balances change all the time, and the row under the mouse with them)
+			local byId = {}
+			for _, c in ipairs(list) do byId[#byId + 1] = c end
+			table.sort(byId, function(a, b) return a.id < b.id end)
+			for _, c in ipairs(byId) do
+				if c.id ~= U.myCo then
+					local id = c.id
+					rows[#rows + 1] = K.row { K.text(c.name, nil, nil, CW - 260), K.gap(8, 1),
+						K.btn(T("Mettre en faillite (test)", "Make bankrupt (test)"), T("Pour essayer les enchères : cette entreprise fait faillite tout de suite.", "To try the auctions: this company goes bankrupt at once."),
+							function() U.coSend("co_test", { op = "bankrupt", co = id, hostTest = true }) end) }
+				end
+			end
+		end
+		rows[#rows + 1] = K.gap(1, 12)
+		U.auHelp(K, rows, W)
+		return rows
+	end
+	local left = math.max(0, au.left - math.floor(os.clock() - (au.at or os.clock())))
+	-- my situation: the best bids this company holds, what is left to bid with
+	local committed, leading = 0, 0
+	for _, lot in ipairs(au.lots) do if U.myCo and lot.bidder == U.myCo then committed = committed + lot.best; leading = leading + 1 end end
+	local free = myBal and (myBal - committed) or nil
+	rows[#rows + 1] = K.section(K.ICON_MONEY, C.Tf("Vente aux enchères : biens de %s", "Auction: the assets of %s", coLabel(au.co)))
+	local head = {
+		K.row { K.text(left > 0 and C.Tf("Fin dans %s", "Ends in %s", U.auTime(left)) or T("Clôture…", "Closing…"), "font-scale-title-2", left <= 30 and "warning" or nil, 300),
+			K.gap(12, 1), K.muted(au.mode == "company" and T("L'entreprise entière en un seul lot", "The whole company in one lot")
+				or C.Tf("%s lot(s) en vente en même temps  ·  %s offre(s)", "%s lot(s) for sale at once  ·  %s bid(s)", #au.lots, au.bids), CW - 320) },
+		K.muted(T("Une offre dans les 30 dernières secondes ajoute 30 s.", "A bid in the last 30 seconds adds 30 s."), CW),
+	}
+	if U.myCo == au.co then
+		head[#head + 1] = K.text(T("Ce sont les biens de votre ancienne entreprise : vous ne pouvez pas enchérir.", "These are your former company's assets: you cannot bid."), nil, "warning", CW)
+	elseif U.myCo then
+		head[#head + 1] = K.text(C.Tf("Votre argent : %s  ·  vos meilleures offres : %s sur %s lot(s)  ·  disponible pour enchérir : %s", "Your money: %s  ·  your best bids: %s on %s lot(s)  ·  left to bid with: %s",
+			money(myBal or 0), money(committed), leading, money(math.max(0, free or 0))), nil, (free or 0) < 0 and "error" or "info", CW)
+	end
+	rows[#rows + 1] = K.card(head)
+	-- the lots, by kind
+	local kinds = { { "company", T("Entreprise", "Company") }, { "line", T("Lignes", "Lines") }, { "station", T("Gares", "Stations") }, { "depot", T("Dépôts", "Depots") } }
+	for _, kd in ipairs(kinds) do
+		local these = {}
+		for _, lot in ipairs(au.lots) do if lot.kind == kd[1] then these[#these + 1] = lot end end
+		if #these > 0 then
+			rows[#rows + 1] = K.gap(1, 10)
+			rows[#rows + 1] = K.section(U.AU_ICON[kd[1]], kd[2] .. "  (" .. #these .. ")")
+			for _, lot in ipairs(these) do
+				local idx = lot.idx
+				local mineBest = U.myCo ~= nil and lot.bidder == U.myCo
+				local det = au.detail and au.detail[idx]
+				local card = {
+					K.row { K.icon(U.AU_ICON[lot.kind] or K.ICON_MONEY, 20), K.gap(8, 1), K.text(U.auLotTitle(lot), "font-scale-title-4", nil, CW - 260), K.gap(8, 1),
+						K.muted(U.auLotSub(lot), 220) },
+					K.row { K.muted(C.Tf("Mise à prix %s", "Reserve %s", money(lot.reserve)), 220), K.gap(8, 1),
+						lot.best > 0 and K.text(C.Tf("Meilleure offre : %s (%s)", "Best bid: %s (%s)", money(lot.best), mineBest and T("vous", "you") or coLabel(lot.bidder)), nil, mineBest and "success" or nil, CW - 240)
+							or K.muted(T("Aucune offre pour l'instant", "No bid yet"), CW - 240) },
+				}
+				local acts = {}
+				if U.myCo and U.myCo ~= au.co and not mineBest and left > 0 then
+					local seen = {}
+					for _, f in ipairs({ 1, 1.1, 1.25, 1.5 }) do
+						local v = math.ceil(lot.min * f / 1000) * 1000
+						if not seen[v] then
+							seen[v] = true
+							if #acts > 0 then acts[#acts + 1] = K.gap(6, 1) end
+							local ok = free == nil or v <= free
+							acts[#acts + 1] = K.btn(money(v), ok and (T("Offrir : ", "Bid: ") .. money(v)) or T("Pas assez d'argent disponible", "Not enough money left"),
+								function() U.coSend("co_bid", { seq = au.seq, lot = idx, amount = v }) end, f == 1, ok)
+						end
+					end
+				end
+				if #acts > 0 then acts[#acts + 1] = K.gap(12, 1) end
+				acts[#acts + 1] = K.btn(U.auOpen[idx] and T("Masquer le détail", "Hide the detail") or T("Détail", "Detail"), T("Ce que contient exactement ce lot", "What exactly this lot holds"),
+					function() U.auOpen[idx] = not U.auOpen[idx]; U.winChanged() end)
+				if det and det.focus and det.focus >= 0 then
+					acts[#acts + 1] = K.gap(6, 1)
+					acts[#acts + 1] = K.btn(T("Voir", "Show"), T("Amener la caméra sur place", "Take the camera there"), function() pcall(function() api.gui.camera.focusEntity(det.focus) end) end)
+				end
+				card[#card + 1] = K.gap(1, 4)
+				card[#card + 1] = K.row(acts)
+				if mineBest then card[#card + 1] = K.text(T("Vous avez la meilleure offre.", "You have the best bid."), nil, "success", CW) end
+				if U.auOpen[idx] then
+					card[#card + 1] = K.gap(1, 4)
+					if det then for _, x in ipairs(det.lines) do card[#card + 1] = K.muted(x, CW) end
+					else card[#card + 1] = K.muted(T("Détail en cours de lecture…", "Reading the detail…"), CW) end
+				end
+				rows[#rows + 1] = K.gap(1, 4)
+				rows[#rows + 1] = K.card(card)
+			end
+		end
+	end
+	rows[#rows + 1] = K.gap(1, 12)
+	U.auHelp(K, rows, W)
+	return rows
+end
+
 -- One of this company's rules (tracks, stops and stations, depots): its three choices, the amount when it takes a toll (a
 -- list), and what it means. The choice just made shows at once, until every game has applied it (or 10 s).
 U.TOLLS = { 500, 1000, 2000, 5000, 10000 }
@@ -3270,6 +3814,84 @@ U.ruleWords = function(rule, amount)
 	if rule == "toll" then return C.Tf("péage %s", "toll %s", money(amount or 0)) end
 	return T("libre", "open")
 end
+-- (0.7.4) a rule's colour in the other companies' table: open green, toll amber, private red
+U.ruleClass = function(rule)
+	if rule == "private" then return "error" end
+	if rule == "toll" then return "warning" end
+	return "success"
+end
+
+-- (0.7.4, the menus redone) A table for the window's own pages, as the options' pages have (u.table): its head on a darker band,
+-- its rows striped, the columns at the widths given (stretched to the page). A cell is a text (a string), a coloured text
+-- { text = ..., cls = "success" | "warning" | "error" | "info" }, or a node of the kit { node = n } (a dot, a button). opts.highlight(i):
+-- this player's own row (a blue band); opts.width: the table's width (K.TEXT_W). MPFEVER_OLDMENUS=1 does not use it.
+U.hubTable = function(K, lines, widths, opts)
+	opts = type(opts) == "table" and opts or {}
+	local n = 0
+	for _, line in ipairs(lines or {}) do n = math.max(n, #line) end
+	n = math.max(1, n)
+	local inner = (tonumber(opts.width) or K.TEXT_W) - 16
+	local ws, sum = {}, 0
+	for j = 1, n do ws[j] = math.max(16, tonumber(widths and widths[j]) or math.floor(inner / n)); sum = sum + ws[j] end
+	local k, used = inner / math.max(1, sum), 0
+	for j = 1, n do
+		ws[j] = math.max(16, math.floor(ws[j] * k))
+		if j == n then ws[j] = math.max(16, inner - used) end
+		used = used + ws[j]
+	end
+	local out = {}
+	for i, line in ipairs(lines or {}) do
+		local head = opts.header ~= false and i == 1
+		local cells = {}
+		for j = 1, n do
+			local cell = line[j]
+			local node
+			if type(cell) == "table" and cell.node ~= nil then
+				node = cell.node
+			elseif type(cell) == "table" and cell.text ~= nil then
+				node = K.colored(tostring(cell.text), K.classColor(cell.cls), ws[j] - 8)
+			elseif head then
+				node = K.colored(tostring(cell or ""), K.color("NeutralLight"), ws[j] - 8)
+			else
+				node = K.text(tostring(cell or ""), nil, nil, ws[j] - 8)
+			end
+			cells[#cells + 1] = K.box({ node }, { size = { ws[j], -1 } }, K.H)
+		end
+		local bg = head and U.HUB_TINT.head or ((i % 2 == 0) and U.HUB_TINT.odd or U.HUB_TINT.even)
+		if not head and type(opts.highlight) == "function" then
+			local okH, hi = pcall(opts.highlight, opts.header ~= false and i - 1 or i)
+			if okH and hi then bg = U.HUB_TINT.mine end
+		end
+		out[#out + 1] = K.box(cells, { size = { inner + 16, -1 }, padding = { 4, 8, 4, 8 }, background = bg }, K.H)
+	end
+	return K.col(out)
+end
+
+-- (0.7.4) « How does it work? » at the end of a page: a section that folds (its button), open until the player folds it, for this
+-- session (U.helpFolded[key]); paragraphs: the texts, each one already through T (tests/test_lang.py reads the T calls)
+U.helpFolded = U.helpFolded or {}
+U.helpCard = function(K, rows, key, paragraphs)
+	local W = K.TEXT_W
+	local folded = U.helpFolded[key] == true
+	rows[#rows + 1] = K.gap(1, 14)
+	local head = K.row { K.icon(K.ICON_ALERT, 22), K.gap(8, 1), K.text(T("Comment ça marche ?", "How does it work?"), "font-scale-title-4", nil, W - 150),
+		K.btn(folded and T("Afficher", "Show") or T("Masquer", "Hide"), nil, function() U.helpFolded[key] = not folded; U.winChanged() end) }
+	-- (the Hub: a title of its own, its paragraphs in its card, see U.hubCards; the small window: a box of its own)
+	local inHub = U.hubDrawing == true and type(U.hubMarks) == "table"
+	if inHub then U.hubMarks[head] = "title" end
+	rows[#rows + 1] = head
+	if folded then return end
+	local list = {}
+	for i, p in ipairs(paragraphs or {}) do
+		if i > 1 then list[#list + 1] = K.gap(1, 6) end
+		list[#list + 1] = K.muted(tostring(p), W - 4)
+	end
+	if inHub or not K.box then
+		for _, x in ipairs(list) do rows[#rows + 1] = x end
+	else
+		rows[#rows + 1] = K.box(list, { size = { W + 20, -1 }, padding = { 8, 10, 8, 10 }, background = U.HUB_TINT.card })
+	end
+end
 
 -- Rules (one company per player): this company's rules for its tracks, its stops and stations and its depots (events applied by
 -- every game, see mpfever_eco.lua), the other companies' rules, the fees and tolls earned and paid, the bankruptcy rule. A rule
@@ -3304,6 +3926,14 @@ U.TABS.ai = function(K, st, ctx)
 			rows[#rows + 1] = K.gap(1, 8)
 			rows[#rows + 1] = K.card(card)
 		end
+	end
+	if not U.oldMenus() then
+		U.helpCard(K, rows, "ai", {
+			T("Les entreprises de l'ordinateur jouent seules, sur le jeu de l'hôte : elles construisent des arrêts, des lignes de bus et de camions, achètent et renouvellent leurs véhicules. Leurs actions passent par tous les jeux comme celles des joueurs.",
+				"The computer companies play by themselves, on the host's game: they build stops, bus and truck lines, buy and renew their vehicles. Their actions go to every game as the players' do."),
+			T("Elles suivent les règles de partage comme tout le monde et ne font jamais faillite. Leur niveau et leur argent de départ se choisissent dans le salon. Cette page montre ce que fait chacune ; « Voir » amène la caméra sur place.",
+				"They follow the sharing rules as everybody does and never go bankrupt. Their level and start money are chosen in the lobby. This page shows what each one does; « Show » takes the camera there."),
+		})
 	end
 	return rows
 end
@@ -3386,7 +4016,30 @@ U.TABS.rules = function(K, st, ctx)
 	local others = {}
 	for ent, id in pairs(U.coMap) do if id ~= my and not eco.gone[id] then others[#others + 1] = { ent = ent, id = id } end end
 	table.sort(others, function(a, b) return a.id < b.id end)
-	if #others > 0 then
+	-- (0.7.4: a table, a company a row, its rules in colour; MPFEVER_OLDMENUS=1: a card a company, as before)
+	if #others > 0 and not U.oldMenus() then
+		rows[#rows + 1] = K.gap(1, 12)
+		rows[#rows + 1] = K.section(K.ICON_PLAYERS, T("Règles des autres entreprises", "The other companies' rules"))
+		local lines = { { T("Entreprise", "Company"), T("Voies", "Tracks"), T("Routes", "Roads"), T("Arrêts et gares", "Stops and stations"), T("Dépôts", "Depots") } }
+		for _, o in ipairs(others) do
+			local tr = eco.track[o.id] or { rule = "open", toll = 0 }
+			local rd = (eco.road or {})[o.id] or { rule = "open" }
+			local sp = eco.stops[o.id] or { rule = "open", fee = 0 }
+			local dp = eco.depotco[o.id] or { rule = "open", toll = 0 }
+			local nameW = math.floor((W - 16) * 0.32)
+			lines[#lines + 1] = {
+				{ node = K.row { K.box({ K.gap(1, 3), U.swatch(K, o.id, 12) }), K.gap(6, 1), K.text(companyName(o.ent), nil, nil, nameW - 26) } },
+				{ text = U.ruleWords(tr.rule, tr.toll), cls = U.ruleClass(tr.rule) },
+				{ text = U.ruleWords(rd.rule), cls = U.ruleClass(rd.rule) },
+				{ text = U.ruleWords(sp.rule, sp.fee), cls = U.ruleClass(sp.rule) },
+				{ text = U.ruleWords(dp.rule, dp.toll), cls = U.ruleClass(dp.rule) },
+			}
+		end
+		rows[#rows + 1] = K.gap(1, 4)
+		rows[#rows + 1] = U.hubTable(K, lines, { 32, 17, 17, 17, 17 })
+		rows[#rows + 1] = K.muted(T("Libre : vos lignes et vos trains y passent gratuitement. Péage : le montant est payé à chaque passage ou arrêt. Privé : interdit à votre entreprise.",
+			"Open: your lines and trains use them for free. Toll: the amount is paid at every passage or stop. Private: closed to your company."), W)
+	elseif #others > 0 then
 		rows[#rows + 1] = K.gap(1, 12)
 		rows[#rows + 1] = K.section(K.ICON_PLAYERS, T("Règles des autres entreprises", "The other companies' rules"))
 		for _, o in ipairs(others) do
@@ -3404,7 +4057,36 @@ U.TABS.rules = function(K, st, ctx)
 	end
 	-- what this company earned and paid
 	local fe = my and eco.fees[my]
-	if fe then
+	-- (0.7.4: a table of what this company received from and paid to each other company, by kind; MPFEVER_OLDMENUS=1: as before)
+	if fe and not U.oldMenus() then
+		rows[#rows + 1] = K.gap(1, 12)
+		rows[#rows + 1] = K.section(K.ICON_MONEY, T("Gains et frais", "Earnings and fees"))
+		rows[#rows + 1] = U.hubTable(K, {
+			{ "", T("Reçu", "Received"), T("Payé", "Paid") },
+			{ T("Gares et arrêts partagés", "Shared stations and stops"), { text = money(fe.si), cls = (fe.si or 0) > 0 and "success" or nil }, { text = money(fe.se), cls = (fe.se or 0) > 0 and "error" or nil } },
+			{ T("Péages (voies et dépôts)", "Tolls (tracks and depots)"), { text = money(fe.ti), cls = (fe.ti or 0) > 0 and "success" or nil }, { text = money(fe.te), cls = (fe.te or 0) > 0 and "error" or nil } },
+		}, { 46, 27, 27 })
+		-- (by company: what this one paid to it and what it paid to this one, every kind together)
+		local paidTo, gotFrom = U.paidBy(eco, my), {}
+		for _, p in ipairs(eco.paid or {}) do
+			if p.to == my and p.from and p.from ~= my then gotFrom[p.from] = (gotFrom[p.from] or 0) + (p.amount or 0) end
+		end
+		local ids, seen = {}, {}
+		for id in pairs(paidTo) do if not seen[id] then seen[id] = true; ids[#ids + 1] = id end end
+		for id in pairs(gotFrom) do if not seen[id] then seen[id] = true; ids[#ids + 1] = id end end
+		table.sort(ids)
+		if #ids > 0 then
+			local lines = { { T("Entreprise", "Company"), T("Reçu d'elle", "Received from it"), T("Payé à elle", "Paid to it"), T("Dont gares / voies / dépôts", "Of which stations / tracks / depots") } }
+			for _, id in ipairs(ids) do
+				local t = paidTo[id] or { s = 0, t = 0, d = 0 }
+				local out = (t.s or 0) + (t.t or 0) + (t.d or 0)
+				lines[#lines + 1] = { U.aiCoName(id), { text = money(gotFrom[id] or 0), cls = (gotFrom[id] or 0) > 0 and "success" or nil },
+					{ text = money(out), cls = out > 0 and "error" or nil }, money(t.s or 0) .. " / " .. money(t.t or 0) .. " / " .. money(t.d or 0) }
+			end
+			rows[#rows + 1] = K.gap(1, 6)
+			rows[#rows + 1] = U.hubTable(K, lines, { 28, 20, 20, 32 })
+		end
+	elseif fe then
 		rows[#rows + 1] = K.gap(1, 12)
 		rows[#rows + 1] = K.section(K.ICON_MONEY, T("Gains et frais", "Earnings and fees"))
 		rows[#rows + 1] = K.muted(C.Tf("Gares partagées : reçu %s, payé %s", "Shared stations: earned %s, paid %s", money(fe.si), money(fe.se)), W)
@@ -3425,6 +4107,16 @@ U.TABS.rules = function(K, st, ctx)
 	rows[#rows + 1] = K.section(K.ICON_ALERT, T("Faillite", "Bankruptcy"))
 	rows[#rows + 1] = K.muted(lim > 0 and C.Tf("Règle de la partie : faillite après %s mois de dette.", "Game rule: bankruptcy after %s months in debt.", lim)
 		or T("Règle de la partie : pas de faillite.", "Game rule: no bankruptcy."), W)
+	if not U.oldMenus() then
+		U.helpCard(K, rows, "rules", {
+			T("Chaque entreprise décide qui peut utiliser ce qu'elle a construit. Ouvert : les autres entreprises s'en servent gratuitement. Péage : elles paient à chaque passage d'un train sur vos voies, à chaque arrêt d'un véhicule chez vous ou pour chaque véhicule acheté ou envoyé dans vos dépôts. Privé : elles ne peuvent pas s'en servir du tout.",
+				"Each company decides who may use what it built. Open: the other companies use it for free. Toll: they pay for every passage of a train on your tracks, every stop of a vehicle at yours, or every vehicle bought or sent to your depots. Private: they cannot use it at all."),
+			T("Une gare ou un dépôt peut avoir sa propre règle, dans sa fenêtre du jeu : elle passe avant celle de l'entreprise. Les routes ne se ferment qu'aux raccordements : tous les véhicules continuent d'y rouler.",
+				"A station or a depot may have its own rule, in its window in the game: it comes before the company's. Roads close to connections only: every vehicle keeps driving on them."),
+			T("Le tableau des autres entreprises montre ce que vous coûterait chacune de leurs voies, routes, gares et dépôts. « Gains et frais » compte ce que vous avez reçu et payé depuis le début de la partie, par entreprise.",
+				"The other companies' table shows what each of their tracks, roads, stations and depots would cost you. « Earnings and fees » counts what you received and paid since the game began, by company."),
+		})
+	end
 	return rows
 end
 
@@ -3551,6 +4243,37 @@ U.TABS.game = function(K, st, ctx)
 	else
 		rows[#rows + 1] = K.text(limCur == 0 and T("Jamais", "Never") or C.Tf("Après %s mois de dette", "After %s months in debt", limCur), nil, nil, W)
 	end
+	-- (0.7.4) the auction of a bankrupt company: its lots all at once or the whole company, and how long (MPFever.exe's "auction"
+	-- request, "mode:minutes")
+	local auRule = tostring(eco.auctionRule or "assets:5")
+	local auCur = asked("auctionAsked", auRule) or auRule
+	local auMode, auMin = auCur:match("^(%a+):(%d+)$")
+	auMode, auMin = auMode or "assets", tonumber(auMin) or 5
+	rows[#rows + 1] = K.gap(1, 12)
+	rows[#rows + 1] = K.text(T("Vente aux enchères d'une faillite", "Auction of a bankruptcy"), nil, nil, W)
+	rows[#rows + 1] = K.muted(T("Les actifs : chaque ligne (avec ses véhicules), chaque gare et chaque dépôt en vente en même temps, chacun son prix. L'entreprise entière : un seul lot, tout ce qu'elle possédait, voies et routes comprises.",
+		"The assets: each line (with its vehicles), each station and each depot for sale at once, each with its own price. The whole company: one lot, everything it owned, tracks and roads included."), W)
+	local function auShow(m) return m == "company" and T("L'entreprise entière", "The whole company") or m == "serial" and T("Un lot après l'autre (0.7.3)", "One lot after the other (0.7.3)") or T("Les actifs, tous en même temps", "The assets, all at once") end
+	if host then
+		local items = {}
+		for _, m in ipairs({ "assets", "company" }) do items[#items + 1] = builtin.ComboBoxItem { value = m, content = K.text(auShow(m)) } end
+		if auMode == "serial" then items[#items + 1] = builtin.ComboBoxItem { value = "serial", content = K.text(auShow("serial")) } end
+		local mins = {}
+		for _, n in ipairs({ 3, 5, 10 }) do mins[#mins + 1] = builtin.ComboBoxItem { value = n, content = K.text(C.Tf("%s min", "%s min", n)) } end
+		rows[#rows + 1] = K.row {
+			builtin.ComboBox { value = auMode, items = items, onValueChange = function(v)
+				local want = tostring(v) .. ":" .. auMin
+				if v ~= nil and want ~= auCur and U.menuRequest("auction", want) then U.auctionAsked = { v = want, at = os.clock() }; U.winChanged() end
+			end },
+			K.gap(12, 1),
+			builtin.ComboBox { value = auMin, items = mins, onValueChange = function(v)
+				local want = auMode .. ":" .. tostring(v)
+				if v ~= nil and want ~= auCur and U.menuRequest("auction", want) then U.auctionAsked = { v = want, at = os.clock() }; U.winChanged() end
+			end },
+		}
+	else
+		rows[#rows + 1] = K.text(auShow(auMode) .. "  ·  " .. C.Tf("%s min", "%s min", auMin), nil, nil, W)
+	end
 	if next(eco.ai or {}) ~= nil then
 		rows[#rows + 1] = K.gap(1, 12)
 		rows[#rows + 1] = K.muted(T("L'argent de départ de chaque entreprise de l'ordinateur se choisit dans le salon.", "Each computer company's start money is chosen in the lobby."), W)
@@ -3558,6 +4281,16 @@ U.TABS.game = function(K, st, ctx)
 	-- (0.6) the game options, under the rules of 0.5.14
 	local okF, errF = pcall(U.featGameRows, K, st, rows)
 	if not okF then log("window: game options not drawn: " .. tostring(errF)) end
+	if not U.oldMenus() then
+		U.helpCard(K, rows, "game", {
+			T("Les règles de la partie sont choisies par l'hôte dans son salon et gardées dans la sauvegarde ; l'hôte peut aussi les changer ici, pendant la partie. Chaque joueur les voit.",
+				"The game's rules are chosen by the host in the lobby and kept in the savegame; the host may also change them here, during the game. Every player sees them."),
+			T("L'argent de départ va à chaque nouvelle entreprise (un joueur qui arrive, une entreprise qui repart après une faillite). Sans règles de partage, tout est ouvert et gratuit entre les entreprises. Une entreprise fait faillite après le nombre de mois de dette choisi, et ses biens sont vendus selon la règle des enchères.",
+				"The start money goes to every new company (a player who arrives, a company starting again after a bankruptcy). Without sharing rules everything is open and free between the companies. A company goes bankrupt after the chosen number of months in debt, and its assets are sold by the auction's rule."),
+			T("L'hôte choisit les options de partie (bourse, commerce, classement, appels d'offres…) dans le salon ou sur cette page ; les pages des options activées apparaissent dans ce menu.",
+				"The host chooses the game options (stock market, trade, ranking, tenders…) in the lobby or on this page; the pages of the options turned on show in this menu."),
+		})
+	end
 	return rows
 end
 
@@ -3962,11 +4695,14 @@ U.featU = function(K, st, M)
 			local ok, err = pcall(onValue, tostring(v or ""))
 			if not ok then log("window: " .. M.ID .. ": " .. tostring(err)) end
 		end
-		return K.builtin.TextInputField {
+		local n = K.builtin.TextInputField {
 			meta = { class = "font-scale-body", localKey = "mpfever-feat-" .. M.ID .. "-" .. tostring(key or ""), styleSheet = K.style { size = { width or 300, -1 } } },
 			value = "", placeholderText = tostring(placeholder or ""), maxLength = 200, acceptOnFocusLoss = true,
 			onTyping = give, onValueChange = give,
 		}
+		-- (0.7.4: its width counted by u.row, as a button's)
+		if rich then made[n] = { kind = "input", w = width or 300 } end
+		return n
 	end
 	-- (lines of cells, in columns: widths in pixels, else the width shared; header: the first line as titles). 0.6, the Hub: a
 	-- real table, its head on a darker band, its rows striped, the columns aligned in the page's width (the widths given are
@@ -4029,6 +4765,40 @@ U.featU = function(K, st, M)
 		end
 		return K.col(out)
 	end
+	-- (0.7.4, the menus redone) the window's old pages asked (Settings, MPFEVER_OLDMENUS=1): the modules draw their pages of 0.7.3
+	u.oldMenus = type(U.oldMenus) == "function" and U.oldMenus() or false
+	-- (0.7.4) a list to pick from (the game's ComboBox): items { { value = v, label = "..." }, ... }, value the one shown; onValue(v)
+	-- when the player picks another (the item's own value, not its place in the list)
+	u.choice = function(items, value, onValue, width)
+		local list, at = {}, nil
+		for i, it in ipairs(items or {}) do
+			list[#list + 1] = K.builtin.ComboBoxItem { value = i, content = K.text(tostring(it.label or it.value)) }
+			if it.value == value then at = i end
+		end
+		if #list == 0 then return K.muted(T("(rien à choisir)", "(nothing to pick)"), width or 200) end
+		local n = K.builtin.ComboBox { meta = width and { styleSheet = K.style { size = { width, -1 } } } or nil, value = at or 1, items = list,
+			onValueChange = function(v)
+				local it = items[tonumber(v) or 0]
+				if it and it.value ~= value then
+					local ok, err = pcall(onValue, it.value)
+					if not ok then log("window: " .. M.ID .. ": " .. tostring(err)) end
+					U.winChanged()
+				end
+			end }
+		if rich then made[n] = { kind = "choice", w = width or 200 } end
+		return n
+	end
+	-- (0.7.4) the page's « How does it work? » (U.helpCard): paragraphs { { "French", "English" }, ... } (tests/test_lang.py reads
+	-- them in the module) or texts
+	u.help = function(key, paragraphs)
+		u.helpDone = true
+		local list = {}
+		for _, p in ipairs(paragraphs or {}) do list[#list + 1] = type(p) == "table" and T(p[1], p[2]) or tostring(p) end
+		local tmp = {}
+		if type(U.helpCard) ~= "function" then for _, t in ipairs(list) do rows[#rows + 1] = K.muted(t, W) end return end
+		U.helpCard(K, tmp, "f_" .. tostring(M.ID) .. "_" .. tostring(key or ""), list)
+		for _, n in ipairs(tmp) do rows[#rows + 1] = n end
+	end
 	-- (the Hub) the game's components are numbers: every one the helpers make is noted, so that a table tells a cell holding a
 	-- component (a row of buttons) from a cell holding a number to write (the territories' « View » and « Claim » showed as a
 	-- number). MPFEVER_HUBNODES=0: as before
@@ -4059,6 +4829,9 @@ U.featTabRows = function(K, st, key)
 				return { K.text(T("Cet onglet n'a pas pu être affiché (voir ui_mod.log).", "This tab could not be drawn (see ui_mod.log)."), nil, "error", W) }
 			end
 			for _, n in ipairs(type(more) == "table" and more or {}) do u.rows[#u.rows + 1] = n end
+			-- (0.7.4: a module's « How does it work? » (M.HELP: { { "French", "English" }, ... }) at the end of its page, unless it put
+			-- it there itself; the window's old pages asked: none)
+			if u.rich and not u.oldMenus and not u.helpDone and type(tb.M.HELP) == "table" and #tb.M.HELP > 0 then pcall(u.help, "page", tb.M.HELP) end
 			-- (the Hub: the texts made where they go, see u.resolve)
 			if u.rich then for i, n in ipairs(u.rows) do u.rows[i] = u.resolve(n) end end
 			return u.rows
@@ -4095,6 +4868,12 @@ U.TABS.settings = function(K, st, ctx)
 			onValueChange = function(v) p.vdots = v == 1 and "1" or "0"; U.saveGlobalPrefs(); U.winChanged() end,
 		} }
 	end
+	-- (0.7.4: the window's pages of 0.7.3, for those who prefer them; this PC only, kept across launches)
+	rows[#rows + 1] = K.row { builtin.CheckBox {
+		value = U.oldMenus() and 1 or 0,
+		label = T("Utiliser les anciennes pages de la fenêtre (MPFever 0.7.3)", "Use the window's old pages (MPFever 0.7.3)"),
+		onValueChange = function(v) p.oldmenus = v == 1 and "1" or "0"; U.saveGlobalPrefs(); U.winChanged() end,
+	} }
 	-- (the bankruptcy rule is in the Game tab since 0.5.14, with the game's other rules)
 	U.settingsRows(K, rows)
 	rows[#rows + 1] = K.gap(1, 12)

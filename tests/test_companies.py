@@ -54,6 +54,8 @@ api = {
       if ct == "po" then return OWN[e] and { player = OWN[e] } or nil end
       if ct == "name" then return { name = NAMES[e] or ("E" .. e) } end
       if ct == "line" then
+        -- (only a line has one: its stops or its vehicles are known)
+        if not (STOPS[e] or VEH[e]) then return nil end
         local s = {}
         for i, sg in ipairs(STOPS[e] or {}) do s[i] = { stationGroup = sg } end
         return { stops = s }
@@ -151,7 +153,8 @@ check(run('return BAL[200] == 0 and BAL[301] == 4000000') is True, "its money mo
 check(run('return CO.match(st.co, "bob", "s2", false).id') == 4, "bob plays company 4")
 
 print("bankruptcy")
-run('st.co.rules = { bankrupt = 3 }; BAL[301] = -10; TIME = 0; E.tick(st, ENV)')
+# (0.7.4: the auction of 0.7.3, one lot after the other, the host's choice "serial"; the auction of every lot at once is below)
+run('st.co.rules = { bankrupt = 3, auction = "serial:5" }; BAL[301] = -10; TIME = 0; E.tick(st, ENV)')
 for m in range(1, 4):
     # (each month: the tick counts it, the host's look says who is in debt)
     run('TIME = %d; E.tick(st, ENV); E.event(st, "co_month", { month = st.co.month, debt = { 4 }, mpfFrom = "Host" }, ENV)' % (m * 1000))
@@ -422,12 +425,82 @@ run('''
 local f = CO.join(st.co, "fay", "Fay", false, "Fay Co", "s7", 7); f.ent = 700; BAL[700] = 0; FAY = f.id
 OWN[8100] = 700; SGS[#SGS + 1] = 8100
 st.co.stationRule.sg8100 = { rule = "toll", fee = 777, co = FAY }
+st.co.rules.auction = nil
 E.bankrupt(st, f, ENV)
 ''')
 check(run('return st.co.auction ~= nil and st.co.auction.lots[1].key') == "sg8100", "Fay's station is at auction")
+check(run('return st.co.auction and st.co.auction.v') == 2, "(0.7.4) the default auction: every lot at once")
 run('E.event(st, "co_bid", { seq = st.co.auction.seq, lot = 1, amount = 100000, mpfCo = 1, mpfFrom = "Host" }, ENV)')
-run('E.event(st, "co_lot_close", { seq = st.co.auction.seq, lot = 1, mpfFrom = "Host" }, ENV)')
+run('E.event(st, "co_auction_close", { seq = st.co.auction.seq, mpfFrom = "Host" }, ENV)')
 check(run('return OWN[8100]') == 100 and run('return st.co.stationRule.sg8100') is None, "the station sold is company 1's, without its own setting")
+
+print("(0.7.4) auction: every lot at once, the whole company, the heir")
+# Gil (entity 1100): two lines (1201 with two vehicles, 1202), a station 8200 that company 1's line 1301 stops at, a station 8201
+# nobody else uses, a track 6100. Company 1 and Bob's company 4... are the bidders; an AI company 12 exists
+run('''
+local g = CO.join(st.co, "gil", "Gil", false, "Gil Co", "s11", 11); g.ent = 1100; BAL[1100] = 0; GIL = g.id
+local ai = CO.join(st.co, "ai:1", "Computer 1", false, "Computer Co", "sai1", 12); ai.ent = 1200; BAL[1200] = 0; AI = ai.id
+OWN[1201] = 1100; VEH[1201] = { 1211, 1212 }; OWN[1211] = 1100; OWN[1212] = 1100; NAMES[1201] = "Gil Bus"
+OWN[1202] = 1100; VEH[1202] = {}; NAMES[1202] = "Gil Tram"
+OWN[8200] = 1100; OWN[8201] = 1100; SGS[#SGS + 1] = 8200; SGS[#SGS + 1] = 8201
+OWN[1301] = 100; VEH[1301] = {}; STOPS[1301] = { 8200 }; LINELIST = { 1201, 1202, 1301 }
+OWN[6100] = 1100; SEGS[6100] = "track"
+BAL[100] = 10000000
+SENT = {}
+E.bankrupt(st, g, ENV)
+''')
+check(run('local au = st.co.auction; return au.v .. " " .. au.mode .. " " .. au.minutes .. " " .. #au.lots') == "2 assets 5 4",
+      "four lots (two lines, two stations) at once, 5 minutes by default")
+run('E.event(st, "co_bid", { seq = st.co.auction.seq, lot = 2, amount = 60000, mpfCo = 1, mpfFrom = "Host" }, ENV)')
+run('E.event(st, "co_bid", { seq = st.co.auction.seq, lot = 1, amount = 120000, mpfCo = 1, mpfFrom = "Host" }, ENV)')
+check(run('local au = st.co.auction; return au.lots[1].best .. " " .. au.lots[2].best .. " " .. au.bids') == "120000 60000 2",
+      "bids on any lot, each its own best")
+run('E.event(st, "co_bid", { seq = st.co.auction.seq, lot = 1, amount = 121000, mpfCo = 1, mpfFrom = "Host" }, ENV)')
+check(run('return st.co.auction.lots[1].best') == 120000, "a bid under the best and 5 %% is refused")
+check(run('return E.minBid(st.co.auction.lots[1])') == 126000, "the smallest next bid: the best and 5 %%")
+run('E.event(st, "co_bid", { seq = st.co.auction.seq, lot = 1, amount = 200000, mpfCo = GIL, mpfFrom = "Gil" }, ENV)')
+check(run('return st.co.auction.lots[1].best') == 120000, "the bankrupt company cannot bid")
+run('E.event(st, "co_auction_close", { seq = st.co.auction.seq, mpfFrom = "Bob#1" }, ENV)')
+check(run('return st.co.auction ~= nil') is True, "only the host closes the auction")
+check(run('return E.heirOf(st.co, st.co.auction, ENV).id') == run('return AI'), "the heir: the computer company first")
+run('E.event(st, "co_auction_close", { seq = st.co.auction.seq, mpfFrom = "Host" }, ENV)')
+check(run('return st.co.auction') is None, "the auction is over")
+check(run('return OWN[1201] == 100 and OWN[1211] == 100 and OWN[1202] == 100') is True, "the two lines sold to company 1 with their vehicles")
+check(run('return BAL[100]') == 10000000 - 180000, "company 1 paid its two bids")
+check(run('return OWN[8200]') == 1200, "the unsold station company 1's line stops at goes to the heir, not demolished")
+check(run('local d, h = false, false; for _, l in ipairs(LOG) do if l:find("lot .E8201. %(station%).*unsold") then d = true end if l:find("station .E8201.*to company") then h = true end end; return d and not h') is True,
+      "the station nobody else uses is demolished")
+check(run('return OWN[6100]') == 1200, "the tracks go to the heir")
+check(run('local n = 0; for _, c in ipairs(SENT) do if c.kind == "owner" and (c.e == 1201 or c.e == 1211) then n = n + 1 end end; return n') == 2,
+      "(au1, 2026-11-07) the line sold and its vehicle change hands once, never again to the heir in the same step")
+
+# the whole company as one lot
+run('''
+local h = CO.join(st.co, "hal", "Hal", false, "Hal Co", "s13", 13); h.ent = 1300; BAL[1300] = 0; HAL = h.id
+OWN[1401] = 1300; VEH[1401] = { 1411 }; OWN[1411] = 1300; NAMES[1401] = "Hal Line"
+OWN[8300] = 1300; SGS[#SGS + 1] = 8300; OWN[6200] = 1300; SEGS[6200] = "street"
+st.co.rules.auction = "company:10"
+E.bankrupt(st, h, ENV)
+''')
+check(run('local au = st.co.auction; return au.mode .. " " .. au.minutes .. " " .. #au.lots .. " " .. au.lots[1].kind .. " " .. au.lots[1].reserve') == "company 10 1 company 150000",
+      "the whole company: one lot, its reserve the sum of its line's and station's")
+run('E.event(st, "co_bid", { seq = st.co.auction.seq, lot = 1, amount = 150000, mpfCo = 1, mpfFrom = "Host" }, ENV)')
+run('E.event(st, "co_auction_close", { seq = st.co.auction.seq, mpfFrom = "Host" }, ENV)')
+check(run('return OWN[1401] == 100 and OWN[1411] == 100 and OWN[8300] == 100 and OWN[6200] == 100') is True,
+      "everything it owned is company 1's, its roads too")
+run('st.co.rules.auction = "bad:7"')
+check(run('local m, n = E.auctionRule(st.co); return m .. " " .. n') == "assets 5", "a rule it cannot read: every lot at once, 5 minutes")
+run('E.event(st, "co_rules", { bankrupt = 12, auction = "company:3", mpfFrom = "Host" }, ENV)')
+check(run('return st.co.rules.auction') == "company:3" and run('return st.co.rules.cfg:find("auction=company:3", 1, true) ~= nil') is True,
+      "the host's rule kept, and in the savegame's text of the rules")
+run('E.event(st, "co_rules", { bankrupt = 12, auction = "company:4", mpfFrom = "Host" }, ENV)')
+check(run('return st.co.rules.auction') == "company:3", "minutes it does not offer: refused")
+# the host's test button: a bankruptcy from the host only
+run('local k = CO.join(st.co, "kim", "Kim", false, "Kim Co", "s14", 14); k.ent = 1400; KIM = k.id')
+run('E.event(st, "co_test", { op = "bankrupt", co = KIM, hostTest = true, mpfFrom = "Bob#1" }, ENV)')
+check(run('return CO.find(st.co, KIM).gone') is None, "the test bankruptcy: not from a player")
+run('E.event(st, "co_test", { op = "bankrupt", co = KIM, hostTest = true, mpfFrom = "Host" }, ENV)')
+check(run('return CO.find(st.co, KIM).gone') == "bankrupt", "the host's test button: a bankruptcy at once")
 
 print("rules: station fees")
 # company 1's line 7001 stops at Dave's 8001 (index 0), its own 8002 (1), Dave's 8003 (2) and 8004 (3); its vehicle 7101

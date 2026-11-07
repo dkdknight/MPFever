@@ -338,11 +338,24 @@ FILES["D/feat_stock_stock.txt"] = table.concat({ "opt\t25\t0\t10\t5\t3\t2\t10", 
 local hubS = page("f_stock", { mode = "separate", opts = "stock=1", players = {} })
 local ts = texts(hubS)
 check("stocks, Hub: every node in its tree", LEFT == 0, LEFT)
-check("stocks, Hub: the ranking table", ts:find("#|Company|Value|Share|Change|Dividend|You", 1, true) ~= nil and ts:find("1|Ann Co|", 1, true) ~= nil, ts)
-local mine = 0
-walk(hubS, function(x) if same(bgOf(x), U.HUB_TINT.mine) then mine = mine + 1 end end)
-check("stocks, Hub: this player's company on a band of its own", mine == 1, mine)
+-- (0.7.4, the menus redone: each company shown once, a card with its figures and its buttons; 0.7.3's table and bars with the
+-- window's old pages)
+local _, nAnn = ts:gsub("Ann Co", "")
+check("stocks, Hub: each company once, its card with its figures", nAnn == 1 and ts:find("1. Ann Co|Value|$5000000|Share  +25 %|$500000|Dividend|$0|Your shares|0/10", 1, true) ~= nil, ts)
+local mineCard = 0
+walk(hubS, function(x) if same(bgOf(x), U.HUB_TINT.info) then mineCard = mineCard + 1 end end)
+check("stocks, Hub: this player's company on a card of its own colour", mineCard == 1, mineCard)
 check("stocks, Hub: a card per company with its buttons", ts:find("1. Ann Co", 1, true) ~= nil and ts:find("2. Bob Co (you)", 1, true) ~= nil and press(hubS, "Buy 1 ($500000)"), ts)
+check("stocks, Hub: How does it work? (its texts at the end of the page)", ts:find("Every company has 10 shares. Their price", 1, true) ~= nil, ts)
+local keepOld = U.oldMenus
+U.oldMenus = function() return true end
+local hubSo = page("f_stock", { mode = "separate", opts = "stock=1", players = {} })
+U.oldMenus = keepOld
+local tso = texts(hubSo)
+check("stocks, Hub, the old pages: the ranking table", tso:find("#|Company|Value|Share|Change|Dividend|You", 1, true) ~= nil and tso:find("1|Ann Co|", 1, true) ~= nil, tso)
+local mine = 0
+walk(hubSo, function(x) if same(bgOf(x), U.HUB_TINT.mine) then mine = mine + 1 end end)
+check("stocks, Hub, the old pages: this player's company on a band of its own", mine == 1, mine)
 -- market shares: the totals' table and the shares as bars
 FILES["D/feat_market_shares.txt"] = table.concat({ "me\t2", "month\t5", "co\t1\t0\tAnn Co", "co\t2\t0\tBob Co", "tot\t1\t600\t-1\t2\t0", "tot\t2\t400\t1000\t1\t1" }, "\n")
 local hubMk = page("f_market", { mode = "separate", opts = "market=1", players = {} })

@@ -135,12 +135,23 @@ L.execute("G.cmode = 'separate'; SENT = {}; OKX = G.preship({ id = 12, at = 1, c
 sent = L.eval("SENT")
 check(L.globals().OKX is True, "one company per player: shipped too")
 COPYCON = "{ toAdd = { { playerEntity = 1, fileName = 'depot.con' } }, proposal = { tag = 'depot' } }"
-L.execute("SENT = {}; OKX = G.preship({ id = 14, at = 1, copy = %s })" % COPYCON)
-check(L.globals().OKX is False and len(L.eval("SENT")) == 0, "a construction (a station, a depot...): shipped the usual way, its replay needs what the engine adds")
-L.execute("ENV.MPFEVER_PRESHIPCON = '1'; G.cmode = 'separate'; SENT = {}; OKX = G.preship({ id = 15, at = 1, copy = %s }); G.cmode = 'shared'; ENV.MPFEVER_PRESHIPCON = nil" % COPYCON)
+L.execute("ENV.MPFEVER_PRESHIPCON = '0'; SENT = {}; OKX = G.preship({ id = 14, at = 1, copy = %s }); ENV.MPFEVER_PRESHIPCON = nil" % COPYCON)
+check(L.globals().OKX is False and len(L.eval("SENT")) == 0, "MPFEVER_PRESHIPCON=0: a construction (a station, a depot...) shipped the usual way, as in 0.7.3")
+L.execute("G.cmode = 'separate'; SENT = {}; OKX = G.preship({ id = 15, at = 1, copy = %s }); G.cmode = 'shared'" % COPYCON)
 sent = L.eval("SENT")
 check(L.globals().OKX is True and sent[1].p.args[1].toAdd[1].playerEntity == 1002,
-      "(MPFEVER_PRESHIPCON=1, tests) one company per player: its constructions named for this player's company, not the savegame's")
+      "(0.7.4) a construction shipped at the click; one company per player: its constructions named for this player's company, not the savegame's")
+# (0.7.4) the copy compared by its street part and the players' constructions, not the town buildings the engine puts back
+L.execute("""C.buildSig = function(m) if not m then return nil end local p = m.proposal or {} local t = {} for _, ce in ipairs(m.toAdd or {}) do t[#t + 1] = ce.fileName end
+  return tostring(#(p.addedSegments or {})) .. '/' .. tostring(p.tag) .. '/' .. table.concat(t, ',') end""")
+SIGA = L.eval("G.preStreetSig({ toAdd = { { playerEntity = 1, fileName = 'depot.con' } }, proposal = { tag = 'd' } })")
+SIGB = L.eval("G.preStreetSig({ toAdd = { { playerEntity = 1, fileName = 'depot.con' }, { playerEntity = -1, fileName = 'house.con' } }, toRemove = { 5 }, proposal = { tag = 'd' } })")
+SIGC = L.eval("G.preStreetSig({ toAdd = { { playerEntity = 1, fileName = 'station.con' } }, proposal = { tag = 'd' } })")
+check(SIGA == SIGB and SIGA != SIGC, "(0.7.4) a construction's copy against its capture: its file counts, the town buildings put back do not", f"{SIGA} {SIGB} {SIGC}")
+L.execute("ENV.MPFEVER_PRECONSIG = '0'")
+check(L.eval("G.preStreetSig({ toAdd = { { playerEntity = 1, fileName = 'station.con' } }, proposal = { tag = 'd' } })") == "0/d/", "MPFEVER_PRECONSIG=0: the street part only, as in 0.7.3")
+L.execute("ENV.MPFEVER_PRECONSIG = nil")
+L.execute("C.buildSig = function(m) if not m then return nil end local p = m.proposal or {} return tostring(#(p.addedSegments or {})) .. '/' .. tostring(p.tag) end")
 L.execute("G.cmode = 'separate'; ENV.MPFEVER_PRESHIPSEP = '0'; SENT = {}; OKX = G.preship({ id = 13, at = 1, copy = %s }); G.cmode = 'shared'; ENV.MPFEVER_PRESHIPSEP = nil" % COPY)
 check(L.globals().OKX is False, "MPFEVER_PRESHIPSEP=0: not in that mode, as in 0.7.2")
 
@@ -229,8 +240,24 @@ sent = L.eval("SENT")
 check(L.globals().OKX is True and sent[1].p.co == 4, "a computer company's build: shipped for that company")
 
 # ---- the rest of the file
-check('if a.pre and os.getenv("MPFEVER_PRERAW") ~= "0" then' in src and "return replayNativeStreet(a)" in src[src.index('MPFEVER_PRERAW'):][:300],
-      "the others apply a copy as the tool made it, never made again from its shape")
+check('if a.pre and not preCon and os.getenv("MPFEVER_PRERAW") ~= "0" then' in src and "return replayNativeStreet(a)" in src[src.index('MPFEVER_PRERAW'):][:1200],
+      "the others apply a copy of a street as the tool made it, never made again from its shape")
+check("local preCon = a.pre and type(a.args[1]) == \"table\" and (#(a.args[1].toAdd or {}) > 0 or #(a.args[1].toRemove or {}) > 0)" in src,
+      "(0.7.4) a copy with constructions is replayed as a capture (the engine's conversion of its constructions, then the build)")
+# (0.7.4) a real tool hands its proposal over at proposalPrepareForApply, before its command; proposalApply comes once the engine
+# applied it, after the held build was announced (the manual test x1 of 2026-11-07)
+gh = src[src.index("local function guiHandleEvent("):]
+check('elseif name == "builder.proposalPrepareForApply" then' in gh and "pcall(G.toolPrepared, param, id)" in gh,
+      "(0.7.4) the tool's copy taken when the tool prepares its build, before its command")
+tp = src[src.index("G.toolPrepared = function(param, id)"):src.index("G.toolCopyFrom = function(param)")]
+check("if G.toolCopyAtApply() then return end" in tp and "if not G.toolCopyAtApply() then return end" in tp and 'MPFEVER_TOOLCOPYAPPLY") == "1"' in src,
+      "(0.7.4) never at proposalApply any more (MPFEVER_TOOLCOPYAPPLY=1: as before)")
+# (0.7.4) the street tool prepares nothing: its copy is its last preview (proposalCreate), never for a tool seen preparing
+check("pcall(G.toolCreated, id, param)" in gh and "if G.toolPrepares[tool] or G.toolCopyAtApply() or os.getenv(\"MPFEVER_PRECREATE\") == \"0\" then return end" in src,
+      "(0.7.4) a tool that prepares nothing (the street tool): its last preview is its copy; never for a tool that prepares (MPFEVER_PRECREATE=0: none)")
+check("if dt > 0.008 then" in src and "G.createSlowUntil = os.clock() + 1" in src, "(0.7.4) a preview too long to read is not read for a second (the interface keeps its speed)")
+tk = src[src.index("G.takeToolCopy = function()"):src.index("G.isWorldAct = function(p)")]
+check('(t.at == "prepare" or t.at == "create") and 120 or 5' in tk, "(0.7.4) a copy of the preparation or of the preview is taken up to 120 frames later (the command is held a few frames after)")
 check("preSig = G.preStreetSig(r.copy)" in src and "local sig = G.preStreetSig(type(o.args)" in src, "the street part is compared (the town buildings the engine moves are not in the copy)")
 check('G.preVerdict[tostring(a.uid)] ~= "same" then' in src, "refused here after its builder confirmed it: reloaded at once")
 check("ctx = (G.natCtx and G.natCtx[r.id]) or r.ctxBits" in src and "G.natRelease[#G.natRelease].ctxBits = madeCtx" in src,

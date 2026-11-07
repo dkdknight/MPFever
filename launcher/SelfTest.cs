@@ -65,8 +65,45 @@ namespace MPFever
             ok &= RunServerConfig();
             ok &= RunReportMode();
             ok &= RunFineTimer();
+            ok &= RunServerJoin074();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.4) The user's server, 2026-11-06 23:13: a player gone during a resynchronisation is no longer waited for
+        /// once not back (RESYNCLEFT); a dedicated server tries its world again when a published mod is missing, not a local one,
+        /// three times (MODRETRY); a player's MPFever never cuts itself for silence while it handles a message (BUSYCUT).</summary>
+        static bool RunServerJoin074()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.4 server: " + what); ok &= c; }
+            var w = new HashSet<string> { "Ann#2", "dickj#53", "Bob#3" };
+            C(MainForm.DropDeparted(w, "dickj#53", new[] { "Ann#2", "Bob#3" }) == 1 && !w.Contains("dickj#53") && w.Count == 2, "a player gone and not back: no longer waited for");
+            w = new HashSet<string> { "Ann#2", "dickj#53" };
+            C(MainForm.DropDeparted(w, "dickj#53", new[] { "Ann#2", "dickj#55" }) == 0 && w.Contains("dickj#53"), "back under another connection: still waited for (it says so itself)");
+            w = new HashSet<string> { "Ann#2" };
+            C(MainForm.DropDeparted(w, "dickj#53", new string[0]) == 0 && w.Count == 1, "a player nobody waited for: nothing changes");
+            C(MainForm.ServerModRetry(true, false, 0) && MainForm.ServerModRetry(true, false, 2) && !MainForm.ServerModRetry(true, false, 3), "a server tries its world again three times");
+            C(!MainForm.ServerModRetry(true, true, 0), "a local mod of the host: no try again (nobody can install it)");
+            C(!MainForm.ServerModRetry(false, false, 0), "a player's game: never (it is told to install the mods)");
+            Environment.SetEnvironmentVariable("MPFEVER_MODRETRY", "0");
+            C(!MainForm.ServerModRetry(true, false, 0), "MPFEVER_MODRETRY=0: as before");
+            Environment.SetEnvironmentVariable("MPFEVER_MODRETRY", null);
+            C(Client.BusyHolds(DateTime.UtcNow.Ticks) && !Client.BusyHolds(0), "a message being handled: no silence cut; none: the usual cut");
+            Environment.SetEnvironmentVariable("MPFEVER_BUSYCUT", "1");
+            C(!Client.BusyHolds(DateTime.UtcNow.Ticks), "MPFEVER_BUSYCUT=1: as before");
+            Environment.SetEnvironmentVariable("MPFEVER_BUSYCUT", null);
+            // (0.7.4, the launcher) the game starts by itself only when asked; the percent of a game sent
+            C(!MainForm.LaunchAtStart(false, false, new string[0]), "launcher: the game waits for the player's click by default");
+            C(MainForm.LaunchAtStart(true, false, new string[0]), "launcher: the box ticked, the game starts by itself");
+            C(MainForm.LaunchAtStart(false, true, new string[0]), "launcher: a Steam invitation starts it at once");
+            C(MainForm.LaunchAtStart(false, false, new[] { "--updated", "--launch" }), "launcher: « Start Transport Fever 3 again » (--launch) starts it at once");
+            Environment.SetEnvironmentVariable("MPFEVER_AUTOLAUNCH", "1");
+            C(MainForm.LaunchAtStart(false, false, new string[0]), "launcher: MPFEVER_AUTOLAUNCH=1, always, as before");
+            Environment.SetEnvironmentVariable("MPFEVER_AUTOLAUNCH", null);
+            C(MainForm.PartsPct(0, 1282) == 0 && MainForm.PartsPct(641, 1282) == 50 && MainForm.PartsPct(1281, 1282) == 99 && MainForm.PartsPct(1282, 1282) == 100,
+                "the percent of a game sent: 0, 50, never 100 before its last part, 100");
+            return ok;
         }
 
         /// <summary>A player's connection cut while both sides keep sending (the host to a player it waits for, the player into

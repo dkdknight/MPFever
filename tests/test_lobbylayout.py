@@ -164,7 +164,8 @@ check(run("return COL[1].c[1].kind == 'picture' and COL[1].c[3].c[1].kind == 'co
 check(run('local ok = false walk(COL[1], function(n) if n.kind == "text" and n.t:find("Sharing on", 1, true) then ok = true end end) return ok') is True,
       "beside the picture: the rules in one line")
 check(run("return COL[5].kind == 'scroll' and COL[5].size[2] == LOBBY_H - PIC_H - 12 - 40 - 8") is True, "the section in a scroll area filling the column")
-check(run("return rowCount()") == 3, "Rules: three rows", run("return rowCount()"))
+# (0.7.4: the auction's kind and its minutes, two rows more)
+check(run("return rowCount()") == 5, "Rules: five rows (start money, sharing, bankruptcy, the auction's kind and minutes)", run("return rowCount()"))
 check(run("return labelWidths()") == str(run("return LABEL_W")), "Rules: one width of label column", run("return labelWidths()"))
 check(run('return btn("2 M").primary and btn("On").primary and btn("12 months").primary and not btn("5 M").primary') is True,
       "Rules: the current values lit")

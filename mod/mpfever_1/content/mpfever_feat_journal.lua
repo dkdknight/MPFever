@@ -190,6 +190,13 @@ M.OPTIONS = {
 M.EVENTS = { f_journal_camreq = true, f_journal_cam = true, f_journal_camend = true, f_journal_share = true }
 
 M.TAB = { id = "journal", title = { "Journal", "Journal" } }
+-- (0.7.4) the page's « How does it work? », at its end in the Hub (see the window's U.featTabRows)
+M.HELP = {
+	{ "Le journal liste ce que chaque joueur construit, démolit, achète et vend, le plus récent en premier. Le chat dit seulement qui a démoli ce qu'un autre avait construit.",
+		"The journal lists what each player builds, demolishes, buys and sells, the latest first. The chat only tells who demolished what another one had built." },
+	{ "Avec les options de l'hôte, la fenêtre d'une gare ou d'une construction montre aussi qui l'a construite, et un bouton amène la caméra là où regarde un autre joueur (chacun peut le refuser).",
+		"With the host's options, a station's or a construction's window also shows who built it, and a button takes the camera where another player looks (each one may refuse it)." },
+}
 
 -- ------------------------------------------------------------------ small helpers (plain Lua, the same on every game)
 

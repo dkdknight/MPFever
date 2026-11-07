@@ -905,6 +905,9 @@ check(run(A2, 'return st.co.stationRule["sg:Mine"] ~= nil and st.co.vstop ~= nil
 run(A2, '''
 for _, n in ipairs({ 40, 41, 42 }) do OWN[n + OFF] = P1 end
 st.co.list[1].gone = nil
+-- (0.7.4: the auction of 0.7.3, one lot after the other: the host's rule "serial")
+st.co.rules = st.co.rules or {}
+st.co.rules.auction = "serial:5"
 E.bankrupt(st, st.co.list[1], ECOENV, 1)
 E.event(st, "co_bid", { seq = st.co.auction.seq, lot = 1, amount = 100000, mpfCo = 2, mpfFrom = "Bob#1" }, ECOENV)
 BEFORE = BAL[P2]

@@ -1068,6 +1068,15 @@ end
 -- window does not give falls back to a text.
 M.SHOW_W = 90                 -- the room a line keeps for its "Show" button (pixels)
 M.NUM_W = 92                  -- the width of a number column of the totals
+M.HELP = {
+	{ "Les parts de marché comparent ce que chaque entreprise transporte dans chaque ville : les voyageurs qui vont vers la ville, en partent ou y circulent (en moyenne sur six mois), et les marchandises livrées à la ville sur six mois. L'hôte les mesure chaque mois de jeu.",
+		"The market shares compare what each company carries in each town: the passengers going to, from and within the town (on average over six months), and the goods delivered to the town over six months. The host measures them every game month." },
+	{ "Le tableau donne les totaux de chaque entreprise ; cliquez sur le titre d'une colonne pour le trier par elle. Les barres montrent la part de chacune.",
+		"The table gives each company's totals; click a column's title to sort it by that column. The bars show each one's share." },
+	{ "Plus bas, chaque ville où vous êtes, avec l'entreprise en tête et sa part ; « Voir » amène la caméra sur la ville. « Toutes les villes » montre aussi celles où vous n'êtes pas.",
+		"Further down, each town where you are, with the leading company and its share; « Show » takes the camera to the town. « All the towns » shows the others too." },
+}
+
 function M.ui(u)
 	local out = {}
 	if type(u) ~= "table" or not u.text then return out end
@@ -1091,6 +1100,25 @@ function M.ui(u)
 				for _, r in ipairs(b.rows) do lines[#lines + 1] = r end
 				local widths = { math.max(120, W - 4 * M.NUM_W) }
 				for k = 2, #b.headers do widths[k] = M.NUM_W end
+				if u.rich and b.ids and not u.oldMenus and u.button then
+					-- (0.7.4, the menus redone: sorted by a click on a column's head, a second click back to the first order)
+					local order = {}
+					for i = 1, #b.rows do order[i] = i end
+					local col = M.sortCol
+					if col and col >= 2 and col <= #b.headers then
+						local function val(i) return tonumber(tostring(b.rows[i][col] or ""):match("[%d%.]+")) or -1 end
+						table.sort(order, function(x, y) if val(x) ~= val(y) then return val(x) > val(y) end return x < y end)
+					end
+					local head = { b.headers[1] }
+					for k = 2, #b.headers do
+						local kk = k
+						head[k] = u.button(b.headers[k], function() M.sortCol = (M.sortCol == kk) and nil or kk end, col == k)
+					end
+					lines = { head }
+					local ids2 = {}
+					for _, i in ipairs(order) do lines[#lines + 1] = b.rows[i]; ids2[#ids2 + 1] = b.ids[i] end
+					b = setmetatable({ ids = ids2 }, { __index = b })
+				end
 				if u.rich and b.ids then
 					-- (0.6, the Hub: this player's company on a band of its own, then the shares as bars in the companies' colours)
 					local ids, me = b.ids, b.me
@@ -1134,6 +1162,12 @@ function M.ui(u)
 			node = button(b.text, function() M.showAll = not M.showAll; if u.refresh then u.refresh() end end)
 		end
 		if node ~= nil then out[#out + 1] = node end
+	end
+	-- (0.7.4: « How does it work? » at the end of the page)
+	if u.rich and not u.oldMenus and u.help and u.add then
+		for _, n in ipairs(out) do u.add(n) end
+		pcall(u.help, "market", { M.HELP[1], M.HELP[2], M.HELP[3] })
+		return {}
 	end
 	return out
 end

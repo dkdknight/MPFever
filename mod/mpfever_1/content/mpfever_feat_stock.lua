@@ -878,6 +878,8 @@ function M.ui(u)
 	local out = {}
 	local function add(w) if w ~= nil then out[#out + 1] = w; if u.add then u.add(w) end end end
 	local function title(s) add((u.title and u.title(s)) or (u.section and u.section(s)) or u.text(s)) end
+	-- (0.7.4, the menus redone: a card a company, see M.uiCards; the window's old pages asked: the Hub's page of 0.7.3)
+	if u.rich and u.card and u.stats and u.add and not u.oldMenus then return M.uiCards(u, v, myBal, now) end
 	if u.rich and u.card and u.table and u.add then return M.uiRich(u, v, myBal, now) end
 	title(T("Bourse", "Stock market"))
 	add(u.muted(T("Chaque entreprise a 10 actions. Prix = valeur / 10 ; valeur = argent - prêts + revente des véhicules, mesurée par l'hôte chaque mois. L'argent d'un achat va à l'entreprise ; au-delà de 50 %, on rachète toute l'entreprise.",
@@ -992,6 +994,75 @@ function M.uiRich(u, v, myBal, now)
 		add(u.card(fmt("%s. %s", r.rank, r.name) .. (r.mine and (" " .. T("(vous)", "(you)")) or ""), kids, { color = (u.coColor and u.coColor(r.id)) or r.id,
 			tint = r.mine and "info" or nil }))
 	end
+	return {}
+end
+
+-- (0.7.4, the menus redone) the tab in the Hub with each company shown once (0.7.3 showed it three times: the table, the bars and a
+-- card): a card a company, by rank, its figures as boxes (value, share and its change, dividend, your shares), what is on the
+-- market, and what your company may do there (the same buttons and requests as M.uiRich)
+M.TX = {
+	help1 = { "Chaque entreprise a 10 actions. Leur prix est la valeur de l'entreprise divisée par 10 ; la valeur, mesurée par l'hôte chaque mois, est l'argent moins les prêts, plus la revente des véhicules. Vous pouvez acheter au plus 2 actions d'une entreprise par mois.",
+		"Every company has 10 shares. Their price is the company's value divided by 10; the value, measured by the host every month, is the money less the loans, plus the vehicles' resale value. You may buy at most 2 shares of a company a month." },
+	help2 = { "L'argent d'un achat va à l'entreprise dont vous achetez l'action. Chaque mois, une part du résultat est versée en dividendes aux actionnaires. Vendre une action vous rend son prix du moment.",
+		"The money of a purchase goes to the company whose share you buy. Every month, a part of the result is paid as dividends to the shareholders. Selling a share gives you its price of the moment." },
+	help3 = { "Au-delà de 5 actions sur 10, vous rachetez toute l'entreprise, à son prix plus la prime de rachat (un second clic confirme). Une entreprise nouvelle est protégée quelques mois. Le chef de votre entreprise est prévenu quand une autre en détient beaucoup.",
+		"Beyond 5 shares out of 10 you take the whole company over, at its price plus the takeover premium (a second click confirms). A new company is protected for a few months. Your company's chief is warned when another one holds many of its shares." },
+}
+function M.uiCards(u, v, myBal, now)
+	local T = u.T or M.T
+	local money = u.money or M.money
+	local W = tonumber(u.W) or 556
+	local add = u.add
+	add(u.title(T("Bourse", "Stock market")))
+	add(u.muted(v.optText))
+	if v.me > 0 then
+		add(u.gap(6))
+		add(u.stats({ { T("Votre portefeuille", "Your portfolio"), money(v.portfolio.value) }, { T("Dividendes reçus", "Dividends received"), money(v.portfolio.got) } }, 220))
+		for _, h in ipairs(v.holders) do
+			local s = fmt(T("%s détient %s actions sur 10 de votre entreprise.", "%s holds %s of the 10 shares of your company."), h.name, h.n)
+			add(h.alert and u.text(s, "warning") or u.muted(s))
+		end
+	end
+	add(u.title(T("Classement par valeur", "Ranking by value")))
+	-- (a box is its width plus its padding: four of them and their gaps in the card's width)
+	local bw = math.max(100, math.floor((W - 30) / 4) - 22)
+	for _, r in ipairs(v.rows) do
+		local change = r.change and ((r.change >= 0 and "+" or "") .. tostring(r.change) .. " %") or nil
+		local kids = {
+			u.stats({ { T("Valeur", "Value"), money(r.value) },
+				{ T("Action", "Share") .. (change and ("  " .. change) or ""), r.listed and money(r.price) or "-", r.change and (r.change > 0 and "success" or (r.change < 0 and "error" or nil)) or nil },
+				{ T("Dividende", "Dividend"), money(r.div) }, { T("Vos actions", "Your shares"), r.held .. "/10" } }, bw),
+			u.muted(fmt(T("Sur le marché : %s. Propres : %s.", "On the market: %s. Own: %s."), r.float, r.own)),
+		}
+		if r.status then kids[#kids + 1] = u.muted(r.status) end
+		if r.note then kids[#kids + 1] = u.muted(r.note) end
+		local buttons = {}
+		if r.buy then
+			buttons[#buttons + 1] = u.button(r.mine and fmt(T("Racheter 1 action (%s)", "Buy 1 back (%s)"), money(r.buy.cost)) or fmt(T("Acheter 1 (%s)", "Buy 1 (%s)"), money(r.buy.cost)),
+				function() u.request("buy", { co = r.id, n = 1 }) end, true, r.buy.allowed)
+		end
+		if r.takeover then
+			local armed = M.armed and M.armed.co == r.id and now - M.armed.at < 10
+			local label = armed and fmt(T("Confirmer le rachat (%s)", "Confirm the takeover (%s)"), money(r.takeover.total))
+				or fmt(T("Racheter l'entreprise (%s)", "Take over (%s)"), money(r.takeover.total))
+			buttons[#buttons + 1] = u.button(label, function()
+				if M.armed and M.armed.co == r.id and os.clock() - M.armed.at < 10 then
+					M.armed = nil
+					u.request("takeover", { co = r.id, n = r.takeover.n, max = r.takeover.total })
+				else
+					M.armed = { co = r.id, at = os.clock() }
+				end
+			end, armed, r.takeover.allowed and (myBal == nil or myBal >= r.takeover.total))
+		end
+		if r.sell then
+			buttons[#buttons + 1] = u.button(T("Vendre 1", "Sell 1"), function() u.request("sell", { co = r.id, n = 1 }) end, false, true)
+		end
+		if #buttons > 0 then kids[#kids + 1] = u.gap(4); kids[#kids + 1] = u.row(buttons) end
+		add(u.gap(8))
+		add(u.card(fmt("%s. %s", r.rank, r.name) .. (r.mine and (" " .. T("(vous)", "(you)")) or ""), kids, { color = (u.coColor and u.coColor(r.id)) or r.id,
+			tint = r.mine and "info" or nil }))
+	end
+	if u.help then pcall(u.help, "stock", { M.TX.help1, M.TX.help2, M.TX.help3 }) end
 	return {}
 end
 

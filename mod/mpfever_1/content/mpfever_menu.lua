@@ -120,6 +120,9 @@ local function noteSaveDirs(list)
 	end
 end
 
+-- (0.7.4) The host's copies a resynchronisation made (« MPFever resync ») are left out, unless the box under the list is ticked:
+-- players asked why the game they had just played was not there. MPFEVER_MENU_RESYNC=1: shown at first (tests)
+local function isResyncSave(name) return type(name) == "string" and name:find("^MPFever resync") ~= nil end
 local function listSaves()
 	local out = {}
 	local ok, err = pcall(function()
@@ -128,9 +131,10 @@ local function listSaves()
 		local all = app.findAllSavegames(ns) or {}
 		pcall(noteSaveDirs, all)
 		for _, s in ipairs(all) do
-			-- one entry per savegame name, the most recent file
+			-- one entry per savegame name, the most recent file (the resynchronisations' copies too: the Host tab shows them
+			-- when asked)
 			local name = s.saveName
-			if name and not name:find("^MPFever resync") and not name:find("^autosave_") and not name:find("^crash_") then
+			if name and not name:find("^autosave_") and not name:find("^crash_") then
 				local cur = byName[name]
 				if not cur or (s.timestamp or 0) > (cur.timestamp or 0) then byName[name] = s end
 			end
@@ -1077,6 +1081,14 @@ local function setup()
 			local shareNote = r.share and T("Chaque entreprise décide si ses voies, gares, arrêts et dépôts sont privés, ouverts ou payants.", "Each company decides whether its tracks, stations, stops and depots are private, open or paying.")
 				or T("Tout est ouvert et gratuit pour toutes les entreprises : voies, gares, arrêts et dépôts.", "Everything is open and free for every company: tracks, stations, stops and depots.")
 			local bankLabel = T("Faillite d'une entreprise endettée après :", "A company in debt goes bankrupt after:")
+			local auLabel = T("Vente aux enchères d'une faillite :", "Auction of a bankruptcy:")
+			local auMinLabel = T("Durée de la vente :", "Length of the sale:")
+			local auCur = (r.auMode == "company") and "company" or "assets"
+			local function auShow(v) return v == "company" and T("L'entreprise entière", "The whole company") or T("Les actifs, tous en même temps", "The assets, all at once") end
+			local function minShow(v) return (T("%s min", "%s min"):gsub("%%s", tostring(v))) end
+			local auNote = auCur == "company"
+				and T("Une seule vente : tout ce que possédait l'entreprise (lignes, véhicules, gares, dépôts, voies, routes) au plus offrant.", "One sale: everything the company owned (lines, vehicles, stations, depots, tracks, roads) to the best bidder.")
+				or T("Chaque ligne (avec ses véhicules), chaque gare et chaque dépôt en vente en même temps, chacun son prix, un seul compte à rebours.", "Each line (with its vehicles), each station and each depot for sale at once, each with its own price, one clock for all.")
 			if c.host then
 				s[#s + 1] = row(startLabel, picks({ 0, 500000, 1000000, 2000000, 5000000, 10000000, 20000000 }, r.start, r.fmt,
 					function(v) request("startmoney", tostring(v), c.playerName()) end), startNote)
@@ -1084,12 +1096,21 @@ local function setup()
 				s[#s + 1] = row(shareLabel, picks({ 1, 0 }, r.share and 1 or 0, onOff, function(v) request("share", tostring(v), c.playerName()) end), shareNote)
 				s[#s + 1] = gap(1, 12)
 				s[#s + 1] = row(bankLabel, picks({ 0, 3, 6, 12, 24 }, r.months, months, function(m) request("bankrupt", tostring(m), c.playerName()) end))
+				-- (0.7.4) the auction of a bankrupt company: its lots all at once, or the whole company in one lot; how long it lasts
+				s[#s + 1] = gap(1, 12)
+				s[#s + 1] = row(auLabel, picks({ "assets", "company" }, auCur, auShow, function(v) request("auction", v .. ":" .. tostring(r.auMin or 5), c.playerName()) end), auNote)
+				s[#s + 1] = gap(1, 12)
+				s[#s + 1] = row(auMinLabel, picks({ 3, 5, 10 }, r.auMin or 5, minShow, function(v) request("auction", auCur .. ":" .. tostring(v), c.playerName()) end))
 			else
 				s[#s + 1] = row(startLabel, value(r.fmt(r.start)), startNote)
 				s[#s + 1] = gap(1, 12)
 				s[#s + 1] = row(shareLabel, value(onOff(r.share and 1 or 0)), shareNote)
 				s[#s + 1] = gap(1, 12)
 				s[#s + 1] = row(bankLabel, value(months(r.months)))
+				s[#s + 1] = gap(1, 12)
+				s[#s + 1] = row(auLabel, value(auShow(auCur)), auNote)
+				s[#s + 1] = gap(1, 12)
+				s[#s + 1] = row(auMinLabel, value(minShow(r.auMin or 5)))
 			end
 			return s
 		end
@@ -1242,6 +1263,7 @@ local function setup()
 		local tab = react.useState("host")
 		local saves = react.useStateLazy(listSaves)
 		local filter = react.useState("")
+		local showResync = react.useState(os.getenv("MPFEVER_MENU_RESYNC") == "1")
 		local defaultName = st0.name
 		if not defaultName or defaultName == "" then
 			local ok, n = pcall(function() return app.getUserProfile():getUserName() end)
@@ -1657,8 +1679,11 @@ local function setup()
 			-- (0.6.3: what is read here, for the lobby in sections, see lobbyColumn)
 			local rulesView
 			if separate then
-				local rStart, rShare, rMonths = (st.rules or ""):match("^(%d+)|(%d)|(%d+)$")
+				local rStart, rShare, rMonths = (st.rules or ""):match("^(%d+)|(%d)|(%d+)")
 				rStart, rMonths = tonumber(rStart) or 2000000, tonumber(rMonths) or tonumber(st.bankrupt) or 12
+				-- (0.7.4: and the auction of a bankrupt company, "mode:minutes")
+				local auMode, auMin = (st.rules or ""):match("|(%a+):(%d+)$")
+				auMode, auMin = auMode or "assets", tonumber(auMin) or 5
 				local shareOn = rShare ~= "0"
 				local function fmt(n)
 					if n >= 1000000 then return (string.format("%g", n / 1000000)) .. " M" end
@@ -1669,7 +1694,7 @@ local function setup()
 				local summary = T("Départ : %s", "Start: %s"):gsub("%%s", fmt(rStart)) .. "  ·  "
 					.. (shareOn and T("Partage activé", "Sharing on") or T("Partage désactivé", "Sharing off")) .. "  ·  "
 					.. (rMonths == 0 and T("Pas de faillite", "No bankruptcy") or (T("Faillite : %s mois", "Bankruptcy: %s months"):gsub("%%s", tostring(rMonths))))
-				rulesView = { start = rStart, share = shareOn, months = rMonths, fmt = fmt, summary = summary }
+				rulesView = { start = rStart, share = shareOn, months = rMonths, fmt = fmt, summary = summary, auMode = auMode, auMin = auMin }
 				side[#side + 1] = gap(1, 12)
 				side[#side + 1] = text(T("Règles de la partie", "Game rules"), "font-scale-title-4", sw)
 				side[#side + 1] = text(summary, "font-scale-body", sw)
@@ -1725,6 +1750,14 @@ local function setup()
 					choices(T("Faillite d'une entreprise endettée après :", "A company in debt goes bankrupt after:"), { 0, 3, 6, 12, 24 }, rMonths,
 						function(m) return m == 0 and T("Jamais", "Never") or (T("%s mois", "%s months"):gsub("%%s", tostring(m))) end,
 						function(m) request("bankrupt", tostring(m), playerName()) end)
+					-- (0.7.4) the auction of a bankrupt company
+					panel[#panel + 1] = gap(1, 10)
+					choices(T("Vente aux enchères d'une faillite :", "Auction of a bankruptcy:"), { "assets", "company" }, auMode == "serial" and "assets" or auMode,
+						function(v) return v == "company" and T("L'entreprise entière", "The whole company") or T("Les actifs, tous en même temps", "The assets, all at once") end,
+						function(v) request("auction", v .. ":" .. tostring(auMin), playerName()) end)
+					choices(T("Durée de la vente :", "Length of the sale:"), { 3, 5, 10 }, auMin,
+						function(v) return (T("%s min", "%s min"):gsub("%%s", tostring(v))) end,
+						function(v) request("auction", (auMode == "serial" and "assets" or auMode) .. ":" .. tostring(v), playerName()) end)
 					if #ais > 0 then
 						panel[#panel + 1] = gap(1, 10)
 						panel[#panel + 1] = text(T("Argent de départ des entreprises de l'ordinateur", "Start money of the computer companies"), "font-scale-title-4", w)
@@ -2112,8 +2145,10 @@ local function setup()
 			body[#body + 1] = gap(1, 12)
 			local list = {}
 			local f = (filter:old() or ""):lower()
+			local nResync = 0
+			for _, s in ipairs(saves:old()) do if isResyncSave(s.saveName) then nResync = nResync + 1 end end
 			for _, s in ipairs(saves:old()) do
-				if f == "" or tostring(s.saveName):lower():find(f, 1, true) then
+				if (f == "" or tostring(s.saveName):lower():find(f, 1, true)) and (showResync:old() or not isResyncSave(s.saveName)) then
 					list[#list + 1] = SaveTile{
 						meta = { localKey = "save-" .. tostring(s.saveName) },
 						save = s,
@@ -2151,6 +2186,20 @@ local function setup()
 				},
 			})
 			body[#body + 1] = gap(1, 6)
+			-- (0.7.4) the resynchronisations' copies, hidden unless asked, with what they are
+			if nResync > 0 or showResync:old() then
+				body[#body + 1] = box(H, {
+					builtin.CheckBox{
+						value = showResync:old() and 1 or 0,
+						label = T("Afficher les sauvegardes de resynchronisation", "Show the resynchronisation savegames") .. " (" .. nResync .. ")",
+						onValueChange = function(v) showResync:set(v == 1) end,
+					},
+					gap(12, 1),
+					text(T("« MPFever resync » est la copie de la partie de l'hôte que MPFever fait à chaque resynchronisation (la dernière remplace la précédente). Elle est masquée d'habitude ; cochez pour la retrouver, par exemple pour reprendre une partie après une coupure.",
+						"« MPFever resync » is the copy of the host's game MPFever makes at every resynchronisation (the last one replaces the one before). It is usually hidden; tick to find it, for instance to go on with a game after a cut."), "font-scale-body", PAGE_W - 480),
+				})
+				body[#body + 1] = gap(1, 6)
+			end
 			if #list == 0 then
 				body[#body + 1] = box(H, { text(#saves:old() == 0 and (newGame.on and T("Aucune sauvegarde trouvée : créez une nouvelle partie avec le bouton « Nouvelle partie… », MPFever l'enregistre et ouvre son salon.", "No savegame found: create a new game with the « New game… » button, MPFever saves it and opens its lobby.")
 						or T("Aucune sauvegarde trouvée. Lancez une partie en solo et sauvegardez-la pour pouvoir l'héberger.", "No savegame found. Start a single-player game and save it to host it."))

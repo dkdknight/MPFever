@@ -54,6 +54,13 @@ M.OPTIONS = {
 -- ("name|day;..."), pubfriends (Steam takes the host's friends only). Its buttons are the requests of the lobby's (admit,
 -- unban: launcher/PublicGames.cs's PublicMenuRequest); Kick and Ban are on the players' lines of the Session tab.
 M.TAB = { id = "public", title = { "Partie publique", "Public game" } }
+-- (0.7.4) the page's « How does it work? », at its end in the Hub (see the window's U.featTabRows)
+M.HELP = {
+	{ "Une partie publique apparaît dans la liste des parties de MPFever avec votre identifiant Steam : tout joueur de la même version peut la rejoindre par Steam, sans port à ouvrir.",
+		"A public game shows in MPFever's list of games with your Steam id: any player of the same version may join it through Steam, without opening a port." },
+	{ "L'hôte peut accepter chaque arrivée, exclure ou bannir un joueur (les bannis sont refusés dans ses parties suivantes aussi), et limiter le nombre de joueurs.",
+		"The host may approve every arrival, kick or ban a player (the banned ones are refused in the host's next games too), and limit the number of players." },
+}
 
 -- the list's state as the host reads it: its text and its class
 local function listState(p, T)
