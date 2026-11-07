@@ -2784,8 +2784,9 @@ namespace MPFever
                             lock (sessionGate) { started = false; pauseAt = null; speed = 0; }
                             HostSend(Msg.Make("tomenu", hostName, "{[\"seq\"]=" + DateTime.Now.Ticks + "}"));
                             companyMode = "shared";
-                            bool back = WaitUntil(() => { int n; lock (players) n = players.Count;
-                                lock (clocks) return n >= 2 && clocks.Count >= 2 && clocks.Values.Select(c => c.T).Distinct().Count() == 1; }, 600);
+                            // ((0.7.5) both games said hello again: their clocks come only once the session is started, so
+                            // the test waited 600 s for them and never started it)
+                            bool back = WaitUntil(() => { int n; lock (players) n = players.Count; return n >= 2; }, 600);
                             resyncing = false;
                             AutoLine(back ? "both games back with the savegame: shared session" : "FAILED: the games did not come back from the main menu");
                             if (back)

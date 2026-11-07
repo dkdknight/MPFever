@@ -2,6 +2,27 @@ MPFever - Changelog
 ===================
 
 0.7.5 - (in progress)
+  - FIX (crash, the user's of 2026-10-28, known since 0.5.12: "restart the game after a session of one company per player"):
+    a game that played a session of one company per player, then joined a session of one company for everybody without
+    closing the game, crashed right after the load ("it != components.end()" from UI::CSelector). Reproduced at every try by
+    the autotest "toshared" (fixed too: it waited for the games' clocks, which come only once the session is started). The
+    native module gave the new world's interface this machine's company of the session before (an entity that is no company
+    there) while that interface made itself, and the money popups kept it. The native module now forgets this machine's
+    company, the savegame's and the others' as soon as a game is being loaded (its first copy into a fresh state, before its
+    interface is made); the mod says them again within seconds in a session of companies. Also: the interface's companies.txt,
+    in the same session folder until the game closes, was the session before's in a session of one company for everybody: the
+    bridge writes "no companies" there, and the interface leaves a file naming an entity that is no company in its world.
+    MPFEVER_LOADKEEPLOCAL=1 / MPFEVER_COFILEOLD=1: as before. Test: tests/test_cofile075.py.
+  - EXPERIMENTAL, OFF by default (computer companies, the user 2026-11-07: "give it what it cannot do yet"): passenger
+    trains between two towns. A computer company builds, one at a time as its cargo railways, a station near each of two
+    towns 3 to 14 km apart (the biggest pair first, none with a passenger station of any company near its centre, nor in a
+    player's territory), the track between them, a depot, a line whose two stops load the passengers and a train of coaches;
+    more trains where passengers wait, trains sold where the line loses money (as its cargo trains). Its stations are the
+    game's own template (one track, 4 platforms, main building, stairs, roofs). Off because the way of a track between two
+    towns took the planner more than its 2 s (tests px1 and px2: the plan given up, the host's game held 2 s each time): the
+    planner must first spread its work over several frames. Its plan already goes in three looks (each station's place, then
+    the track's way), at most 3 pairs of towns are tried in a session, a minute apart. MPFEVER_AIPAXRAIL=1: on, every level;
+    =hard: the Hard level only. Test: tests/test_aipaxrail075.py.
   - FIX (hitches every 10 s, the checks): a check held the simulation 0.27 to 0.41 s on a big world (Test Lag Rp: 5 874
     constructions, 7 267 segments, two games on one PC), 0.25 to 0.31 s on the user's server (2026-11-07). Measured part by
     part (MPFEVER_HASHPROF=1 times each step of the heaviest parts, MPFEVER_HASHCOSTLOG=1 logs every check's costs): the

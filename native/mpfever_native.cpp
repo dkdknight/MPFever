@@ -1587,6 +1587,24 @@ static void ApplyLocalPlayer(const char* why)
     Buf b; b.str("local player ").dec(cur).str(" -> ").dec(want).str(" (").str(why).str(", state ").hex((u64)g_slot).str(")"); LogLine(b);
 }
 
+static bool LoadKeepLocal()
+{
+    static long v = -1;
+    if (v < 0) { char e[4]; v = (GetEnvironmentVariableA("MPFEVER_LOADKEEPLOCAL", e, 3) == 1 && e[0] == '1') ? 1 : 0; }
+    return v == 1;
+}
+// a game is being loaded (its first copy into a fresh state, see ReplDetour): this machine's company, the savegame's and the
+// others' of the game before are forgotten until the mod says them again
+static void DropAtLoad()
+{
+    long lp = _InterlockedExchange(&g_localPlayer, 0);
+    if (lp) { NoteStale(0, lp); Buf b; b.str("local player ").dec(lp).str(" dropped: a game is being loaded"); LogLine(b); }
+    if (g_nOthers) { Buf b; b.str("other companies dropped: a game is being loaded"); LogLine(b); }
+    g_nOthers = 0;
+    g_nDone = 0; g_doneNext = 0;
+    DropCanon("a game is being loaded");
+}
+
 static void DecisionCopy(void* src, void* dst);
 static bool g_replOn = false;
 extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
@@ -1603,7 +1621,17 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
     if (src && dst && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) { g_gsWord[0] = (u64)src + 0x20c; g_gsWord[1] = (u64)dst + 0x20c; }
     // (a game being loaded: its first copy goes into a fresh state, before its interface and tools are made and seconds before its
     // first iteration; the interface word of the game before is forgotten there, not at that iteration, see g_stalePlayer)
-    if (dst && before == 0xFFFFFFFFu && (u32)((uptr)_ReturnAddress() - g_base) != RVA_REPL_LOOP) g_uiWord = 0;
+    if (dst && before == 0xFFFFFFFFu && (u32)((uptr)_ReturnAddress() - g_base) != RVA_REPL_LOOP) {
+        g_uiWord = 0;
+        // (0.7.5) and this machine's company, the savegame's and the other companies' with it: they belong to the game before.
+        // Kept until the first iteration of the new one (see ApplyLocalPlayer), the interface read this machine's company of the
+        // game before while it made itself, and the money popups' HUD item keeps the player it is made for: a client that played
+        // one company per player, then joined a session of one company for everybody without closing the game, crashed at its
+        // first popup right after the load ("it != components.end()" from UI::CSelector, 0x789bf0 reading the popups' positions
+        // of player 108734, the user's crash of 2026-10-28, autotests ts2, ts3 and ts4 of 2026-11-07). The mod says them again
+        // within seconds in a session of companies. MPFEVER_LOADKEEPLOCAL=1: kept, as before
+        if (!LoadKeepLocal()) DropAtLoad();
+    }
     u64 r = g_replOrig(src, dst, flag);
     if (dst && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) g_uiWord = (long)*(u32*)((u8*)dst + 0x20c);
     // (the platform-decision flags of the state just simulated, into the one about to be)

@@ -73,6 +73,13 @@ local RL = { MIN = 2500, MAX = 15000, LEN = 3, STEP = 60, GRADE = 0.03, STATION 
 	DEPOT = "::/depots/rail/rail_depot.con", DEPOT_EXIT = { x = -12.2, y = -90 }, POWER = 400, WAGONS = 6,
 	OFFSETS = { 0, 0.12, -0.12, 0.25, -0.25, 0.4, -0.4 }, CELL = 100, CROSS = 300, ALONG = 150, LEG = 600, LEAD = 500, RADIUS = 80, TRIES = 3, SPAN = 50, CLEAR = 7, WATER = 300, WET = 400, IDLE_TRIES = 20,
 	RAMP = 0.07, LOOK = 7200, MAXTRAINS = 3, NEAR = 8, NEARCELL = 20, MINPROD = tonumber(os.getenv("MPFEVER_AIRAILMIN") or "") or 300, LOSSLOOKS = 5 }
+-- (0.7.5) the computer companies' passenger trains between two towns, see "passenger trains" below: towns RP.MIN to RP.MAX
+-- apart with RP.POP places at least (homes, shops, offices), the company's stations RP.RINGS metres from a town's centre, a
+-- town whose centre has a passenger station of any company within RP.NEAR metres left
+-- (RP.LOOK frames between two looks: each reads every construction of the map)
+-- (RP.PLACE seconds at most for one station's place: the dry runs near a town mostly meet its houses, and the first plan of
+-- both stations and their track in one look held the host's game over 2 s, test px1 of 2026-11-07)
+local RP = { MIN = 3000, MAX = 14000, POP = 300, RINGS = { 300, 400, 500, 650, 800 }, NEAR = 1200, TOWNS = 12, LOOK = 300, PLACE = 0.6, FAILS = 3 }
 -- (0.6.9) the time a railway's plan may take on the host's game, see RL.corridor (MPFEVER_AIRAILBUDGET seconds, 2; 0: no limit,
 -- as before)
 RL.BUDGET = tonumber(os.getenv("MPFEVER_AIRAILBUDGET") or "") or 2
@@ -4586,20 +4593,22 @@ end
 -- (RL.stationPlace, the second one turned towards the first), their ends facing each other (80 m out of each centre), and some
 -- way between those ends clear of what is in its way (RL.trackProposal: towns, slopes, bridges) that the engine's dry run lets
 -- through too. True, or false and why
-function RL.corridor(E, co, from, to, a)
+function RL.corridor(E, co, from, to, a, place)
 	-- (0.6.9) within RL.BUDGET s: the plan of a long railway on a big map held the host's game 17 s (the others stopped waiting
 	-- for its builds and applied them late, test fz1 of 2026-11-02; 0.6.8's st2 too); a plan that takes longer is left
 	RL.deadline = RL.BUDGET > 0 and os.clock() + RL.BUDGET or nil
-	local okC, r1, r2 = pcall(RL.corridorIn, E, co, from, to, a)
+	local okC, r1, r2 = pcall(RL.corridorIn, E, co, from, to, a, place)
 	RL.deadline = nil
 	if not okC then error(r1, 0) end
 	return r1, r2
 end
-function RL.corridorIn(E, co, from, to, a)
-	local pa = RL.stationPlace(E, co, from, a)
-	if not pa then return false, "no place for a station near industry " .. from.e end
-	local pb = RL.stationPlace(E, co, to, a + math.pi)
-	if not pb then return false, "no place for a station near industry " .. to.e end
+function RL.corridorIn(E, co, from, to, a, place)
+	-- ((0.7.5) place: where the stations go, RL.stationPlace (near an industry) unless told otherwise (RP.place, near a town))
+	place = place or RL.stationPlace
+	local pa = place(E, co, from, a)
+	if not pa then return false, "no place for a station near " .. (from.town and "town " or "industry ") .. from.e end
+	local pb = place(E, co, to, a + math.pi)
+	if not pb then return false, "no place for a station near " .. (to.town and "town " or "industry ") .. to.e end
 	local u = { x = math.cos(a), y = math.sin(a) }
 	local back = { x = -u.x, y = -u.y }
 	local p0 = { x = pa.x + u.x * 80, y = pa.y + u.y * 80 }
@@ -4693,6 +4702,12 @@ end
 function RL.underway(E, co, lines)
 	local A = E.G.AI
 	local stations = RL.mine(E, co, "modular_station")
+	-- ((0.7.5) its passenger stations are RP's, see "passenger trains")
+	do
+		local keep = {}
+		for _, s in ipairs(stations) do if not RP.isPax(s.c) then keep[#keep + 1] = s end end
+		stations = keep
+	end
 	if #stations == 0 then return nil, stations end
 	local inLine = {}
 	for _, l in ipairs(lines) do for _, g in ipairs(l.groups) do inLine[g] = l end end
@@ -5007,6 +5022,8 @@ function RL.manage(E, co, money)
 				local lc = E.C.marshal(api.engine.getComponent(l.e, api.type.ComponentType.LINE))
 				for i, on in pairs(lc.stops[1].stopConfig.load) do if on == true then cargo = i - 1 end end
 			end)
+			-- ((0.7.5) a line of passenger trains: the passengers, see "passenger trains")
+			if cargo == nil and RP.isPaxGroup(E, l.groups[1]) then pcall(function() cargo = api.res.cargoTypeRep.getPassengerCargoTypeId() end) end
 			if cargo then pcall(function() waiting = api.engine.system.simEntityAtTerminalSystem.getLineStopSimEntitiesCount(l.e, 0, cargo) or 0 end) end
 			local bal = lineBalance(E, l.e)
 			local t = cargo and RL.train(E, cargo)
@@ -5109,6 +5126,443 @@ function RL.isRailGroup(E, group)
 		T.railGroup[group] = v
 	end
 	return v
+end
+
+-- ------------------------------------------------------------------ passenger trains (0.7.5)
+-- The user, 2026-11-07: give the computer companies what they cannot do yet. A railway of passengers between two towns, one at
+-- a time, as the freight's (RL.project) and with its parts: two of the company's stations, one near each town (RP.place, on
+-- rings RP.RINGS around the town's centre, on the side of the other town first), the track between them (RL.buildTrack), a depot
+-- behind one of them, a line whose two stops load the passengers, a train of coaches (RL.train for the passengers); RL.manage
+-- adds trains where passengers wait and sells them where the line loses money, as for cargo. The towns: RP.MIN to RP.MAX apart,
+-- RP.POP places at least, the biggest pair first, none with a passenger station of any company near its centre (RP.NEAR m:
+-- the players keep their towns' stations, PvE) nor in a player's territory. EXPERIMENTAL, OFF by default: the way of a track
+-- between two towns (their streets) takes the planner more than RL.BUDGET s (tests px1 and px2 of 2026-11-07: the plan given
+-- up both times, the host's game held 2 s each), and the track's build plans it again without a limit; before it is on, the
+-- planner must take its time over several frames. MPFEVER_AIPAXRAIL=1: on, every level; =hard: the Hard level only (the
+-- host's game decides, the actions go to every game as the company's others). At most RP.FAILS pairs left in a session
+function RP.on()
+	local v = os.getenv("MPFEVER_AIPAXRAIL")
+	if not RL.on() then return false end
+	if v == "1" then return true end
+	if v == "hard" then return LV.name == "hard" end
+	return false
+end
+
+-- whether a modular station's parameters hold a passenger platform (slots 7400000 to 7499999, see RP.stationParams)
+function RP.isPax(c)
+	local yes = false
+	pcall(function()
+		for k in pairs(c.params.modules) do
+			local n = tonumber(k)
+			if n and n >= 7400000 and n < 7500000 then yes = true end
+		end
+	end)
+	return yes
+end
+function RP.isPaxGroup(E, group)
+	local yes = false
+	pcall(function()
+		local sg = E.api.engine.getComponent(group, E.api.type.ComponentType.STATION_GROUP)
+		local con = E.api.engine.system.streetConnectorSystem.getConstructionEntityForStation(sg.stations[1])
+		local c = E.api.engine.getComponent(con, E.api.type.ComponentType.CONSTRUCTION)
+		yes = tostring(c.fileName):find("modular_station", 1, true) ~= nil and RP.isPax(c)
+	end)
+	return yes
+end
+
+-- a passenger station of one track as the game's own template makes it (modular_station.script's createTemplateFn, not a head
+-- station, level 1): its platforms in row 0 (7400000 + 10 j), its track in row 1 (8401000 + 10 j), its main building (and two
+-- side buildings from 3 platforms on) behind the platforms, the stairs at the centre platform, a roof over each platform (but
+-- the end ones from 5 platforms on)
+function RP.stationParams(year, length)
+	local era = year >= 1990 and "c" or year >= 1950 and "b" or "a"
+	local _, _, module = RL.track(year)
+	local s, e = -math.floor(length / 2), math.ceil(length / 2)
+	local mods = {}
+	local k = (e - s) % 2 == 0 and 0 or 2
+	mods[3400000 + 10 * k] = { name = "::/stations/rail/modular_station/main_building_1_era_" .. era .. ".module", variant = 0 }
+	if length > 2 then
+		mods[3400000 + 10 * (k + 1) + 5] = { name = "::/stations/rail/modular_station/side_building_1_era_" .. era .. ".module", variant = 0 }
+		mods[3400000 + 10 * (k - 2) + 5] = { name = "::/stations/rail/modular_station/side_building_1_era_" .. era .. ".module", variant = 0 }
+	end
+	local center = math.floor((e - s) / 2) + s
+	for j = s, e do
+		mods[7400000 + 10 * j] = { name = "::/stations/rail/modular_station/platform_passenger_era_" .. era .. ".module", variant = 0 }
+		mods[8401000 + 10 * j] = { name = module, variant = 0 }
+		if j == center or (e - s > 3 and (j == s + 1 or j == e - 1)) then
+			mods[10800000 + 10 * j] = { name = "::/stations/rail/modular_station/addon_platform_passenger_stairs_era_" .. era .. ".module", variant = 0 }
+		end
+		if (j ~= s and j ~= e) or e - s <= 3 then
+			mods[10400000 + 10 * j] = { name = "::/stations/rail/modular_station/platform_passenger_roof_era_" .. era .. ".module", variant = 0 }
+		end
+	end
+	return { length = length, seed = 0, specialization = 0, trackType = year >= 1930 and 2 or 1, catenary = 1, tracks = 1, year = year, modules = mods }
+end
+
+-- the towns a passenger railway may join: { e, town = true, pos (its homes' centre), size }, the biggest first (RP.TOWNS at most)
+function RP.towns(E)
+	local api = E.api
+	local out = {}
+	local terr = territoryCheck(E)
+	for _, t in ipairs(townsBySize(E)) do
+		if #out >= RP.TOWNS then break end
+		if t.size >= RP.POP then
+			local c = centre(E, t.e, api.type.enum.LandUseType.RESIDENTIAL)
+			if c and not (terr and terr(c.x, c.y)) then out[#out + 1] = { e = t.e, town = true, pos = { x = c.x, y = c.y, z = c.z or 0 }, size = t.size } end
+		end
+	end
+	return out
+end
+
+-- the towns that have a passenger station of any company near their centre (RP.NEAR m)
+function RP.taken(E, towns)
+	local api = E.api
+	local taken = {}
+	for _, e in ipairs(E.R.entitiesWith("CONSTRUCTION")) do
+		local c = api.engine.getComponent(e, api.type.ComponentType.CONSTRUCTION)
+		if c and tostring(c.fileName):find("modular_station", 1, true) and RP.isPax(c) then
+			local m = E.C.marshal(c.transf)
+			local p = { x = m[13], y = m[14] }
+			for _, t in ipairs(towns) do if dist(p, t.pos) < RP.NEAR then taken[t.e] = true end end
+		end
+	end
+	return taken
+end
+
+-- the company's passenger stations, each with its town (the nearest one whose centre is within RP.NEAR + 300 m), its terminals,
+-- its line
+function RP.stations(E, co, lines, towns)
+	local A = E.G.AI
+	local inLine = {}
+	for _, l in ipairs(lines) do for _, g in ipairs(l.groups) do inLine[g] = l end end
+	local out = {}
+	for _, s in ipairs(RL.mine(E, co, "modular_station")) do
+		if RP.isPax(s.c) and not (A.railGone and A.railGone[s.con]) then
+			local best, bd
+			for _, t in ipairs(towns) do
+				local d = dist(s.pos, t.pos)
+				if d < RP.NEAR + 300 and (not bd or d < bd) then best, bd = t, d end
+			end
+			s.town = best
+			s.term = RL.terminals(E, s.con)
+			s.line = s.term and inLine[s.term.group] or nil
+			out[#out + 1] = s
+		end
+	end
+	table.sort(out, function(a, b) return a.con < b.con end)
+	return out
+end
+
+-- the best pair of towns not joined yet: { from, to, d, key }, the smaller town's size times the square root of the distance
+function RP.route(E, towns, taken)
+	local A = E.G.AI
+	local best
+	for i = 1, #towns do
+		for j = i + 1, #towns do
+			local a, b = towns[i], towns[j]
+			local d = dist(a.pos, b.pos)
+			local key = math.min(a.e, b.e) .. "-" .. math.max(a.e, b.e)
+			if d >= RP.MIN and d <= RP.MAX and not taken[a.e] and not taken[b.e] and not ((A.paxTried or {})[key]) then
+				local score = math.min(a.size, b.size) * math.sqrt(d)
+				if not best or score > best.score then best = { from = a, to = b, d = d, key = key, score = score } end
+			end
+		end
+	end
+	return best
+end
+
+-- a place for the company's passenger station near a town, its tracks along a (towards the other town): on rings around the
+-- town's centre, the side of the other town first; a place where a depot fits behind it first (RL.depotRoom)
+function RP.place(E, co, town, a, tag)
+	local params = RP.stationParams(currentYear(E), RL.LEN)
+	local tried, fallback = 0, nil
+	local t0 = os.clock()
+	for _, r in ipairs(RP.RINGS) do
+		for _, side in ipairs({ 0, 1, -1, 2, -2 }) do
+			if os.clock() - t0 > RP.PLACE then return fallback end
+			local b = a + side * math.pi / 4
+			local x, y = town.pos.x + math.cos(b) * r, town.pos.y + math.sin(b) * r
+			tried = tried + 1
+			local free, sp, ctx, cost, why, bits = RL.dry(E, co, RL.STATION, params, x, y, a - math.pi / 2)
+			if free then
+				local place = { sp = sp, ctx = ctx, cost = cost, bits = bits, x = x, y = y, r = r, a = a }
+				if RL.depotRoom(E, co, x, y, a) then return place end
+				fallback = fallback or place
+			elseif tried <= 3 and tag then L(E, "passenger station " .. tag .. " at " .. math.floor(r) .. " m from town " .. town.e .. ": " .. tostring(why):sub(1, 160)) end
+		end
+	end
+	return fallback
+end
+
+function RP.buildStation(E, co, town, a, tag, known)
+	local place = known or RP.place(E, co, town, a, tag)
+	if not place then return false end
+	if not spendOk(E, co, (place.cost or 600000) + 50000, "passenger station " .. tag) then return "dear" end
+	L(E, string.format("passenger station %s near %s: %.0f m from its centre, %s", tag, townName(E, town.e), place.r, place.cost and ("cost " .. math.floor(place.cost)) or "cost unknown"))
+	build(E, co.id, E.api.cmd.makeWorldBuildProposalCmd(place.sp, place.ctx, false, true, true), "passenger station " .. tag, place.bits, { kind = "railstation", pos = { x = place.x, y = place.y, z = 0 } })
+	return true
+end
+
+-- the pair of towns left for good (its track refused RL.TRIES times, no place for a station, no train on sale)
+function RP.leave(E, key, why)
+	local A = E.G.AI
+	A.paxTried = A.paxTried or {}
+	A.paxTried[key] = true
+	A.pax = nil
+	A.paxFailed = (A.paxFailed or 0) + 1
+	if A.paxFailed >= RP.FAILS then L(E, "passenger railways: " .. A.paxFailed .. " pairs of towns left, no other tried in this session") end
+	-- (the next pair a minute later: each plan holds the host's game a little)
+	A.paxNextAt = E.G.frames + 3600
+	L(E, "passenger railway " .. tostring(key) .. " left: " .. tostring(why))
+end
+
+-- One step of the company's passenger railway, as RL.project's: true when it acted, "wait" when it waits for money, false when
+-- there is nothing to do (begin: whether it may begin a new one now)
+function RP.project(E, co, lines, money, begin)
+	if not RP.on() then return false end
+	local A = E.G.AI
+	local api = E.api
+	if A.paxLookAt and E.G.frames < A.paxLookAt then return false end
+	A.paxLookAt = E.G.frames + RP.LOOK
+	local towns = RP.towns(E)
+	local st = RP.stations(E, co, lines, towns)
+	local running = {}
+	for _, v in ipairs(RL.trains(E, co.ent)) do if v.line >= 0 then running[v.line] = true end end
+	for l in pairs(A.railDropped or {}) do running[l] = true end
+	-- (its stations not on a line that runs: the railway under way)
+	local free = {}
+	for _, s in ipairs(st) do if s.town and not (s.line and running[s.line.e]) then free[#free + 1] = s end end
+	if #free >= 2 then
+		local sa, sb = free[1], free[2]
+		if sa.town.e ~= sb.town.e then return RP.finish(E, co, sa, sb, money) end
+	end
+	if #free >= 1 then
+		-- the other town's station: the pair begun (A.pax), else the biggest town in reach for it
+		local sa = free[1]
+		local P = A.pax
+		local to
+		if P and P.from == sa.town.e then
+			for _, t in ipairs(towns) do if t.e == P.to then to = t end end
+		end
+		if not to then
+			local taken = RP.taken(E, towns)
+			taken[sa.town.e] = nil
+			local best
+			for _, t in ipairs(towns) do
+				local d = dist(t.pos, sa.town.pos)
+				if t.e ~= sa.town.e and not taken[t.e] and d >= RP.MIN and d <= RP.MAX and (not best or t.size > best.size) then best = t end
+			end
+			to = best
+		end
+		if not to then return false end
+		local key = math.min(sa.town.e, to.e) .. "-" .. math.max(sa.town.e, to.e)
+		if (A.paxTried or {})[key] then return false end
+		local a = math.atan2(sa.town.pos.y - to.pos.y, sa.town.pos.x - to.pos.x)
+		local ok = RP.buildStation(E, co, to, a, "B")
+		if ok == false then RP.leave(E, key, "no place for a station near " .. townName(E, to.e)) end
+		return ok == true or (ok == "dear" and "wait") or false
+	end
+	-- a new one
+	if not begin then return false end
+	if A.paxNextAt and E.G.frames < A.paxNextAt then return false end
+	if (A.paxFailed or 0) >= RP.FAILS then return false end
+	local r = RP.route(E, towns, RP.taken(E, towns))
+	if not r then A.paxNextAt = E.G.frames + 3600; return false end
+	local pid
+	pcall(function() pid = api.res.cargoTypeRep.getPassengerCargoTypeId() end)
+	local train = type(pid) == "number" and RL.train(E, pid)
+	if not train then RP.leave(E, r.key, "no train of coaches on sale"); return false end
+	local need = 2 * 900000 + 2000000 + r.d * 1.3 * 600 + train.price
+	if money - (A.loanCash or 0) < RESERVE + need then
+		if E.G.frames - (A.paxSaid or -100000) > 3600 then
+			A.paxSaid = E.G.frames
+			L(E, string.format("passenger railway %s - %s %.1f km waits for %d (has %d)", townName(E, r.from.e), townName(E, r.to.e), r.d / 1000, math.floor(RESERVE + need), math.floor(money)))
+		end
+		return "wait"
+	end
+	-- (its plan in three looks, each within its time: the place of the station near the first town, then near the second, then
+	-- the way of the track between them, RL.corridor with the two places found; then the first station is built)
+	local a = math.atan2(r.to.pos.y - r.from.pos.y, r.to.pos.x - r.from.pos.x)
+	local P = A.paxPlan
+	if not (P and P.key == r.key) then
+		P = { key = r.key, from = r.from.e, to = r.to.e, a = a }
+		A.paxPlan = P
+	end
+	-- (a look of its plan is a look's work: nothing else begins meanwhile, a new line of buses would close its growth and leave
+	-- the plan half done)
+	if not P.pa then
+		P.pa = RP.place(E, co, r.from, a, "A")
+		if not P.pa then A.paxPlan = nil; RP.leave(E, r.key, "no place for a station near " .. townName(E, r.from.e)); return false end
+		return true
+	end
+	if not P.pb then
+		P.pb = RP.place(E, co, r.to, a + math.pi, "B")
+		if not P.pb then A.paxPlan = nil; RP.leave(E, r.key, "no place for a station near " .. townName(E, r.to.e)); return false end
+		return true
+	end
+	local found = { [r.from.e] = P.pa, [r.to.e] = P.pb }
+	local okF, clear, why = pcall(RL.corridor, E, co, r.from, r.to, a, function(_, _, town) return found[town.e] end)
+	if not (okF and clear) then
+		A.paxPlan = nil
+		RP.leave(E, r.key, "no way for it (" .. tostring(okF and why or clear):sub(1, 160) .. ")")
+		return false
+	end
+	A.paxPlan = nil
+	-- (a first station asked for twice and never there, refused by the engine when it came: the pair is left)
+	A.paxBegun = A.paxBegun or {}
+	A.paxBegun[r.key] = (A.paxBegun[r.key] or 0) + 1
+	if A.paxBegun[r.key] > 2 then RP.leave(E, r.key, "its first station was refused twice"); return false end
+	A.pax = { from = r.from.e, to = r.to.e, key = r.key, a = a }
+	L(E, string.format("passenger railway begun: %s - %s, %.1f km", townName(E, r.from.e), townName(E, r.to.e), r.d / 1000))
+	local ok = RP.buildStation(E, co, r.from, a, "A", P.pa)
+	if ok == false then RP.leave(E, r.key, "no place for a station near " .. townName(E, r.from.e)) end
+	return ok == true or (ok == "dear" and "wait") or false
+end
+
+-- its two stations built: the track, the depot, the line, the train (RL.project's steps, with the passengers)
+function RP.finish(E, co, sa, sb, money)
+	local A = E.G.AI
+	local api = E.api
+	local key = math.min(sa.town.e, sb.town.e) .. "-" .. math.max(sa.town.e, sb.town.e)
+	if not (sa.term and sb.term) then return false end
+	local na, nb = {}, {}
+	for _, t in ipairs(sa.term.list) do na[#na + 1] = t.node end
+	for _, t in ipairs(sb.term.list) do nb[#nb + 1] = t.node end
+	local function gone(why)
+		A.railGone = A.railGone or {}
+		A.railGone[sa.con], A.railGone[sb.con] = true, true
+		RP.leave(E, key, why)
+	end
+	-- the track between them (after a refusal, tried again a minute later; left after RL.TRIES)
+	if not RL.path(E, na, nb) then
+		local what = "passenger track " .. sa.con .. "-" .. sb.con
+		local lr = A.lastResult
+		A.paxFails = A.paxFails or {}
+		if lr and lr.what == what and not lr.ok and lr.frame ~= A.paxSeen then
+			A.paxSeen = lr.frame
+			A.paxFails[key] = (A.paxFails[key] or 0) + 1
+			A.paxTrackAt = E.G.frames + 3600
+		end
+		if (A.paxFails[key] or 0) >= RL.TRIES then gone("its track was refused " .. RL.TRIES .. " times"); return false end
+		if A.paxTrackAt and E.G.frames < A.paxTrackAt then return false end
+		local best
+		for _, x in ipairs(RL.ends(E, sa.con)) do
+			for _, y in ipairs(RL.ends(E, sb.con)) do
+				local d = dist(x.p, y.p)
+				if not best or d < best.d then best = { a = x, b = y, d = d } end
+			end
+		end
+		if not best then L(E, "passenger railway: no free track end at its stations"); return false end
+		local ok, why = RL.buildTrack(E, co, best.a, best.b, what)
+		if ok == false then
+			A.paxFails[key] = (A.paxFails[key] or 0) + 1
+			A.paxTrackAt = E.G.frames + 3600
+			L(E, "passenger track refused (" .. A.paxFails[key] .. "): " .. tostring(why):sub(1, 200))
+			if A.paxFails[key] >= RL.TRIES then gone("no track could be laid between its stations") end
+			return false
+		end
+		return ok == true or "wait"
+	end
+	-- a depot of the company that reaches the first station (any of its rail depots), else one behind either station
+	local depot
+	for _, d in ipairs(RL.mine(E, co, "rail_depot")) do
+		pcall(function()
+			for _, dp in ipairs(d.c.depots) do
+				local outs = {}
+				local vd = api.engine.getComponent(dp, api.type.ComponentType.VEHICLE_DEPOT)
+				for k = 1, #vd.outNodes do outs[#outs + 1] = vd.outNodes[k] end
+				if not depot and #outs > 0 and RL.path(E, outs, na) then depot = { con = d.con, depot = dp, pos = d.pos } end
+			end
+		end)
+	end
+	if not depot then
+		local near, nearSt
+		for _, d in ipairs(RL.mine(E, co, "rail_depot")) do
+			if not (A.railGone and A.railGone[d.con]) then
+				for _, s in ipairs({ sa, sb }) do if not near and dist(d.pos, s.pos) < 600 then near, nearSt = d, s end end
+			end
+		end
+		if not near then
+			if A.paxDepotAt and E.G.frames < A.paxDepotAt then return false end
+			for _, s in ipairs({ sa, sb }) do
+				local back = RL.ends(E, s.con)[1]
+				if back then
+					for _, gap in ipairs({ 80, 140, 200, 280 }) do
+						for _, lat in ipairs({ 0, 60, -60, 120, -120, 200, -200 }) do
+							local okD, isFree, sp, ctx, cost, why, bits, O = pcall(RL.dryDepot, E, co, back, gap, lat)
+							if okD and isFree then
+								if not spendOk(E, co, (cost or 2000000) + 50000, "train depot") then return "wait" end
+								L(E, string.format("train depot behind passenger station %d: its exit %.0f m out, %.0f m aside", s.con, gap, lat))
+								build(E, co.id, api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true, true), "train depot", bits, { kind = "raildepot", pos = { x = O.x, y = O.y, z = 0 } })
+								return true
+							end
+						end
+					end
+				end
+			end
+			A.paxDepotAt = E.G.frames + 18000
+			L(E, "passenger railway " .. key .. ": no place for a depot behind its stations, looked for again in five minutes")
+			return false
+		end
+		local best
+		for _, x in ipairs({ RL.depotExit(E, near.con) }) do
+			for _, y in ipairs(RL.ends(E, nearSt.con)) do
+				local d = dist(x.p, y.p)
+				if not best or d < best.d then best = { a = x, b = y, d = d } end
+			end
+		end
+		if not best then L(E, "passenger railway: no free end between depot " .. near.con .. " and station " .. nearSt.con); return false end
+		if A.depotTrackAt and E.G.frames < A.depotTrackAt then return false end
+		local ok, why = RL.buildTrack(E, co, best.a, best.b, "depot track " .. near.con)
+		if ok == false then
+			A.depotFails = A.depotFails or {}
+			A.depotFails[near.con] = (A.depotFails[near.con] or 0) + 1
+			A.depotTrackAt = E.G.frames + 1800
+			L(E, "passenger depot track refused (" .. A.depotFails[near.con] .. "): " .. tostring(why):sub(1, 200))
+			if A.depotFails[near.con] >= RL.TRIES then A.railGone = A.railGone or {}; A.railGone[near.con] = true end
+			return false
+		end
+		return ok == true or "wait"
+	end
+	local pid
+	pcall(function() pid = api.res.cargoTypeRep.getPassengerCargoTypeId() end)
+	if type(pid) ~= "number" then return false end
+	-- the line: both stops load the passengers
+	local line = sa.line and sa.line == sb.line and sa.line or nil
+	if not line then
+		local stop0
+		pcall(function() stop0 = E.C.marshal(api.type.Line.Stop.new()) end)
+		local template = E.C.marshal(api.type.Line.new())
+		template.stops = { freightStop(E, sa.term, stop0, pid), freightStop(E, sb.term, stop0, pid) }
+		local name = AINAME .. " " .. townName(E, sa.town.e) .. " - " .. townName(E, sb.town.e) .. " (train)"
+		act(E, co.id, "makeLineCreateCmd", { n = 4, [1] = name, [2] = E.C.marshal(api.type.Vec3f.new(0.2, 0.6, 0.9)), [3] = co.ent, [4] = template })
+		A.busy = { what = "line " .. name, since = E.G.frames, until_ = E.G.frames + 300 }
+		journal(E, co.id, "railline", sa.pos, name, pid)
+		L(E, "passenger train line requested: " .. name)
+		return true
+	end
+	-- its train
+	local trains, idle = 0, nil
+	for _, v in ipairs(RL.trains(E, co.ent)) do
+		if v.line == line.e then trains = trains + 1 elseif v.line < 0 then idle = v.e end
+	end
+	if idle then
+		act(E, co.id, "makeVehicleSetLineCmd", { n = 3, [1] = idle, [2] = line.e, [3] = 0 })
+		A.busy = { what = "train " .. idle .. " to line " .. line.e, since = E.G.frames, until_ = E.G.frames + 120 }
+		L(E, "train " .. idle .. " sent to line " .. line.e)
+		return true
+	end
+	if trains == 0 then
+		local t = RL.train(E, pid)
+		if not t then return false end
+		if not spendOk(E, co, t.price, "train") then return "wait" end
+		RL.buyTrain(E, co, depot.depot, t, pid, depot.pos)
+		return true
+	end
+	-- done: this railway runs
+	A.pax = nil
+	L(E, "passenger railway " .. key .. " runs")
+	return false
 end
 
 -- ------------------------------------------------------------------ the step
@@ -5330,6 +5784,12 @@ local function step(E)
 		if r == true then return end
 		-- (and its lines of trains: a train more where cargo piles up, see RL.manage)
 		if RL.manage(E, co, money) == true then return end
+		-- (0.7.5) its passenger railway, see "passenger trains": one under way goes on; a new one when a railway of cargo could
+		-- begin, none is under way and none waits for its money
+		if RP.on() then
+			local rp = RP.project(E, co, myLines(E, co.ent, true), money, begin and r ~= "wait" and not A.rail)
+			if rp == true then return end
+		end
 	end
 	-- (0.6) its long-term freight line when it has none under way and can afford one (see ltProject): before the freight of plenty of
 	-- money and the buses' new projects. A path search alone builds nothing: the look goes on
@@ -5547,7 +6007,7 @@ M.f = { isLeft = isLeft, leave = leave, aiCompany = aiCompany, myStops = myStops
 	manageLines = manageLines, lineIdle = lineIdle, mayExpand = mayExpand, spendOk = spendOk, ltSync = ltSync, ltProject = ltProject, connectIndustry = connectIndustry, roadProject = roadProject,
 	townFreightProject = townFreightProject, industryProject = industryProject, freightProject = freightProject,
 	buildingsHit = buildingsHit, stockTakes = stockTakes, stopReaches = stopReaches, townDropPoint = townDropPoint, townGood = townGood,
-	step = step, RL = RL, stopSegments = stopSegments }
+	step = step, RL = RL, RP = RP, stopSegments = stopSegments }
 
 -- (0.6) the pure rules, and the module's state of the company under way, for the offline tests (tests/test_ai_*.py)
 M.p = { floorOf = floorOf, renewStep = renewStep, renewPick = renewPick, vehicleAge = vehicleAge, modelSeatsOf = modelSeatsOf, ltBudget = ltBudget, ltJudge = ltJudge, ltScore = ltScore, densest = densest, LT = LT, FLOOR_MIN = FLOOR_MIN,

@@ -17559,7 +17559,16 @@ end
 
 K.coCtlSeq = 0
 local function coGui(st)
-	if G.cmode ~= "separate" then return end
+	if G.cmode ~= "separate" then
+		-- ((0.7.5) one company for everybody: the interface's companies.txt says none, so that the file of a session of one
+		-- company per player before, in the same game, goes (see the interface's pollCompanies). MPFEVER_COFILEOLD=1: as before)
+		if os.getenv("MPFEVER_COFILEOLD") ~= "1" and G.coFile ~= "me	0" .. NL then
+			G.coFile = "me	0" .. NL
+			local f = C.IO.open(C.DIR .. BS .. "companies.txt", "wb")
+			if f then f:write(G.coFile); f:close() end
+		end
+		return
+	end
 	R.CO = st.co
 	G.prog = st.prog
 	-- (0.6.8, #95: this game's interface unlocks its own company's achievements, see mpfever_co.lua's CO.installAchievements)
@@ -17584,6 +17593,15 @@ local function coGui(st)
 			lines[#lines + 1] = "rank	" .. tostring(r.company) .. "	" .. tostring(r.experience) .. "	" .. tostring(r.level) .. "	" .. tostring(r.potential)
 		end
 		local txt = table.concat(lines, NL) .. NL
+		if txt ~= G.coFile then
+			G.coFile = txt
+			local f = C.IO.open(C.DIR .. BS .. "companies.txt", "wb")
+			if f then f:write(txt); f:close() end
+		end
+	elseif os.getenv("MPFEVER_COFILEOLD") ~= "1" then
+		-- ((0.7.5) one company for everybody: no companies, written too, so that the file of a session of one company per
+		-- player before, in the same game, goes, see the interface's pollCompanies)
+		local txt = "me	0" .. NL
 		if txt ~= G.coFile then
 			G.coFile = txt
 			local f = C.IO.open(C.DIR .. BS .. "companies.txt", "wb")

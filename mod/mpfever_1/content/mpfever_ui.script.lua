@@ -388,6 +388,28 @@ local function pollCompanies()
 		local cid, cix = line:match("^color" .. C.TAB .. "(%d+)" .. C.TAB .. "(%d+)")
 		if cid then colors[tonumber(cid)] = tonumber(cix) end
 	end
+	-- (0.7.5) A file of the world before: the session folder stays the same until the game closes, and a client that played
+	-- one company per player, then joined a game of one company for everybody without closing the game, read the companies
+	-- of its previous world before the bridge wrote anything; the interface then read a company's data on an entity of the new
+	-- world that is none, « it != components.end() » in UI::CSelector (the user's crash of 2026-10-28, autotests ts2 and ts3
+	-- of 2026-11-07, both times right after the load). A file naming an entity that is no company here is left until it
+	-- changes. MPFEVER_COFILEOLD=1: taken as it is, as before
+	if os.getenv("MPFEVER_COFILEOLD") ~= "1" then
+		for e in pairs(map) do
+			local okP, isP = pcall(function()
+				return api.engine.entityExists(e) and api.engine.getComponent(e, api.type.ComponentType.PLAYER) ~= nil
+			end)
+			if not (okP and isP) then
+				if U.coStaleTxt ~= txt then
+					U.coStaleTxt = txt
+					log("companies.txt names entity " .. tostring(e) .. ", no company in this world: a file of the world before, left")
+				end
+				U.coMap, U.myCo, U.coNames, U.coColors, U.ranks, U.canon = {}, nil, {}, {}, nil, nil
+				U.coTxt = nil
+				return
+			end
+		end
+	end
 	U.coColors = colors
 	U.coMap = map
 	U.coNames = names
