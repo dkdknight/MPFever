@@ -1,7 +1,15 @@
 MPFever - Changelog
 ===================
 
-0.7.4 - (in progress)
+0.7.5 - (in progress)
+  - FIX (a reload "script:towns" on the user's dedicated server, 2026-11-07 08:41): the towns' noise and traffic ratings
+    came out a little different on the server (16 threads) and a player's PC (32 threads): town 18 had noise 0.67015 and
+    0.67012, traffic 0.98496 and 0.98514, every other measure identical. Noise comes from the engine's emission grid (as
+    pollution in issue #126) and traffic from its traffic speed map, both summed on the engine's thread pool. They are now
+    kept in steps of 1/64, as pollution is since 0.7.1. MPFEVER_NOISEQ=0 / MPFEVER_TRAFFICQ=0: the engine's value, as
+    before; =<n>: steps of 1/n. Test: tests/test_townratingsq075.py.
+
+0.7.4 - 2026-11-07: the auction of every lot at once, the MPFever window redone in the game's style, the launcher waits for its launch
   - FIX (issue #130): a report made right after a crash carried the game's crash dump with 0 bytes, the game was still
     writing it. The report now waits until it is written (not empty, the same size for a second; 15 s at most).
     MPFEVER_DUMPWAIT=0: as before. Test: tests/test_dumpwait.py.

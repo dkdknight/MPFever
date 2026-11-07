@@ -31,7 +31,7 @@ def check(cond, name):
 
 
 bridge = open(os.path.join(CONTENT, "mpfever_bridge.script.lua"), encoding="utf-8").read()
-i = bridge.find("DET.townQ = function()")
+i = bridge.find("DET.townQ = function(")
 j = bridge.find("\nend\n", bridge.find("function DET.installTownRatings()", i)) + 5
 check(i > 0 and j > i, "DET.installTownRatings found")
 code = bridge[i:j]

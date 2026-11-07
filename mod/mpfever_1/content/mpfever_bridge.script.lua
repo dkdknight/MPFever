@@ -1748,8 +1748,15 @@ end
 -- whose grid differs). Pollution keeps its effect on the towns (MPFever turned it off before 0.6.9: the players asked for it
 -- back). In a session only. MPFEVER_POLLUTIONQ=0: the engine's value as it comes, as before; MPFEVER_POLLUTIONQ=<n>: steps of
 -- 1/n
-DET.townQ = function()
-	local v = os.getenv("MPFEVER_POLLUTIONQ")
+-- (0.7.5) The noise and traffic ratings drift the same way. Noise comes from the same emission grid
+-- (town_util.getRatingNoise), and traffic from the engine's traffic speed map (getRatingTraffic,
+-- api.engine.util.town.computeTownsTrafficSpeedMap). On 2026-11-07 at 08:41, on a dedicated server (16 threads) and a
+-- player's PC (32 threads), town 18 had noise 0.6701461792 here and 0.6701197306 there, and traffic 0.9849569798 here and
+-- 0.9851356149 there. Every other measure was identical (vehicles and their positions, persons, lines, streets, money),
+-- and the checks reloaded the game on "script:towns". Both ratings are kept in steps of 1/64 too (43/64 and 63/64 for
+-- these values). MPFEVER_NOISEQ / MPFEVER_TRAFFICQ = 0: the engine's value, as before; = <n>: steps of 1/n.
+DET.townQ = function(var)
+	local v = os.getenv(var or "MPFEVER_POLLUTIONQ")
 	if v == "0" then return nil end
 	local n = tonumber(v or "")
 	return (n and n >= 2) and math.floor(n) or 64
@@ -1758,24 +1765,39 @@ DET.quantRating = function(v, q)
 	if type(v) ~= "number" or v ~= v or not q then return v end
 	return math.floor(v * q + 0.5) / q
 end
+DET.townRatingList = {
+	{ fn = "getRatingPollution", key = "pollution", var = "MPFEVER_POLLUTIONQ", mark = "__mpfPollution" },
+	{ fn = "getRatingNoise", key = "noise", var = "MPFEVER_NOISEQ", mark = "__mpfNoise" },
+	{ fn = "getRatingTraffic", key = "traffic_congestion", var = "MPFEVER_TRAFFICQ", mark = "__mpfTraffic" },
+}
 function DET.installTownRatings()
 	if DET.townRatings or not C.ACTIVE then return end
-	local q = DET.townQ()
 	DET.townRatings = true
-	if not q then log("town ratings: pollution as the engine computes it (MPFEVER_POLLUTIONQ=0)") return end
 	local tu
 	for _, path in ipairs({ "/game_mechanics/towns/town_util.tl", "::/game_mechanics/towns/town_util.tl" }) do
 		local ok, m = pcall(ug_require, path)
 		if ok and type(m) == "table" and type(m.getRatingPollution) == "function" then tu = m break end
 	end
-	if not tu then log("town ratings: the towns' module is not reachable, pollution as the engine computes it (desync risk)") return end
-	if not tu.__mpfPollution then
-		local orig = tu.getRatingPollution
-		tu.__mpfPollution = orig
-		tu.getRatingPollution = function(...) return DET.quantRating(orig(...), q) end
+	if not tu then log("town ratings: the towns' module is not reachable, pollution, noise and traffic as the engine computes them (desync risk)") return end
+	local said = {}
+	for _, r in ipairs(DET.townRatingList) do
+		local q = DET.townQ(r.var)
+		if not q then
+			said[#said + 1] = r.key .. " as the engine computes it (" .. r.var .. "=0)"
+		elseif type(tu[r.fn]) ~= "function" then
+			said[#said + 1] = r.key .. " not found (as the engine computes it)"
+		else
+			if not tu[r.mark] then
+				local orig = tu[r.fn]
+				tu[r.mark] = orig
+				tu[r.fn] = function(...) return DET.quantRating(orig(...), q) end
+			end
+			local fn = r.fn
+			local okG, same = pcall(function() return tu.GetRating(r.key).getRating == tu[fn] end)
+			said[#said + 1] = r.key .. " kept in steps of 1/" .. q .. (okG and same and "" or " (the towns' ratings list was not seen using it)")
+		end
 	end
-	local okG, same = pcall(function() return tu.GetRating("pollution").getRating == tu.getRatingPollution end)
-	log("town ratings: pollution kept in steps of 1/" .. q .. (okG and same and "" or " (the towns' ratings list was not seen using it)"))
+	log("town ratings: " .. table.concat(said, ", "))
 end
 
 -- A build replayed here for another player is announced by the engine to every script as made by a player (the replays
