@@ -38,7 +38,12 @@ it is stable enough.
   [x] Station and warehouse modules and railway upgrades show at once for their builder; the other games stop about
       half a second for each (a second for a very big station) instead of up to 3 seconds (0.6.12)
   [x] No more "script:towns" reloads after building in a pause; money no longer evened out twice after a pause (0.6.12)
+  [x] Towns' pollution, noise and traffic the same on PCs with different processors (0.7.1, 0.7.5)
+  [x] Full speed again in multiplayer: two games in step no longer both slow down to half speed (0.7.5)
+  [x] Lighter checks: the small hitch every 10 seconds about a third shorter on big worlds (0.7.5)
+  [x] Several players building at once without stopping (host setting, experimental, off by default: 0.7.3 to 0.7.5)
   [ ] Replays of big stations without the engine's two proposals (the rest of their freeze)
+  [ ] Building without stopping for everything (vehicles, lines, every construction) and on by default (0.8)
   [ ] Tests and fixes for 3 to 8 players
   [ ] Feedback from the first testers
 
@@ -79,6 +84,9 @@ it is stable enough.
   [x] Stock market: a new company's protection of 2, 5 or 10 years (0.6.12)
   [x] A shared street stays its company's when another builds a station on it; another company's station edited by a
       player stays its owner's (0.6.10)
+  [x] A bankrupt company's auction sells everything at once; the company cards in the MPFever window (0.7.4)
+  [x] No more crash when joining a session of one company for everybody after a session of one company per player:
+      no need to restart the game (0.7.5)
 
 0.5 - Mixed modes
   [x] Shared companies and separate companies in the same game (0.5.0)
@@ -100,9 +108,12 @@ it is stable enough.
   [x] They start on a new map: their own garages; no more buses bought for a line they cannot reach (0.6.11)
   [x] Railways: two stations, the track (round the towns, bridges over roads, tracks and rivers), a depot, a line and
       trains; a train more where cargo piles up, the trains of a losing line sold (0.6.4, experimental)
+  [x] Computer companies on a dedicated server; they renew their vehicles (0.7.0)
+  [x] They use the other companies' stops (open, or a toll their level finds worth paying) instead of building their
+      own beside them, and sell the stops they no longer use (0.7.5)
+  [ ] Passenger trains between two towns (written in 0.7.5, off until their track planning is faster)
   [ ] Signals, electric trains and warehouses
   [ ] Ships and planes
-  [ ] Computer companies on a dedicated server
 
 Later - Persistent worlds
   [x] Dedicated server running the world without the host's PC (0.3.12: MPFever.exe --server, separate archive,
