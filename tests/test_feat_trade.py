@@ -236,7 +236,6 @@ both('MODE = "separate"; st.co.mode = "separate"; OPTS.contracts = false')
 print("sales: refusals")
 both('''
 ev("f_trade_offer", { to = 3, kind = "line", key = "L:Coal|c:mine@1,1#0;c:mill@5,5#0", price = 5, mpfCo = 2, mpfFrom = "Dan#2" })
-ev("f_trade_offer", { to = 1, kind = "station", key = "c:ai@7,7#0", price = 5, mpfCo = 4, mpfFrom = "Host" })
 ev("f_trade_offer", { to = 4, kind = "depot", key = "D:truck@9,9", price = 5, mpfCo = 1, mpfFrom = "Host" })
 ev("f_trade_offer", { to = 1, kind = "depot", key = "D:truck@9,9", price = 5, mpfCo = 1, mpfFrom = "Host" })
 ev("f_trade_offer", { to = 2, kind = "depot", key = "D:nowhere", price = 5, mpfCo = 1, mpfFrom = "Host" })
@@ -246,9 +245,9 @@ ev("f_trade_offer", { to = 2, kind = "depot", key = "D:truck@9,9", price = 1.5, 
 ev("f_trade_offer", { to = 2, kind = "depot", key = "D:truck@9,9", price = 2e10, mpfCo = 1, mpfFrom = "Host" })
 ev("f_trade_offer", { to = 2, kind = "station", key = "c:mill@5,5#0", price = 5, mpfCo = 1, mpfFrom = "Host" })
 ''')
-check(run(A, "return st.feat == nil") is True, "a member who is not the chief, a computer company (selling or buying), itself, an unknown lot, a "
+check(run(A, "return st.feat == nil") is True, "a member who is not the chief, a computer company buying, itself, an unknown lot, a "
       "track, a bad price, another company's station: refused, nothing written")
-check(run(A, 'return logHas("not the chief") and logHas("may not trade") and logHas("buyer 4") and logHas("has no such depot") and logHas("price -5")') is True,
+check(run(A, 'return logHas("not the chief") and logHas("buyer 4") and logHas("has no such depot") and logHas("price -5")') is True,
       "each refusal says why in the log")
 
 print("sales: an offer, the answers")
@@ -915,6 +914,26 @@ E.event(st, "co_lot_close", { seq = st.co.auction.seq, lot = 1, mpfFrom = "Host"
 ''')
 check(run(A2, 'return owners({ 40, 41, 42, 10, 13 }) == "200 200 200 100 100" and BAL[P2] == BEFORE - 100000') is True,
       "an auction's lot sold: the line and its vehicles change hands, the bid booked, as before")
+
+print("sales: a computer company sells a station it no longer uses (0.7.5)")
+C = new_game(0)
+run(C, '''
+OPTS.sales = true
+ev("f_trade_offer", { to = 1, kind = "station", key = "c:ai@7,7#0", price = 15000, mpfCo = 4, mpfFrom = "Host" })
+''')
+check(run(C, 'local o = S() and S().offers[1] return o ~= nil and o.from == 4 and o.to == 1 and o.kind == "station" and o.price == 15000') is True,
+      "the computer company's offer (sent by the host's game, it has no chief) is open for company 1")
+run(C, '''
+ev("f_trade_answer", { id = 1, accept = true, mpfCo = 1, mpfFrom = "Host" })
+''')
+check(run(C, 'return #S().offers == 0 and #TRANSFERS == 1 and TRANSFERS[1].from == 4 and TRANSFERS[1].to == 1 and TRANSFERS[1].key == "c:ai@7,7#0"') is True,
+      "company 1's chief accepts: the station goes from the computer company to company 1")
+check(run(C, 'local paid, got = 0, 0 for _, b in ipairs(BOOKS) do if b.amount == -15000 then paid = paid + 1 end if b.amount == 15000 then got = got + 1 end end return paid == 1 and got == 1') is True,
+      "the buyer paid 15 000, the computer company got it")
+run(C, '''
+ev("f_trade_offer", { to = 4, kind = "depot", key = "D:truck@9,9", price = 5, mpfCo = 1, mpfFrom = "Host" })
+''')
+check(run(C, 'return #S().offers == 0 and logHas("buyer 4")') is True, "a computer company still never buys")
 
 if failures:
     print(f"FAIL {len(failures)} case(s):")

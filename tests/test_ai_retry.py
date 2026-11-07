@@ -43,7 +43,8 @@ check(run('return LST["1/2"]') is True and run('return M.f.isLeft(E, LST, "1/2")
 run('ENV.MPFEVER_AIPAIRRETRY = nil')
 
 src = open(os.path.join(T0.CONTENT, "mpfever_ai.lua"), encoding="utf-8").read()
-check("A.pairFailed[pair.key] = true" not in src and src.count("leave(E, A.pairFailed, pair.key)") == 3, "the three places that leave a pair")
+check("A.pairFailed[pair.key] = true" not in src and src.count("leave(E, A.pairFailed, pair.key)") == 4,
+      "the four places that leave a pair (0.7.5: a town whose other companies' stops are closed to it, see test_aishared075.py)")
 check("A.skipTown[town] = true" not in src and src.count("leave(E, A.skipTown, town)") == 2 and "isLeft(E, A.skipTown, town)" in src, "the towns left too")
 check("not isLeft(E, A.pairFailed, key)" in src, "bestPair reads it")
 check('free town segment(s) within 200 m' in src, "no stop street: the reason logged")

@@ -259,6 +259,215 @@ local function myStops(E, ent)
 	return out
 end
 
+-- ------------------------------------------------------------------ the other companies' stops (0.7.5)
+-- The user, 2026-11-07: a computer company put its stops in towns where a player already had stops it could share. Now, in a town
+-- where another company has street stops, it builds none of its own: it runs its line through theirs when their rule lets it
+-- (open, or a toll its level finds worth paying: none for Easy, up to 150 a stop for Normal, 400 for Hard; a line through toll
+-- stops it gave up for losing money marks those stops too dear). When their stops are closed to it (private, too dear, or fewer
+-- than two it may use): Easy leaves the town, Normal leaves it while a town without the other companies' stops is left to it,
+-- Hard builds its own stops there. The same for the towns of a line between two towns. MPFEVER_AISHARED=0: its own stops
+-- everywhere, as before
+local SH = { TOLL = { easy = 0, normal = 150, hard = 400 } }
+function SH.on() return os.getenv("MPFEVER_AISHARED") ~= "0" end
+-- the town of a station (the engine's), nil when none
+function SH.townOf(E, station)
+	local t
+	pcall(function() t = E.api.engine.system.stationSystem.getTown(station) end)
+	return (type(t) == "number" and t >= 0) and t or nil
+end
+-- the other companies' street stops: { station, group, edge, pos, co (their company's number), town }, read again every 10 s
+function SH.others(E, ent)
+	local api, R = E.api, E.R
+	local A = E.G.AI or {}
+	local cache = A.othersCache
+	if cache and cache.ent == ent and E.G.frames - cache.frame < 600 then return cache.list end
+	local out = {}
+	A.othersCache = { ent = ent, frame = E.G.frames, list = out }
+	local reg = E.G.co
+	if not (reg and E.CO and E.CO.idOfEntity) then return out end
+	for _, e in ipairs(R.allEdges()) do
+		local c = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
+		if c and #c.objects > 0 then
+			for k = 1, #c.objects do
+				local eo = c.objects[k][1]
+				local o = ownerOf(E, eo)
+				if o and o ~= ent and api.engine.getComponent(eo, api.type.ComponentType.STATION) then
+					local coId = E.CO.idOfEntity(reg, o)
+					local okg, sg = pcall(function() return api.engine.system.stationGroupSystem.getStationGroup(eo) end)
+					local a, b = E.nodePosition(c.node0), E.nodePosition(c.node1)
+					if coId and okg and sg and a and b then
+						out[#out + 1] = { station = eo, group = sg, edge = e, co = coId, town = SH.townOf(E, eo),
+							pos = { x = (a.x + b.x) / 2, y = (a.y + b.y) / 2, z = (a.z + b.z) / 2 } }
+					end
+				end
+			end
+		end
+	end
+	return out
+end
+-- whether this company may stop at another company's stop: "use" (open, or a toll worth paying), "dear" (a toll too dear, or one
+-- of a line it gave up for losing money) or "closed" (private); and the toll
+function SH.use(E, s)
+	local eco = E.C.eco and E.C.eco() or nil
+	if not eco or not eco.stationRule then return "closed", 0 end
+	local okR, rule, fee = pcall(eco.stationRule, E.G.co, E.R.sgKey(s.group), s.co)
+	if not okR then return "closed", 0 end
+	if rule == nil or rule == "open" then return "use", 0 end
+	if rule == "toll" then
+		if ((E.G.AI or {}).tollBad or {})[s.group] then return "dear", fee end
+		if (tonumber(fee) or 0) <= (SH.TOLL[LV.name] or 150) then return "use", fee end
+		return "dear", fee
+	end
+	return "closed", 0
+end
+-- a town's other companies' stops: all of them, and those this company may use
+function SH.town(E, ent, town)
+	local all, usable = {}, {}
+	for _, s in ipairs(SH.others(E, ent)) do
+		if s.town == town then
+			all[#all + 1] = s
+			s.use, s.fee = SH.use(E, s)
+			if s.use == "use" then usable[#usable + 1] = s end
+		end
+	end
+	return all, usable
+end
+-- in a town whose other companies' stops are closed to it: whether it builds its own (Hard; Normal when no town free of the other
+-- companies' stops is left to it)
+function SH.mayBuild(freeLeft)
+	if LV.name == "hard" then return true end
+	if LV.name == "easy" then return false end
+	return not freeLeft
+end
+-- the stops of a town's line through the other companies' stops: up to four, 300 m apart at least, chained from the one farthest
+-- from the town's centre
+function SH.pick(usable, c)
+	local chosen = {}
+	local list = {}
+	for _, s in ipairs(usable) do list[#list + 1] = s end
+	table.sort(list, function(a, b)
+		local da, db = dist(a.pos, c), dist(b.pos, c)
+		if da ~= db then return da < db end
+		return a.group < b.group
+	end)
+	for _, s in ipairs(list) do
+		local far = true
+		for _, o in ipairs(chosen) do if dist(o.pos, s.pos) < 300 then far = false end end
+		if far and #chosen < 4 then chosen[#chosen + 1] = s end
+	end
+	if #chosen < 2 then return nil end
+	local start, sd = 1, -1
+	for i, o in ipairs(chosen) do local d = dist(o.pos, c); if d > sd then start, sd = i, d end end
+	local chain, left = { table.remove(chosen, start) }, chosen
+	while #left > 0 do
+		local last = chain[#chain].pos
+		local bi, bd = 1, nil
+		for i, o in ipairs(left) do local d = dist(o.pos, last); if not bd or d < bd then bi, bd = i, d end end
+		chain[#chain + 1] = table.remove(left, bi)
+	end
+	return chain
+end
+-- another company's stop this company may use for a point of a town: the one chosen for that point before while it may still use
+-- it (the choice kept: chosen anew, a nearer stop built meanwhile changed the line's stops and a second line was made, test ai75
+-- of 2026-11-07), else the nearest within 800 m (in the town: no stop of its own there)
+function SH.near(E, ent, town, p, key, maxD)
+	maxD = maxD or 800
+	local A = E.G.AI
+	A.sharedAt = A.sharedAt or {}
+	local _, usable = SH.town(E, ent, town)
+	local kept = key and A.sharedAt[key]
+	if kept then for _, s in ipairs(usable) do if s.group == kept then return s end end end
+	local best, bd
+	for _, s in ipairs(usable) do
+		local d = dist(s.pos, p)
+		if d < maxD and (not bd or d < bd or (d == bd and s.group < best.group)) then best, bd = s, d end
+	end
+	if best and key then A.sharedAt[key] = best.group end
+	return best
+end
+-- (0.7.5) Selling the stops it no longer wants (see manageLines): whether the host's game option "sales" is on, a stop's buyer (the
+-- player company whose lines stop there the most, else the one with the most stops in its town; never a computer company), the
+-- game's month, and the offers made (A.sale[key] = the game time it was offered at)
+SH.MONTH = 60000
+function SH.salesOn(E)
+	return type(E.G.featOpts) == "string" and (";" .. E.G.featOpts .. ";"):find(";sales=1;", 1, true) ~= nil
+end
+function SH.month(E)
+	local y
+	pcall(function() y = E.api.util.getDefaultYearDuration() end)
+	return (tonumber(y) and y > 0) and (y / 12) or SH.MONTH
+end
+function SH.player(E, coId)
+	for _, c in ipairs((E.G.co or {}).list or {}) do
+		if c.id == coId then return not c.gone and not c.ai and tostring(c.key or ""):sub(1, 3) ~= "ai:" and c.ent ~= nil end
+	end
+	return false
+end
+function SH.buyer(E, co, s)
+	local api = E.api
+	local count = {}
+	pcall(function()
+		for _, l in ipairs(E.R.entitiesWith("LINE")) do
+			local o = ownerOf(E, l)
+			if o and o ~= co.ent then
+				local id = E.CO.idOfEntity(E.G.co, o)
+				local lc = api.engine.getComponent(l, api.type.ComponentType.LINE)
+				for k = 1, #(lc and lc.stops or {}) do
+					if id and lc.stops[k].stationGroup == s.group then count[id] = (count[id] or 0) + 1 end
+				end
+			end
+		end
+	end)
+	if not next(count) then
+		local town = SH.townOf(E, s.station)
+		for _, o in ipairs(town and SH.others(E, co.ent) or {}) do if o.town == town then count[o.co] = (count[o.co] or 0) + 1 end end
+	end
+	local best, bn
+	for id, n in pairs(count) do
+		if SH.player(E, id) and (not bn or n > bn or (n == bn and id < best)) then best, bn = id, n end
+	end
+	return best
+end
+function SH.onSale(E, group)
+	local A = E.G.AI
+	local key
+	pcall(function() key = E.R.sgKey(group) end)
+	local at = key and (A.sale or {})[key]
+	return at ~= nil and E.gameTime() - at < 3 * SH.month(E)
+end
+function SH.sell(E, co, lines)
+	if not SH.salesOn(E) then return false end
+	local A = E.G.AI
+	local used = {}
+	for _, l in ipairs(lines) do for _, g in ipairs(l.groups) do used[g] = true end end
+	for _, s in ipairs(myStops(E, co.ent)) do
+		local key
+		pcall(function() key = E.R.sgKey(s.group) end)
+		if key and A.deadGroups[s.group] and not used[s.group] and not (A.sale or {})[key] then
+			local to = SH.buyer(E, co, s)
+			A.sale = A.sale or {}
+			A.sale[key] = E.gameTime()
+			if to then
+				local price = 15000
+				L(E, "stop " .. s.station .. " of a given up line offered to company " .. to .. " for " .. price)
+				SH.act(E, co.id, "makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "f_trade_offer",
+					[4] = { to = to, kind = "station", key = key, price = price } })
+				return true
+			end
+			L(E, "stop " .. s.station .. " of a given up line: no player company to offer it to")
+		end
+	end
+	return false
+end
+-- said once per town and kind (the look runs every few seconds)
+function SH.say(E, key, text)
+	local A = E.G.AI
+	A.sharedSaid = A.sharedSaid or {}
+	if A.sharedSaid[key] == text then return end
+	A.sharedSaid[key] = text
+	L(E, text)
+end
+
 local function myDepots(E, ent)
 	local api, R = E.api, E.R
 	local out = {}
@@ -411,6 +620,8 @@ local function act(E, coId, fn, margs)
 	A.reqId = (A.reqId or 0) + 1
 	E.C.appendFile(E.C.DIR .. E.BS .. "ui.log", E.C.line("act_req", { tok = "ai", id = A.reqId, fn = fn, args = margs, co = coId }))
 end
+-- (for the SH helpers above, defined before it)
+SH.act = act
 
 -- (0.6) the floor of a company, see FLOOR: two months of its vehicles' running costs (runCost: a year's) and of its loans'
 -- payments (loanMonthly: a month's), at least FLOOR_MIN, at most its reserve
@@ -573,7 +784,13 @@ local function buildStop(E, co, seg, n)
 	eo.left = false
 	eo.model = STOP_MODEL
 	eo.playerEntity = co.ent
+	-- (0.7.5) its name: its town's and the company's (n is "<town>:<point>"). Built with none, a computer company's stops had no
+	-- name in the game, at an auction or in a player's line window ("Unnamed station"). MPFEVER_AISTOPNAME=0: none, as before
 	eo.name = ""
+	if os.getenv("MPFEVER_AISTOPNAME") ~= "0" then
+		local tw = tonumber(tostring(n):match("^(%d+):"))
+		if tw then pcall(function() eo.name = townName(E, tw) .. ((AINAME or "") ~= "" and (" " .. AINAME) or "") end) end
+	end
 	ssp.edgesToRemove = { seg }
 	ssp.edgesToAdd = { e }
 	ssp.edgeObjectsToAdd = { eo }
@@ -1726,6 +1943,18 @@ local function manageLines(E, co, lines, vehicles, money)
 			-- town stop may be a stop of the town's bus line)
 			A.deadGroups = A.deadGroups or {}
 			if not l.freight then for _, g in ipairs(l.groups) do A.deadGroups[g] = true end end
+			-- (0.7.5, see SH: the other companies' toll stops of a line given up: too dear for its next lines)
+			if SH.on() then
+				for _, o in ipairs(SH.others(E, co.ent)) do
+					for _, g in ipairs(l.groups) do
+						local u, fee = SH.use(E, o)
+						if o.group == g and u ~= "closed" and (tonumber(fee) or 0) > 0 then
+							A.tollBad = A.tollBad or {}; A.tollBad[g] = true
+							L(E, "company " .. o.co .. "'s toll stop " .. g .. " (" .. tostring(fee) .. " a stop) too dear from now on: its line " .. l.e .. " was given up")
+						end
+					end
+				end
+			end
 			-- (0.5.14: only for a line of one town; a line between two towns that failed says nothing of either town's own line,
 			-- and both towns were left for the whole session. MPFEVER_AIRETRY=0: as before)
 			local mine = {}
@@ -1755,12 +1984,19 @@ local function manageLines(E, co, lines, vehicles, money)
 	-- (MPFEVER_AIDEMOLISH=1: on): a stop demolished frees its entity, MPFever's free-id order (the smallest first) gives that id
 	-- to a new octree node a step later, and the interface's copy of the world, which still had the stop's log book under that
 	-- id, stopped both games ("LogBookSystem::EntityAdded isSupported", test rel052 of 2026-10-28)
+	-- (0.7.5, the user: "the AI must be able to sell the stops or stations it no longer wants") such a stop is first offered for sale
+	-- (the game option "sales" on, see SH.sell): to the player company whose lines stop there, else the one with the most stops in
+	-- its town, at half a stop's price; unsold three game months later it is demolished, still only with MPFEVER_AIDEMOLISH=1
+	-- (the reason above). MPFEVER_AISELL=0: never offered
+	if A.deadGroups and period == 7200 and SH.on() and os.getenv("MPFEVER_AISELL") ~= "0" and SH.sell(E, co, lines) then return true end
 	if A.deadGroups and period == 7200 and os.getenv("MPFEVER_AIDEMOLISH") == "1" then
 		local used = {}
 		for _, l in ipairs(lines) do for _, g in ipairs(l.groups) do used[g] = true end end
 		for _, s in ipairs(myStops(E, co.ent)) do
+			-- (0.7.5: not while it is offered for sale, see SH.sell)
+			local onSale = SH.onSale(E, s.group)
 			-- (0.6: its removal is paid too: never under the floor, see spendOk)
-			if A.deadGroups[s.group] and not used[s.group] and spendOk(E, co, 20000, "demolition of stop " .. s.station) then
+			if A.deadGroups[s.group] and not used[s.group] and not onSale and spendOk(E, co, 20000, "demolition of stop " .. s.station) then
 				local api = E.api
 				local sp = api.type.SimpleProposal.new()
 				local ssp = sp.streetProposal
@@ -2173,8 +2409,27 @@ local function pairProject(E, co, stops, lines, vehicles, money, grow)
 	for _, p in ipairs(pa) do wanted[#wanted + 1] = { town = pair.a.e, p = p } end
 	for k = #pb, 1, -1 do wanted[#wanted + 1] = { town = pair.b.e, p = pb[k] } end
 	local groups = {}
+	-- (0.7.5, see SH: in a town where another company has stops and this one none near the point, theirs when it may use one there;
+	-- else, by its level, the pair is left or it builds its own)
+	local ownTown = {}
+	if SH.on() then for _, s in ipairs(stops) do local tw = SH.townOf(E, s.station); if tw then ownTown[tw] = true end end end
 	for _, w in ipairs(wanted) do
 		local s = stopAt(stops, w.p.p)
+		if not s and SH.on() and not ownTown[w.town] then
+			local all, usableT = SH.town(E, co.ent, w.town)
+			if #all > 0 then
+				local o = SH.near(E, co.ent, w.town, w.p.p, pair.key .. "@" .. w.town .. ":" .. w.p.use)
+				if o then
+					s = o
+					SH.say(E, "pair" .. w.town .. ":" .. w.p.use, townName(E, w.town) .. ": the line " .. na .. " - " .. nb .. " stops at company " .. o.co .. "'s stop (" .. (o.fee and o.fee > 0 and ("toll " .. o.fee) or "open") .. ")")
+				elseif #usableT > 0 or not SH.mayBuild(true) then
+					-- (its own stops only where every stop is closed to it, as for the town lines)
+					SH.say(E, "pair" .. w.town, townName(E, w.town) .. ": no stop of the other companies there it may use (private, a toll too dear, or none within 800 m): pair " .. na .. " - " .. nb .. " left")
+					A.pairFailed = A.pairFailed or {}; leave(E, A.pairFailed, pair.key)
+					return false
+				end
+			end
+		end
 		if not s then
 			if money < RESERVE + 60000 then return "wait" end
 			if stopNear(E, co, stops, w.p.p, w.town .. ":" .. w.p.use) then return true end
@@ -2184,7 +2439,9 @@ local function pairProject(E, co, stops, lines, vehicles, money, grow)
 				return false
 			end
 		else
-			groups[#groups + 1] = s.group
+			-- (0.7.5: a stop already on the line not twice in a row: two points of a town served by the same shared stop made lines
+			-- of A A B B, test ai76 of 2026-11-07. MPFEVER_AISHARED=0: as before)
+			if not (SH.on() and groups[#groups] == s.group) then groups[#groups + 1] = s.group end
 		end
 	end
 	if #groups < 2 then return true end
@@ -2856,6 +3113,26 @@ local function townFreightProject(E, co, stops, lines, vehicles, money, mode)
 		return false
 	end
 	local s = stopAt(stops, f.p)
+	-- (0.7.5, see SH: a delivery to a town where another company has stops and this one none near the point: their stop near the
+	-- point (250 m: it must reach the buildings that take the cargo, checked below) when it may use one; else the delivery is left,
+	-- unless every stop there is closed to it and its level builds its own. Test ai78 of 2026-11-07: its town stops for goods
+	-- came first, and the town's line then added its own stops beside the players')
+	if not s and SH.on() then
+		local own = false
+		for _, x in ipairs(stops) do if SH.townOf(E, x.station) == f.town then own = true end end
+		local all, usableT = SH.town(E, co.ent, f.town)
+		if not own and #all > 0 then
+			local o = SH.near(E, co.ent, f.town, f.p, "freight@" .. f.key, 250)
+			if o then
+				s = o
+				SH.say(E, "freight" .. f.key, townName(E, f.town) .. ": the delivery goes to company " .. o.co .. "'s stop (" .. (o.fee and o.fee > 0 and ("toll " .. o.fee) or "open") .. ")")
+			elseif #usableT > 0 or not SH.mayBuild(true) then
+				SH.say(E, "freight" .. f.key, townName(E, f.town) .. ": no stop of the other companies near the " .. f.use .. " centre it may use: delivery left (no stop of its own beside theirs)")
+				A.freightTried[f.key] = false
+				return false
+			end
+		end
+	end
 	if not s then
 		if money < RESERVE + 60000 then return true end
 		if stopNear(E, co, stops, f.p, f.town .. ":" .. f.use) then return true end
@@ -5074,7 +5351,20 @@ local function step(E)
 	local pairsFirst = LV.profitFirst and os.getenv("MPFEVER_AIORDER") ~= "0"
 	-- (a pair that only waits for money lets the towns' lines and their buses go on, see pairProject's "wait")
 	if pairsFirst and pairProject(E, co, stops, lines, vehicles, money, grow) == true then return end
-	for _, t in ipairs(townsForLines(E, co.ent)) do
+	-- (0.7.5, see SH: the towns where the company has stops of its own, and whether a town free of the other companies' stops is
+	-- left to it, for Normal's choice)
+	local ownTown, freeLeft = {}, false
+	local townList = townsForLines(E, co.ent)
+	if SH.on() then
+		for _, s in ipairs(stops) do local tw = SH.townOf(E, s.station); if tw then ownTown[tw] = true end end
+		for _, t in ipairs(townList) do
+			if not freeLeft and not isLeft(E, A.skipTown, t.e) and t.size >= LV.townMin and not ownTown[t.e] then
+				local all = SH.town(E, co.ent, t.e)
+				if #all == 0 then freeLeft = true end
+			end
+		end
+	end
+	for _, t in ipairs(townList) do
 		local town = t.e
 		if isLeft(E, A.skipTown, town) or t.size < LV.townMin then goto continue end
 		do
@@ -5092,7 +5382,55 @@ local function step(E)
 				end
 				goto continue
 			end
-			local have, missing = townProject(E, co, town, stops)
+			-- (0.7.5, see SH) a town where another company has stops and this one none: no stop of its own, the line goes through
+			-- theirs when it may use two of them at least; else, by its level, the town is left or it builds its own
+			local shared
+			if SH.on() and not ownTown[town] then
+				local all, usable = SH.town(E, co.ent, town)
+				if #all > 0 then
+					-- (the stops chosen before while it may still use them all, see SH.near)
+					A.sharedTown = A.sharedTown or {}
+					local kept = A.sharedTown[town]
+					if kept then
+						local byG, all2 = {}, {}
+						for _, s in ipairs(usable) do byG[s.group] = s end
+						for _, g in ipairs(kept) do if byG[g] then all2[#all2 + 1] = byG[g] end end
+						if #all2 == #kept then shared = all2 end
+					end
+					shared = shared or SH.pick(usable, tc)
+					if shared then
+						local gs = {}
+						for _, s in ipairs(shared) do gs[#gs + 1] = s.group end
+						A.sharedTown[town] = gs
+					end
+					if shared then
+						local fees = {}
+						for _, s in ipairs(shared) do fees[#fees + 1] = "company " .. s.co .. (s.fee and s.fee > 0 and (" toll " .. s.fee) or " open") end
+						SH.say(E, "town" .. town, townName(E, town) .. ": its line goes through the other companies' stops (" .. table.concat(fees, ", ") .. "), none of its own built")
+					elseif #usable > 0 then
+						-- (stops it may use, but too few or too close for a line of the town: no stop of its own beside them, they serve
+						-- its lines between towns; its own stops only where every stop is closed to it. Test ai77 of 2026-11-07: Normal,
+						-- no free town left, built three stops in a town where it used a player's open stops)
+						SH.say(E, "town" .. town, townName(E, town) .. ": the other companies' open stops there are too few or too close for a town line: none of its own built")
+						goto continue
+					elseif not SH.mayBuild(freeLeft) then
+						local why = {}
+						for _, s in ipairs(all) do why[s.use] = (why[s.use] or 0) + 1 end
+						SH.say(E, "town" .. town, string.format("%s: the other companies' %d stop(s) there are closed to it (%d private, %d with a toll too dear, %d open or worth it): town left (%s)",
+							townName(E, town), #all, why.closed or 0, why.dear or 0, why.use or 0, LV.name == "easy" and "Easy" or "Normal, other towns left"))
+						goto continue
+					else
+						SH.say(E, "town" .. town, townName(E, town) .. ": the other companies' stops there are closed to it: it builds its own (" .. (LV.name == "hard" and "Hard" or "Normal, no other town left") .. ")")
+					end
+				end
+			end
+			local have, missing
+			if shared then
+				have, missing = {}, {}
+				for _, s in ipairs(shared) do have[#have + 1] = { stop = s } end
+			else
+				have, missing = townProject(E, co, town, stops)
+			end
 			-- (a town's line not begun yet: only when the company may grow, see mayExpand)
 			-- (a town with no stop of the company yet: a new project; one under way, begun when it could grow, goes on)
 			-- (a town whose own line the company began, A.townBegun: a stop of a line between towns does not count)

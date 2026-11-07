@@ -1123,6 +1123,9 @@ local function setup()
 			local s = {
 				box(H, head, nil, { size = { w, -1 } }),
 				text(T("Gérées par le jeu de l'hôte : bus, camions de marchandises et livraisons des villes. Plus le niveau est élevé, plus elles grandissent vite.", "Run by the host's game: buses, freight trucks and deliveries to the towns. The higher the level, the faster they grow."), "font-scale-body", w),
+				-- (0.7.5) what each level does differently (see mpfever_ai.lua's LEVELS and SH)
+				gap(1, 4),
+				text(T("Les niveaux. Facile : grandit lentement, garde une grosse réserve, ne prend que les arrêts gratuits des autres entreprises et évite les villes où leurs arrêts lui sont fermés. Normal : grandit plus vite, paie un péage jusqu'à 150 par arrêt et n'entre dans une ville aux arrêts fermés que s'il ne lui reste aucune autre ville. Difficile : grandit vite, transporte plus de marchandises, dispute aux joueurs leurs villes et leurs industries, paie un péage jusqu'à 400 et pose ses propres arrêts là où ceux des autres lui sont fermés.", "The levels. Easy: grows slowly, keeps a large reserve, only takes the other companies' free stops and stays out of towns where their stops are closed to it. Normal: grows faster, pays a toll of up to 150 a stop and goes into a town with closed stops only when no other town is left. Hard: grows fast, carries more freight, competes for the players' towns and industries, pays a toll of up to 400 and builds its own stops where the others' are closed to it."), "font-scale-body", w),
 			}
 			local iw = w - 16
 			for i, a in ipairs(c.ais) do
@@ -1627,6 +1630,7 @@ local function setup()
 				end
 				below[#below + 1] = box(H, head, nil, { size = { w, -1 } })
 				below[#below + 1] = text(T("Gérées par le jeu de l'hôte : bus, camions de marchandises et livraisons des villes. Plus le niveau est élevé, plus elles grandissent vite.", "Run by the host's game: buses, freight trucks and deliveries to the towns. The higher the level, the faster they grow."), "font-scale-body", w)
+				below[#below + 1] = text(T("Les niveaux. Facile : grandit lentement, garde une grosse réserve, ne prend que les arrêts gratuits des autres entreprises et évite les villes où leurs arrêts lui sont fermés. Normal : grandit plus vite, paie un péage jusqu'à 150 par arrêt et n'entre dans une ville aux arrêts fermés que s'il ne lui reste aucune autre ville. Difficile : grandit vite, transporte plus de marchandises, dispute aux joueurs leurs villes et leurs industries, paie un péage jusqu'à 400 et pose ses propres arrêts là où ceux des autres lui sont fermés.", "The levels. Easy: grows slowly, keeps a large reserve, only takes the other companies' free stops and stays out of towns where their stops are closed to it. Normal: grows faster, pays a toll of up to 150 a stop and goes into a town with closed stops only when no other town is left. Hard: grows fast, carries more freight, competes for the players' towns and industries, pays a toll of up to 400 and builds its own stops where the others' are closed to it."), "font-scale-body", w)
 				below[#below + 1] = gap(1, 6)
 				-- its level (0.5.13): how fast it grows and how hard it competes
 				local LEVELS = { T("Facile", "Easy"), T("Normal", "Normal"), T("Difficile", "Hard") }

@@ -10,7 +10,8 @@
 --              not met is paid pro rata, and A pays B the contract's penalty for each unit missing (E2). Delivered = all of that
 --              cargo A's vehicles unload at B's station (E3). The first month (signed during it) is paid without a penalty.
 --
--- Only the chief of a company sells, buys, signs and cancels (E1). The computer companies stay out of trade in v1 (E6).
+-- Only the chief of a company sells, buys, signs and cancels (E1). The computer companies stay out of trade in v1 (E6); since 0.7.5
+-- they sell the stations they no longer use (the host's game sends their offers), and still never buy nor sign.
 --
 -- Events (sent by a game's GUI half with env.send; the bridge adds param.mpfCo, the sender's company, and param.mpfFrom, the
 -- sender's name, "#n" after it for a player who joined, as for every "mpfever" event of the companies mode):
@@ -408,8 +409,13 @@ end
 
 local function sale(st, s, reg, env, name, param, mine, key, refuse)
 	if name == "f_trade_offer" then
-		if not tradable(mine) then return refuse("company " .. tostring(param.mpfCo) .. " may not trade") end
-		if chief(mine) ~= key then return refuse("not the chief of company " .. mine.id) end
+		-- (0.7.5) a computer company sells too (stations it no longer uses, see mpfever_ai.lua): the host's game sends its offers, it
+		-- has no chief; it never buys (an offer to it is refused, as before)
+		local aiSeller = mine ~= nil and not mine.gone and isAi(mine)
+		if not aiSeller then
+			if not tradable(mine) then return refuse("company " .. tostring(param.mpfCo) .. " may not trade") end
+			if chief(mine) ~= key then return refuse("not the chief of company " .. mine.id) end
+		end
 		local to = findCo(reg, int(param.to))
 		if not tradable(to) or to.id == mine.id then return refuse("buyer " .. tostring(param.to)) end
 		local price = int(param.price)
@@ -438,7 +444,7 @@ local function sale(st, s, reg, env, name, param, mine, key, refuse)
 	local o, i = findById(s.offers, int(param.id))
 	if not o then return refuse("no offer " .. tostring(param.id)) end
 	if name == "f_trade_cancel" then
-		if not (mine and mine.id == o.from and chief(mine) == key) then return refuse("not the chief of the seller") end
+		if not (mine and mine.id == o.from and (chief(mine) == key or isAi(mine))) then return refuse("not the chief of the seller") end
 		table.remove(s.offers, i)
 		news(s, { kind = "cancelled", from = o.from, to = o.to, what = what(o) })
 		env.log("trade: offer " .. o.id .. " taken back")
@@ -453,7 +459,8 @@ local function sale(st, s, reg, env, name, param, mine, key, refuse)
 		return true
 	end
 	local seller = findCo(reg, o.from)
-	if not tradable(seller) then
+	-- (0.7.5: a computer company's offer, see f_trade_offer)
+	if not (tradable(seller) or (seller and not seller.gone and isAi(seller))) then
 		news(s, { kind = "failed", from = o.from, to = o.to, what = what(o) })
 		return refuse("the seller is gone")
 	end

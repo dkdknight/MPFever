@@ -1414,6 +1414,42 @@ namespace MPFever
         public event Action ResumeRefused;
 
         public Client(SessionLink link = null) { Link = link ?? new SessionLink(); }
+
+        // (0.7.5, tests only: MPFEVER_TESTLAGMS=<ms>, 1 to 2000) this player's session messages, to the host and from it, held that
+        // long each, in their order, as over a far network (two games on one PC answer each other in a few ms; the pacing of a real
+        // server, its clocks arriving late, cannot be tried otherwise). Never set for a game: 0, nothing held
+        internal static readonly int TestLagMs = int.TryParse(Environment.GetEnvironmentVariable("MPFEVER_TESTLAGMS"), out var tlag) && tlag > 0 && tlag <= 2000 ? tlag : 0;
+        readonly Queue<KeyValuePair<long, Action>> lagQ = new Queue<KeyValuePair<long, Action>>();
+        Thread lagThread;
+        void Later(Action a)
+        {
+            lock (lagQ)
+            {
+                lagQ.Enqueue(new KeyValuePair<long, Action>(Environment.TickCount + TestLagMs, a));
+                Monitor.Pulse(lagQ);
+                if (lagThread == null)
+                {
+                    lagThread = new Thread(() =>
+                    {
+                        while (!stop)
+                        {
+                            KeyValuePair<long, Action> it;
+                            lock (lagQ)
+                            {
+                                while (lagQ.Count == 0 && !stop) Monitor.Wait(lagQ, 200);
+                                if (stop) break;
+                                it = lagQ.Dequeue();
+                            }
+                            int wait = (int)(it.Key - Environment.TickCount);
+                            if (wait > 0) Thread.Sleep(wait);
+                            try { it.Value(); } catch (Exception e) { Log.W("test lag: " + e.Message); }
+                        }
+                    }) { IsBackground = true, Name = "MPFever test lag" };
+                    lagThread.Start();
+                    Log.Warn("TESTLAG: this player's messages held " + TestLagMs + " ms each way (MPFEVER_TESTLAGMS, tests only)");
+                }
+            }
+        }
         /// <summary>The host refused this player (wrong password, server full, other version, kicked): raised with the
         /// "denied" payload, before Closed.</summary>
         public event Action<Dictionary<object, object>> Denied;
@@ -1717,6 +1753,15 @@ namespace MPFever
                     Link.Received();
                     // (0.7.4, BUSYCUT: no silence cut while a message is handled, see LinkLoop)
                     Interlocked.Exchange(ref handlingSince, DateTime.UtcNow.Ticks);
+                    if (TestLagMs > 0 && !SessionLink.IsControl(m.Kind) && !m.IsBinary)
+                    {
+                        // (tests, see TestLagMs: handed on later, in order)
+                        var held = m;
+                        Later(() => Received?.Invoke(held));
+                        Interlocked.Exchange(ref handlingSince, 0);
+                        Interlocked.Exchange(ref lastRecvTicks, DateTime.UtcNow.Ticks);
+                        continue;
+                    }
                     try { Received?.Invoke(m); }
                     finally
                     {
@@ -1792,6 +1837,11 @@ namespace MPFever
         /// <summary>Sends a message to the host. A session message goes into the link first, and waits there while the host
         /// has not answered a claim (it goes after its "resumed", or is dropped by its plain welcome).</summary>
         public void Send(Msg m)
+        {
+            if (TestLagMs > 0 && !SessionLink.IsControl(m.Kind)) { Later(() => SendNow(m)); return; }
+            SendNow(m);
+        }
+        void SendNow(Msg m)
         {
             try
             {

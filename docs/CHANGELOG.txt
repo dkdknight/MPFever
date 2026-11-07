@@ -2,6 +2,22 @@ MPFever - Changelog
 ===================
 
 0.7.5 - (in progress)
+  - Tests: MPFEVER_TESTLAGMS=<ms> holds a player's session messages that long each way, in order, as over a far network
+    (two games on one PC could not show the pacing of a real server). Never set for a game. Test: tests/test_testlag075.py.
+  - A computer company's new street stops are named after their town and the company (they had no name: "Unnamed
+    station" at an auction and in the players' line windows). MPFEVER_AISTOPNAME=0: none. Test: tests/test_aistopname075.py.
+  - Computer companies and the other companies' stops (the user, 2026-11-07): in a town where another company has street
+    stops, a computer company builds none of its own. Its line goes through theirs when their rule lets it: open, or a toll
+    its level finds worth paying (Easy none, Normal up to 150 a stop, Hard up to 400; a line through toll stops it gave up
+    for losing money marks them too dear). When their stops are closed to it, Easy stays out of the town, Normal stays out
+    while a town free of them is left, Hard builds its own. The same for the towns of a line between two towns. The lobby
+    says what each level does. MPFEVER_AISHARED=0: its own stops everywhere, as before. Test: tests/test_aishared075.py.
+  - Computer companies sell the stops they no longer use (a given up line's, used by no other of its lines), the game
+    option "sales" on: offered to the player company whose lines stop there (else the one with the most stops in its
+    town) for 15 000. The trade module takes a computer company's offers (sent by the host's game); it still never buys.
+    Unsold, a stop is demolished only with MPFEVER_AIDEMOLISH=1, as before: a demolished stop's id may be given again at
+    once by MPFever's free-id order, which stopped both games once (2026-10-28). MPFEVER_AISELL=0: never offered.
+    Tests: tests/test_aishared075.py, tests/test_feat_trade.py.
   - FIX (the game ran at half speed in multiplayer, the user's server 2026-11-07): the smooth pacing slowed a game down as it
     came within a batch and a half of the barrier, the other game's last clock plus 6 steps at 4x. That clock arrives a few
     steps old, so two games in step were always that close, and both showed their batches twice as long all game long: x2.0
