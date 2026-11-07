@@ -158,18 +158,27 @@ end
 
 local function extendedParts(parts)
 	local dump = SDUMP.on and (not SDUMP.all or SDUMP.n < 40 or os.getenv("MPFEVER_SDUMP") == "all") and {}
+	-- (0.7.5) the dump's cost, apart (K.dumpCost, in the "hash costs" lines): the dump is a diagnostic, the check holds the
+	-- simulation for it
+	local tDump = 0
 	for name, res in pairs(GAME_SCRIPTS) do
 		local ok, v = pcall(function()
 			local e = api.engine.system.gameScriptSystem.getEntityForGameScript(res)
 			if not e or e < 0 then return "absent" end
 			local c = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT)
 			if not c then return "absent" end
-			if dump then flatten(c.state, name, dump, 0) end
+			if dump then local t0 = os.clock(); flatten(c.state, name, dump, 0); tDump = tDump + os.clock() - t0 end
 			return tostring(valueHash(c.state, 0, name == "subventions" and os.getenv("MPFEVER_SUBNAMES") ~= "1"))
 		end)
 		if ok and v ~= "absent" then parts["script:" .. name] = v end
 	end
-	if dump then
+	-- (0.7.5) the world's part of the dump (vehicles, lines, names, stations, constructions: a loop over every construction of
+	-- the map) in one dump of three, the game scripts' states (the drifts seen most, "script:towns") in every one: the check
+	-- held the simulation 0.15 to 0.3 s every 10 s on the user's server, a hitch the players felt. The dumps are not part of
+	-- the check (each game writes its own files). MPFEVER_SDUMPWORLD=1: in every dump, as before
+	local world = dump and (SDUMP.all or SDUMP.n % 3 == 0 or os.getenv("MPFEVER_SDUMPWORLD") == "1")
+	local tWorld = os.clock()
+	if dump and world then
 		-- the vehicles too, by their line and where they are (their ids differ between games): the first vehicle that moved
 		-- otherwise in two games' files shows where a drift of "vehicles" started
 		pcall(function()
@@ -285,6 +294,8 @@ local function extendedParts(parts)
 				end
 			end)
 		end
+	end
+	if dump then
 		SDUMP.n = SDUMP.n + 1
 		table.sort(dump)
 		pcall(function()
@@ -293,6 +304,7 @@ local function extendedParts(parts)
 			f:write("t = " .. tostring(gameTime()), NL, table.concat(dump, NL), NL)
 			f:close()
 		end)
+		K.dumpCost = tDump + os.clock() - tWorld
 	end
 	-- cargo waiting in buildings (industries, warehouses, stations)
 	pcall(function()
@@ -612,6 +624,7 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	local okx, errx = pcall(extendedParts, parts)
 	if not okx then parts.extended = "ERR " .. tostring(errx):sub(1, 80) end
 	costs.extended = os.clock() - tMark
+	if K.dumpCost then costs.dump = K.dumpCost; K.dumpCost = nil end
 	-- (0.6.8: and later a check that held the simulation more than 0.12 s, one in 20 of them: which part weighs, on a big world)
 	K.hashHeavy = (K.hashHeavy or 0) + ((os.clock() - tStart > 0.12) and 1 or 0)
 	if K.hashCostsShown < 3 or (os.clock() - tStart > 0.12 and K.hashHeavy % 20 == 1) then
@@ -4290,7 +4303,13 @@ G.smoothPace = function(sp)
 	-- (running at the session's speed, nothing held or stepped exactly: the stop points keep their own logic)
 	if okT and s.started and s.pauseAt == nil and sp > 0 and sp == s.speed and G.holdAt == nil and not G.stepTarget and G.lastBarrier then
 		local per = math.max(1, sp)                                  -- steps per batch
-		local margin = (G.lastBarrier - now) / STEP / per            -- batches left before the barrier
+		-- (0.7.5) the room is counted to where this game really stops: the barrier and its overshoot reserve (the native stop
+		-- point). Counted to the barrier alone, two games in step were always under a batch and a half from it (the barrier is
+		-- the other game's last clock plus 6 steps at 4x, and that clock arrives a few steps old): both ran their batches twice
+		-- as long, all game long. The user's server, 2026-11-07: x2.0 to x2.5 at 4x, x0.72 at 1x, the factor at 2.00 on both
+		-- games; x3.05 at 4x on one PC. MPFEVER_PACEBARRIER=1: counted to the barrier, as before
+		local stopRoom = os.getenv("MPFEVER_PACEBARRIER") == "1" and 0 or overshootReserve() * STEP
+		local margin = (G.lastBarrier + stopRoom - now) / STEP / per -- batches left before this game stops
 		target = 1 + 2 * (1.5 - margin)
 		if target < 1 then target = 1 elseif target > 2 then target = 2 end
 	end
@@ -17964,7 +17983,10 @@ G.coLotDetail = function(reg, au, i, lot)
 					local okK, key = pcall(R.sgKey, sg)
 					if okK and key then
 						for j, lt in ipairs(au.lots or {}) do
-							if lt.kind == "station" and lt.key == key then return C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", j) end
+							if lt.kind == "station" and lt.key == key then
+								if lt.town and os.getenv("MPFEVER_LOTTOWN") ~= "0" then return C.Tf("Gare sans nom à %s (lot %s)", "Unnamed station in %s (lot %s)", lt.town, j) end
+								return C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", j)
+							end
 						end
 					end
 					return n
@@ -18077,7 +18099,8 @@ G.coNewsText = function(reg, n)
 	-- (0.7.4: a station or a depot the game never named)
 	if (k == "lot_sold" or k == "lot_unsold") and (n.label or "") == "" then
 		n = C.copy(n)
-		if n.lk == "station" and n.lot then n.label = C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", n.lot)
+		if n.lk == "station" and n.lot and n.town and os.getenv("MPFEVER_LOTTOWN") ~= "0" then n.label = C.Tf("Gare sans nom à %s (lot %s)", "Unnamed station in %s (lot %s)", n.town, n.lot)
+		elseif n.lk == "station" and n.lot then n.label = C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", n.lot)
 		elseif n.lk == "depot" and n.lot then n.label = C.Tf("Dépôt sans nom (lot %s)", "Unnamed depot (lot %s)", n.lot)
 		else n.label = C.T("sans nom", "unnamed") end
 	end
@@ -19701,12 +19724,15 @@ local function guiHandleEvent(userParams, state, guiState, src, id, name, param)
 	elseif name == "builder.proposalPrepareForApply" then
 		-- (0.7.4: the copy of a build shipped at the click, the proposal the tool sends next, see G.toolPrepared)
 		pcall(G.toolPrepared, param, id)
+		-- (0.7.5: the copy for the game options' allow, taken here: proposalApply comes after the engine applied the build, so the
+		-- copy taken there came too late for the DLL's "deferred" and G.featTakeTool gave nothing. MPFEVER_FEATTOOLAPPLY=1: as before)
+		if G.featOn and G.featAllow and os.getenv("MPFEVER_FEATTOOLAPPLY") ~= "1" then pcall(G.featTool, param) end
 	elseif name == "builder.proposalApply" then
 		pcall(G.previewGone); pcall(G.toolApplied, param)
 		-- (0.7.0: this player's own build, for the mods that finish it from their guiUpdate, see mpfever_modauto.lua)
 		pcall(function() package.loaded["mpfever_local_activity"] = os.clock() end)
 		-- (0.6: the build the tool applies, for a game option that checks this player's builds, see G.featRefuse)
-		if G.featOn and G.featAllow then pcall(G.featTool, param) end
+		if G.featOn and G.featAllow and os.getenv("MPFEVER_FEATTOOLAPPLY") == "1" then pcall(G.featTool, param) end
 	end
 	-- (research, MPFEVER_EVLOG=1: every interface event of this game, its first time and then every 50th, with its parameter's kind)
 	if os.getenv("MPFEVER_EVLOG") == "1" then

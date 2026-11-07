@@ -339,6 +339,24 @@ local function stationsOf(env, ent)
 	return out
 end
 
+-- (0.7.5) The town of a station the game never named (a computer company's truck stops): its lot reads « Unnamed station in
+-- <town> (lot N) » instead of its number only. The engine's station -> town, the same on every game; always kept here (the
+-- interface's MPFEVER_LOTTOWN=0 only hides it: never a switch in the simulation, each PC has its own)
+function E.townOfStation(sg)
+	local town
+	pcall(function()
+		local g = api.engine.getComponent(sg, api.type.ComponentType.STATION_GROUP)
+		for _, st in ipairs(g and g.stations or {}) do
+			local t = api.engine.system.stationSystem.getTown(st)
+			if t and t > 0 then
+				local n = api.engine.getComponent(t, api.type.ComponentType.NAME)
+				if n and type(n.name) == "string" and n.name ~= "" then town = n.name break end
+			end
+		end
+	end)
+	return town
+end
+
 function E.lotsOf(env, c)
 	local lines, stations, depots = {}, {}, {}
 	pcall(function()
@@ -350,7 +368,9 @@ function E.lotsOf(env, c)
 		end
 	end)
 	for _, sg in ipairs(stationsOf(env, c.ent)) do
-		stations[#stations + 1] = { kind = "station", key = env.R.sgKey(sg), label = nameOf(sg), reserve = E.RESERVE.station }
+		local lot = { kind = "station", key = env.R.sgKey(sg), label = nameOf(sg), reserve = E.RESERVE.station }
+		if lot.label == "" then lot.town = E.townOfStation(sg) end
+		stations[#stations + 1] = lot
 	end
 	for _, d in ipairs(depotsOf(env, c.ent)) do
 		depots[#depots + 1] = { kind = "depot", key = depotKey(d), label = nameOf(d), reserve = E.RESERVE.depot }
@@ -651,7 +671,7 @@ function E.closeAll(st, env)
 			if w and live(w) and w.ent then
 				sell(env, c, lot, w, lot.best, reg)
 				sold = sold + 1
-				news(reg, { kind = "lot_sold", co = au.co, lot = i, lk = lot.kind, label = lot.label, to = w.id, amount = lot.best })
+				news(reg, { kind = "lot_sold", co = au.co, lot = i, lk = lot.kind, label = lot.label, town = lot.town, to = w.id, amount = lot.best })
 			elseif lot.kind == "company" then
 				-- (the whole company unsold: its lines, depots and stations nobody else uses go, as lots of their own would)
 				for _, sub in ipairs(E.lotsOf(env, c)) do
@@ -662,7 +682,7 @@ function E.closeAll(st, env)
 			else
 				local toHeir = unsold(env, c, lot, heir)
 				if toHeir then kept = kept + 1 else gone = gone + 1 end
-				news(reg, { kind = "lot_unsold", co = au.co, lot = i, lk = lot.kind, label = lot.label, heir = (toHeir and heir) and heir.id or nil })
+				news(reg, { kind = "lot_unsold", co = au.co, lot = i, lk = lot.kind, label = lot.label, town = lot.town, heir = (toHeir and heir) and heir.id or nil })
 			end
 			if lot.kind ~= "company" then dropLotRule(reg, lot) end
 		end

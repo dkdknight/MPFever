@@ -23660,6 +23660,19 @@
       "ko": "올해 지금까지의 실적:",
       "zh-CN": "本年迄今结果：",
       "zh-TW": "本年迄今結果："
+    },
+    "Unnamed station in %s (lot %s)": {
+      "de": "Unbenannter Bahnhof in %s (Los %s)",
+      "es": "Estación sin nombre en %s (lote %s)",
+      "it": "Stazione senza nome a %s (lotto %s)",
+      "nl": "Naamloos station in %s (kavel %s)",
+      "pl": "Stacja bez nazwy w %s (pozycja %s)",
+      "pt-BR": "Estação sem nome em %s (lote %s)",
+      "ru": "Станция без названия в %s (лот %s)",
+      "ja": "%s の名前のない駅（ロット %s）",
+      "ko": "%s의 이름 없는 역 (품목 %s)",
+      "zh-CN": "%s的未命名车站（拍品 %s）",
+      "zh-TW": "%s的未命名車站（拍品 %s）"
     }
   }
 }

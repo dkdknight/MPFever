@@ -2,6 +2,24 @@ MPFever - Changelog
 ===================
 
 0.7.5 - (in progress)
+  - FIX (the game ran at half speed in multiplayer, the user's server 2026-11-07): the smooth pacing slowed a game down as it
+    came within a batch and a half of the barrier, the other game's last clock plus 6 steps at 4x. That clock arrives a few
+    steps old, so two games in step were always that close, and both showed their batches twice as long all game long: x2.0
+    to x2.5 when x4 was asked, x0.72 at x1, the factor at 2.00 on both games (x3.05 at 4x on one PC). The room is now counted
+    to where the game really stops (the barrier and its overshoot reserve): x3.6 to x3.9 at 4x on one PC, every check
+    identical. MPFEVER_PACEBARRIER=1: as before. Test: tests/test_pace075.py.
+  - FIX (hitches every 10 s): the checks' diagnostic dump (sdump_ring_*.txt) read the whole world at every check (vehicles,
+    names, stations, every construction of the map): the check held the simulation 0.15 to 0.3 s. The world's part goes in
+    one dump of three now, the game scripts' states in every one; its cost shows apart ("dump=" in the "hash costs"
+    lines). MPFEVER_SDUMPWORLD=1: as before. Test: tests/test_sdumpworld075.py.
+  - FIX: the MPFever Hub opened with its top left corner in the middle of the screen (the game places a window before its
+    pages are laid out), and a larger Hub ran off a small screen. Once laid out, its size and the screen's are read and it is
+    opened again once, centred. MPFEVER_HUBCENTER=0: as before. Test: tests/test_hubcenter075.py.
+  - An unnamed station's lot at an auction (a computer company's truck stops) names its town: « Unnamed station in Lyon
+    (lot 4) ». MPFEVER_LOTTOWN=0: its number only. Test: tests/test_lottown075.py.
+  - FIX: the game options' copy of a tool's build was taken at builder.proposalApply, which comes after the engine applied
+    the build: too late for the option checks of a build held by the DLL. Taken at builder.proposalPrepareForApply now.
+    MPFEVER_FEATTOOLAPPLY=1: as before. Test: tests/test_feattool075.py.
   - FIX (a reload "script:towns" on the user's dedicated server, 2026-11-07 08:41): the towns' noise and traffic ratings
     came out a little different on the server (16 threads) and a player's PC (32 threads): town 18 had noise 0.67015 and
     0.67012, traffic 0.98496 and 0.98514, every other measure identical. Noise comes from the engine's emission grid (as

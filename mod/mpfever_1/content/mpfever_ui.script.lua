@@ -2309,7 +2309,7 @@ U.loadPrefs = function()
 		end
 	end
 	read(C.DIR .. C.BS .. "ui_prefs.txt", { open = true, tab = true, compact = true, pinned = true, hubpage = true, hubsize = true })
-	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true, vdots = true, oldmenus = true })
+	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true, vdots = true, oldmenus = true, hubk = true })
 	U.prefs = p
 	U.tab = U.tab or p.tab or "session"
 	U.compact = p.compact == "1"
@@ -2329,7 +2329,8 @@ U.saveGlobalPrefs = function()
 	local p = U.loadPrefs()
 	local f = C.IO.open(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", "wb")
 	if f then f:write("autoopen=" .. tostring(p.autoopen or "1") .. C.NL .. "aichat=" .. tostring(p.aichat or "1") .. C.NL .. "dots=" .. tostring(p.dots or "1") .. C.NL
-		.. (p.vdots ~= nil and ("vdots=" .. tostring(p.vdots) .. C.NL) or "") .. (p.oldmenus == "1" and ("oldmenus=1" .. C.NL) or "")); f:close() end
+		.. (p.vdots ~= nil and ("vdots=" .. tostring(p.vdots) .. C.NL) or "") .. (p.oldmenus == "1" and ("oldmenus=1" .. C.NL) or "")
+		.. (p.hubk ~= nil and ("hubk=" .. tostring(p.hubk) .. C.NL) or "")); f:close() end
 end
 U.saveAutoOpen = function(on)
 	local p = U.loadPrefs()
@@ -2619,6 +2620,8 @@ U.openHub = function(page, wapi)
 	local ok, err = pcall(function() wapi.addSingletonWindow(U.HubWindow, { onClose = function() U.closeHub() end }) end)
 	if not ok then log("hub: not opened: " .. tostring(err)) return false end
 	U.hubOpen, U.hubApi = true, wapi
+	-- (0.7.5, see U.hubCentre)
+	U.hubCenterDue = 6
 	-- (the small window, the quick view, stood out behind the Hub: it closes while the Hub is open, not as the player's choice,
 	-- so it still opens by itself after a reload. MPFEVER_HUBHIDESMALL=0: it stays)
 	if U.winOpen and os.getenv("MPFEVER_HUBHIDESMALL") ~= "0" then pcall(U.closeWindow, false) end
@@ -2626,6 +2629,48 @@ U.openHub = function(page, wapi)
 	U.refreshChat()
 	U.winChanged()
 	return true
+end
+-- (0.7.5) Where the Hub opens. The game places a window by its first size, before the Hub's pages are laid out (no size yet), and
+-- keeps it there by its id for the rest of the session (initialX/Y is read once: seen in game, a Hub opened again kept its place;
+-- a window whose id changes while shown is a fatal assertion). With 0.5/0.45 the Hub's top left corner landed in the middle of
+-- the screen and a larger Hub ran off a small screen (1280 x 895). Once laid out, the Hub's size is read as a part of the
+-- screen (api.gui.byId.getSize, from onStep: the interface's API is refused in a timer; the game gives parts of the screen,
+-- the Hub 0.475 x 0.478 of 1 x 1) and compared with its measures: the ratio is kept (hubk in the ui_prefs.txt kept across
+-- launches, for that screen), and the next openings put its top left corner where it is centred, from the first frame.
+U.hubCentre = function()
+	local function wh(id)
+		local x, y
+		pcall(function() local v = api.gui.byId.getSize(id); x, y = tonumber(v.x or v[1]), tonumber(v.y or v[2]) end)
+		return x, y
+	end
+	local hw, hh = wh("window.mpfever.hub")
+	local cw, ch = wh("GameUiWindowContainer")
+	if not (cw and ch and cw > 0 and ch > 0) then cw, ch = wh("mainView") end
+	if not (hw and hh and cw and ch and hw > 0 and hh > 0 and cw > 0 and ch > 0 and hw <= cw * 1.5 and hh <= ch * 1.5) then
+		log("hub: its size not read (hub " .. tostring(hw) .. " x " .. tostring(hh) .. ", screen " .. tostring(cw) .. " x " .. tostring(ch) .. ")")
+		return
+	end
+	local m = U.hubMeasures()
+	local sw, sh = U.hubScreen()
+	-- (the part of the screen the Hub takes for each unit of its measures: its frame and title included)
+	local rx, ry = (hw / cw) / m.W, (hh / ch) / m.H
+	local p = U.loadPrefs()
+	local key = string.format("%d,%d", math.floor(sw), math.floor(sh))
+	local old = p.hubk
+	p.hubk = string.format("%s,%.8g,%.8g", key, rx, ry)
+	if old ~= p.hubk then pcall(U.saveGlobalPrefs) end
+	log(string.format("hub: %.3g x %.3g of the screen (%s): kept for its next openings, centred", hw / cw, hh / ch, key))
+end
+-- the Hub's initialX/Y: its top left corner where it is centred, when its ratio is known for this screen (see U.hubCentre)
+U.hubAt = function()
+	if os.getenv("MPFEVER_HUBCENTER") == "0" then return 0.5, 0.45 end
+	local p = U.prefs or U.loadPrefs()
+	local sw, sh = U.hubScreen()
+	local w, h, rx, ry = tostring(p.hubk or ""):match("^(%d+),(%d+),([%d%.eE%-]+),([%d%.eE%-]+)$")
+	rx, ry = tonumber(rx), tonumber(ry)
+	if not (rx and ry) or tonumber(w) ~= math.floor(sw) or tonumber(h) ~= math.floor(sh) then return 0.5, 0.45 end
+	local m = U.hubMeasures()
+	return math.max(0, (1 - rx * m.W) / 2), math.max(0, (1 - ry * m.H) / 2)
 end
 U.closeHub = function()
 	local wapi = U.hubApi or defaultWindowApi()
@@ -3608,6 +3653,10 @@ end
 U.auLotTitle = function(lot)
 	-- (a station or a depot the game never named, as a computer company's truck stops: its number in the sale)
 	if (lot.label or "") == "" then
+		-- (0.7.5: and its town, when the engine gives one; MPFEVER_LOTTOWN=0: its number only, as 0.7.4)
+		if lot.kind == "station" and lot.town and os.getenv("MPFEVER_LOTTOWN") ~= "0" then
+			return C.Tf("Gare sans nom à %s (lot %s)", "Unnamed station in %s (lot %s)", lot.town, lot.idx or "?")
+		end
 		if lot.kind == "station" then return C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", lot.idx or "?") end
 		if lot.kind == "depot" then return C.Tf("Dépôt sans nom (lot %s)", "Unnamed depot (lot %s)", lot.idx or "?") end
 	end
@@ -5142,10 +5191,23 @@ U.installHub = function(react, builtin)
 		local st = useStatus(react)
 		local chat = useChat(react)
 		local view = react.useState(U.hubViewKey())
+		-- (0.7.5) where it opens, see U.hubAt (read once by the game, at its first frame)
+		local atX, atY = U.hubAt()
 		react.onStepTimer(function()
 			local k = U.hubViewKey()
 			if view:old() ~= k then view:set(k) end
 		end, 0.25)
+		-- (0.7.5) a few frames after it opens, once laid out, its size is read for its next openings, see U.hubCentre.
+		-- MPFEVER_HUBCENTER=0: as before
+		if react.onStep and os.getenv("MPFEVER_HUBCENTER") ~= "0" then
+			react.onStep(function()
+				if not U.hubCenterDue then return end
+				U.hubCenterDue = U.hubCenterDue - 1
+				if U.hubCenterDue > 0 then return end
+				U.hubCenterDue = nil
+				pcall(U.hubCentre)
+			end)
+		end
 		local ctx = {}
 		ctx.draft = react.useState("")
 		ctx.chatGen = react.useState(0)
@@ -5170,8 +5232,8 @@ U.installHub = function(react, builtin)
 		return builtin.Window {
 			title = "MPFever Hub",
 			id = "window.mpfever.hub",
-			initialX = 0.5,
-			initialY = 0.45,
+			initialX = atX,
+			initialY = atY,
 			movable = true,
 			closable = true,
 			pinnable = false,
