@@ -117,7 +117,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.7.5";
+        public const string Version = "0.7.6";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -1625,6 +1625,29 @@ namespace MPFever
             return waiting.RemoveWhere(w => w == gone || BaseName(w) == b);
         }
 
+        /// <summary>(0.7.6, RESYNCLEFTNAME) Whether a resynchronisation waits for this player, under this connection's name or
+        /// another of the same player. The user's server, 2026-11-07 20:02: chris#10 left while the game was on its way, came back
+        /// 17 s later as chris#12 (so chris#10 stayed waited for), and left again: the wait looked for "chris#12", found nothing
+        /// and never dropped chris#10: every game stood 600 s. exact (MPFEVER_RESYNCLEFTNAME=0): this name only, as before.</summary>
+        internal static bool WaitedFor(HashSet<string> waiting, string name, bool exact)
+        {
+            if (exact) return waiting.Contains(name);
+            string b = BaseName(name);
+            return waiting.Any(w => w == name || BaseName(w) == b);
+        }
+
+        /// <summary>(0.7.6, JOINMIDRESYNC) What becomes of a player who joins (its look at the mods and DLCs done) while a
+        /// resynchronisation runs: "pending", a resynchronisation of its own afterwards (as before: no resynchronisation, or its
+        /// game not saved yet, or its wait over); "send", the game being sent now goes to it too and is waited for (chris#12 on
+        /// the user's server, 2026-11-07 20:03:16, got nothing: the game was on its way to the others, and nothing was left to do
+        /// for it afterwards either). old (MPFEVER_JOINMIDRESYNC=0): as before ("none" during a resynchronisation).</summary>
+        internal static string JoinDuringResync(bool resyncing, bool hasBytes, bool sending, int bytesId, int cancelled, bool old)
+        {
+            if (!resyncing || !hasBytes) return "pending";
+            if (old) return "none";
+            return sending && cancelled < bytesId ? "send" : "pending";
+        }
+
         /// <summary>(0.7.4, MODRETRY) A dedicated server whose own world needs a mod the game does not see yet tries again: the
         /// user's server, 2026-11-06 23:20, "PYT - Mega Warehouse (mod.io)" missing 2 s after the menu, there at 21:04 (mod.io was
         /// updating it). Its game is started again after 30 s, three times at most, before giving up. MPFEVER_MODRETRY=0: as
@@ -2984,7 +3007,7 @@ namespace MPFever
                 // is no longer waited for. MPFEVER_RESYNCLEFT=0: as before
                 if (!lobbyStarting && resyncing && Environment.GetEnvironmentVariable("MPFEVER_RESYNCLEFT") != "0")
                 {
-                    bool waited; lock (resyncWaiting) waited = resyncWaiting.Contains(p.Name);
+                    bool waited; lock (resyncWaiting) waited = WaitedFor(resyncWaiting, p.Name, Environment.GetEnvironmentVariable("MPFEVER_RESYNCLEFTNAME") == "0");
                     if (waited)
                     {
                         var gone = p.Name;
@@ -4129,7 +4152,16 @@ namespace MPFever
                         bool asked = jr.TryGetValue("asked", out var av) && av is bool ab && ab;
                         Log.Ok(asked ? F("{0} a vérifié les mods et les DLC : il rejoint la partie", "{0} checked the mods and DLCs: they join the game", BaseName(from.Name))
                                      : F("{0} a les mêmes mods et DLC : il rejoint la partie", "{0} has the same mods and DLCs: they join the game", BaseName(from.Name)));
-                        if (!resyncing || resyncBytes == null) joinPending = true;
+                        var bytesNow = resyncBytes;
+                        string jd = JoinDuringResync(resyncing, bytesNow != null, resyncSending, resyncBytesId, saveCancel,
+                            Environment.GetEnvironmentVariable("MPFEVER_JOINMIDRESYNC") == "0");
+                        if (jd == "pending") joinPending = true;
+                        else if (jd == "send")
+                        {
+                            lock (resyncWaiting) { resyncWaiting.RemoveWhere(w => BaseName(w) == BaseName(from.Name)); resyncWaiting.Add(from.Name); }
+                            Log.W(F("{0} rejoint pendant la resynchronisation : la partie lui est envoyée aussi", "{0} joins during the resynchronisation: the game is sent to them too", BaseName(from.Name)));
+                            SendSave(resyncBytesId, bytesNow, resyncBytesSha ?? Sha256(bytesNow), new[] { from.Name });
+                        }
                         MenuStatus();
                     }
                     break;
@@ -4540,6 +4572,7 @@ namespace MPFever
         void ResyncLocked(string reason)
         {
             int id = Interlocked.Increment(ref resyncId);
+            resyncAbort = false;
             int prevSpeed; lock (sessionGate) prevSpeed = Math.Max(1, speed);
             var t0 = DateTime.UtcNow;
             try
@@ -4601,8 +4634,9 @@ namespace MPFever
                 SendSave(id, bytes, sha, all.Where(n => !viaDelta.Contains(n)));
                 SendDeltas(id, bytes, sha, viaDelta);
                 KeepDeltaBase(bytes, sha);
-                bool back = WaitUntil(() => { lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600);
-                if (!back) { lock (resyncWaiting) Log.Warn(T("Resynchronisation : sans nouvelles de ", "Resynchronisation: no news from ") + string.Join(", ", resyncWaiting) + T(" (on reprend quand même).", " (resuming anyway).")); }
+                bool back = WaitUntil(() => { if (resyncAbort) return true; lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600);
+                if (resyncAbort) { lock (resyncWaiting) if (resyncWaiting.Count > 0) Log.Warn(T("Resynchronisation interrompue (arrêt ou redémarrage du serveur) : on n'attend plus ", "Resynchronisation cut short (the server stops or restarts): no longer waiting for ") + string.Join(", ", resyncWaiting)); }
+                else if (!back) { lock (resyncWaiting) Log.Warn(T("Resynchronisation : sans nouvelles de ", "Resynchronisation: no news from ") + string.Join(", ", resyncWaiting) + T(" (on reprend quand même).", " (resuming anyway).")); }
                 saveCancel = id;   // (a player still receiving it would hold everybody's messages up: it gets the next one)
                 resyncDropping = false;
                 BroadcastSession();
@@ -4811,6 +4845,11 @@ namespace MPFever
 
         // (the host) the sends of a game up to this id are over (see SendSave)
         volatile int saveCancel;
+        /// <summary>(0.7.6, STOPRESYNC) The dedicated server stops or restarts: a resynchronisation under way waits for nobody
+        /// any more (see ResyncLocked). The user's server, 2026-11-07 20:07 and 20:09: "restart" then "stop" only wrote their
+        /// message in the chat, the world's save waited behind a resynchronisation stuck for 600 s; the server was closed by
+        /// hand and started again from an older save.</summary>
+        volatile bool resyncAbort;
         // (the host) the base of the differences (SendDeltas), each player's last game (its fingerprint) and measured speed (MB/s)
         string deltaBaseSha, deltaBasePath;
         readonly Dictionary<string, string> peerBase = new Dictionary<string, string>();

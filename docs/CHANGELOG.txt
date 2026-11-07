@@ -1,6 +1,45 @@
 MPFever - Changelog
 ===================
 
+0.7.6 - 2026-11-07: a crash after changing a tunnel during a pause fixed (#131), a dedicated server no longer stuck in a resynchronisation, its stop and restart at once
+  - FIX (crash, issue #131, juliu 2026-11-07 19:09, 0.7.4): a tram tunnel's type changed from its window during a pause
+    crashed the host at once ("it != components.end()", BaseNodeConfig, the traffic-light junction at the tunnel's end). The
+    window's build, held in the pause, was rebuilt in a script form that removed the configurations of the nodes it touched
+    (the tool's list) and gave none back: the engine makes a plain node's again, not a junction's with traffic lights. The
+    tool's configurations of those nodes are given again, with the form's numbers of the new segments (a replacement, never a
+    second one). The same for every build replayed in that form (a street upgrade beside traffic lights in a pause...).
+    MPFEVER_CFGREADD=0: as before. Autotest scenario cfgjunction (with MPFEVER_PAUSED=1). Test: tests/test_cfgreadd076.py.
+  - FIX (dedicated server, the user's 2026-11-07 20:02): every game stood 600 s in a resynchronisation when a joining player
+    left while the game was on its way, came back within 20 s under another connection (chris#10, then chris#12) and left
+    again: the wait looked for the new connection's name only and never dropped the old one. A player gone is now found in the
+    wait under any of its connections' names (MPFEVER_RESYNCLEFTNAME=0: as before). A player who finishes its look at the mods
+    and DLCs while the game is being sent gets that game too and is waited for in the place of its old connection; after the
+    wait, a resynchronisation of its own, as before (MPFEVER_JOINMIDRESYNC=0: as before: it got nothing). Test:
+    tests/test_server076.py (and MPFever.exe --selftest).
+  - FIX (dedicated server, the same evening): "restart" and "stop" only wrote their message in the chat while a
+    resynchronisation was stuck: the world's save waited behind it (up to 600 s) and said nothing; the server was closed by
+    hand and started again from an older save. A stop or a restart now cuts a resynchronisation short (it waits for nobody
+    any more, ends within seconds), says so, then saves the world (MPFEVER_STOPRESYNC=0: as before). The console's "resync"
+    says that a resynchronisation is under way instead of "no player to resynchronise" (MPFEVER_RESYNCMSGOLD=1: as before).
+    Test: tests/test_server076.py.
+  - FIX (EXPERIMENTAL "several players building without stopping", the user's server 2026-11-07 20:32): an upgrade of 15
+    road segments was shipped at the click with the tool's copy of 55 frames before, while its last preview (41 frames before)
+    had not been read (a preview that takes more than 8 ms to read stops the reading for a second): the build came out
+    otherwise than shipped and the host's game was reloaded. A preview copy older than the tool's last preview is no longer
+    taken: the build is held and shipped the usual way (MPFEVER_PRECREATESTALE=0: as before). Test:
+    tests/test_precreatestale076.py.
+  - EXPERIMENTAL, OFF by default: faster saves (after TPF3-MP, MIT, itself after silver2127's Big Maps for TPF2). With
+    MPFEVER_FASTSAVE=1 the game's save writer compresses with zstd at level 1 through a 64 KiB buffer instead of level 3 through
+    128 bytes (two instructions rewritten in place, each checked byte for byte; loading untouched, the savegames are standard
+    zstd frames that any game loads; =level or =buffer: one of the two). Measured on Test Lag Rp (the host's resynchronisation
+    save): the game's own 6.4 s for 114.8 MB, both 5.3 s for 124.7 MB, the buffer alone 6.5 s. The second gained is lost again
+    sending the 10 MB more to a player over the Internet (5.4 MB/s on the user's server), so the game's own stays. Test:
+    tests/test_fastsave076.py.
+  - The launcher finds the Mod Hub mods where mod.io's settings keep them ("RootLocalStoragePath" of a user's user.json, then
+    of mod.io's globalsettings.json, then the default %PUBLIC%\mod.io; after TPF3-MP 1.5.0): the mods of a player who moved
+    them to another drive were "not installed" for MPFever. MPFEVER_MODIOROOT=0: the default folder only, as before. Test:
+    tests/test_modioroot076.py.
+
 0.7.5 - 2026-11-07: the game at full speed again in multiplayer, lighter checks, no more crash after a session of one company per player, computer companies share the players' stops
   - FIX (reloads with "several players building without stopping", AMD and keviK 2026-11-07: 6 in 10 minutes): a bus stop
     shipped at the click was rebuilt on the other games as a street proposal: the segment replaced, its stop lost. The host

@@ -8214,6 +8214,16 @@ end
 G.takeToolCopy = function()
 	local t = G.toolCopy
 	G.toolCopy = nil
+	-- (0.7.6) A preview copy older than the tool's last preview is not the build: that preview was not read (it took more than 8
+	-- ms, or one before it did: none read for a second; or it had a critical error), and the player moved the tool meanwhile.
+	-- The user's upgrade of 15 segments on the server, 2026-11-07 20:32:29 (Knight-HD#2:57): the copy of 55 frames before was
+	-- shipped at the click, the last preview 41 frames before had not been read, the build came out otherwise than shipped and the
+	-- host's game was reloaded. Such a build is held and shipped the usual way. MPFEVER_PRECREATESTALE=0: taken, as before
+	if t and t.at == "create" and G.lastCreate and G.lastCreate.frame > t.frame and os.getenv("MPFEVER_PRECREATESTALE") ~= "0" then
+		log("held build: the tool's copy (" .. (G.frames - t.frame) .. " frame(s) before) is older than its last preview (" .. (G.frames - G.lastCreate.frame)
+			.. " frame(s) before, not read): not taken, the build is shipped the usual way")
+		return nil
+	end
 	-- (a copy taken when the tool prepares its build comes before its command, which the native module reports a few frames
 	-- later: 6 frames in the manual test x2 of 2026-11-07; every build of a tool is prepared first, so the last one prepared is
 	-- the one held now)
@@ -13276,6 +13286,110 @@ H.extend = function(from, p)
 		.. ", EXTENDCOUNT=" .. tostring(os.getenv("MPFEVER_EXTENDCOUNT"))
 	log("AUTOTEST extend: " .. AUTO.results[1])
 	G.waits[#G.waits + 1] = { at = G.frames + 300, fn = autoFinish }
+end
+
+-- A street segment beside a junction with traffic lights replaced as the game's windows replace one (MPFEVER_SCENARIO=cfgjunction
+-- with MPFEVER_PAUSED=1, host; issue #131: the tunnel window's build in a pause, rebuilt in a script form that removed the
+-- junction's configuration and gave none back, crashed the host): the game's own proposal (api.engine.util.proposal.replaceSegment,
+-- whose list removes the configurations of the segment's nodes and gives them again, as createBridgeOrTunnelProposal does), sent
+-- as a window sends it. MPFEVER_CFGJ_N (1) segments, each beside another junction. The log shows "node configs given again" and
+-- no game stops (MPFEVER_CFGREADD=0 on every game: the crash of #131)
+H.cfgjunction = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local want = tonumber(os.getenv("MPFEVER_CFGJ_N") or "") or 1
+	local segmap = api.engine.system.streetSystem.getNode2SegmentMap()
+	local CT = api.type.ComponentType
+	local function plainStreet(s)
+		local be = api.engine.getComponent(s, CT.BASE_EDGE)
+		local st = api.engine.getComponent(s, CT.BASE_EDGE_STREET)
+		return be and st and be.type == 0 and #be.objects == 0
+	end
+	local function lightsOf()
+		local l = R.entitiesWith("BASE_NODE_TRAFFIC_LIGHT")
+		if #l == 0 then
+			for _, nd in ipairs(R.allNodes()) do
+				pcall(function() if api.engine.getComponent(nd, CT.BASE_NODE_TRAFFIC_LIGHT) then l[#l + 1] = nd end end)
+			end
+		end
+		table.sort(l)
+		return l
+	end
+	-- the segment replaced beside each junction with traffic lights
+	local function replaceBeside(lights)
+		local sent = 0
+		for _, nd in ipairs(lights) do
+			if sent >= want then break end
+			local segs = {}
+			pcall(function() for _, s in ipairs(segmap[nd] or {}) do segs[#segs + 1] = s end end)
+			table.sort(segs)
+			for _, s in ipairs(segs) do
+				local ok, why = pcall(function()
+					if not plainStreet(s) then error("not a plain street") end
+					local prop = api.engine.util.proposal.replaceSegment(s)
+					local sp = prop.proposal
+					local add, rm = #sp.nodeConfigsToAdd, #sp.nodeConfigsToRemove
+					if add == 0 or rm == 0 then error("no node configuration in its proposal (" .. add .. "/" .. rm .. ")") end
+					local ctx = api.type.Context.new()
+					ctx.player = api.engine.util.getPlayer()
+					uiRequest("makeWorldBuildProposalCmd", { n = 4, C.marshal(prop), C.marshal(ctx), false, true })
+					return "segment " .. s .. " beside junction " .. nd .. " replaced (configurations " .. rm .. " removed, " .. add .. " given)"
+				end)
+				if ok then
+					sent = sent + 1
+					AUTO.results[#AUTO.results + 1] = why
+					log("AUTOTEST cfgjunction: " .. why .. " at t=" .. tostring(gameTime()) .. (G.session.pauseAt and " (paused)" or " (not paused)"))
+					break
+				end
+			end
+		end
+		if sent == 0 then AUTO.results[#AUTO.results + 1] = "no street segment beside a junction with traffic lights (" .. #lights .. " junctions)" end
+		log("AUTOTEST cfgjunction: " .. sent .. " sent, CFGREADD=" .. tostring(os.getenv("MPFEVER_CFGREADD")))
+		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = autoFinish }
+	end
+	local lights = lightsOf()
+	if #lights > 0 then replaceBeside(lights) return end
+	-- none in this world: traffic lights put on a street junction first (the game's own proposal, as the node window does), then
+	-- the segment replaced beside it once they are there
+	local nodes = {}
+	for nd, segs in pairs(segmap) do
+		pcall(function()
+			if #segs >= 3 and api.engine.getComponent(nd, CT.BASE_NODE_CONFIG) then
+				local all = true
+				for _, s in ipairs(segs) do if not plainStreet(s) then all = false end end
+				if all then nodes[#nodes + 1] = nd end
+			end
+		end)
+	end
+	table.sort(nodes)
+	local put = {}
+	for _, nd in ipairs(nodes) do
+		if #put >= want then break end
+		local ok, err = pcall(function()
+			local cfg = api.engine.getComponent(nd, CT.BASE_NODE_CONFIG)
+			local tl = cfg.trafficLightConfig:clone()
+			local prop = api.engine.util.proposal.createTrafficLightProposal(nd, tl, api.type.enum.TrafficLightPreference.YES)
+			uiRequest("makeWorldBuildProposalCmd", { n = 4, C.marshal(prop), nil, false, true })
+		end)
+		if ok then put[#put + 1] = nd else log("AUTOTEST cfgjunction: traffic lights on " .. nd .. " refused: " .. shortErr(err)) end
+	end
+	AUTO.results[#AUTO.results + 1] = "no junction with traffic lights: lights asked on " .. #put .. " of " .. #nodes .. " street junctions (" .. table.concat(put, ",") .. ")"
+	log("AUTOTEST cfgjunction: " .. AUTO.results[#AUTO.results])
+	local tries = 0
+	local function later()
+		tries = tries + 1
+		local have = {}
+		for _, nd in ipairs(put) do pcall(function() if api.engine.getComponent(nd, CT.BASE_NODE_TRAFFIC_LIGHT) then have[#have + 1] = nd end end) end
+		if #have > 0 or tries >= 20 then
+			AUTO.results[#AUTO.results + 1] = "traffic lights there on " .. #have .. " junction(s) after " .. tries .. " look(s)"
+			replaceBeside(have)
+		else
+			G.waits[#G.waits + 1] = { at = G.frames + 60, fn = later }
+		end
+	end
+	G.waits[#G.waits + 1] = { at = G.frames + 120, fn = later }
 end
 
 -- A train station edited again and again, as the module tool does (MPFEVER_SCENARIO=stationedit, host; issue #82: the frame

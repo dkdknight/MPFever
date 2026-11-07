@@ -583,11 +583,24 @@ namespace MPFever
             Log.Warn(T("Serveur dédié : son jeu n'héberge ni ne rejoint de partie depuis son menu. Utilisez la console du serveur (help).", "Dedicated server: its game neither hosts nor joins from its menu. Use the server console (help)."));
         }
 
+        /// <summary>(0.7.6, STOPRESYNC) A stop or a restart during a resynchronisation: it waits for nobody any more and ends
+        /// within seconds, then the world is saved (before, the save waited behind it, up to 600 s, and said nothing).
+        /// MPFEVER_STOPRESYNC=0: as before.</summary>
+        void CutResyncShort(string why)
+        {
+            if (!StopCutsResync(resyncing, Environment.GetEnvironmentVariable("MPFEVER_STOPRESYNC") == "0")) return;
+            resyncAbort = true;
+            Log.W(F("{0} : la resynchronisation en cours se termine d'abord (quelques secondes)", "{0}: the resynchronisation under way ends first (a few seconds)", why));
+        }
+
+        internal static bool StopCutsResync(bool resyncing, bool old) => resyncing && !old;
+
         /// <summary>"restart": the settings are read again, the world is saved, then the game starts again with it (the
         /// players are reconnected by their MPFever).</summary>
         void RestartWorld()
         {
             if (serverStopping) return;
+            CutResyncShort(T("redémarrage", "restart"));
             new Thread(() =>
             {
                 bool st; lock (sessionGate) st = started;
@@ -619,6 +632,7 @@ namespace MPFever
             if (serverStopping) return;
             serverStopping = true;
             serverStoppedByHand = true;
+            CutResyncShort(T("arrêt", "stop"));
             new Thread(() =>
             {
                 Log.W(T("=== Arrêt du serveur ===", "=== The server stops ==="));
@@ -1097,6 +1111,8 @@ namespace MPFever
                 case "resync":
                     {
                         int others; lock (players) others = players.Count(p => p != hostName);
+                        // ((0.7.6) a resynchronisation under way said "no player to resynchronise": the user's server, 2026-11-07 20:06)
+                        if (resyncing && Environment.GetEnvironmentVariable("MPFEVER_RESYNCMSGOLD") != "1") { Log.Warn(T("Une resynchronisation est déjà en cours.", "A resynchronisation is already under way.")); break; }
                         if (!st || others == 0 || resyncing) { Log.Warn(T("Pas de joueur à resynchroniser.", "No player to resynchronise.")); break; }
                         resyncing = true;
                         new Thread(() => Resync(T("demandée par la console", "asked by the console"))) { IsBackground = true, Name = "Resync" }.Start();

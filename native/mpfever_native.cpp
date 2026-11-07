@@ -4243,6 +4243,56 @@ static void InstallFastSpan()
     LogLine(b);
 }
 
+// ---------------------------------------------------------------- faster saves (0.7.6, after TPF3-MP, MIT)
+// After TPF3-MP's "faster saves" (Juliansgith/Transport-Fever-3-Multiplayer-Mod, MIT: crates/tpf3mp-hook/src/savefast.rs and
+// profiles/tf3_build40425_steam_windows/savefast.rs, verified there 2026-10-28; itself after silver2127's Big Maps for TPF2). The
+// game compresses a savegame with zstd at level 3 through a 128-byte stream buffer: most of a save's time on a big world. Two
+// instructions of the save writer's PushCompressor (40425: 0x32deb0) are rewritten in place: the level loaded from the constant it
+// shares with the reader (mov eax,[rip+x]) becomes 1 (mov eax,1; nop), the buffer (mov r8d,80h) 64 KiB. A savegame is still a
+// standard zstd frame of the same bytes, loaded by any game with or without it (the reader keeps its constant); TPF3-MP measured
+// 4.4-4.6 s instead of 7.2-7.4 s for a 150 MB world, files about 6.5 % larger. MPFever saves at every resynchronisation, every
+// autosave of a server and when a player joins, every game stopped meanwhile. Each site is checked byte for byte (its signature is
+// unique in the game) and patched alone. Off by default (see below): MPFEVER_FASTSAVE=1
+static void InstallFastSave()
+{
+    // (0.7.6, measured on Test Lag Rp, two games on one PC, the host's resynchronisation save: the game's own 6.4 s for 114.8 MB;
+    // level 1 and the buffer 5.3 s for 124.7 MB; the buffer alone 6.5 s, 114.8 MB. The second gained is lost again sending 10 MB
+    // more to a player over the Internet (5.4 MB/s on the user's server): OFF by default. MPFEVER_FASTSAVE=1: both; =level: the
+    // level only; =buffer: the buffer only)
+    char fs[16] = {};
+    if (GetEnvironmentVariableA("MPFEVER_FASTSAVE", fs, 15) == 0 || fs[0] == '0') { Buf b; b.str("faster saves: the game's own (MPFEVER_FASTSAVE=1 to try them)"); LogLine(b); return; }
+    bool doLevel = fs[0] != 'b', doBuffer = fs[0] != 'l';
+    auto patch = [](u32 at, const u8* expect, const u8* put, int n) -> bool {
+        if (!at) return false;
+        u8* site = (u8*)(g_base + at);
+        for (int i = 0; i < n; i++) if (site[i] != expect[i]) return false;
+        DWORD old;
+        if (!VirtualProtect(site, n, PAGE_EXECUTE_READWRITE, &old)) return false;
+        for (int i = 0; i < n; i++) site[i] = put[i];
+        VirtualProtect(site, n, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), site, n);
+        return true;
+    };
+    // mov eax,[rip+disp] / mov [r11+10h],eax / lea rax,[r11-78h]: the level (the displacement is read, not assumed)
+    u32 lv = FindSigRva("8B 05 ?? ?? ?? ?? 41 89 43 10 49 8D 43 88");
+    u8 lvWas[6] = { 0x8B, 0x05, 0, 0, 0, 0 };
+    if (lv) for (int i = 2; i < 6; i++) lvWas[i] = *(u8*)(g_base + lv + i);
+    // the level's constant must hold 3, the game's (else another build's code: left alone)
+    bool three = lv && *(i32*)(g_base + lv + 6 + *(i32*)(g_base + lv + 2)) == 3;
+    static const u8 lvPut[6] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90 };
+    bool okL = doLevel && three && patch(lv, lvWas, lvPut, 6);
+    // mov r9,rbx / mov r8d,80h / lea rdx,[rsp+30h] / mov rcx,rax / call (the compressor's stream): the buffer
+    u32 bf = FindSigRva("4C 8B CB 41 B8 80 00 00 00 48 8D 54 24 30 48 8B C8 E8 E9 B5 FE FF");
+    static const u8 bfWas[6] = { 0x41, 0xB8, 0x80, 0x00, 0x00, 0x00 }, bfPut[6] = { 0x41, 0xB8, 0x00, 0x00, 0x01, 0x00 };
+    bool okB = doBuffer && bf && patch(bf + 3, bfWas, bfPut, 6);
+    Buf b;
+    b.str("faster saves (from TPF3-MP): ").str(okL ? "zstd level 1" : "the game's zstd level").str(okL ? "" : (lv ? (three ? " (not patched)" : " (its constant is not 3)") : " (not found)"))
+        .str(", ").str(okB ? "a 64 KiB buffer" : "the game's 128-byte buffer").str(okB ? "" : (bf ? " (not patched)" : " (not found)"));
+    if (okL) b.str(" at ").hex(lv);
+    if (okB) b.str(", ").hex(bf + 3);
+    LogLine(b);
+}
+
 static void InstallVehicleWear()
 {
     { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_ALLWEAR", v, 3) > 0 && v[0] == '0') { Buf b; b.str("vehicle wear: the savegame's company only (MPFEVER_ALLWEAR=0)"); LogLine(b); return; } }
@@ -5082,6 +5132,7 @@ static DWORD WINAPI Init(void*)
     if (g_layout) InstallOpenNet();
     InstallVehicleWear();
     InstallFastSpan();
+    InstallFastSave();
     { Buf b; b.str(g_luaSeedFixed ? "Lua string hash seed: fixed (same table order on every game)" : "Lua string hash seed: NOT fixed"); LogLine(b); }
     if (g_layout && RVA_MONEYCHECK) InstallDetour(RVA_MONEYCHECK, P_MONEYCHECK, sizeof(P_MONEYCHECK), (void*)&MoneyCheckDetour, (void**)&g_moneyOrig);
     if (g_layout && RVA_LINES) InstallDetour(RVA_LINES, P_LINES, sizeof(P_LINES), (void*)&LinesDetour, (void**)&g_linesOrig);

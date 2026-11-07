@@ -16,7 +16,8 @@ Third-party code
 
 Parts of MPFever were ported from TPF3-MP (Transport Fever 3 Multiplayer Mod, github.com/Juliansgith/
 Transport-Fever-3-Multiplayer-Mod): order fixes, smooth pacing, signatures, the company rules, the Mod Hub install, the
-shared industry-demand history, the faster industry connection (the span fill).
+shared industry-demand history, the faster industry connection (the span fill), the faster saves (zstd level 1, a 64 KiB
+buffer; an option, off by default) and the folders mod.io's settings move the Mod Hub mods to.
 They are used under the MIT License:
 
 MIT License

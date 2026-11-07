@@ -221,6 +221,50 @@ namespace MPFever
             return r;
         }
 
+        /// <summary>(0.7.6, MODIOROOT) The folders mod.io keeps this game's Mod Hub mods in, in the order the game's mod.io SDK
+        /// takes them: a user's settings (%LOCALAPPDATA%\mod.io\10640\&lt;user&gt;\user.json), then mod.io's own
+        /// (%LOCALAPPDATA%\mod.io\globalsettings.json), each when its "RootLocalStoragePath" names an absolute folder, then the
+        /// default (%PUBLIC%\mod.io). mod.io's support tells players to move their mods to another drive that way; MPFever looked
+        /// in the default folder only, so the mods of such a player were "not installed" (as TPF3-MP found, 1.5.0). Only that
+        /// key is read (a user.json also holds the user's mod.io login). old (MPFEVER_MODIOROOT=0): the default only, as before.</summary>
+        internal static List<string> ModioStorages(string localAppData, string pub, bool old)
+        {
+            var r = new List<string>();
+            void Add(string p) { if (p != null && !r.Any(x => string.Equals(x.TrimEnd('\\', '/'), p.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))) r.Add(p); }
+            if (!old && !string.IsNullOrEmpty(localAppData))
+            {
+                try
+                {
+                    var users = Path.Combine(localAppData, "mod.io", "10640");
+                    if (Directory.Exists(users))
+                        foreach (var u in Directory.GetDirectories(users).Select(d => Path.Combine(d, "user.json")).Where(File.Exists).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                            Add(ModioStoragePath(u));
+                }
+                catch { }
+                Add(ModioStoragePath(Path.Combine(localAppData, "mod.io", "globalsettings.json")));
+            }
+            Add(Path.Combine(pub ?? @"C:\Users\Public", "mod.io"));
+            return r;
+        }
+
+        static readonly Regex StorageRx = new Regex("\"RootLocalStoragePath\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+
+        /// <summary>(0.7.6) The absolute folder a mod.io settings file names in "RootLocalStoragePath", or null (no file, no key,
+        /// an empty or relative one: it moves nothing).</summary>
+        internal static string ModioStoragePath(string file)
+        {
+            try
+            {
+                if (!File.Exists(file)) return null;
+                var m = StorageRx.Match(File.ReadAllText(file));
+                if (!m.Success) return null;
+                var v = Regex.Replace(m.Groups[1].Value, @"\\(.)", x => x.Groups[1].Value == "n" ? "\n" : x.Groups[1].Value == "t" ? "\t" : x.Groups[1].Value).Trim();
+                if (v == "" || !Path.IsPathRooted(v) || v.StartsWith("\\") && !v.StartsWith("\\\\")) return null;
+                return v;
+            }
+            catch { return null; }
+        }
+
         static Dictionary<string, string> Scan()
         {
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -228,8 +272,9 @@ namespace MPFever
             try
             {
                 var pub = Environment.GetEnvironmentVariable("PUBLIC") ?? @"C:\Users\Public";
-                var modio = Path.Combine(pub, "mod.io");
-                if (Directory.Exists(modio)) foreach (var g in Directory.GetDirectories(modio)) roots.Add(Path.Combine(g, "mods"));
+                var lad = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                foreach (var modio in ModioStorages(lad, pub, Environment.GetEnvironmentVariable("MPFEVER_MODIOROOT") == "0"))
+                    try { if (Directory.Exists(modio)) foreach (var g in Directory.GetDirectories(modio)) roots.Add(Path.Combine(g, "mods")); } catch { }
             }
             catch { }
             // (0.6.7) and the mods being made there, not published (the game's "StagingArea" origin: local\staging_area): the host's

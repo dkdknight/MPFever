@@ -23699,6 +23699,58 @@
       "ko": ", 이 PC에서 다른 게임 실행 중",
       "zh-CN": "，此电脑上还有另一个游戏",
       "zh-TW": "，此電腦上還有另一個遊戲"
+    },
+    "{0} joins during the resynchronisation: the game is sent to them too": {
+      "de": "{0} tritt während der Resynchronisierung bei: das Spiel wird auch an ihn gesendet",
+      "es": "{0} se une durante la resincronización: la partida también se le envía",
+      "it": "{0} si unisce durante la risincronizzazione: la partita viene inviata anche a lui",
+      "nl": "{0} doet mee tijdens de hersynchronisatie: het spel wordt ook naar hem gestuurd",
+      "pl": "{0} dołącza podczas ponownej synchronizacji: gra jest wysyłana także do niego",
+      "pt-BR": "{0} entra durante a ressincronização: a partida também é enviada para ele",
+      "ru": "{0} присоединяется во время повторной синхронизации: игра отправляется и ему",
+      "ja": "{0} が再同期中に参加しました: ゲームも送信します",
+      "ko": "{0}이(가) 재동기화 중에 참가합니다: 게임을 함께 보냅니다",
+      "zh-CN": "{0} 在重新同步期间加入：也向其发送游戏",
+      "zh-TW": "{0} 在重新同步期間加入：也向其傳送遊戲"
+    },
+    "Resynchronisation cut short (the server stops or restarts): no longer waiting for ": {
+      "de": "Resynchronisierung abgebrochen (der Server stoppt oder startet neu): es wird nicht mehr gewartet auf ",
+      "es": "Resincronización interrumpida (el servidor se detiene o se reinicia): ya no se espera a ",
+      "it": "Risincronizzazione interrotta (il server si arresta o si riavvia): non si attende più ",
+      "nl": "Hersynchronisatie afgebroken (de server stopt of herstart): er wordt niet meer gewacht op ",
+      "pl": "Ponowna synchronizacja przerwana (serwer się zatrzymuje lub restartuje): już nie czekamy na ",
+      "pt-BR": "Ressincronização interrompida (o servidor para ou reinicia): não aguardando mais ",
+      "ru": "Повторная синхронизация прервана (сервер останавливается или перезапускается): больше не ожидается ",
+      "ja": "再同期を中断しました (サーバーの停止または再起動): もう待機しません: ",
+      "ko": "재동기화 중단 (서버 정지 또는 재시작): 더 이상 기다리지 않습니다: ",
+      "zh-CN": "重新同步已中断（服务器停止或重启）：不再等待 ",
+      "zh-TW": "重新同步已中斷（伺服器停止或重新啟動）：不再等待 "
+    },
+    "{0}: the resynchronisation under way ends first (a few seconds)": {
+      "de": "{0}: die laufende Resynchronisierung endet zuerst (einige Sekunden)",
+      "es": "{0}: primero termina la resincronización en curso (unos segundos)",
+      "it": "{0}: prima termina la risincronizzazione in corso (qualche secondo)",
+      "nl": "{0}: de lopende hersynchronisatie eindigt eerst (enkele seconden)",
+      "pl": "{0}: najpierw kończy się trwająca ponowna synchronizacja (kilka sekund)",
+      "pt-BR": "{0}: a ressincronização em andamento termina primeiro (alguns segundos)",
+      "ru": "{0}: сначала завершается текущая повторная синхронизация (несколько секунд)",
+      "ja": "{0}: 進行中の再同期を先に終了します (数秒)",
+      "ko": "{0}: 진행 중인 재동기화를 먼저 끝냅니다 (몇 초)",
+      "zh-CN": "{0}：先结束正在进行的重新同步（几秒钟）",
+      "zh-TW": "{0}：先結束正在進行的重新同步（幾秒鐘）"
+    },
+    "A resynchronisation is already under way.": {
+      "de": "Eine Resynchronisierung läuft bereits.",
+      "es": "Ya hay una resincronización en curso.",
+      "it": "Una risincronizzazione è già in corso.",
+      "nl": "Er is al een hersynchronisatie bezig.",
+      "pl": "Ponowna synchronizacja już trwa.",
+      "pt-BR": "Já há uma ressincronização em andamento.",
+      "ru": "Повторная синхронизация уже идёт.",
+      "ja": "再同期はすでに進行中です。",
+      "ko": "재동기화가 이미 진행 중입니다.",
+      "zh-CN": "重新同步已在进行中。",
+      "zh-TW": "重新同步已在進行中。"
     }
   }
 }

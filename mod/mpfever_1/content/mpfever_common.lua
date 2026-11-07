@@ -861,6 +861,43 @@ function C.cfgGuard(add, remove, skip, has)
 	return remove, n
 end
 
+-- (0.7.6, issue #131) the tool's configurations (list: the captured nodeConfigsToAdd) of the nodes whose configuration a
+-- script form of its build removes (removed: this game's node ids), for that form: its new segments numbered again from -1
+-- (edgeMap: the tool's number -> the form's, see C.renumberStreet), the existing segments as they are. A node the build
+-- removes (gone[node]) or a new node gets none; a configuration naming a new segment the form does not have is left (counted).
+-- Returns the list (copies) and the number left.
+function C.readdedConfigs(list, removed, edgeMap, gone)
+	local want, out, left = {}, {}, 0
+	for _, n in ipairs(removed or {}) do want[n] = true end
+	for _, c in ipairs(list or {}) do
+		local e = type(c) == "table" and c.entity or nil
+		if type(e) == "number" and e >= 0 and want[e] and not (gone and gone[e]) then
+			local comp = type(c.comp) == "table" and c.comp or {}
+			local ok, lcs = true, {}
+			for j, l in ipairs(comp.laneConnections or {}) do
+				local x = {}
+				for k, v in pairs(l) do x[k] = v end
+				for _, f in ipairs({ "segment0", "segment1" }) do
+					local s = x[f]
+					if type(s) == "number" and s < 0 then
+						if edgeMap and edgeMap[s] then x[f] = edgeMap[s] else ok = false end
+					end
+				end
+				lcs[j] = x
+			end
+			if ok then
+				local cc = {}
+				for k, v in pairs(comp) do cc[k] = v end
+				cc.laneConnections = lcs
+				out[#out + 1] = { entity = e, comp = cc }
+			else
+				left = left + 1
+			end
+		end
+	end
+	return out, left
+end
+
 -- (0.6.9) what a script's copy of a segment keeps of it, as the stop tool and the replays of its stops keep it (replayStop): its
 -- decorations (a town street's trees: the copy had none on the builder's game, both rows on the replaying games: "edges" apart,
 -- then the towns, test fe3 of 2026-11-02) and a track's distance. rev: the copy runs the other way round (a decoration's side
@@ -1041,7 +1078,8 @@ function C.rebuildProposal(m, opts)
 	if type(st) == "table" and not opts.noStreet then
 		local ssp = sp.streetProposal
 		local variant = opts.variant or "full"
-		if not opts.raw then C.renumberStreet(st) end
+		local nodeMap, edgeMap = {}, {}
+		if not opts.raw then nodeMap, edgeMap = C.renumberStreet(st) end
 		local nodes = {}
 		for i, n in ipairs(st.nodesToAdd or st.addedNodes or {}) do
 			if variant == "full" then
@@ -1169,6 +1207,22 @@ function C.rebuildProposal(m, opts)
 					local okr, errr = pcall(function() ssp.nodeConfigsToRemove = rm end)
 					C.errors[#C.errors + 1] = "node configs replaced: " .. nput .. (okr and "" or " (" .. tostring(errr):sub(1, 80) .. ")")
 				end
+			end
+		elseif not onlyConfigs and #cfgKeep > 0 and #(st.nodeConfigsToAdd or {}) > 0 and os.getenv("MPFEVER_CFGREADD") ~= "0" then
+			-- (0.7.6, issue #131) The other forms removed the configurations of the nodes the build touches (the tool's list) and
+			-- added none: the engine makes a plain node's again, not a junction's with traffic lights. juliu, 2026-11-07 19:09, a
+			-- tram tunnel's type changed from its window during a pause (2 segments replaced, the configurations of their 3 nodes
+			-- removed and given again by the tool): node 35603, the traffic-light junction at the tunnel's end, was left without
+			-- one, "it != components.end()" (BaseNodeConfig), the host crashed. The tool's configurations of the nodes whose
+			-- configuration is removed here are given again, with this form's numbers of the new segments (as the tool does:
+			-- a replacement, never a second one, see C.cfgGuard). MPFEVER_CFGREADD=0: none, as before
+			local gone = {}
+			for _, r in ipairs(entityList(st.nodesToRemove or st.removedNodes)) do gone[r] = true end
+			local put, left = C.readdedConfigs(st.nodeConfigsToAdd, cfgKeep, edgeMap, gone)
+			if #put > 0 then
+				local okc, errc = pcall(function() ssp.nodeConfigsToAdd = C.nodeConfigs(put) end)
+				C.errors[#C.errors + 1] = "node configs given again: " .. #put .. (left > 0 and (" (" .. left .. " left: a new segment unknown)") or "")
+					.. (okc and "" or (" (" .. tostring(errc):sub(1, 100) .. ")"))
 			end
 		end
 		-- (the removed stops carry the originator's ids: this game's are found by their rank on the removed segments)

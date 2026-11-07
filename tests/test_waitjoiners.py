@@ -26,7 +26,7 @@ body = SRC[i:SRC.index("void SendSave(int id, byte[] bytes", i)]
 a = body.find("lock (reviewing) all = all.Where(n => !reviewing.Contains(n)).ToArray();")
 b = body.find('string[] joining; lock (players) joining = all.Where(n => !players.Contains(n)).ToArray();')
 c = body.find("lock (resyncWaiting) foreach (var n in joining) resyncWaiting.Add(n);")
-d = body.find("bool back = WaitUntil(() => { lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600);")
+d = body.find("bool back = WaitUntil(() => { if (resyncAbort) return true; lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600);")
 check(a > 0 and b > a, "the joining players are those the game is sent to who are not playing yet")
 check(c > b and d > c, "they are added to the players waited for, before the wait")
 check('Environment.GetEnvironmentVariable("MPFEVER_WAITJOINERS") != "0"' in body, "MPFEVER_WAITJOINERS=0: as before")

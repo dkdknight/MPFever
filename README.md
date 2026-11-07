@@ -257,7 +257,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
   - the translations into 13 languages;
   - the in-game window and the chat.
 - **[Steelworm](https://github.com/Steelworm)**: build timing fixes, the builder lead, in-depth issue analyses.
-- **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures, the company rules, the industries' demand fix and the faster industry connection (MIT).
+- **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures, the company rules, the industries' demand fix, the faster industry connection, the faster saves and the Mod Hub folders (MIT).
 - **DubstepDude-hub, Kev1505in (keviK), AMD and hschi**: long sessions sent with the logs of every player, which showed
   that players with different DLCs desynchronise (0.6.9).
 - **The testers** who sent reports, logs and savegames: most fixes came from them. Thank you to

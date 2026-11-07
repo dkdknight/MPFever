@@ -67,8 +67,62 @@ namespace MPFever
             ok &= RunFineTimer();
             ok &= RunServerJoin074();
             ok &= RunSharedLog075();
+            ok &= RunServer076();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.6) The user's server, 2026-11-07 20:02-20:10: a player gone during a resynchronisation is found in its
+        /// wait under any of its connections' names (RESYNCLEFTNAME); a player who joins during a resynchronisation gets the game
+        /// being sent (JOINMIDRESYNC); a stop or a restart cuts a resynchronisation short (STOPRESYNC).</summary>
+        static bool RunServer076()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.6 server: " + what); ok &= c; }
+            var w = new HashSet<string> { "Knight-HD#2", "chris#10" };
+            C(MainForm.WaitedFor(w, "chris#12", false), "chris#12 gone: the wait for chris#10 is his (the same player)");
+            C(!MainForm.WaitedFor(w, "chris#12", true), "  MPFEVER_RESYNCLEFTNAME=0: this name only, as before (not found)");
+            C(MainForm.WaitedFor(w, "chris#10", true) && MainForm.WaitedFor(w, "chris#10", false), "  its own name: found both ways");
+            C(!MainForm.WaitedFor(w, "chrisB#4", false) && !MainForm.WaitedFor(new HashSet<string>(), "chris#12", false), "  another player, or nobody waited for: no");
+            // (then the 20 s wait drops chris#10 once no connection of chris is there: DropDeparted, 0.7.4)
+            C(MainForm.DropDeparted(w, "chris#12", new[] { "Knight-HD#2" }) == 1 && !w.Contains("chris#10"), "  chris gone for good: chris#10 no longer waited for");
+            C(MainForm.JoinDuringResync(false, true, false, 3, 0, false) == "pending", "join, no resynchronisation: one of its own, as before");
+            C(MainForm.JoinDuringResync(true, false, false, 0, 0, false) == "pending", "join before the game is saved: as before");
+            C(MainForm.JoinDuringResync(true, true, true, 3, 2, false) == "send", "join while the game is being sent: it gets it too");
+            C(MainForm.JoinDuringResync(true, true, true, 3, 3, false) == "pending", "join once the wait is over: a resynchronisation of its own afterwards");
+            C(MainForm.JoinDuringResync(true, true, false, 3, 2, false) == "pending", "join after the sending: one of its own afterwards");
+            C(MainForm.JoinDuringResync(true, true, true, 3, 2, true) == "none", "MPFEVER_JOINMIDRESYNC=0: nothing, as before");
+            C(MainForm.StopCutsResync(true, false) && !MainForm.StopCutsResync(false, false) && !MainForm.StopCutsResync(true, true),
+                "a stop or restart cuts a resynchronisation short (MPFEVER_STOPRESYNC=0: not)");
+            // (MODIOROOT) the folders mod.io keeps the Mod Hub mods in, as its settings move them
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-modio-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var lad = Path.Combine(dir, "local");
+                Directory.CreateDirectory(Path.Combine(lad, "mod.io", "10640", "u2"));
+                Directory.CreateDirectory(Path.Combine(lad, "mod.io", "10640", "u1"));
+                File.WriteAllText(Path.Combine(lad, "mod.io", "10640", "u1", "user.json"), "{\"OAuth\":{\"token\":\"secret\"},\"RootLocalStoragePath\":\"E:\\\\Games\\\\modio\"}");
+                File.WriteAllText(Path.Combine(lad, "mod.io", "10640", "u2", "user.json"), "{\"RootLocalStoragePath\":\"\"}");
+                File.WriteAllText(Path.Combine(lad, "mod.io", "globalsettings.json"), "{ \"RootLocalStoragePath\" : \"D:/mods/modio\" }");
+                var got = Mods.ModioStorages(lad, @"C:\Users\Public", false);
+                C(got.Count == 3 && got[0] == @"E:\Games\modio" && got[1] == "D:/mods/modio" && got[2] == @"C:\Users\Public\mod.io",
+                    "mod.io: a user's folder, then mod.io's settings, then the default (" + string.Join(" | ", got) + ")");
+                File.WriteAllText(Path.Combine(lad, "mod.io", "globalsettings.json"), "{\"RootLocalStoragePath\":\"relative\\\\x\"}");
+                File.Delete(Path.Combine(lad, "mod.io", "10640", "u1", "user.json"));
+                got = Mods.ModioStorages(lad, @"C:\Users\Public", false);
+                C(got.Count == 1 && got[0] == @"C:\Users\Public\mod.io", "mod.io: an empty or relative folder moves nothing (" + string.Join(" | ", got) + ")");
+                File.WriteAllText(Path.Combine(lad, "mod.io", "globalsettings.json"), "{\"RootLocalStoragePath\":\"C:\\\\Users\\\\Public\\\\mod.io\\\\\"}");
+                got = Mods.ModioStorages(lad, @"C:\Users\Public", false);
+                C(got.Count == 1, "mod.io: the default named again: once");
+                got = Mods.ModioStorages(Path.Combine(dir, "nothing"), @"C:\Users\Public", false);
+                C(got.Count == 1 && got[0] == @"C:\Users\Public\mod.io", "mod.io: no settings: the default");
+                File.WriteAllText(Path.Combine(lad, "mod.io", "globalsettings.json"), "{\"RootLocalStoragePath\":\"D:\\\\m\"}");
+                got = Mods.ModioStorages(lad, @"C:\Users\Public", true);
+                C(got.Count == 1 && got[0] == @"C:\Users\Public\mod.io", "mod.io: MPFEVER_MODIOROOT=0, the default only, as before");
+            }
+            catch (Exception e) { C(false, "mod.io: " + e.Message); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+            return ok;
         }
 
         /// <summary>(0.7.5) Two games of one Steam account on one PC share one game log: a game that ended with code 0 while
