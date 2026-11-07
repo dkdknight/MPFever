@@ -5656,19 +5656,6 @@
       "zh-CN": "♥ 支持 MPFever",
       "zh-TW": "♥ 支持 MPFever"
     },
-    "Transport Fever 3 closed.": {
-      "de": "Transport Fever 3 geschlossen.",
-      "es": "Transport Fever 3 cerrado.",
-      "it": "Transport Fever 3 chiuso.",
-      "nl": "Transport Fever 3 gesloten.",
-      "pl": "Transport Fever 3 zamknięty.",
-      "pt-BR": "Transport Fever 3 fechado.",
-      "ru": "Transport Fever 3 закрыт.",
-      "ja": "Transport Fever 3 が終了しました。",
-      "ko": "Transport Fever 3가 종료되었습니다.",
-      "zh-CN": "Transport Fever 3 已关闭。",
-      "zh-TW": "Transport Fever 3 已關閉。"
-    },
     "Thanks for playing with MPFever!": {
       "de": "Danke, dass du mit MPFever spielst!",
       "es": "¡Gracias por jugar con MPFever!",
@@ -23686,6 +23673,32 @@
       "ko": "레벨. 쉬움: 천천히 성장하고, 넉넉한 예비금을 두며, 다른 회사의 무료 정류장만 이용하고, 그 정류장이 닫혀 있는 도시는 피합니다. 보통: 더 빨리 성장하고, 정류장당 150까지 통행료를 내며, 정류장이 닫힌 도시에는 다른 도시가 남아 있지 않을 때만 들어갑니다. 어려움: 빨리 성장하고, 화물을 더 많이 나르며, 플레이어의 도시와 산업을 두고 경쟁하고, 400까지 통행료를 내며, 다른 회사의 정류장이 닫혀 있는 곳에는 자기 정류장을 짓습니다.",
       "zh-CN": "难度说明。简单：成长缓慢，保留大量储备，只使用其他公司的免费站点，并避开其站点对它关闭的城镇。普通：成长更快，每次停靠最多支付150的通行费，只有在没有其他城镇可去时才进入站点关闭的城镇。困难：成长迅速，运输更多货物，与玩家争夺城镇和产业，最多支付400的通行费，并在其他公司站点对它关闭的地方修建自己的站点。",
       "zh-TW": "難度說明。簡單：成長緩慢，保留大量儲備，只使用其他公司的免費站點，並避開其站點對它關閉的城鎮。普通：成長較快，每次停靠最多支付150的通行費，只有在沒有其他城鎮可去時才進入站點關閉的城鎮。困難：成長迅速，運輸更多貨物，與玩家爭奪城鎮和產業，最多支付400的通行費，並在其他公司站點對它關閉的地方興建自己的站點。"
+    },
+    "Transport Fever 3 closed (code {0}{1}).": {
+      "de": "Transport Fever 3 geschlossen (Code {0}{1}).",
+      "es": "Transport Fever 3 cerrado (código {0}{1}).",
+      "it": "Transport Fever 3 chiuso (codice {0}{1}).",
+      "nl": "Transport Fever 3 gesloten (code {0}{1}).",
+      "pl": "Transport Fever 3 zamknięty (kod {0}{1}).",
+      "pt-BR": "Transport Fever 3 fechado (código {0}{1}).",
+      "ru": "Transport Fever 3 закрыт (код {0}{1}).",
+      "ja": "Transport Fever 3 が終了しました（コード {0}{1}）。",
+      "ko": "Transport Fever 3가 종료되었습니다(코드 {0}{1}).",
+      "zh-CN": "Transport Fever 3 已关闭（代码 {0}{1}）。",
+      "zh-TW": "Transport Fever 3 已關閉（代碼 {0}{1}）。"
+    },
+    ", another game on this PC": {
+      "de": ", ein anderes Spiel auf diesem PC",
+      "es": ", otro juego en este PC",
+      "it": ", un altro gioco su questo PC",
+      "nl": ", een ander spel op deze pc",
+      "pl": ", inna gra na tym komputerze",
+      "pt-BR": ", outro jogo neste PC",
+      "ru": ", другая игра на этом ПК",
+      "ja": "、このPCで別のゲームが実行中",
+      "ko": ", 이 PC에서 다른 게임 실행 중",
+      "zh-CN": "，此电脑上还有另一个游戏",
+      "zh-TW": "，此電腦上還有另一個遊戲"
     }
   }
 }

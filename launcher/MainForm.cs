@@ -337,7 +337,8 @@ namespace MPFever
         static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds" };
         string lastDiagDiffs = "";
         // game state that is never a local measure, even when it differs right after a reload (a company a game missed must be seen)
-        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "ages", "buildIds", "constructions", "lines" };
+        // ((0.7.5) "edges2": the segments' second half, see the checks' halves in the bridge's simHash)
+        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "edges2", "ages", "buildIds", "constructions", "lines" };
         // the simulation's own state (passengers boarding, vehicle positions, the towns and what follows them): it used to drift
         // by itself (the game's Lua walked its tables in a different order on every PC, fixed in 0.3.4), so it was only reloaded
         // when it lasted. The games now stay identical: a difference there comes from an action applied differently and must be
@@ -952,7 +953,7 @@ namespace MPFever
         void InstallPendingUpdateThenClose()
         {
             if (menuGame != null) Reporter.KeepGameLog(menuGame.Dir);
-            if (!ServerMode && !autotest && Reporter.CrashedSince(gameStartedAt, menuGame?.Dir))
+            if (!ServerMode && !autotest && Reporter.CrashedSince(gameStartedAt, menuGame?.Dir, menuGame?.ExitCode, menuGame != null && menuGame.OtherGameSeen))
             {
                 Log.Err(T("Transport Fever 3 s'est arrêté brutalement (fichier de crash écrit).", "Transport Fever 3 crashed (a crash dump was written)."));
                 // (the window was minimised while the game ran: the question must be seen)
@@ -1403,7 +1404,15 @@ namespace MPFever
                 g.ToGame(Msg.Make("solo", g.Name));
                 NativeHoldOff(g);
             };
-            menuGame.Exited += () => { Log.W(T("Transport Fever 3 fermé.", "Transport Fever 3 closed.")); LeaveOnGameExit(); try { BeginInvoke((Action)InstallPendingUpdateThenClose); } catch { } };
+            menuGame.Exited += () =>
+            {
+                // ((0.7.5) with its exit code, and whether another game shared its log)
+                var g = menuGame;
+                string code = g?.ExitCode == null ? "?" : (g.ExitCode.Value < 0 || g.ExitCode.Value > 0xFFFF ? "0x" + g.ExitCode.Value.ToString("X8") : g.ExitCode.Value.ToString());
+                Log.W(F("Transport Fever 3 fermé (code {0}{1}).", "Transport Fever 3 closed (code {0}{1}).", code,
+                    g != null && g.OtherGameSeen ? T(", un autre jeu sur ce PC", ", another game on this PC") : ""));
+                LeaveOnGameExit(); try { BeginInvoke((Action)InstallPendingUpdateThenClose); } catch { }
+            };
             MenuStatus();
             // (the game rewrites its log at its start: the previous run's is kept for a report)
             if (JoinAtStart == null) Reporter.KeepPreviousGameLog();

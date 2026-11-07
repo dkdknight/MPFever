@@ -109,8 +109,18 @@ namespace MPFever
         /// <summary>Did the game crash after <paramref name="since"/>? (a crash dump written since, and its log does not end with
         /// the game's normal shutdown: the game writes dumps of its own while it loads, at Steam events and when it quits,
         /// and every normal close was reported as a crash)</summary>
-        public static bool CrashedSince(DateTime since, string sessionDir = null)
+        public static bool CrashedSince(DateTime since, string sessionDir = null, int? exitCode = null, bool otherGame = false)
         {
+            // (0.7.5) Two games of one Steam account on one PC write one log (the game's stdout.txt in its crash_dump folder),
+            // and the game writes dumps of its own (at its load, at Steam events): the user's client game, closed normally on
+            // 2026-10-29 08:45:57 while the host's game on the same PC still ran, was reported as crashed (the log's last lines
+            // were the host's, no "Normal shutdown" yet; a dump of its load). A game that ended with code 0 while another game
+            // ran beside it is not taken for a crash. MPFEVER_SHAREDLOGOLD=1: as before
+            if (otherGame && exitCode == 0 && Environment.GetEnvironmentVariable("MPFEVER_SHAREDLOGOLD") != "1")
+            {
+                Log.Dim("report: the game ended with code 0, another game ran on this PC (one log for both): not a crash");
+                return false;
+            }
             bool dump = false;
             foreach (var d in CrashDumpDirs())
                 try { if (Directory.GetFiles(d, "*.dmp").Any(f => File.GetLastWriteTime(f) > since)) dump = true; } catch { }
@@ -133,6 +143,19 @@ namespace MPFever
             }
             catch { }
             return true;
+        }
+
+        /// <summary>(0.7.5) How many Transport Fever 3 processes run on this PC besides the one of id `exceptPid` (-1: none).</summary>
+        public static int OtherGamesRunning(int exceptPid)
+        {
+            try
+            {
+                int n = 0;
+                foreach (var p in System.Diagnostics.Process.GetProcessesByName("TransportFever3"))
+                    try { if (p.Id != exceptPid && !p.HasExited) n++; } catch { } finally { p.Dispose(); }
+                return n;
+            }
+            catch { return 0; }
         }
 
         [DllImport("kernel32.dll")] static extern bool IsProcessorFeaturePresent(int feature);

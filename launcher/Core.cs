@@ -501,6 +501,10 @@ namespace MPFever
         volatile bool stop;
         Thread poll;
         Process proc;
+        /// <summary>(0.7.5) The game's exit code once it closed (null: unknown), and whether another Transport Fever 3 ran on
+        /// this PC while it did (two games of one Steam account write one log, stdout.txt: see Reporter.CrashedSince).</summary>
+        public int? ExitCode { get; private set; }
+        public bool OtherGameSeen { get; private set; }
 
         public event Action<GameLink, Msg> FromGame;
 
@@ -746,9 +750,15 @@ namespace MPFever
                     int eq = kv.IndexOf('=');
                     if (eq > 0) psi.EnvironmentVariables[kv.Substring(0, eq).Trim()] = kv.Substring(eq + 1);
                 }
+            if (Reporter.OtherGamesRunning(-1) > 0) OtherGameSeen = true;
             proc = Process.Start(psi);
             proc.EnableRaisingEvents = true;
-            proc.Exited += (s, e) => Exited?.Invoke();
+            proc.Exited += (s, e) =>
+            {
+                try { ExitCode = proc.ExitCode; } catch { ExitCode = null; }
+                if (Reporter.OtherGamesRunning(proc.Id) > 0) OtherGameSeen = true;
+                Exited?.Invoke();
+            };
             // experiment (MPFEVER_AFFINITY=mask): pin the game to some CPU cores
             var aff = Environment.GetEnvironmentVariable("MPFEVER_AFFINITY");
             if (!string.IsNullOrEmpty(aff)) try { proc.ProcessorAffinity = (IntPtr)Convert.ToInt64(aff, 16); } catch (Exception e) { Log.W("affinity: " + e.Message); }

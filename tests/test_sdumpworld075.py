@@ -3,7 +3,7 @@
 The user's server, 2026-11-07: every check (every 10 s) held the simulation 0.15 to 0.3 s ("expensive checksum" lines), a hitch
 the players felt. Part of it is the diagnostic dump written at each check (sdump_ring_*.txt, the files that showed the noise
 and traffic drift of that morning): the game scripts' states, and the world's (vehicles, lines, names, stations, and a loop
-over every construction of the map). The world's part now goes in one dump of three (by the dump's own counter: the dumps are
+over every construction of the map). The world's part now goes in one dump of six, once a minute (by the dump's own counter: the dumps are
 not part of the check, each game writes its own), the game scripts' states in every one; the dump's cost is measured apart
 ("dump=" in the "hash costs" lines). MPFEVER_SDUMPWORLD=1: the world in every dump, as before; MPFEVER_SDUMP=all: every dump
 whole (tests).
@@ -27,7 +27,7 @@ j = src.find("\nend\n", i)
 ext = src[i:j]
 check(i > 0, "extendedParts found")
 flat = ext.find("flatten(c.state, name, dump, 0)")
-world = ext.find('local world = dump and (SDUMP.all or SDUMP.n % 3 == 0 or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
+world = ext.find('local world = dump and (SDUMP.all or SDUMP.n % 6 == 0 or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
 veh = ext.find('for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do')
 cons = ext.find('for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do')
 check(0 < flat < world, "the game scripts' states dumped at every check, before the world's choice")

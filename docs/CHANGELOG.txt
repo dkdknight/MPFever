@@ -2,6 +2,21 @@ MPFever - Changelog
 ===================
 
 0.7.5 - (in progress)
+  - FIX (hitches every 10 s, the checks): a check held the simulation 0.27 to 0.41 s on a big world (Test Lag Rp: 5 874
+    constructions, 7 267 segments, two games on one PC), 0.25 to 0.31 s on the user's server (2026-11-07). Measured part by
+    part (MPFEVER_HASHPROF=1 times each step of the heaviest parts, MPFEVER_HASHCOSTLOG=1 logs every check's costs): the
+    constructions' parameters ("conParams") took 0.27 s, most of it hashing the same texts again and again (parameter names,
+    file names). The hashes of texts and of numbers with decimals are now kept from one check to the next, a construction's
+    file name is hashed once, each node is read once per check (it ends two segments or more), and no closure is made per
+    segment, node or owner: the same values as before ("conParams" 0.17 to 0.21 s, "edges" 0.145 s). The two heaviest parts
+    are then checked in halves, in turn ("conParams"/"conParams2", "edges"/"edges2", by the places' rounded coordinates):
+    each part is checked every 50 s instead of 30, a check holds about half as long. MPFEVER_QHCACHE=0: no cache;
+    MPFEVER_HASHHALVES=0 (on every game): whole parts, as before. Test: tests/test_hashcache075.py.
+  - FIX (a crash reported for nothing): two games of one Steam account on one PC write one game log (stdout.txt): the
+    user's client game, closed normally on 2026-10-29 while the host's game on the same PC still ran, was reported as
+    crashed (the log's last lines were the host's, no "Normal shutdown" yet, and a dump the game writes at its load was
+    there). A game that ends with code 0 while another game runs on the PC is no longer taken for a crash; the launcher's
+    log says the game's exit code. MPFEVER_SHAREDLOGOLD=1: as before. Test: tests/test_sharedlog075.py.
   - Tests: MPFEVER_TESTLAGMS=<ms> holds a player's session messages that long each way, in order, as over a far network
     (two games on one PC could not show the pacing of a real server). Never set for a game. Test: tests/test_testlag075.py.
   - A computer company's new street stops are named after their town and the company (they had no name: "Unnamed
@@ -26,7 +41,7 @@ MPFever - Changelog
     identical. MPFEVER_PACEBARRIER=1: as before. Test: tests/test_pace075.py.
   - FIX (hitches every 10 s): the checks' diagnostic dump (sdump_ring_*.txt) read the whole world at every check (vehicles,
     names, stations, every construction of the map): the check held the simulation 0.15 to 0.3 s. The world's part goes in
-    one dump of three now, the game scripts' states in every one; its cost shows apart ("dump=" in the "hash costs"
+    one dump of six now (once a minute), the game scripts' states in every one; its cost shows apart ("dump=" in the "hash costs"
     lines). MPFEVER_SDUMPWORLD=1: as before. Test: tests/test_sdumpworld075.py.
   - FIX: the MPFever Hub opened with its top left corner in the middle of the screen (the game places a window before its
     pages are laid out), and a larger Hub ran off a small screen. Once laid out, its size and the screen's are read and it is

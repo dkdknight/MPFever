@@ -176,7 +176,8 @@ local function extendedParts(parts)
 	-- the map) in one dump of three, the game scripts' states (the drifts seen most, "script:towns") in every one: the check
 	-- held the simulation 0.15 to 0.3 s every 10 s on the user's server, a hitch the players felt. The dumps are not part of
 	-- the check (each game writes its own files). MPFEVER_SDUMPWORLD=1: in every dump, as before
-	local world = dump and (SDUMP.all or SDUMP.n % 3 == 0 or os.getenv("MPFEVER_SDUMPWORLD") == "1")
+	-- ((0.7.5, later) one dump of six, once a minute: the dump's world part still cost 0.05 to 0.09 s on a big world)
+	local world = dump and (SDUMP.all or SDUMP.n % 6 == 0 or os.getenv("MPFEVER_SDUMPWORLD") == "1")
 	local tWorld = os.clock()
 	if dump and world then
 		-- the vehicles too, by their line and where they are (their ids differ between games): the first vehicle that moved
@@ -307,11 +308,14 @@ local function extendedParts(parts)
 		K.dumpCost = tDump + os.clock() - tWorld
 	end
 	-- cargo waiting in buildings (industries, warehouses, stations)
+	-- ((0.7.5) their costs apart, K.extCost: "x.stocks" / "x.onboard" in the "hash costs" lines)
+	local tS = os.clock()
 	pcall(function()
 		local counts = {}
 		for _, list in pairs(api.engine.system.simEntityAtStockSystem.getStock2SimEntityMap() or {}) do counts[#counts + 1] = #list end
 		parts.stocks = countsHash(counts)
 	end)
+	local tO = os.clock()
 	-- cargo and passengers on board of vehicles
 	pcall(function()
 		local counts = {}
@@ -322,6 +326,7 @@ local function extendedParts(parts)
 		end
 		parts.onboard = countsHash(counts)
 	end)
+	K.extCost = { stocks = tO - tS, onboard = os.clock() - tO }
 	pcall(function()
 		local gt = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
 		parts.timeOfDay = gt.timeOfDaySec
@@ -531,10 +536,16 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	-- the determinism run; MPFEVER_HASHROT=0 / 1 forces it off / on.)
 	local rot = os.getenv("MPFEVER_HASHROT")
 	R.hashSkip = nil
+	-- (0.7.5) the two heaviest parts in halves ("conParams" and "conParams2", "edges" and "edges2", R.hashHalves: see
+	-- mpfever_refs), each half its own turn: a check held the simulation 0.27 to 0.38 s on a big world (Test Lag Rp, 5 874
+	-- constructions, two games on one PC, 2026-11-07), "conParams" alone 0.17 to 0.29 s. Each part is checked every 50 s
+	-- instead of 30. MPFEVER_HASHHALVES=0 (on every game): whole, as before
+	R.hashHalves = os.getenv("MPFEVER_HASHHALVES") ~= "0" and os.getenv("MPFEVER_HASHGROUPS") ~= "0"
 	if n and (rot == "1" or (rot ~= "0" and not os.getenv("MPFEVER_SAVE"))) then
 		-- (0.6.8: the segments alone, their ages with the constructions and the nodes: the heaviest check of a big world held
 		-- the simulation 0.26 s, a hitch every 30 s. MPFEVER_HASHGROUPS=0: the groups of before)
 		local groups = os.getenv("MPFEVER_HASHGROUPS") == "0" and { { "conParams" }, { "edges", "ages" }, { "constructions", "nodeConfigs" } }
+			or R.hashHalves and { { "conParams" }, { "edges" }, { "constructions", "nodeConfigs", "ages" }, { "conParams2" }, { "edges2", "owners" } }
 			or { { "conParams" }, { "edges" }, { "constructions", "nodeConfigs", "ages" } }
 		local keep = groups[(n % #groups) + 1]
 		R.hashSkip = {}
@@ -558,6 +569,9 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 		end
 	end
 	parts.buildIds = bn .. "/" .. bs
+	-- ((0.7.5) with the halves, "owners" takes its turn too, with "edges2": it reads every road, construction and vehicle
+	-- again, 0.03 to 0.07 s of every check)
+	local skipOwners = R.hashSkip and R.hashSkip.owners
 	R.hashSkip = nil
 	-- diagnostic (MPFEVER_VDUMP set): every vehicle and every company's money at each checkpoint, to diff two games
 	if os.getenv("MPFEVER_VDUMP") then
@@ -586,11 +600,13 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	if reg and reg.mode == "separate" then
 		parts.companies = CO.signature(reg)
 		-- who owns what: roads, constructions and vehicles counted per company (0 = nobody's)
-		pcall(function()
+		if not skipOwners then pcall(function()
 			local cnt = {}
+			-- ((0.7.5) the engine's function through pcall directly, no new closure for each road, construction and vehicle)
+			local getC, ctPO = api.engine.getComponent, api.type.ComponentType.PLAYER_OWNED
 			local function tally(kind, list)
 				for _, e in ipairs(list) do
-					local okc, po = pcall(function() return api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED) end)
+					local okc, po = pcall(getC, e, ctPO)
 					local id = (okc and po) and (CO.idOfEntity(reg, po.player) or -1) or 0
 					cnt[kind .. id] = (cnt[kind .. id] or 0) + 1
 				end
@@ -602,7 +618,7 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 			for k, v in pairs(cnt) do keys[#keys + 1] = k .. "=" .. v end
 			table.sort(keys)
 			parts.owners = table.concat(keys, " ")
-		end)
+		end) end
 		-- the loans of the companies other than the savegame's (the savegame company's are in script:loan)
 		pcall(function()
 			local t = {}
@@ -625,9 +641,16 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	if not okx then parts.extended = "ERR " .. tostring(errx):sub(1, 80) end
 	costs.extended = os.clock() - tMark
 	if K.dumpCost then costs.dump = K.dumpCost; K.dumpCost = nil end
+	if K.extCost then for k, v in pairs(K.extCost) do costs["x." .. k] = v end; K.extCost = nil end
+	-- (diagnostic, MPFEVER_HASHPROF=1: one check in four also times the steps of the heaviest parts, after the check's own costs)
+	if os.getenv("MPFEVER_HASHPROF") == "1" and n and n % 4 == 0 then
+		local okp, pr = pcall(R.hashProfile, C.hashStr)
+		log("hash profile: " .. tostring(pr))
+	end
 	-- (0.6.8: and later a check that held the simulation more than 0.12 s, one in 20 of them: which part weighs, on a big world)
 	K.hashHeavy = (K.hashHeavy or 0) + ((os.clock() - tStart > 0.12) and 1 or 0)
-	if K.hashCostsShown < 3 or (os.clock() - tStart > 0.12 and K.hashHeavy % 20 == 1) then
+	-- (MPFEVER_HASHCOSTLOG=1, measures: every check's line)
+	if K.hashCostsShown < 3 or (os.clock() - tStart > 0.12 and K.hashHeavy % 20 == 1) or os.getenv("MPFEVER_HASHCOSTLOG") == "1" then
 		K.hashCostsShown = K.hashCostsShown + 1
 		local t = {}
 		for k, v in pairs(costs) do t[#t + 1] = string.format("%s=%.3f", k, v) end

@@ -961,6 +961,26 @@ function R.translateIn(margs, bind)
 	return missing
 end
 
+-- (0.7.5) the hashes of texts and of numbers with decimals kept from one check to the next (QH): the parameters of the
+-- constructions of a big world repeat the same keys and values thousands of times ("modules", file names, levels), and each
+-- was hashed again character by character, 0.14 s of the 0.28 s the part "conParams" held the simulation on a world of 5 874
+-- constructions (2026-11-07). The same text gives the same number: every check gives the values it gave before. Emptied past
+-- 200 000 entries, and for another hash function. MPFEVER_QHCACHE=0 (read at each check, R.contentHash): no cache, as before
+local QH = { on = true, fn = nil, s = {}, f = {}, n = 0, cont = false }
+local function qhFor(hashStr)
+	if QH.fn ~= hashStr then
+		-- (fileAt only for a function that goes on from the hash of a text's start exactly as through the whole text, as
+		-- C.hashStr does: checked once on a few texts)
+		local okc, cont = pcall(function()
+			for _, t in ipairs({ { "a/b.con@", "12,-3#7" }, { "x@", "" }, { "station_x.con@", "1024,768#4294967295" } }) do
+				if hashStr(hashStr(0, t[1]), t[2]) ~= hashStr(0, t[1] .. t[2]) then return false end
+			end
+			return true
+		end)
+		QH.cont = okc and cont or false
+	end
+	QH.fn, QH.s, QH.f, QH.n = hashStr, {}, {}, 0
+end
 -- order-independent hash of a plain Lua value (much faster than hashing its printed form)
 local function quickHash(hashStr, v, d)
 	local t = type(v)
@@ -973,13 +993,37 @@ local function quickHash(hashStr, v, d)
 		return acc
 	elseif t == "number" then
 		if v == math.floor(v) and v > -2147483648 and v < 2147483648 then return (v * 2654435761) % 4294967296 end
+		if QH.on and v == v then
+			if QH.fn ~= hashStr then qhFor(hashStr) end
+			local h = QH.f[v]
+			if not h then h = hashStr(5, string.format("%.6g", v)); QH.f[v] = h; QH.n = QH.n + 1 end
+			return h
+		end
 		return hashStr(5, string.format("%.6g", v))
 	elseif t == "string" then
+		if QH.on then
+			if QH.fn ~= hashStr then qhFor(hashStr) end
+			local h = QH.s[v]
+			if not h then h = hashStr(3, v); QH.s[v] = h; QH.n = QH.n + 1 end
+			return h
+		end
 		return hashStr(3, v)
 	elseif t == "boolean" then
 		return v and 1 or 2
 	end
 	return 0
+end
+-- (0.7.5) a construction's file name and the "@" after it, hashed once (see QH): the text of a construction in the checks
+-- starts with them, and hashStr goes on from the hash of the start of a text exactly as through the whole text
+local function fileAt(hashStr, f)
+	f = tostring(f)
+	if not QH.on then return nil, f .. "@" end
+	if QH.fn ~= hashStr then qhFor(hashStr) end
+	if not QH.cont then return nil, f .. "@" end
+	local k = "" .. f
+	local h = QH.s[k]
+	if not h then h = hashStr(0, f .. "@"); QH.s[k] = h; QH.n = QH.n + 1 end
+	return h, nil
 end
 
 -- the name of an entity, and what the player sets on a line (its text in the checks and in the state dumps)
@@ -1070,10 +1114,77 @@ function R.lineText(e)
 end
 
 -- id-independent world fingerprint parts
+-- diagnostic (MPFEVER_HASHPROF=1, measures only): where the time of the heaviest parts goes, each step of their reads timed
+-- apart over the whole world ("hash profile:" lines); never part of a check
+function R.hashProfile(hashStr)
+	local clock, out = os.clock, {}
+	local function mark(name, t0) out[#out + 1] = string.format("%s=%.3f", name, clock() - t0) end
+	local eng = api.engine
+	local get, exists = eng.getComponent, eng.entityExists
+	local CTC, CTT, CTE, CTN, CTNC = CT("CONSTRUCTION"), CT("TOWN_BUILDING"), CT("BASE_EDGE"), CT("BASE_NODE"), CT("BASE_NODE_CONFIG")
+	local t = clock()
+	local cons = R.entitiesWith("CONSTRUCTION"); mark("c.list", t)
+	t = clock(); for i = 1, #cons do pcall(exists, cons[i]) end; mark("c.exists", t)
+	t = clock(); local nonTown = {}
+	for i = 1, #cons do local ok, tb = pcall(get, cons[i], CTT); if not (ok and tb) then nonTown[#nonTown + 1] = cons[i] end end
+	mark("c.townCheck", t)
+	t = clock(); local cs = {}
+	for i = 1, #nonTown do local ok, c = pcall(get, nonTown[i], CTC); if ok and c then cs[#cs + 1] = c end end
+	mark("c.read", t)
+	t = clock(); local ps = {}
+	for i = 1, #cs do local ok, p = pcall(function() return cs[i].params end); ps[i] = ok and p or false end
+	mark("c.params", t)
+	t = clock(); for i = 1, #ps do if type(ps[i]) == "table" then quickHash(hashStr, ps[i], 0) end end; mark("c.quickHash", t)
+	t = clock(); for i = 1, #cs do local m = matPos(cs[i].transf); hashStr(0, tostring(cs[i].fileName) .. "@" .. tostring(m and m.x)) end
+	mark("c.text", t)
+	out[#out + 1] = "c.n=" .. #cons .. "/" .. #nonTown
+	t = clock(); local edges = R.allEdges(); mark("e.list", t)
+	t = clock(); local es = {}
+	for i = 1, #edges do local ok, c = pcall(get, edges[i], CTE); if ok and c then es[#es + 1] = c end end
+	mark("e.read", t)
+	t = clock(); for i = 1, #es do nodePos(es[i].node0); nodePos(es[i].node1) end; mark("e.nodePos", t)
+	t = clock(); for i = 1, #es do pcall(function() local d = es[i].edgeDecorations; return #d end) end; mark("e.decos", t)
+	t = clock()
+	for i = 1, #es do
+		pcall(function()
+			local lanes = es[i].laneConfigs
+			for k = 1, #lanes do local tm = lanes[k].transportModes; for j = 0, 15 do local _ = tm[j] end end
+		end)
+	end
+	mark("e.lanes", t)
+	out[#out + 1] = "e.n=" .. #edges
+	t = clock(); local nodes = R.allNodes(); mark("n.list", t)
+	t = clock(); for i = 1, #nodes do pcall(get, nodes[i], CTNC) end; mark("n.config", t)
+	t = clock(); for i = 1, #nodes do pcall(get, nodes[i], CTN) end; mark("n.read", t)
+	out[#out + 1] = "n.n=" .. #nodes
+	return table.concat(out, " ")
+end
+
+local function trafficLightOf(nc) return nc.trafficLightConfig.trafficLightType end
+local OTHER_HALF = {}
+-- (0.7.5) which half of the checks a place belongs to: its rounded coordinates' sum, even (0) or odd (1); 0 without a place
+local function halfOf(x, y)
+	if type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y or x == math.huge or x == -math.huge or y == math.huge or y == -math.huge then return 0 end
+	return (math.floor(x + 0.5) + math.floor(y + 0.5)) % 2
+end
+local POW2 = {}
+for j = 0, 15 do POW2[j] = 2 ^ j end
 function R.contentHash(hashStr, dumpFn)
 	local parts = {}
 	local off = os.getenv("MPFEVER_HASHOFF") or ""
 	R.partCost = {}
+	QH.on = os.getenv("MPFEVER_QHCACHE") ~= "0"
+	local halves = R.hashHalves
+	if QH.n > 200000 then QH.fn = nil end   -- (emptied at the next use, see qhFor)
+	-- (0.7.5) the nodes' places and texts read once per check (a node ends two segments or more: each segment read both of its
+	-- nodes again). The check runs within one step: nothing moves meanwhile
+	local nodeAt, nodeText = {}, {}
+	local function nodePosC(nd)
+		if not QH.on then return nodePos(nd) end
+		local p = nodeAt[nd]
+		if p == nil then p = nodePos(nd) or false; nodeAt[nd] = p end
+		return p or nil
+	end
 	local function part(name, fn)
 		if off:find(name, 1, true) then return end
 		-- (R.hashSkip: the parts left out of this checkpoint, see the rotation in simHash)
@@ -1088,9 +1199,13 @@ function R.contentHash(hashStr, dumpFn)
 		for _, e in ipairs(R.entitiesWith(cname)) do
 			-- (contentFn answers false for what is not counted at all)
 			local s = contentFn and contentFn(e) or nil
-			if s ~= false then
+			-- ((0.7.5) OTHER_HALF: an element of the other half of the part, not counted here; a false answer goes through
+			-- "or nil" above and counts without a text, as it always did)
+			if s ~= false and s ~= OTHER_HALF then
 				n = n + 1
-				if s then acc = (acc + hashStr(0, s)) % 4294967296 end
+				-- ((0.7.5) a number: the hash of the element's text, worked out by the part itself, see fileAt)
+				if type(s) == "number" then acc = (acc + s) % 4294967296
+				elseif s then acc = (acc + hashStr(0, s)) % 4294967296 end
 			end
 		end
 		if R.loopErrors[cname] then return "cannot list " .. cname end
@@ -1120,7 +1235,7 @@ function R.contentHash(hashStr, dumpFn)
 		for k = 1, #lanes do
 			local tm = lanes[k].transportModes
 			local m = 0
-			for j = 0, 15 do if tm[j] then m = m + 2 ^ j end end
+			for j = 0, 15 do if tm[j] then m = m + POW2[j] end end
 			t[#t + 1] = m
 		end
 		table.sort(t)
@@ -1131,17 +1246,27 @@ function R.contentHash(hashStr, dumpFn)
 		local c = comp(e, "CONSTRUCTION")
 		if c and isAssetFile(c.fileName) then return false end
 		local p = c and matPos(c.transf)
-		return c and (tostring(c.fileName) .. "@" .. r1(p and p.x) .. "," .. r1(p and p.y)) or nil
+		if not c then return nil end
+		local h, head = fileAt(hashStr, c.fileName)
+		if h then return hashStr(h, r1(p and p.x) .. "," .. r1(p and p.y)) end
+		return head .. r1(p and p.x) .. "," .. r1(p and p.y)
 	end) end)
 	-- (diagnostic: R.edgeDump, set by the bridge with MPFEVER_EDGEDUMP, gets every segment's text of one check)
-	part("edges", function() local dump = R.edgeDump and R.edgeDump() or nil; local r = count("BASE_EDGE", function(e)
-		local t = (function()
+	-- ((0.7.5) in two halves too, R.hashHalves: "edges" the segments whose ends' rounded places add up to an even number,
+	-- "edges2" the others)
+	local function edgesOf(want, dumpIt) local dump = dumpIt and R.edgeDump and R.edgeDump() or nil
+		-- ((0.7.5) a segment's text made by one function of the check, no longer by a new closure for each segment)
+		local function edgeText(e)
 		local c = comp(e, "BASE_EDGE")
 		if not c then return nil end
-		local a, b = nodePos(c.node0), nodePos(c.node1)
+		local n0, n1 = c.node0, c.node1
+		local a, b = nodePosC(n0), nodePosC(n1)
 		if not a or not b then return nil end
-		local s1 = r1(a.x) .. "," .. r1(a.y)
-		local s2 = r1(b.x) .. "," .. r1(b.y)
+		if want and (halfOf(a.x, a.y) + halfOf(b.x, b.y)) % 2 ~= want then return OTHER_HALF end
+		local s1 = QH.on and nodeText[n0] or nil
+		if not s1 then s1 = r1(a.x) .. "," .. r1(a.y); if QH.on then nodeText[n0] = s1 end end
+		local s2 = QH.on and nodeText[n1] or nil
+		if not s2 then s2 = r1(b.x) .. "," .. r1(b.y); if QH.on then nodeText[n1] = s2 end end
 		local swapped = false
 		if s1 > s2 then s1, s2 = s2, s1; swapped = true end
 		-- what the road carries beyond its template: decorations (side and model) and which vehicles each lane takes (tram)
@@ -1158,10 +1283,14 @@ function R.contentHash(hashStr, dumpFn)
 		local okd = true
 		return s1 .. "-" .. s2 .. tostring(c.roadTemplate) .. "/" .. tostring(okd and nd or 0) .. "/" .. tostring(c.roadStyle)
 			.. "/" .. tostring(c.roadType) .. "/" .. tostring(c.type) .. "/" .. tostring(c.typeIndex) .. "/" .. deco .. "/" .. lanesig .. "/d" .. tostring(c.distance)
-		end)()
-		if dump and t then dump[#dump + 1] = e .. "	" .. t end
+		end
+		local r = count("BASE_EDGE", function(e)
+		local t = edgeText(e)
+		if dump and t and t ~= OTHER_HALF then dump[#dump + 1] = e .. "	" .. t end
 		return t
-	end); if dump and R.edgeDumpDone then pcall(R.edgeDumpDone, dump) end; return r end)
+	end); if dump and R.edgeDumpDone then pcall(R.edgeDumpDone, dump) end; return r end
+	part("edges", function() return edgesOf(halves and 0 or nil, true) end)
+	if halves then part("edges2", function() return edgesOf(1, false) end) end
 	-- the segments' ages (TICK_EPOCH: the step each was added at, which the towns' parcels compare; the street tool used to give
 	-- its own on the builder's game only), as a set
 	part("ages", function()
@@ -1238,11 +1367,11 @@ function R.contentHash(hashStr, dumpFn)
 		local dump = os.getenv("MPFEVER_NCDUMP") and {} or nil     -- diagnostic: the line of every node, to diff two games
 		for _, node in ipairs(R.allNodes()) do
 			local nc = comp(node, "BASE_NODE_CONFIG")
-			local p = nc and nodePos(node)
+			local p = nc and nodePosC(node)
 			if nc and p then
 				n = n + 1
-				local tl = nil
-				pcall(function() tl = nc.trafficLightConfig.trafficLightType end)
+				local okT, tl = pcall(trafficLightOf, nc)
+				if not okT then tl = nil end
 				local line = r1(p.x) .. "," .. r1(p.y) .. "/" .. #nc.laneConnections .. "/" .. #nc.crosswalks .. "/"
 					.. tostring(nc.trafficLightPreference) .. "/" .. tostring(tl) .. "/" .. tostring(nc.doubleSlipSwitch)
 				if dump then dump[#dump + 1] = line .. " #" .. tostring(node) .. " " .. string.format("%.2f,%.2f", p.x, p.y) end
@@ -1254,19 +1383,26 @@ function R.contentHash(hashStr, dumpFn)
 	end)
 	-- (the height of the ground is not sampled: api.engine.terrain.getHeightAt called from the game script stalls the game)
 	-- the parameters of every construction that is not a town building (the modules of a modular station...)
-	part("conParams", function() return count("CONSTRUCTION", function(e)
+	-- ((0.7.5) in two halves, R.hashHalves: "conParams" the constructions whose rounded place adds up to an even number,
+	-- "conParams2" the others, checked in turn, see simHash; nil: all of them in "conParams")
+	local function conParamsOf(want) return count("CONSTRUCTION", function(e)
 		if comp(e, "TOWN_BUILDING") then return nil end
 		local c = comp(e, "CONSTRUCTION")
 		if not c then return nil end
 		if isAssetFile(c.fileName) then return false end
 		local p = matPos(c.transf)
+		if want and halfOf(p and p.x, p and p.y) ~= want then return OTHER_HALF end
 		local d = ""
 		pcall(function()
 			local params = c.params
 			if type(params) == "table" then d = tostring(quickHash(hashStr, params, 0)) else d = dumpFn(params) end
 		end)
-		return tostring(c.fileName) .. "@" .. r1(p and p.x) .. "," .. r1(p and p.y) .. "#" .. tostring(d)
-	end) end)
+		local h, head = fileAt(hashStr, c.fileName)
+		if h then return hashStr(h, r1(p and p.x) .. "," .. r1(p and p.y) .. "#" .. tostring(d)) end
+		return head .. r1(p and p.x) .. "," .. r1(p and p.y) .. "#" .. tostring(d)
+	end) end
+	part("conParams", function() return conParamsOf(halves and 0 or nil) end)
+	if halves then part("conParams2", function() return conParamsOf(1) end) end
 	part("edgeObjects", function()
 		local n, acc = 0, 0
 		for eo, edge in pairs(api.engine.system.streetSystem.getEdgeObject2EdgeMap() or {}) do

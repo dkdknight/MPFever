@@ -66,8 +66,32 @@ namespace MPFever
             ok &= RunReportMode();
             ok &= RunFineTimer();
             ok &= RunServerJoin074();
+            ok &= RunSharedLog075();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.5) Two games of one Steam account on one PC share one game log: a game that ended with code 0 while
+        /// another game ran is not taken for a crash (MPFEVER_SHAREDLOGOLD=1: as before).</summary>
+        static bool RunSharedLog075()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_SHAREDLOGOLD");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_SHAREDLOGOLD", null);
+                Check(!Reporter.CrashedSince(DateTime.MinValue, null, 0, true), "shared log: code 0 with another game on the PC is no crash");
+                Check(Reporter.OtherGamesRunning(-1) >= 0, "shared log: the other games counted");
+                // (the other cases read this PC's own crash dumps: the same answer as the call of before)
+                Check(Reporter.CrashedSince(DateTime.MaxValue, null, 0, false) == Reporter.CrashedSince(DateTime.MaxValue), "shared log: alone, as before");
+                Check(Reporter.CrashedSince(DateTime.MaxValue, null, unchecked((int)0xC0000005), true) == Reporter.CrashedSince(DateTime.MaxValue), "shared log: another exit code, as before");
+                Environment.SetEnvironmentVariable("MPFEVER_SHAREDLOGOLD", "1");
+                Check(Reporter.CrashedSince(DateTime.MaxValue, null, 0, true) == Reporter.CrashedSince(DateTime.MaxValue), "shared log: MPFEVER_SHAREDLOGOLD=1, as before");
+            }
+            catch (Exception e) { Check(false, "shared log: " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_SHAREDLOGOLD", kept); }
+            return ok;
         }
 
         /// <summary>(0.7.4) The user's server, 2026-11-06 23:13: a player gone during a resynchronisation is no longer waited for
