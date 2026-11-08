@@ -3963,6 +3963,30 @@ static bool g_freshOn = false;
 static volatile long g_freshReplayTid = 0;
 static volatile long g_freshCmd = 0, g_freshReplay = 0, g_freshOther = 0, g_freshScript = 0, g_freshSkip = 0;
 static u32 g_freshSite[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu };   // AddEntity's returns in CustomEntityCreate and LineCreate
+// (0.7.7) A vehicle bought (or replaced at a depot) is not made by its command: the vehicles' system makes it at a later step,
+// outside any command (the user's server and PC, 2026-11-07 23:41, an AI truck: 118852 on one game, 111350 on the other;
+// MPFEVER_ENTLOG of a purchase, 2026-11-08: "-79058" freed by another system in that step, then "+79058" the vehicle, the head of
+// the queue). Its id was the queue's head at that moment, which two games had different for a few steps: the order fixes then
+// sorted the vehicles otherwise and the towns followed. It gets a fresh id too. The chain on 40425: AddEntity returning to
+// 26a8250 (a wrapper at 26a8000), called from 26a8850 (26a8480), called from 9deb11 (the vehicles' system); found by
+// signature. Only on the simulated state's engine, on the simulation thread. MPFEVER_FRESHBUY=0: the queue's id, as before.
+static u32 g_buySite[3] = { 0, 0, 0 };
+static bool g_freshBuy = false;
+static volatile long g_freshBuyN = 0;
+static void InstallFreshBuy();
+
+// the callers' return addresses g_buySite[1] then g_buySite[2] above sp (AddEntity's own return checked by the caller)
+static bool BuyChain(u64 sp)
+{
+    const u64 a = g_base + g_buySite[1], b = g_base + g_buySite[2];
+    if (!Readable((void*)sp, 0x800)) return false;
+    const u64* q = (const u64*)sp;
+    int i = 0;
+    for (; i < 0x100; i++) if (q[i] == a) break;
+    if (i >= 0x100) return false;
+    for (int j = i + 1; j < 0x100; j++) if (q[j] == b) return true;
+    return false;
+}
 
 // Engine::Replicate's replay of an "entity added" record (rdi the copy's engine, rbx the record: the id at +4)
 static void FreshReplay(SavedRegs* r)
@@ -3981,6 +4005,25 @@ static void FreshAdd(SavedRegs* r)
         g_freshReplayTid = 0;
         if (r->r8) { r->r8 = 0; _InterlockedIncrement(&g_freshReplay); }
         return;
+    }
+    // (0.7.7) a vehicle bought, made by the vehicles' system (see g_buySite)
+    if (g_freshBuy && r->r8 && tid == g_simTid) {
+        u64 sp = OrigRsp(r);
+        u64 ret0 = *(u64*)(sp + 0x58);
+        if (g_addCallerTid == tid && (ret0 < g_textStart || ret0 >= g_textEnd)) ret0 = g_base + g_addCaller;
+        if (ret0 == g_base + g_buySite[0] && BuyChain(sp + 0x60)) {
+            u8* gs = (u8*)g_slot;
+            if (gs && Readable(gs + 0x18, 8) && *(u64*)(gs + 0x18) == r->rdi) {
+                long n = _InterlockedIncrement(&g_freshBuyN);
+                if (n <= 12) {
+                    Buf b; b.str("fresh id: a vehicle bought gets ").dec((long)FiCount((const u8*)r->rdi)).str(" (")
+                        .dec((long)r->r8).str(" waiting in the queue) at step ").dec((long)StepOf(gs));
+                    LogLine(b);
+                }
+                r->r8 = 0;
+                return;
+            }
+        }
     }
     if (g_scriptTid == tid && g_cmdTid != tid) {
         // (a script's command: its entities keep the queue's ids, counted; the first ones in native.log, with whether the state
@@ -4084,6 +4127,35 @@ static void InstallFreshIds()
     b.str("fresh ids: the vehicles and lines that commands make (AddEntity returning to ").hex(g_freshSite[0]).str(" or ").hex(g_freshSite[1])
         .str(", the loop's commands and the scripts', Apply returning to ").hex(RVA_SCRIPT_APPLY_RET).str(") get fresh ids, AddEntity at ").hex(RVA_ADDENTITY)
         .str(", the copy's replay at ").hex(rep);
+    LogLine(b);
+    InstallFreshBuy();
+}
+
+// (0.7.7) the vehicles bought: the three calls of their chain, each found once and checked (see g_buySite)
+static void InstallFreshBuy()
+{
+    Buf b;
+    char v[4] = {};
+    if (GetEnvironmentVariableA("MPFEVER_FRESHBUY", v, 3) > 0 && v[0] == '0') { b.str("fresh ids: the vehicles bought take the queue's ids (MPFEVER_FRESHBUY=0)"); LogLine(b); return; }
+    // the wrapper's AddEntity call "lea rdx,[rsp+40h] / mov rcx,r15 / vzeroupper / call AddEntity / mov edx,[rsp+40h] / mov [r12],edx"
+    u32 s0 = FindSigRva("48 8D 54 24 40 49 8B CF C5 F8 77 E8 ?? ?? ?? ?? 8B 54 24 40 41 89 14 24");
+    // its caller's call "mov r9d,ebx / mov r8d,r15d / mov rdx,r13 / lea rcx,[rsp+48h] / call / mov [rbp-60h],r13 / mov edi,[rsp+48h]"
+    u32 s1 = FindSigRva("44 8B CB 45 8B C7 49 8B D5 48 8D 4C 24 48 E8 ?? ?? ?? ?? 4C 89 6D A0 8B 7C 24 48");
+    // the vehicles' system's call "mov [rsp+28h],r15 / mov [rsp+20h],rsi / mov r9,rax / lea rcx,[rsp+70h] / call / mov eax,[rax] / mov [r12+50h],eax"
+    u32 s2 = FindSigRva("4C 89 7C 24 28 48 89 74 24 20 4C 8B C8 48 8D 4C 24 70 E8 ?? ?? ?? ?? 8B 00 41 89 44 24 50");
+    const char* miss = (!s0 || !s1 || !s2) ? "a call of the chain not found" : 0;
+    auto target = [](u32 callRva) -> u64 { const u8* c = (const u8*)(g_base + callRva); return (u64)(c + 5 + *(const i32*)(c + 1)) - g_base; };
+    if (!miss) {
+        u64 t0 = target(s0 + 11), t1 = target(s1 + 14), t2 = target(s2 + 18);
+        // AddEntity; the second call goes to the function the first is in, the third to the function the second is in
+        if (t0 != RVA_ADDENTITY) miss = "the wrapper calls another function";
+        else if (!(t1 <= s0 && s0 - t1 < 0x1000)) miss = "the wrapper's caller calls another function";
+        else if (!(t2 <= s1 && s1 - t2 < 0x1000)) miss = "the vehicles' system calls another function";
+    }
+    if (miss) { b.str("fresh ids: the vehicles bought take the queue's ids (").str(miss).str(")"); LogLine(b); return; }
+    g_buySite[0] = s0 + 16; g_buySite[1] = s1 + 19; g_buySite[2] = s2 + 23;
+    g_freshBuy = true;
+    b.str("fresh ids: the vehicles bought too (AddEntity returning to ").hex(g_buySite[0]).str(" from ").hex(g_buySite[1]).str(" from ").hex(g_buySite[2]).str(")");
     LogLine(b);
 }
 
@@ -4365,7 +4437,7 @@ static void LogOrderCounts()
     // (the commands' new entities given a fresh id / the same in a copy of the state / refused, another engine)
     // (the scripts' commands' entities: counted, the queue's ids)
     b.str("; fresh ids ").dec(g_freshCmd).str("/").dec(g_freshReplay).str("/").dec(g_freshOther).str(", left to the queue ").dec(g_freshSkip)
-        .str(", script entities ").dec(g_freshScript);
+        .str(", script entities ").dec(g_freshScript).str(", vehicles bought ").dec(g_freshBuyN);
     // (the commands applied, by where from: the loop, the scripts' sink, CGame's sink, another place; on the simulation thread
     // and on another)
     b.str("; applied ");
