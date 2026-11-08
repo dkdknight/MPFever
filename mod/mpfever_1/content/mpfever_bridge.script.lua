@@ -887,8 +887,14 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	-- GetComponentDataIndex (Name). The game scripts' interface commands ("gsmod-...") were not checked as the simulation's mods'
 	-- are. A name, whoever gives it, and a game script's colour now go only on an entity that has one here. MPFEVER_NAMEGUARD=0:
 	-- the simulation's mods' commands only, as before)
+	-- (0.7.13, #168: lukas' game, 2026-11-08 22:28: Philipp coloured 8 vehicles he had just bought, stamped 2 s ahead; lukas paused
+	-- before that step, Philipp sold the 8 in the pause (a paused action applies at once, before the colours sent earlier), lukas'
+	-- paused builds took their ids, and the colours went on track segments: "HasComponent(cmd.entity, Color)" failed. The engine
+	-- asserts on every colour without a Color component, whoever sends it: every colour is checked now. MPFEVER_COLORANY=0: a game
+	-- script's colours only, as in 0.7.12)
 	local nameGuard = os.getenv("MPFEVER_NAMEGUARD") ~= "0" and a.tok ~= "mod" and (a.fn == "makeEntitySetNameCmd"
-		or (a.fn == "makeEntitySetColorCmd" and type(a.tok) == "string" and a.tok:sub(1, 6) == "gsmod-"))
+		or (a.fn == "makeEntitySetColorCmd" and (os.getenv("MPFEVER_COLORANY") ~= "0"
+			or (type(a.tok) == "string" and a.tok:sub(1, 6) == "gsmod-"))))
 	if (a.tok == "mod" or nameGuard) and type(a.args) == "table" then
 		local need, what = api.type.ComponentType.LINE, "a line"
 		if nameGuard or os.getenv("MPFEVER_MODANYTARGET") ~= "0" then

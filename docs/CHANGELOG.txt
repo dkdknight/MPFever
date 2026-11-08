@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.7.13 - (in progress)
+  - FIX (crash, #168, lukas' game 2026-11-08 22:28): Philipp coloured 8 vehicles he had just bought (stamped 2 s ahead); lukas
+    paused the game before that moment, Philipp sold the 8 vehicles during the pause (a paused action is applied at once, so
+    before the colours sent earlier), lukas' paused builds took their ids, and after the pause the colours went on track
+    segments: the game stopped ("HasComponent(cmd.entity, Color)"). The engine stops on any colour given to something without
+    a colour, whoever sends it: every colour is now checked as a game script's was in 0.7.12, and skipped where it doesn't fit
+    (MPFEVER_COLORANY=0: game scripts' colours only, as in 0.7.12). Test: tests/test_colorguard0713.py.
   - FIX (joining, #164/#165, Hansen and ChristianHansen 2026-11-08): the host was behind its provider's shared address (CGNAT)
     and a router that answers its own public address from inside. The player's direct connection connected at once, but
     nothing of the host ever came through it; the Steam tunnel, opened at the same time and working, was let go for it, and

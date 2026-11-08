@@ -56,7 +56,10 @@ end
     check(g("makeEntitySetNameCmd", 300, '"gsmod-1"') is None, "a name on a station group (it has one): goes on")
     check(g("makeEntitySetNameCmd", 400, '"1794-123-rasma"') is None, "  a player's line name: goes on")
     check(g("makeEntitySetColorCmd", 215954, '"gsmod-1"') is not None, "a game script's colour on something without one: skipped")
-    check(g("makeEntitySetColorCmd", 215954, '"1794-123-rasma"') is None, "  a player's colour: as before")
+    # (0.7.13, #168: a player's colour is checked too, see test_colorguard0713.py; MPFEVER_COLORANY=0: as in 0.7.12)
+    L.execute('ENV.MPFEVER_COLORANY = "0"')
+    check(g("makeEntitySetColorCmd", 215954, '"1794-123-rasma"') is None, "  a player's colour: as before (0.7.12, MPFEVER_COLORANY=0)")
+    L.execute('ENV.MPFEVER_COLORANY = nil')
     check(g("makeEntitySetColorCmd", 400, '"gsmod-1"') is None, "  a game script's colour on a line: goes on")
     check(g("makeLineUpdateCmd", 215954, '"gsmod-1"') is None, "  other commands: as before")
     check(g("makeEntitySetNameCmd", 215954, '"mod"') is not None and g("makeLineUpdateCmd", 300, '"mod"') is not None,
