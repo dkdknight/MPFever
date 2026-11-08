@@ -31,8 +31,8 @@ A mod with a **script** can act on the game by itself. In November 2026 we read 
 | Auto Color Lines | Same as Auto Line Namer for colours. Since 0.7.0 its first sweep of the existing lines (option 3) is sent by one game only. |
 | Auto Assign Terminals | Same mechanism for the terminals. If you edit a line while it is being updated, your edit may be undone (on every game alike, no desync). |
 | Visual Auto Namer | Same mechanism (names from the host's game). |
-| Auto Signals | **Fixed in 0.7.7**. Adds signals after you place one: the mod's build goes to every game and is built on each. From 0.7.1 to 0.7.6 those signals were refused on every game (no desync, but no extra signals). |
-| Automatic Signal Spacing, Automatisches Gleisvorfeld | Same as Auto Signals: their signals are built on every game since 0.7.7. The same fix brings back the signals and stops other mods put up by script: Advanced Station Builder's throat signals, Advanced Track Patterns, Bus Loops, Express & Local, Undo!, Town Transit Planner and Auto City Bus Lines' stops. |
+| Auto Signals | **Fixed in 0.7.8**. Adds signals after you place one: the mod's build goes to every game and is built on each. From 0.7.1 to 0.7.6 those signals were refused on every game (no desync, but no extra signals). |
+| Automatic Signal Spacing, Automatisches Gleisvorfeld | Same as Auto Signals: their signals are built on every game since 0.7.8. The same fix brings back the signals and stops other mods put up by script: Advanced Station Builder's throat signals, Advanced Track Patterns, Bus Loops, Express & Local, Undo!, Town Transit Planner and Auto City Bus Lines' stops. |
 | Parallel Tracks, Parallel Roads | **Seen working** (Parallel Tracks). The parallel track is built by your game and replayed by the others. |
 | Auto Bridges, Express & Local Rail Stations | Same. Express & Local: a station placed during a long pause (more than 10 s before the game runs again) may get no track fans. |
 | Auto Track Connector | Works. With one company per player the new track belongs to the savegame's first company. Two players using the tool at the same moment share one selection (the mod keeps only one). |

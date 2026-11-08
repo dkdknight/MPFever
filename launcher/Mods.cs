@@ -46,14 +46,14 @@ namespace MPFever
             ["urbangames_no_costs_1"] = () => new Verdict { Level = "fixed", Note = T("Constructions gratuites : MPFever ne corrige plus leur prix entre les jeux (0.6.7).", "Free building: MPFever no longer evens out its price between the games (0.6.7).") },
             // (0.7.7) the signals a mod's script adds (a script's edge objects) were refused on every game from 0.7.1 to 0.7.6: rebuilt now
             // (C.scriptEdgeObjects); the same for the other mods that put up signals or stops by script
-            ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux ajoutés sont construits sur chaque jeu (0.7.7 ; refusés partout de la 0.7.1 à la 0.7.6).", "Its added signals are built on every game (0.7.7; refused everywhere from 0.7.1 to 0.7.6).") },
-            ["advanced_station_builder"] = () => new Verdict { Level = "fixed", Note = T("Ses gares sont envoyées à chaque jeu (0.7.2), ses signaux construits sur chaque jeu (0.7.7).", "Its stations are sent to every game (0.7.2), its signals built on every game (0.7.7).") },
+            ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux ajoutés sont construits sur chaque jeu (0.7.8 ; refusés partout de la 0.7.1 à la 0.7.6).", "Its added signals are built on every game (0.7.8; refused everywhere from 0.7.1 to 0.7.6).") },
+            ["advanced_station_builder"] = () => new Verdict { Level = "fixed", Note = T("Ses gares sont envoyées à chaque jeu (0.7.2), ses signaux construits sur chaque jeu (0.7.8).", "Its stations are sent to every game (0.7.2), its signals built on every game (0.7.8).") },
             // (0.7.7) #133: each of these stations, placed once, was refused on the two other games and rebuilt there otherwise (two
             // reloads). Their construction scripts draw nothing at random (read 2026-11-08): the station and the streets the tool
             // attaches to it are replayed otherwise. To reproduce with the mods installed
             ["gct_tramschleife"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
             ["gct_bogenbahnhof"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
-            ["advanced_track_patterns"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux construits par script sont construits sur chaque jeu (0.7.7).", "Its signals built by script are built on every game (0.7.7).") },
+            ["advanced_track_patterns"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux construits par script sont construits sur chaque jeu (0.7.8).", "Its signals built by script are built on every game (0.7.8).") },
         };
 
         // (0.7.0) the 83 most downloaded script mods of mod.io, read one by one (docs/MODS.md): those that work as they are, and

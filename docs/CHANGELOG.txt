@@ -1,21 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.7 - (in progress)
-  - FIX (issue #133, yoyo's session 2026-11-07 23:11, a regression of 0.7.6): a build replayed in a script form that gives
-    the tool's node configurations again (0.7.6, #131) for fewer nodes than the tool (an electrification of 18 track segments:
-    1 of 24) was applied a second time by the engine, as it does for some configurations. Each game takes that second
-    application for the one it just replayed by what it builds, but compared it with the shipped build: every game shipped it
-    as a build of its own, three more copies, refused on the others, and the games were reloaded. What the rebuilt form builds
-    is now known too, for a running and for a paused game (MPFEVER_REBUILTSIG=0: as before). Test:
-    tests/test_rebuiltsig077.py.
-  - FIX (desync, the user's server and PC 2026-11-07 23:41, 16 and 32 threads): a computer company bought a truck at the same
-    step on both games; it got id 118852 on one and 111350 on the other, the vehicles (sorted by id by the order fixes) and the
-    towns drifted, the games were reloaded. A vehicle bought is made by the vehicles' system a step after its command, with the
-    head of the free-id queue: an id another system had freed in that same step, which two games sometimes hold at different
-    moments for a few steps (0.6.8's analysis). The 0.6.8 fresh ids covered only the entities a command makes itself. A
-    vehicle bought (or replaced at a depot) now gets a fresh id too, the same on every game (found by signature on the game's
-    code; MPFEVER_FRESHBUY=0: as before). Test: tests/test_freshbuy077.py.
+0.7.8 - 2026-11-08: two players building at the same place at once no longer reload the games, DLCs a player lacks switched off for the session, mods' script signals built again, TF3's own autosave off in sessions (the host saves at a common pause), big station edits compressed
   - FIX (DLCs): a DLC works like a mod of the savegame (its models, the Deluxe pack's balloon script, its animals are loaded
     only when the savegame names it; installed and not named, it does nothing). A savegame naming a DLC that a player lacked
     ran with it on the other games and without it on that player's: the games parted (#109). The host now switches such a
@@ -35,11 +21,6 @@ MPFever - Changelog
     every form): a script names an edge object's segment and kind otherwise than a tool. They are built on every game now
     (MPFEVER_SCRIPTEO=0: as before); a tool's own signals and stops are rebuilt exactly as before. Test:
     tests/test_scripteo077.py.
-  - FIX (computer companies, found in a test 2026-11-08): a build refused by the engine on every game, the builder's too (a
-    computer company's builds are replayed on the host's game as well: an AI garage refused everywhere) reloaded every game
-    for nothing, and without a reload (the autotests) the players' games left the next builds out, waiting for it. Refused
-    everywhere, no game built it: every game is told and nothing is reloaded (MPFEVER_FAILALIKE=0: as before). Test:
-    tests/test_failalike077.py.
   - FIX (desync, #133 resync 3): a street stop built by its player was refused "collision" on another game only, and the
     games were reloaded; the report could not tell what was in the way. That game now tries the stop once more by the engine's
     own conversion of the tool's build (exact, as for the stops on bridges and the signals) before anything is reloaded, and a
@@ -82,14 +63,35 @@ MPFever - Changelog
   - DIAGNOSTIC (the user's server 2026-11-08 02:40, a reload on "vehicles" with no dump of them between the last check alike
     and the first apart): a check that finds the simulation apart makes the next check dump every vehicle whole on every game,
     and every dump gives each vehicle's state hash (MPFEVER_SDUMPAFTER=0: not). Test: tests/test_sdumpafter077.py.
-  - DIAGNOSTIC (the user's server 2026-11-08 00:00, a reload on "vehicles"): the checks' dump of every vehicle (one check of
-    six) is chosen by the check's number, the same on every game: counted by each game's own dumps, it fell at other moments on
-    each game and the first vehicle that moved otherwise could not be told (MPFEVER_SDUMPWORLDN=0: as before). Test:
-    tests/test_sdumpworldn077.py.
   - NEW (issue #135): a player whose game build is not the host's (another Steam build, a GOG copy) is warned like for the
     DLCs, in the lobby, the join review and the reports, and the host sees it in its lobby; never refused (two builds do not
     simulate the game alike: the games reloaded every few minutes and the player did not know why). MPFEVER_BUILDWARN=0:
     nothing, as before. Test: tests/test_buildwarn077.py (and MPFever.exe --selftest).
+
+0.7.7 - 2026-11-08: a resync after a track upgrade fixed (#133, a regression of 0.7.6), a vehicle bought gets the same number on every game, a build refused everywhere no longer reloads, players' reports name the players and the game build
+  - FIX (issue #133, yoyo's session 2026-11-07 23:11, a regression of 0.7.6): a build replayed in a script form that gives
+    the tool's node configurations again (0.7.6, #131) for fewer nodes than the tool (an electrification of 18 track segments:
+    1 of 24) was applied a second time by the engine, as it does for some configurations. Each game takes that second
+    application for the one it just replayed by what it builds, but compared it with the shipped build: every game shipped it
+    as a build of its own, three more copies, refused on the others, and the games were reloaded. What the rebuilt form builds
+    is now known too, for a running and for a paused game (MPFEVER_REBUILTSIG=0: as before). Test:
+    tests/test_rebuiltsig077.py.
+  - FIX (desync, the user's server and PC 2026-11-07 23:41, 16 and 32 threads): a computer company bought a truck at the same
+    step on both games; it got id 118852 on one and 111350 on the other, the vehicles (sorted by id by the order fixes) and the
+    towns drifted, the games were reloaded. A vehicle bought is made by the vehicles' system a step after its command, with the
+    head of the free-id queue: an id another system had freed in that same step, which two games sometimes hold at different
+    moments for a few steps (0.6.8's analysis). The 0.6.8 fresh ids covered only the entities a command makes itself. A
+    vehicle bought (or replaced at a depot) now gets a fresh id too, the same on every game (found by signature on the game's
+    code; MPFEVER_FRESHBUY=0: as before). Test: tests/test_freshbuy077.py.
+  - FIX (computer companies, found in a test 2026-11-08): a build refused by the engine on every game, the builder's too (a
+    computer company's builds are replayed on the host's game as well: an AI garage refused everywhere) reloaded every game
+    for nothing, and without a reload (the autotests) the players' games left the next builds out, waiting for it. Refused
+    everywhere, no game built it: every game is told and nothing is reloaded (MPFEVER_FAILALIKE=0: as before). Test:
+    tests/test_failalike077.py.
+  - DIAGNOSTIC (the user's server 2026-11-08 00:00, a reload on "vehicles"): the checks' dump of every vehicle (one check of
+    six) is chosen by the check's number, the same on every game: counted by each game's own dumps, it fell at other moments on
+    each game and the first vehicle that moved otherwise could not be told (MPFEVER_SDUMPWORLDN=0: as before). Test:
+    tests/test_sdumpworldn077.py.
   - REPORTS: a player's report says who plays and whether the game runs (it read "Players: -; game running: no" in a running
     game: a player's launcher has no lobby of its own; MPFEVER_REPORTCLIENT=0: as before), and a game build MPFever does not
     know gets the number its log names and whether Steam installed it (issue #135: a GOG copy, build 40393, read "unknown
