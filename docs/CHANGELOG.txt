@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.7.13 - (in progress)
+  - FIX (joining, #164/#165, Hansen and ChristianHansen 2026-11-08): the host was behind its provider's shared address (CGNAT)
+    and a router that answers its own public address from inside. The player's direct connection connected at once, but
+    nothing of the host ever came through it; the Steam tunnel, opened at the same time and working, was let go for it, and
+    after 19 s of silence the connection was lost, again and again for 10 minutes. A direct address that let nothing of the
+    host through (the player not leaving) is now left out of the next attempts while Steam can carry the session
+    (MPFEVER_DEADDIRECT=0: tried every time, as before). Test: tests/test_deaddirect0713.py (and the selftest).
 
 0.7.12 - 2026-11-08: mods that need another mod no longer taken for it (false "not the same version"), a crash on a mod's station name fixed, the other players' reports come in
   - FIX (crash, #162, rasma's game 2026-11-08 20:03): a game script mod of the host named its new station ("Avenue de la

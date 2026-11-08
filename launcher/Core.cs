@@ -1554,6 +1554,13 @@ namespace MPFever
             }
             else
             {
+                // (0.7.13, see deadDirect) an address that let nothing of the host through before: Steam only for it
+                if (DeadDirectOn() && plain.Length > 0)
+                {
+                    var dropped = new List<string>();
+                    lock (deadDirect) plain = NetAddr.WithoutDead(plain, port, deadDirect, dropped);
+                    if (dropped.Count > 0) Log.W("join: " + string.Join(", ", dropped) + " skipped (nothing of the host came through it before): through Steam");
+                }
                 var tcpErrors = new List<string>();
                 string tcpUsed = null, steamUsed = null, steamErr = null;
                 var tcpTask = plain.Length == 0 ? null : System.Threading.Tasks.Task.Run(() => ConnectTcp(plain, port, tcpErrors, out tcpUsed));
@@ -1599,9 +1606,11 @@ namespace MPFever
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
                 + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + "}"));
+            viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
+            usedDirect = viaSteam ? null : used;
+            gotAny = false;
             new Thread(ReadLoop) { IsBackground = true, Name = "Client read" }.Start();
             new Thread(LinkLoop) { IsBackground = true, Name = "Client link" }.Start();
-            viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             Log.Ok(L.F("Client : connecté à {0}", "Client: connected to {0}", used));
         }
 
@@ -1773,6 +1782,7 @@ namespace MPFever
                 while ((m = r.Read()) != null)
                 {
                     Interlocked.Exchange(ref lastRecvTicks, DateTime.UtcNow.Ticks);
+                    gotAny = true;
                     if (m.Kind == "~ack") { hostAcks = true; long n = SessionLink.ReadN(m); if (n >= 0) Link.Ack(n); continue; }
                     if (m.Kind.StartsWith("~", StringComparison.Ordinal)) continue;
                     if (m.Kind == "denied")
@@ -1843,10 +1853,27 @@ namespace MPFever
                 }
             }
             catch (Exception e) { if (!stop) Log.W("client : " + e.Message); }
+            bool leftHere = stop;
             stop = true;
+            // (0.7.13, see deadDirect: a direct connection cut before anything of the host came, this player not leaving)
+            if (!gotAny && !leftHere && usedDirect != null && DeadDirectOn())
+                lock (deadDirect)
+                    if (deadDirect.Add(usedDirect))
+                        Log.W("join: nothing of the host came through " + usedDirect + ": the next attempts go through Steam");
             lock (bulk) { foreach (var c in bulk) NetAddr.Cut(c); bulk.Clear(); }
             Closed?.Invoke();
         }
+
+        // (0.7.13, #164/#165: Hansen and ChristianHansen, 2026-11-08, the host behind a shared address of its provider (CGNAT) and
+        // its router, which answers its own public address from inside: the player's direct connection to the host's address
+        // connected at once, but nothing of the host ever came through it; the Steam tunnel, opened at the same time and working,
+        // was let go for it ("closed before joining the session"), and after 19 s of silence the connection was lost, again and
+        // again for 10 minutes. A direct address that let nothing of the host through, the player not leaving, is not tried
+        // again in this MPFever's run when Steam can carry the session. MPFEVER_DEADDIRECT=0: tried every time, as before)
+        static readonly HashSet<string> deadDirect = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        internal static bool DeadDirectOn() => Environment.GetEnvironmentVariable("MPFEVER_DEADDIRECT") != "0";
+        volatile bool gotAny;
+        string usedDirect;
 
         static int connections;
         bool viaSteam;
@@ -2114,6 +2141,20 @@ namespace MPFever
         }
 
         public static string Show(string host, int port) => (host.Contains(":") ? "[" + host + "]" : host) + ":" + port;
+
+        /// <summary>(0.7.13, #164/#165) The addresses of a list but those in dead (as Show writes them, "1.2.3.4:28090"); the ones
+        /// left out go into dropped.</summary>
+        public static string WithoutDead(string spec, int defaultPort, ICollection<string> dead, List<string> dropped)
+        {
+            var keep = new List<string>();
+            foreach (var t in Parse(spec, defaultPort))
+            {
+                string shown = IPAddress.TryParse(t.Key, out var ip) ? Show(ip.ToString(), t.Value) : Show(t.Key, t.Value);
+                if (dead != null && dead.Contains(shown)) { dropped?.Add(shown); continue; }
+                keep.Add(Show(t.Key, t.Value));
+            }
+            return string.Join(",", keep);
+        }
 
         /// <summary>The first address of a list, to show it: "1.2.3.4:28090".</summary>
         public static string First(string spec, int defaultPort)

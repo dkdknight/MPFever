@@ -71,8 +71,26 @@ namespace MPFever
             ok &= RunReport077();
             ok &= RunReport079();
             ok &= RunModIdTop0712();
+            ok &= RunDeadDirect0713();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.13) Issues #164/#165: a direct address that let nothing of the host through is left out of the next joins.</summary>
+        static bool RunDeadDirect0713()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13: " + what); ok &= c; }
+            var dead = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "100.65.42.253:28090" };
+            var dropped = new List<string>();
+            var left = NetAddr.WithoutDead("100.65.42.253:28090,[2a02:810d:1:2::5]:28090", 28090, dead, dropped);
+            C(left == "[2a02:810d:1:2::5]:28090" && dropped.Count == 1 && dropped[0] == "100.65.42.253:28090", "the dead IPv4 left out, the IPv6 kept (" + left + ")");
+            C(NetAddr.WithoutDead("100.65.42.253", 28090, dead, null) == "", "  an address without its port: the default port compared");
+            C(NetAddr.WithoutDead("100.65.42.253:28091,example.org:28090", 28090, dead, null) == "100.65.42.253:28091,example.org:28090", "  another port, a name: kept");
+            var d6 = new HashSet<string> { "[2a02:810d:1:2::5]:28090" };
+            C(NetAddr.WithoutDead("[2a02:810d:1:2::5]:28090,1.2.3.4:28090", 28090, d6, null) == "1.2.3.4:28090", "  a dead IPv6 left out");
+            C(NetAddr.WithoutDead("1.2.3.4:28090", 28090, new HashSet<string>(), null) == "1.2.3.4:28090", "  nothing dead: the list as it was");
+            return ok;
         }
 
         /// <summary>(0.7.12) Issue #159: a mod's own id is the top level's "modId", not a dependency's.</summary>
