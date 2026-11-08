@@ -54,7 +54,7 @@ Roads, tracks, signals, stops, stations, airports, depots, buildings, the bulldo
 
 [size=5][color=#f0a030]► Good to know[/color][/size]
 [list]
-[*]MPFever is in active development, with frequent updates. Backing up your savegames is always a good idea.
+[*]MPFever gets frequent updates, and updates itself when the game closes.
 [*]Every player needs [b]the same game version[/b] (let Steam update Transport Fever 3 on every PC) and the same mods (they install themselves). The MPFever version is kept in step automatically.
 [*]The shared company is the most tested mode. One company per player works and is still being polished.
 [*]Made for the Steam version of the game, on Windows. The tutorial is made for solo play.

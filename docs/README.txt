@@ -1,14 +1,13 @@
 MPFever - Multiplayer for Transport Fever 3
-Version 0.6.12
+Version 0.7.9
 ===========================================
 
 MPFever lets several players play the same Transport Fever 3 world together, each one
 in their own copy of the game, over the internet or a local network: either all in the SAME
 company, or each player with their OWN company.
 
-MPFever IS STILL IN ACTIVE DEVELOPMENT. You may meet bugs, pauses or a crash now and then. Keep
-backups of the savegames you play with, and please send feedback (see "Reporting a
-problem" below).
+MPFever gets frequent updates. If something goes wrong, please send a report (see
+"Reporting a problem" below): it decides what comes next.
 
 
 WHAT WORKS

@@ -1,6 +1,11 @@
 MPFever - Changelog
 ===================
 
+0.7.9 - (in progress)
+  - DOCS: the "still in active development, back up your savegames" warning is gone from the README, the server's guide,
+    the mod page texts and the release notes: no savegame was ever damaged by MPFever (it never writes the savegame played;
+    the session's saves have names of their own). Features still being finished keep their own note.
+
 0.7.8 - 2026-11-08: two players building at the same place at once no longer reload the games, DLCs a player lacks switched off for the session, mods' script signals built again, TF3's own autosave off in sessions (the host saves at a common pause), big station edits compressed
   - FIX (DLCs): a DLC works like a mod of the savegame (its models, the Deluxe pack's balloon script, its animals are loaded
     only when the savegame names it; installed and not named, it does nothing). A savegame naming a DLC that a player lacked

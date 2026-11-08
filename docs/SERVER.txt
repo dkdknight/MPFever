@@ -14,7 +14,7 @@ the servers of Minecraft, Satisfactory or Factorio:
 - a console under the log drives the server (say, save, kick, restart, stop...);
 - a password, a number of players at most and a message of the day.
 
-THIS IS NEW AND STILL EXPERIMENTAL, like the rest of MPFever. Keep backups of your world.
+The server keeps copies of the world in server\backups after each save (setting backups=).
 
 
 HOW IT WORKS
