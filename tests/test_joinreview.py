@@ -146,7 +146,7 @@ def launcher():
           'menuPhase = "review";' in form and 'reviewSend = () => { reviewAccepted = key; send(true); };' in form and 'else if (cmd == "joinready")' in form)
     check("player: the connection's « connected » does not hide the review", 'if (!clientCancelled && menuPhase != "review")' in form)
     check("player: a mod missing, in another version or incompatible, or other DLCs, is something to look at",
-          "c.Missing.Count == 0 && c.Differs.Count == 0 && c.Bad.Count == 0" in form and "string.IsNullOrEmpty(dlcWarn)" in form)
+          "c.Missing.Count == 0 && c.Differs.Count == 0 && c.Bad.Count == 0" in form and "string.IsNullOrEmpty(PlayerDlcWarn())" in form and "new[] { dlcWarn, buildWarn }" in form)   # (0.7.7: with the game build's)
     check("player: the DLC list for the page, and a DLC's Steam page", '["dlcList"] = (lobbyOpen || hostGame != null) ? "" : dlcListView,' in form
           and 'else if (cmd == "dlcstore")' in form and "Mods.DlcStoreUrl(arg" in form)
     check("the Deluxe upgrade's store page", '"steam://store/3979620"' in mods)

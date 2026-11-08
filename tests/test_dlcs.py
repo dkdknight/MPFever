@@ -41,7 +41,8 @@ def main():
     check("and sends its own to the host", 'Msg.Make("dlccheck", name,' in form)
     check("the host names the player in its lobby and logs the warning", 'case "dlccheck":' in form and '" (DLC différents)", " (different DLCs)"' in form
           and "Log.Err(warn)" in form)
-    check("the lobby's status carries the warning", '["dlcWarn"] = (lobbyOpen || hostGame != null) ? HostDlcWarn() : dlcWarn,' in form)
+    check("the lobby's status carries the warning", '["dlcWarn"] = (lobbyOpen || hostGame != null) ? HostDlcWarn() : PlayerDlcWarn(),' in form
+          and 'string PlayerDlcWarn() => string.Join(" ", new[] { dlcWarn, buildWarn }' in form)   # (0.7.7: with the game build's)
     check("the in-game lobby shows it", 'if st.dlcWarn and st.dlcWarn ~= "" then' in menu and "text(st.dlcWarn," in menu)
     check("the problem report says the DLCs", 'sb.AppendLine("DLCs: " + Mods.InstalledDlcs()' in form)
     check("the launcher logs them at start", "Mods.InstalledDlcs());" in core and '"DLC du jeu sur ce PC : "' in core)
