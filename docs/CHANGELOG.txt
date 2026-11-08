@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.10 - (in progress)
+0.7.10 - 2026-11-08: the join page opens every time, a computer company no longer freezes the other games, « Same platform order (test) » in the settings
   - CHANGE (the user 2026-11-08: « je souhaite que la page du salon s'ouvre systématiquement »): the join review opens every
     time a game already running is joined, the same mods and DLCs too; a player who accepted already (back after a cut, the
     same game) is not asked again (MPFEVER_REVIEWALWAYS=0: only when something differs, as 0.7.0 to 0.7.9). Tests:
