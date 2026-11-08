@@ -40,6 +40,11 @@ MPFever - Changelog
     for nothing, and without a reload (the autotests) the players' games left the next builds out, waiting for it. Refused
     everywhere, no game built it: every game is told and nothing is reloaded (MPFEVER_FAILALIKE=0: as before). Test:
     tests/test_failalike077.py.
+  - FIX (desync, #133 resync 3): a street stop built by its player was refused "collision" on another game only, and the
+    games were reloaded; the report could not tell what was in the way. That game now tries the stop once more by the engine's
+    own conversion of the tool's build (exact, as for the stops on bridges and the signals) before anything is reloaded, and a
+    refusal names what was in the way (a town building, a vehicle, a construction, with its owner) and how late the replay was.
+    MPFEVER_STOPNATIVERETRY=0: as before. Test: tests/test_stopretry077.py.
   - FIX (desync, two players building at the same place at the same moment): a tool's build is computed at the click and
     held about two seconds; another player's build landing at that very place meanwhile (two streets of one junction upgraded
     at once) made the builder apply a build computed on the old world while the other games rebuilt it from what was shipped,

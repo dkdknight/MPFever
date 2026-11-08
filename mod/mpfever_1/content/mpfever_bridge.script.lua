@@ -5370,7 +5370,32 @@ local function replayStop(a, plan, variant)
 			G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() replayStop(a, plan, variant) end }
 			return
 		end
-		if not success then pcall(send, "replay_failed", { uid = tostring(a.uid), why = ("stop refused " .. why):sub(1, 120) }) end
+		if not success then
+			-- (0.7.7, #133 resync 3: a street stop refused "Botsing" on one game only, its builder's log alone in the report) what
+			-- the engine found in the way, in the log and in the reason the host's report carries
+			pcall(G.logRefusal, a, res)
+			local inWay = ""
+			pcall(function() inWay = G.collisionShort(res) end)
+			local late = (type(a.at) == "number") and math.floor((gameTime() - a.at) / STEP) or nil
+			-- built on its builder's game, refused here in every script form: once more by the engine's own conversion of the tool's
+			-- build (exact, as for the stops on bridges and the signals) before the games are reloaded. MPFEVER_STOPNATIVERETRY=0:
+			-- as before
+			if type(a.ts) == "table" and not plan.nativeTried and type(plan.E) == "number" and os.getenv("MPFEVER_STOPNATIVERETRY") ~= "0" then
+				plan.nativeTried = true
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop refused in its script forms (" .. why .. inWay .. (late and (", " .. late .. " step(s) after its time") or "")
+					.. "): once more by the engine's conversion of the tool's build")
+				pcall(G.gateLate, "a refused stop, tried by the engine's conversion")
+				G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function()
+					local okN, errN = pcall(G.replayNativeStop, a, plan)
+					if not okN then
+						log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine's conversion failed: " .. shortErr(errN))
+						pcall(send, "replay_failed", { uid = tostring(a.uid), why = ("stop refused " .. why .. inWay):sub(1, 200) })
+					end
+				end }
+				return
+			end
+			pcall(send, "replay_failed", { uid = tostring(a.uid), why = ("stop refused " .. why .. inWay .. (late and late > 0 and (", " .. late .. " step(s) late") or "")):sub(1, 200) })
+		end
 		if success then
 			G.waits[#G.waits + 1] = { at = G.frames + 10, fn = function()
 				local after = stopCount()
@@ -5448,6 +5473,41 @@ end
 
 -- a build this game could not reproduce: the host reloads its game for everybody at once (without waiting for the
 -- next checkpoints to notice the difference)
+-- (0.7.7) for replayStop, defined before it
+G.logRefusal = logRefusal
+-- (0.7.7) what the engine found in the way of a refused build, short: " [in the way: town building 123 (owner -1), vehicle 456]"
+G.collisionShort = function(res)
+	local out, seen = {}, {}
+	local rpd = res and res.resultProposalData
+	if not rpd then return "" end
+	local function kind(e)
+		for _, k in ipairs({ { "TOWN_BUILDING", "town building" }, { "TRANSPORT_VEHICLE", "vehicle" }, { "CONSTRUCTION", "construction" },
+			{ "BASE_EDGE", "segment" }, { "BASE_NODE", "node" }, { "EDGE_OBJECT", "stop or signal" }, { "SIM_PERSON", "person" } }) do
+			local ok, c = pcall(function() return api.engine.getComponent(e, api.type.ComponentType[k[1]]) end)
+			if ok and c then return k[2] end
+		end
+		return "entity"
+	end
+	for _, list in ipairs({ "collisionEntities", "buildingEntities" }) do
+		pcall(function()
+			local l = rpd.collisionInfo[list]
+			for i = 1, #l do
+				local x = l[i]
+				local e = x
+				if type(x) ~= "number" then pcall(function() e = x.entity end) end
+				if type(e) == "number" and not seen[e] and #out < 6 then
+					seen[e] = true
+					local who = ""
+					pcall(function() local po = api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED); if po then who = " (owner " .. tostring(po.player) .. ")" end end)
+					out[#out + 1] = kind(e) .. " " .. e .. who
+				end
+			end
+		end)
+	end
+	if #out == 0 then return "" end
+	return " [in the way: " .. table.concat(out, ", ") .. "]"
+end
+
 local function replayFailed(a, why)
 	-- (0.7.3: a copy shipped at the click, refused here: its builder's engine may have refused it too, see G.prePost and
 	-- G.preCancelled, which decide)
