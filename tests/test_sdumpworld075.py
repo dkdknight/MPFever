@@ -22,19 +22,19 @@ def check(cond, name):
         fails.append(name)
 
 
-i = src.find("local function extendedParts(parts)")
+i = src.find("local function extendedParts(parts")
 j = src.find("\nend\n", i)
 ext = src[i:j]
 check(i > 0, "extendedParts found")
 flat = ext.find("flatten(c.state, name, dump, 0)")
-world = ext.find('local world = dump and (SDUMP.all or SDUMP.n % 6 == 0 or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
+world = ext.find('local world = dump and (SDUMP.all or worldTurn or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
 veh = ext.find('for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do')
 cons = ext.find('for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do')
 check(0 < flat < world, "the game scripts' states dumped at every check, before the world's choice")
 check("if dump and world then" in ext[world:veh] and world < veh < cons, "the vehicles and the constructions only in the world's dumps")
 write = ext.find('sdump_ring_')
 check(ext.rfind("if dump then", 0, write) > cons, "every dump still sorted and written (the ring of 12)")
-check("SDUMP.n = SDUMP.n + 1" in ext[cons:write], "the dump's own counter (not the check's number) chooses")
+check("SDUMP.n = SDUMP.n + 1" in ext[cons:write], "the dump's own counter still counts the ring (0.7.7: the check's number chooses the world's turn, see test_sdumpworldn077.py)")
 check("K.dumpCost = tDump + os.clock() - tWorld" in ext, "the dump's cost measured")
 h = src.find("local function simHash(")
 check("if K.dumpCost then costs.dump = K.dumpCost; K.dumpCost = nil end" in src[h:h + 9000], "and shown with the check's costs")

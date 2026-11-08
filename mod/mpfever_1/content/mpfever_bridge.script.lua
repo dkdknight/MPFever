@@ -156,7 +156,7 @@ local function flatten(v, path, out, d)
 	end
 end
 
-local function extendedParts(parts)
+local function extendedParts(parts, checkN)
 	local dump = SDUMP.on and (not SDUMP.all or SDUMP.n < 40 or os.getenv("MPFEVER_SDUMP") == "all") and {}
 	-- (0.7.5) the dump's cost, apart (K.dumpCost, in the "hash costs" lines): the dump is a diagnostic, the check holds the
 	-- simulation for it
@@ -177,7 +177,13 @@ local function extendedParts(parts)
 	-- held the simulation 0.15 to 0.3 s every 10 s on the user's server, a hitch the players felt. The dumps are not part of
 	-- the check (each game writes its own files). MPFEVER_SDUMPWORLD=1: in every dump, as before
 	-- ((0.7.5, later) one dump of six, once a minute: the dump's world part still cost 0.05 to 0.09 s on a big world)
-	local world = dump and (SDUMP.all or SDUMP.n % 6 == 0 or os.getenv("MPFEVER_SDUMPWORLD") == "1")
+	-- ((0.7.7) one check of six by the check's number, the same on every game: counted by each game's own dumps, the world
+	-- parts fell at other moments on each game (a pause makes more dumps on one), t=42066200 on the player's and 42105800
+	-- on the server, 2026-11-08 00:00: no two files to tell which vehicle moved otherwise first. MPFEVER_SDUMPWORLDN=0: each
+	-- game's own count, as before)
+	local worldTurn = SDUMP.n % 6 == 0
+	if type(checkN) == "number" and os.getenv("MPFEVER_SDUMPWORLDN") ~= "0" then worldTurn = checkN % 6 == 0 end
+	local world = dump and (SDUMP.all or worldTurn or os.getenv("MPFEVER_SDUMPWORLD") == "1")
 	local tWorld = os.clock()
 	if dump and world then
 		-- the vehicles too, by their line and where they are (their ids differ between games): the first vehicle that moved
@@ -637,7 +643,7 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	-- the terrain edits applied so far (the sum of their cells' checksums, kept in the simulation state)
 	parts.terrain = tostring(terrainSig or 0)
 	tMark = os.clock()
-	local okx, errx = pcall(extendedParts, parts)
+	local okx, errx = pcall(extendedParts, parts, n)
 	if not okx then parts.extended = "ERR " .. tostring(errx):sub(1, 80) end
 	costs.extended = os.clock() - tMark
 	if K.dumpCost then costs.dump = K.dumpCost; K.dumpCost = nil end
@@ -787,6 +793,7 @@ local function buildCommand(fn, srcArgs, tries)
 	for _, t in ipairs(tries) do
 		local margs = C.deser(srcArgs)
 		if t.ie ~= nil then margs[3] = t.ie; margs[4] = t.pi end
+		C.rebuiltCfgs = nil
 		local okr, args, n = pcall(C.rebuildArgs, fn, margs, { seed = 7919, variant = t.v, raw = t.raw })
 		if not okr then
 			errs[#errs + 1] = tryLabel(t) .. ": rebuild " .. shortErr(args)
@@ -984,6 +991,7 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	end
 	local isBuild = a.fn == "makeWorldBuildProposalCmd"
 	local cmd, label, errs = buildCommand(a.fn, C.ser(a.args or {}), isBuild and BUILD_TRIES or { { v = "full" } })
+	local rcfgs = C.rebuiltCfgs
 	if not cmd then
 		result.err = table.concat(errs, " | ")
 		log("BUILD NOT REPLAYABLE " .. tostring(a.uid) .. " " .. tostring(a.fn) .. ": " .. result.err)
@@ -1005,6 +1013,17 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		end)
 		log("action " .. tostring(a.uid) .. " rebuilt as '" .. label .. "'" .. (#errs > 0 and (" after " .. #errs .. " refused form(s)") or ""))
 		if #C.errors > 0 then log("  notes: " .. table.concat(C.errors, " ; "):sub(1, 300)) end
+		-- (0.7.7, issue #133) what this form builds, when it is not what was shipped (fewer node configurations: see C.rebuiltSig):
+		-- the engine's second application of it is recognised too, not shipped by every game. Said before the command goes,
+		-- the engine applies it after. MPFEVER_REBUILTSIG=0: the shipped build's signature only, as before
+		if os.getenv("MPFEVER_REBUILTSIG") ~= "0" and type(rcfgs) == "table" then
+			local okS, rs = pcall(C.rebuiltSig, type(a.args) == "table" and a.args[1] or nil, rcfgs)
+			if okS and rs then
+				result.rebuiltSig = rs
+				log("action " .. tostring(a.uid) .. " rebuilt form's signature " .. rs:sub(1, 120))
+				if C.rebuiltSigHook then pcall(C.rebuiltSigHook, rs) end
+			end
+		end
 	end
 	local createdKey = (a.fn == "makeLineCreateCmd" and "L" or ((a.fn == "makeVehicleBuyCmd" or a.fn == "makeVehicleReplaceCmd") and "V" or nil))
 	-- (the key of what the action creates: its uid and its stamp. The uid alone came back after every load, its counter
@@ -1536,6 +1555,13 @@ local function simApplyDue(state)
 					if not okx then error(r) end
 					st = state:get() or st
 					if r.toll and SIM.noteDepotToll(st.co, r.toll) then changed = true end
+					-- (0.7.7, issue #133: what the rebuilt form builds, when it is not what was shipped; the engine applies it after
+					-- this script's update, see C.rebuiltSig)
+					if r.rebuiltSig then
+						SIM.addReplaySig(st, now, r.rebuiltSig)
+						r.rebuiltSig = nil
+						changed = true
+					end
 					-- (not replayable here: no build of it comes, the count above is taken back. Else the player's own next
 					-- build in this step was taken as this replay and never shipped)
 					if C.makesProposal(a.fn) and not r.success and st.replay and st.replay.at == now and st.replay.n > 0 then
@@ -2759,6 +2785,16 @@ end
 -- when a later build is about to be applied (force): at x4 the script runs once per batch of steps, and one game read after
 -- the next build had split a segment (-1) while the other read before it (towncross with the builder leading, 2026-10-27).
 -- MPFEVER_IDREADEARLY=0: only two steps after, as before.
+-- (0.7.7, issue #133) one more signature of a build this game replays at game time t (the rebuilt form's, see C.rebuiltSig):
+-- its engine's second application is not shipped as a build of this game. Once in the list.
+SIM.addReplaySig = function(st, t, sig)
+	if type(sig) ~= "string" then return end
+	if not (st.replaySigs and st.replaySigs.at == t) then st.replaySigs = { at = t, list = {} } end
+	for _, s in ipairs(st.replaySigs.list) do if s == sig then return end end
+	st.replaySigs.list[#st.replaySigs.list + 1] = sig
+	log("replay at t=" .. tostring(t) .. ": its rebuilt form's signature kept too (" .. #st.replaySigs.list .. " for this time)")
+end
+
 SIM.idResolve = function(state, force)
 	if not SIM.idChecks then return end
 	local keep = {}
@@ -3676,6 +3712,9 @@ local function handleEvent(userParams, state, src, id, name, param)
 				if not (st.replaySigs and st.replaySigs.at == gameTime()) then st.replaySigs = { at = gameTime(), list = {} } end
 				st.replaySigs.list[#st.replaySigs.list + 1] = param.sig
 			end
+		elseif name == "replay_sig" then
+			-- (0.7.7, issue #133: a paused action's rebuilt form builds something else than was shipped, see C.rebuiltSig)
+			if type(param) == "table" and type(param.sig) == "string" then SIM.addReplaySig(st, gameTime(), param.sig) end
 		elseif name == "out_shipped" then
 			-- (the interface has sent the captured builds up to n: their proposals are not needed here any more. They made the
 			-- state megabytes heavy, and the engine copies the whole state at every state:get())
@@ -10494,6 +10533,8 @@ local function runPausedActions()
 					if okD then featDg = dg end
 				end
 				if G.pausedOut then G.pausedOut[tostring(a.uid)] = G.frames end
+				-- (0.7.7, issue #133: the rebuilt form's signature goes to the simulation before the command, see C.rebuiltSig)
+				C.rebuiltSigHook = function(sig) toSim("replay_sig", { sig = sig }) end
 				withActor(PL(a), executeAction, a, O.sendCommand, true, G.bind, function(r)
 					if G.pausedOut then G.pausedOut[tostring(a.uid)] = nil end
 					if G.pausedCreating and G.pausedCreating.uid == a.uid then G.pausedCreating = nil end
@@ -10519,6 +10560,7 @@ local function runPausedActions()
 					if r.created then C.appendFile(C.DIR .. BS .. "bindings.log", r.created.key .. " " .. tostring(r.created.e) .. NL) end
 					G.reportResult(r)
 				end)
+				C.rebuiltSigHook = nil
 				-- (a checkpoint after it in this same frame waits too, see answering above)
 				if G.pausedOut and G.pausedOut[tostring(a.uid)] ~= nil then answering = true end
 			end

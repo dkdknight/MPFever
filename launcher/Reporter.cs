@@ -203,10 +203,40 @@ namespace MPFever
                     int pe = BitConverter.ToInt32(b, 0x3c);
                     uint stamp = BitConverter.ToUInt32(b, pe + 8);
                     string known = stamp == 0x6ad9ce10 ? "40425" : stamp == 0x6ad0e4e5 ? "40423" : stamp == 0x6ac50427 ? "40420" : stamp == 0x6ab69fe5 ? "40408" : "unknown build";
-                    return known + " (" + stamp.ToString("x8") + ")";
+                    // (0.7.7, issue #135: a GOG copy, build 40393, read "unknown build (6ab3eec7)": the game's own log says which,
+                    // and whether Steam installed it. MPFEVER_REPORTBUILD=0: as before)
+                    string extra = "";
+                    if (Environment.GetEnvironmentVariable("MPFEVER_REPORTBUILD") != "0")
+                    {
+                        if (known == "unknown build") { var n = BuildInLog(GameLog()); if (n != null) extra += ", build " + n + " in the game's log"; }
+                        if (GameInstall.NotSteamCopy(gameDir)) extra += ", NOT a Steam copy (GOG or another store)";
+                    }
+                    return known + " (" + stamp.ToString("x8") + extra + ")";
                 }
             }
             catch { return "?"; }
+        }
+
+        /// <summary>(0.7.7) The build the game's log names at its start ("Starting up build version: 40393"), or null.</summary>
+        internal static string BuildInLog(string logPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(logPath) || !File.Exists(logPath)) return null;
+                using (var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var r = new StreamReader(fs))
+                {
+                    for (int i = 0; i < 60; i++)
+                    {
+                        var line = r.ReadLine();
+                        if (line == null) break;
+                        var m = System.Text.RegularExpressions.Regex.Match(line, @"Starting up build version: (\d+)");
+                        if (m.Success) return m.Groups[1].Value;
+                    }
+                }
+            }
+            catch { }
+            return null;
         }
 
         sealed class Entry { public string Path, Name; }

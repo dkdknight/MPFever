@@ -68,8 +68,36 @@ namespace MPFever
             ok &= RunServerJoin074();
             ok &= RunSharedLog075();
             ok &= RunServer076();
+            ok &= RunReport077();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.7) A player's report says who plays and whether the game runs (from the host's messages: it read
+        /// "Players: -; game running: no" in a running game), and the build of a game MPFever does not know (issue #135: a GOG copy,
+        /// build 40393, read "unknown build").</summary>
+        static bool RunReport077()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.7 report: " + what); ok &= c; }
+            C(MainForm.SessionStarted("{[\"started\"]=true,[\"speed\"]=4,[\"cmode\"]=\"shared\"}") == true, "the host's session message: the game runs");
+            C(MainForm.SessionStarted("{[\"started\"]=false,[\"speed\"]=0}") == false, "  or not");
+            C(MainForm.SessionStarted("{[\"speed\"]=0}") == null && MainForm.SessionStarted("not lua") == null, "  nothing said: unknown");
+            C(MainForm.HostRunningText(1) == "yes" && MainForm.HostRunningText(0) == "no" && MainForm.HostRunningText(-1).StartsWith("?"), "  written yes / no / ?");
+            C(MainForm.NotesPeer("peerclock", "Kai") && MainForm.NotesPeer("act", "Eric#3") && !MainForm.NotesPeer("session", "MPFever")
+                && !MainForm.NotesPeer("chatmsg", "Kai") && !MainForm.NotesPeer("act", ""), "the players: the names the host's messages come with, not MPFever's own");
+            var f = Path.Combine(Path.GetTempPath(), "mpfever-selftest-stdout-" + Guid.NewGuid().ToString("N") + ".txt");
+            try
+            {
+                File.WriteAllText(f, "[2026-11-07 21:29:09Z - MESSAGE  - Main             - Main           ]  Application startup. Hello!\n"
+                    + "[2026-11-07 21:29:09Z - MESSAGE  - Main             - Main           ]  Starting up build version: 40393, build name \"Build\"\n");
+                C(Reporter.BuildInLog(f) == "40393", "the build the game's log names (a GOG copy, #135)");
+                File.WriteAllText(f, "nothing here\n");
+                C(Reporter.BuildInLog(f) == null && Reporter.BuildInLog(f + ".none") == null && Reporter.BuildInLog(null) == null, "  none named, or no log: none");
+            }
+            catch (Exception e) { C(false, "the game's log: " + e.Message); }
+            finally { try { File.Delete(f); } catch { } }
+            return ok;
         }
 
         /// <summary>(0.7.6) The user's server, 2026-11-07 20:02-20:10: a player gone during a resynchronisation is found in its

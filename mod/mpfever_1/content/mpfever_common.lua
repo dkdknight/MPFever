@@ -1015,6 +1015,28 @@ function C.buildSig(m)
 	return table.concat(parts, "/")
 end
 
+-- (0.7.7, issue #133) The signature of what a rebuilt form builds: the shipped build (m) with the node configurations the
+-- form really adds and removes (cfgs, C.rebuiltCfgs). A form other than the raw ones gives the tool's configurations again
+-- only for the nodes it touches (#131), so it adds fewer than the tool: the engine's second application of that build had
+-- another signature than the shipped one, and every game shipped it as a build of its own (yoyo's session, 2026-11-07 23:11:
+-- 18 segments electrified, built three more times, resynchronisation). nil when it is the shipped one's.
+function C.rebuiltSig(m, cfgs)
+	if type(m) ~= "table" or type(cfgs) ~= "table" then return nil end
+	local src = m.proposal or m.streetProposal
+	if type(src) ~= "table" then return nil end
+	local p = {}
+	for k, v in pairs(src) do p[k] = v end
+	p.nodeConfigsToAdd = cfgs.add or {}
+	p.nodeConfigsToRemove = cfgs.rm or {}
+	local copy = {}
+	for k, v in pairs(m) do copy[k] = v end
+	copy.streetProposal = nil
+	copy.proposal = p
+	local a, b = C.buildSig(m), C.buildSig(copy)
+	if b == nil or a == b then return nil end
+	return b
+end
+
 -- Whether replaying a command can reach onPreBuildProposal (and must be marked as a replay so that it is not shipped
 -- again). Vehicles, lines, names, events... never do: counting them while the game time stood still (a paused session)
 -- made every later build of the player look like a replay, and none was shipped (issue #12).
@@ -1037,6 +1059,9 @@ end
 -- opts.seed: deterministic seed for constructions that have none (a script ConstructionEntity needs params.seed)
 function C.rebuildProposal(m, opts)
 	opts = opts or {}
+	-- (0.7.7) the node configurations this form adds and removes, as Lua lists, for the signature of what it builds (see
+	-- C.rebuiltSig): nil when the form has no street part
+	C.rebuiltCfgs = nil
 	local sp = C.newOf("SimpleProposal")
 	local toAdd = m.constructionsToAdd or m.toAdd or {}
 	local cons = {}
@@ -1190,6 +1215,7 @@ function C.rebuildProposal(m, opts)
 			if #keep > 0 then ssp.nodeConfigsToRemove = keep end
 			cfgKeep = keep
 		end)
+		C.rebuiltCfgs = { add = {}, rm = cfgKeep }
 		-- and the configurations it added (lane connections, crosswalks, traffic lights), with the native ids: for the raw
 		-- forms, and for a build that only changes configurations (a node window's double slip switch, issue #26), where
 		-- they are the whole build
@@ -1200,11 +1226,13 @@ function C.rebuildProposal(m, opts)
 			if not okc then C.errors[#C.errors + 1] = "node configs: " .. tostring(errc):sub(1, 120) end
 			-- (0.7.1, issue #127: a node configured here already gets its configuration replaced, never a second one)
 			if okc then
+				C.rebuiltCfgs.add = st.nodeConfigsToAdd
 				local gone = {}
 				for _, r in ipairs(entityList(st.nodesToRemove or st.removedNodes)) do gone[r] = true end
 				local rm, nput = C.cfgGuard(st.nodeConfigsToAdd, cfgKeep, function(e) return gone[e] end)
 				if nput > 0 then
 					local okr, errr = pcall(function() ssp.nodeConfigsToRemove = rm end)
+					if okr then C.rebuiltCfgs.rm = rm end
 					C.errors[#C.errors + 1] = "node configs replaced: " .. nput .. (okr and "" or " (" .. tostring(errr):sub(1, 80) .. ")")
 				end
 			end
@@ -1221,6 +1249,7 @@ function C.rebuildProposal(m, opts)
 			local put, left = C.readdedConfigs(st.nodeConfigsToAdd, cfgKeep, edgeMap, gone)
 			if #put > 0 then
 				local okc, errc = pcall(function() ssp.nodeConfigsToAdd = C.nodeConfigs(put) end)
+				if okc then C.rebuiltCfgs.add = put end
 				C.errors[#C.errors + 1] = "node configs given again: " .. #put .. (left > 0 and (" (" .. left .. " left: a new segment unknown)") or "")
 					.. (okc and "" or (" (" .. tostring(errc):sub(1, 100) .. ")"))
 			end

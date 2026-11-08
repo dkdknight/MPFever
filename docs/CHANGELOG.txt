@@ -1,6 +1,23 @@
 MPFever - Changelog
 ===================
 
+0.7.7 - (in progress)
+  - FIX (issue #133, yoyo's session 2026-11-07 23:11, a regression of 0.7.6): a build replayed in a script form that gives
+    the tool's node configurations again (0.7.6, #131) for fewer nodes than the tool (an electrification of 18 track segments:
+    1 of 24) was applied a second time by the engine, as it does for some configurations. Each game takes that second
+    application for the one it just replayed by what it builds, but compared it with the shipped build: every game shipped it
+    as a build of its own, three more copies, refused on the others, and the games were reloaded. What the rebuilt form builds
+    is now known too, for a running and for a paused game (MPFEVER_REBUILTSIG=0: as before). Test:
+    tests/test_rebuiltsig077.py.
+  - DIAGNOSTIC (the user's server 2026-11-08 00:00, a reload on "vehicles"): the checks' dump of every vehicle (one check of
+    six) is chosen by the check's number, the same on every game: counted by each game's own dumps, it fell at other moments on
+    each game and the first vehicle that moved otherwise could not be told (MPFEVER_SDUMPWORLDN=0: as before). Test:
+    tests/test_sdumpworldn077.py.
+  - REPORTS: a player's report says who plays and whether the game runs (it read "Players: -; game running: no" in a running
+    game: a player's launcher has no lobby of its own; MPFEVER_REPORTCLIENT=0: as before), and a game build MPFever does not
+    know gets the number its log names and whether Steam installed it (issue #135: a GOG copy, build 40393, read "unknown
+    build"; MPFEVER_REPORTBUILD=0: as before). Test: tests/test_report077.py (and MPFever.exe --selftest).
+
 0.7.6 - 2026-11-07: a crash after changing a tunnel during a pause fixed (#131), a dedicated server no longer stuck in a resynchronisation, its stop and restart at once
   - FIX (crash, issue #131, juliu 2026-11-07 19:09, 0.7.4): a tram tunnel's type changed from its window during a pause
     crashed the host at once ("it != components.end()", BaseNodeConfig, the traffic-light junction at the tunnel's end). The

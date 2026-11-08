@@ -117,7 +117,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.7.6";
+        public const string Version = "0.7.7";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -1094,9 +1094,51 @@ namespace MPFever
             bool st; lock (sessionGate) st = started;
             string role = server != null ? "dedicated server" : hostGame != null ? "host" : clients.Count > 0 ? "client" : joining ? "client (not connected)" : "no session";
             string[] ready; lock (players) ready = players.ToArray();
+            string running = st ? "yes" : "no";
+            // (0.7.7) a player's launcher keeps no lobby of its own: its report said "Players: -; game running: no" in a game that ran
+            // (the user's and #135's reports, 2026-11-08). The players and the game's state as the host's messages say them.
+            // MPFEVER_REPORTCLIENT=0: as before
+            if (server == null && hostGame == null && (clients.Count > 0 || joining) && Environment.GetEnvironmentVariable("MPFEVER_REPORTCLIENT") != "0")
+            {
+                lock (clientPeers) ready = clientPeers.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+                running = HostRunningText(hostStartedSeen);
+            }
             return "Company mode: " + (ReportCompanyMode() == "separate" ? "one company per player" : "one company for everybody") + "; role: " + role
                 + (hostName != null ? " (host " + BaseName(hostName) + ")" : "") + Environment.NewLine
-                + "Players: " + (ready.Length > 0 ? string.Join(", ", ready.Select(BaseName)) : "-") + "; game running: " + (st ? "yes" : "no");
+                + "Players: " + (ready.Length > 0 ? string.Join(", ", ready.Select(BaseName)) : "-") + "; game running: " + running;
+        }
+
+        // (0.7.7) a player's view of the session, for its reports: the names the host's messages came with (the host and the
+        // players it relays) and whether the host's game runs (its "session" messages: -1 none yet, 0 no, 1 yes)
+        readonly HashSet<string> clientPeers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        volatile int hostStartedSeen = -1;
+        internal static string HostRunningText(int seen) => seen == 1 ? "yes" : seen == 0 ? "no" : "? (no word from the host yet)";
+
+        /// <summary>(0.7.7) The host's "started" in a "session" message, or null.</summary>
+        internal static bool? SessionStarted(string payload)
+        {
+            try
+            {
+                var d = LuaLit.Parse(payload) as Dictionary<object, object>;
+                return d != null && d.TryGetValue("started", out var v) && v is bool b ? b : (bool?)null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>(0.7.7) What a message from the host tells a player's report: who plays, whether the game runs.</summary>
+        internal static bool NotesPeer(string kind, string from) =>
+            !string.IsNullOrEmpty(from) && from != "MPFever"
+            && (kind == "peerclock" || kind == "act" || kind == "session" || kind == "hash" || kind == "welcome" || kind == "hello");
+
+        void NoteFromHost(Msg m, string me)
+        {
+            if (m.Kind == "session") { var s = SessionStarted(m.Payload); if (s.HasValue) hostStartedSeen = s.Value ? 1 : 0; }
+            if (NotesPeer(m.Kind, m.From))
+                lock (clientPeers)
+                {
+                    clientPeers.Add(BaseName(m.From));
+                    if (!string.IsNullOrEmpty(me)) clientPeers.Add(BaseName(me));
+                }
         }
 
         /// <summary>What MPFever contacts by itself and how to turn each off (docs/PRIVACY.txt, in the archive): told once, in a
@@ -3107,6 +3149,9 @@ namespace MPFever
         {
             var game = existing ?? new GameLink(name, "client");
             if (!games.Contains(game)) games.Add(game);
+            // (0.7.7: a new session's players, for the reports, see NoteFromHost)
+            lock (clientPeers) clientPeers.Clear();
+            hostStartedSeen = -1;
             Client current = null;
             string hostSid = null;   // the host's Steam id, from its welcome
             string Targets() => hostSid == null || host.IndexOf("steam:", StringComparison.OrdinalIgnoreCase) >= 0 ? host : host + ",steam:" + hostSid;
@@ -3215,6 +3260,8 @@ namespace MPFever
                 {
                     // (0.6.12, #125: the host's company mode, for this player's problem reports; the message goes on to the game)
                     if (m.Kind == "session") { var cm = SessionMode(m.Payload); if (cm != "") hostCompanyMode = cm; }
+                    // (0.7.7: who plays and whether the game runs, for this player's reports)
+                    try { NoteFromHost(m, name); } catch { }
                     if (m.Kind == "resync_file" || m.Kind == "resync_bin") { OnResyncFile(game, m); return; }
                     if (m.Kind == "resync_use") { OnResyncUse(game, client, name, m); return; }
                     if (m.Kind == "delta_bin") { OnDeltaFile(game, client, name, m); return; }
