@@ -190,7 +190,7 @@ namespace MPFever
                     }
                     if (done) break;
                     // (25 s without news, the plan not even come in 10 s: an older host; 2 minutes at most)
-                    if (DateTime.UtcNow - last > TimeSpan.FromSeconds(plan ? 25 : 10) || DateTime.UtcNow - t0 > TimeSpan.FromMinutes(2)) break;
+                    if (DateTime.UtcNow - last > TimeSpan.FromSeconds(plan ? 25 : 10) || DateTime.UtcNow - t0 > TimeSpan.FromMinutes(ReportWaitOn() ? 4 : 2)) break;
                     if (plan && answered != shown)
                     {
                         shown = answered;
@@ -245,6 +245,12 @@ namespace MPFever
             }
         }
 
+        // (0.7.12, #157/#161: yoyo's reports of 2026-11-08 18:11 and 19:33, three players: the other players' reports, 0 of 1 then
+        // 0 of 2. A player's report is made before any of it is sent: 20 s and more after a long session (the host's own, 10.7 MB,
+        // took 20 s), and the one asking gave up after 25 s without news. While this one is made, a word every 8 s says it is
+        // coming ("report_work"), and the one asking waits 4 minutes at most instead of 2. MPFEVER_REPORTWAIT=0: as before)
+        static bool ReportWaitOn() => Environment.GetEnvironmentVariable("MPFEVER_REPORTWAIT") != "0";
+
         /// <summary>This player's own report, sent for another's (`to`), in parts through `send`.</summary>
         void SendOwnReport(string id, string to, string me, Action<Msg> send)
         {
@@ -252,7 +258,21 @@ namespace MPFever
             try
             {
                 if (!ReportShareOn()) { send(Msg.Make("report_no", me, "{" + Fields() + ",[\"why\"]=\"its player keeps their reports to themselves (reportshare=0)\"}")); return; }
-                var zip = Reporter.Collect(games.Select(x => x.Dir).ToList(), ReportSummary(false, BaseName(to)), out _);
+                string zip;
+                using (var made = new ManualResetEvent(false))
+                {
+                    if (ReportWaitOn())
+                    {
+                        try { send(Msg.Make("report_work", me, "{" + Fields() + "}")); } catch { }
+                        new Thread(() =>
+                        {
+                            try { while (!made.WaitOne(8000)) send(Msg.Make("report_work", me, "{" + Fields() + "}")); }
+                            catch { }
+                        }) { IsBackground = true, Name = "Report coming for " + to }.Start();
+                    }
+                    try { zip = Reporter.Collect(games.Select(x => x.Dir).ToList(), ReportSummary(false, BaseName(to)), out _); }
+                    finally { made.Set(); }
+                }
                 var bytes = File.ReadAllBytes(zip);
                 if (bytes.Length > ReportShareMax) { send(Msg.Make("report_no", me, "{" + Fields() + ",[\"why\"]=\"" + (bytes.Length >> 20) + " MB, too large to send\"}")); return; }
                 int n = Math.Max(1, (bytes.Length + ReportPart - 1) / ReportPart);
@@ -302,6 +322,7 @@ namespace MPFever
                     }
                 case "report_bin":
                 case "report_no":
+                case "report_work":
                     FeedGather(m);
                     return true;
             }
@@ -330,7 +351,7 @@ namespace MPFever
                 new Thread(() => SendOwnReport(id, asker, hostName, x => { var p = relay?.Find(asker); if (p != null) relay.TrySend(p, x); })) { IsBackground = true, Name = "Report for " + asker }.Start();
                 return true;
             }
-            if (m.Kind == "report_bin" || m.Kind == "report_no")
+            if (m.Kind == "report_bin" || m.Kind == "report_no" || m.Kind == "report_work")
             {
                 if (from == null) return true;
                 var h = LuaLit.Parse(m.Payload) as Dictionary<object, object>;

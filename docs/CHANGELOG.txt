@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.7.12 - (in progress)
+  - FIX (reports, #157/#161, yoyo 2026-11-08, three players): the report had none of the other players' reports (0 of 1, then
+    0 of 2). A player's report is made before any of it is sent, 20 s and more after a long session, and the one asking gave up
+    after 25 s without news. While a player's report is made, a word every 8 s now says it is coming, and the one asking waits
+    4 minutes at most instead of 2 (MPFEVER_REPORTWAIT=0: as before). Test: tests/test_reportwait0712.py.
   - FIX (mods, #159, Domenik 2026-11-08): a mod was known by the first "modId" of its mod.json, and a mod that needs another
     one names that one first, in its dependencies (BR189, LGNS and the other ModWerkstatt mods need "mw_basis"). MPFever took
     BR189's folder for ModWerkstatt's Base Mod: "installed twice", "not the same version as the host" for mods that were the

@@ -57,8 +57,8 @@ check("const int ReportPart = 64 * 1024;" in rs and "const long ReportShareMax =
 check('SettingOff("reportshare", "MPFEVER_REPORTSHARE")' in rs and 'SettingOff("reportupload", "MPFEVER_REPORTUPLOAD")' in rs,
       "reportshare=0 / reportupload=0 in mpfever_settings.txt, MPFEVER_REPORTSHARE=0 / MPFEVER_REPORTUPLOAD=0")
 go = rs[rs.index("        internal Dictionary<string, byte[]> GatherOthers("):]
-check("if (!ReportShareOn()) return none;" in go and "TimeSpan.FromSeconds(plan ? 25 : 10)" in go and "TimeSpan.FromMinutes(2)" in go,
-      "the wait: every answer, 25 s without news (10 s without the plan), 2 minutes at most")
+check("if (!ReportShareOn()) return none;" in go and "TimeSpan.FromSeconds(plan ? 25 : 10)" in go and "TimeSpan.FromMinutes(ReportWaitOn() ? 4 : 2)" in go,
+      "the wait: every answer, 25 s without news (10 s without the plan), 4 minutes at most (0.7.12; MPFEVER_REPORTWAIT=0: 2)")
 check('notes.Add(e + ": no answer' in go and "Reporter.AddPlayers(zip, others, notes);" in rs, "  who did not answer said in players.txt")
 rep = rs[rs.index("        void Report(bool crashed)"):]
 rep = rep[:rep.index("        void OpenUrl(")]
