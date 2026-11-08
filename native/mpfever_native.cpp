@@ -392,6 +392,18 @@ static int g_dropId = 0;              // the last build held until then
 static volatile long g_dropIds[16];
 static volatile long g_nDropIds = 0;
 static bool IsDropped(int id) { for (long i = 0; i < g_nDropIds && i < 16; i++) if (g_dropIds[i] == id) return true; return false; }
+// (0.7.7) held builds the mod asks to refuse (failid N: another player's build changed what it was computed on since the click,
+// and every game, its builder's too, replays the tool's copy instead): given to the engine in their turn like a released one, so
+// that the tool gets its answer, and refused at Apply exactly as the engine refuses a command naming an entity that is gone
+// (Apply 0x9e84b0 in 40425: "Apply: invalid entity", the element's success byte +0x30 set to 0, nothing dispatched). A dropped
+// command never answered its tool, which stayed busy until the next reload (#91). The payload is matched once, within 60 s.
+static volatile long g_failIds[16];
+static volatile long g_nFailIds = 0;
+static bool IsFailed(int id) { for (long i = 0; i < g_nFailIds && i < 16; i++) if (g_failIds[i] == id) return true; return false; }
+struct FailPay { u8* volatile pay; u64 at; int id; };
+static FailPay g_failPay[16];
+static volatile long g_failPayN = 0, g_failRefused = 0;
+static bool g_failOn = true;
 static u64 g_enabledAt = 0;           // when holding was turned on (GetTickCount64)
 static int g_deferNextTarget = 0, g_deferNextDone = 0;   // test mode: defer the mod's own next commands
 
@@ -675,6 +687,10 @@ static void ReadControl()
         else if (len >= 8 && memcmp(l, "dropid ", 7) == 0) {
             for (int k = 7; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
             if (v > 0 && !IsDropped((int)v)) { long n = g_nDropIds; g_dropIds[n % 16] = v; if (n < 16) g_nDropIds = n + 1; }
+        }
+        else if (len >= 8 && memcmp(l, "failid ", 7) == 0 && g_failOn) {
+            for (int k = 7; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
+            if (v > 0 && !IsFailed((int)v)) { long n = g_nFailIds; g_failIds[n % 16] = v; if (n < 16) g_nFailIds = n + 1; }
         }
         else if (len >= 11 && memcmp(l, "releaseid ", 10) == 0) {
             for (int k = 10; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
@@ -1681,6 +1697,20 @@ static u64 ApplyBody(void* a, void* b, bool inLoop)
     ApplyLocalPlayer("apply");
     u8* pay = *(u8**)b;
     u32 kind = pay ? *(u8*)(pay + 0x9b8) : 255;
+    if (kind == 52 && g_failPayN > 0) {
+        u64 now = GetTickCount64();
+        for (int i = 0; i < 16; i++) {
+            FailPay& f = g_failPay[i];
+            if (!f.pay) continue;
+            if (now - f.at > 60000) { f.pay = 0; _InterlockedDecrement(&g_failPayN); continue; }
+            if (f.pay != pay) continue;
+            int id = f.id;
+            f.pay = 0; _InterlockedDecrement(&g_failPayN); _InterlockedIncrement(&g_failRefused);
+            ((u8*)b)[0x30] = 0;
+            Buf l; l.str("held build ").dec(id).str(" refused on purpose at its turn (replayed here as on the other games), ").str(inLoop ? "in the loop" : "direct"); LogLine(l);
+            return 0;
+        }
+    }
     if (kind < 128) { if (inLoop) g_kcLoop[kind]++; else g_kcDir[kind]++; }
     AuditFlush(false);
     if (kind == 52) TerrainCapture(pay);
@@ -1741,6 +1771,24 @@ static void ReleaseOne()
     ((Dtor)(g_base + RVA_CMD_DTOR))(h->cmd);
     if (g_timing) TimingLine("release", h->id, 0);
     Buf b; b.str("released build ").dec(h->id).str(" (tool site ").hex(h->site).str(")"); LogLine(b);
+}
+
+// a held build the mod asked to refuse (failid): given to the engine like a released one, its payload noted for ApplyBody
+static void FailOne()
+{
+    if (g_heldHead == g_heldTail) return;
+    Held* h = g_held[g_heldHead % 64];
+    u8* pay = *(u8**)h->cmd;
+    bool noted = false;
+    if (pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) {
+        for (int i = 0; i < 16 && !noted; i++) {
+            if (g_failPay[i].pay) continue;
+            g_failPay[i].at = GetTickCount64(); g_failPay[i].id = h->id; g_failPay[i].pay = pay;
+            _InterlockedIncrement(&g_failPayN); noted = true;
+        }
+    }
+    Buf b; b.str("held build ").dec(h->id).str(noted ? " to be refused at its turn" : " could NOT be marked to refuse (released as it is)"); LogLine(b);
+    ReleaseOne();
 }
 
 // a held build the mod dropped: its command is destroyed, never given to the engine (its callback is never called)
@@ -1932,7 +1980,7 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
                 if (g_released < g_dropTarget) g_released = g_dropTarget;
             }
             g_inRelease = 1;
-            while (g_heldHead != g_heldTail) { if (g_nDropIds > 0 && IsDropped(g_held[g_heldHead % 64]->id)) DropOne(); else ReleaseOne(); g_released++; }
+            while (g_heldHead != g_heldTail) { if (g_nDropIds > 0 && IsDropped(g_held[g_heldHead % 64]->id)) DropOne(); else if (g_nFailIds > 0 && IsFailed(g_held[g_heldHead % 64]->id)) FailOne(); else ReleaseOne(); g_released++; }
             g_inRelease = 0;
             return g_addOrig(list, out, cmd, done, progress);
         }
@@ -1983,7 +2031,7 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
             if (g_heldHead != g_heldTail && g_held[g_heldHead % 64]->id <= g_releaseUpTo) {
                 g_inRelease = 1;
                 while (g_heldHead != g_heldTail && g_held[g_heldHead % 64]->id <= g_releaseUpTo) {
-                    if (g_nDropIds > 0 && IsDropped(g_held[g_heldHead % 64]->id)) DropOne(); else ReleaseOne();
+                    if (g_nDropIds > 0 && IsDropped(g_held[g_heldHead % 64]->id)) DropOne(); else if (g_nFailIds > 0 && IsFailed(g_held[g_heldHead % 64]->id)) FailOne(); else ReleaseOne();
                     g_released++;
                 }
                 g_inRelease = 0;
@@ -3609,7 +3657,9 @@ static void InstallOrderFixes()
     b.str(", road entries").str(InstallRoadOrder(mem) ? " on" : " OFF");
     LogLine(b);
     // (the mod compares the segments' ages only where they are stamped: its check "ages")
-    WriteSessionFile("native_state.txt", tickOn ? "tickepochs=1\n" : "tickepochs=0\n", 13);
+    // (0.7.7: and whether it refuses a held build on purpose, failid; MPFEVER_FAILID=0: not, the mod keeps its old ways)
+    { char fv[4] = {}; if (GetEnvironmentVariableA("MPFEVER_FAILID", fv, 3) > 0 && fv[0] == '0') g_failOn = false; }
+    WriteSessionFile("native_state.txt", tickOn ? (g_failOn ? "tickepochs=1\nfailid=1\n" : "tickepochs=1\nfailid=0\n") : (g_failOn ? "tickepochs=0\nfailid=1\n" : "tickepochs=0\nfailid=0\n"), 22);
     // Test MPFEVER_NOANIMALMOVE=1 (on every game): the animals stand still, ecs::AnimalMoveSystem's update returns at once (its
     // entry found from a unique sequence 0x36 bytes in, its prologue checked). Tells whether the towns' drifts start with them.
     if (GetEnvironmentVariableA("MPFEVER_NOANIMALMOVE", 0, 0) > 0) {

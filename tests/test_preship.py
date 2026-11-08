@@ -279,9 +279,9 @@ tool = src.index('send("nat_pending", { origin = G.me, at = at, id = id, paused 
 check(tool > 0 and src.count("if not paused and G.preship then pcall(G.preship, G.natRelease[#G.natRelease]) end") == 1
       and "G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() pcall(G.preship, held) end }" in src,
       "a tool's held build and an autotest's (a frame later: a computer company's gets its company) both shipped at the click, after their announcement")
-check("if not (G.restaleOn or pre) or not G.session.started or (G.cmode == \"separate\" and not pre) then return end" in src,
-      "the tool's copy is kept for it, in the separate companies mode too")
-check("if not G.restaleOn or r.lead or r.preshipped then return false end" in src, "never replayed here the old restale way")
+check("if not (G.restaleOn or pre or v2) or not G.session.started or (G.cmode == \"separate\" and not pre and not v2) then return end" in src,
+      "the tool's copy is kept for it, in the separate companies mode too (0.7.7: and for RESTALE v2 while another player builds)")
+check("if not (G.restaleOn or v2) or r.lead or r.preshipped then return false end" in src, "never replayed here the old restale way (nor RESTALE v2's)")
 check('G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")' in src, "on with the host's setting")
 opt = open(OPTIONS, encoding="utf-8").read()
 check('Key = "MPFEVER_NOSTOP", Session = true, DefaultOn = false' in opt, "the host's setting in the launcher, off by default")

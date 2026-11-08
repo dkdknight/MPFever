@@ -40,6 +40,17 @@ MPFever - Changelog
     for nothing, and without a reload (the autotests) the players' games left the next builds out, waiting for it. Refused
     everywhere, no game built it: every game is told and nothing is reloaded (MPFEVER_FAILALIKE=0: as before). Test:
     tests/test_failalike077.py.
+  - FIX (desync, two players building at the same place at the same moment): a tool's build is computed at the click and
+    held about two seconds; another player's build landing at that very place meanwhile (two streets of one junction upgraded
+    at once) made the builder apply a build computed on the old world while the other games rebuilt it from what was shipped,
+    and the games were reloaded. Now, when another player's build came since the click AND what the held build names already
+    standing (its nodes, segments, constructions) changed since the click, the builder ships the tool's copy and replays it like
+    every other game (it waits for its own replay, 0.3 to 1.2 s, only then). The tool's own command still goes to the engine and
+    is refused there the way the engine refuses a command naming an entity that is gone, so the tool gets its answer and never
+    stays busy (the old way, MPFEVER_RESTALE=1 since 0.5.12, dropped it: #91). Builds elsewhere change nothing (in #133, 29 of
+    39 held builds had another player's build land meanwhile, none at the same place); a build naming nothing already standing,
+    a stop or a signal: as before. MPFEVER_RESTALE=0: off; MPFEVER_FAILID=0 (native refusal off): off too. Test:
+    tests/test_restale077.py.
   - FIX (desync, the user's server 2026-11-07 22:40 and 2026-11-08 01:39, "vehicles"): TF3's own autosave ran on every PC
     by its own clock during a session, stalled that game alone 2.4 to 4 s in the middle of a run, and twice in four the
     vehicles drifted within a minute after it. It is off in a session on every game now (outside a session: as always;

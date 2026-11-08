@@ -8099,6 +8099,8 @@ local function pollNativeEvents()
 				local pt = paused and G.ptOn or nil
 				-- (t0, copy: see G.restale)
 				G.natRelease[#G.natRelease + 1] = { id = id, at = at, paused = pt, frame0 = G.frames, t0 = now, copy = G.takeToolCopy() }
+				-- (0.7.7, RESTALE v2: what the build names already standing, as this game has it at the click)
+				do local okM, errM = pcall(G.restaleMark, G.natRelease[#G.natRelease]); if not okM then log("RESTALE mark: " .. tostring(errM):sub(1, 200)) end end
 				if pt then G.ptIssue(G.me, id) end
 				send("nat_pending", { origin = G.me, at = at, id = id, paused = pt })
 				-- (0.8, no wait: its copy goes to the other games now, after its announcement, see G.preship)
@@ -8132,6 +8134,29 @@ end
 -- made where another player built in the same second is applied as the tool computed it, as before 0.5.7, and if the games then
 -- differ, the host's game is reloaded everywhere.
 G.restaleOn = os.getenv("MPFEVER_RESTALE") == "1"
+-- (0.7.7, RESTALE v2) On by default, only with a native module that refuses a held build on purpose (failid, native_state.txt):
+-- the tool's own command then still goes to the engine in its turn and is refused there as the engine refuses a command naming
+-- an entity that is gone, so the tool gets its answer and is never left busy (#91). And only a real race: another player's build
+-- applied or stamped since the click (G.restaleWhy) AND what the held build names already standing changed since the click (its
+-- references' fingerprint, as PRESHIP takes it: nodes, segments, constructions; G.restaleNeed). In #133, 29 of 39 held builds had
+-- another player's build land meanwhile, none of them on the same place: those are applied as the tool computed them, as before.
+-- In a real race the builder ships the tool's copy and replays it as every other game does (it stands for its own replay, 0.3 to
+-- 1.2 s): every game computes it on the same world. A build that names nothing already standing cannot go stale (a collision of
+-- two new pieces: the engine checks it again at Apply on every game). A stop or a signal: as before (a copy replayed as a street
+-- proposal lost its stop, 0.7.5). MPFEVER_RESTALE=0: off; MPFEVER_RESTALE=1: the old rule (any change since the click);
+-- MPFEVER_RESTALEFORCE=1 (tests): every held build with a copy takes the replay path
+G.failidOn = function()
+	if G.failidState == nil then
+		local f = C.IO and C.IO.open(C.DIR .. BS .. "native_state.txt", "rb")
+		local t = f and f:read("*a") or ""
+		if f then f:close() end
+		G.failidState = t:find("failid=1", 1, true) ~= nil
+	end
+	return G.failidState
+end
+G.restaleV2 = function()
+	return os.getenv("MPFEVER_RESTALE") ~= "0" and not G.restaleOn and G.failidOn()
+end
 G.othersAt = {}
 G.worldFrame = 0
 -- the tool's event when it applies a build ({proposal, data} by position or by name): its compact form, for G.restale
@@ -8161,7 +8186,7 @@ G.toolCreated = function(id, param)
 	local tool = tostring(id)
 	G.lastCreate = { frame = G.frames, tool = tool }
 	if G.toolPrepares[tool] or G.toolCopyAtApply() or os.getenv("MPFEVER_PRECREATE") == "0" then return end
-	if not (G.preshipOn and G.preshipOn()) or not G.session.started then return end
+	if not ((G.preshipOn and G.preshipOn()) or (G.restaleV2() and G.othersBusy())) or not G.session.started then return end
 	if (G.createSlowUntil or 0) > os.clock() then return end
 	local crit = false
 	pcall(function() crit = param[2].errorState.critical == true end)
@@ -8183,7 +8208,9 @@ G.toolApplied = function(param)
 end
 G.toolCopyFrom = function(param)
 	local pre = G.preshipOn and G.preshipOn()
-	if not (G.restaleOn or pre) or not G.session.started or (G.cmode == "separate" and not pre) then return end
+	-- (v2: only while another player builds, see G.othersBusy: the copy costs 1 to 40 ms at the click)
+	local v2 = G.restaleV2() and G.othersBusy()
+	if not (G.restaleOn or pre or v2) or not G.session.started or (G.cmode == "separate" and not pre and not v2) then return end
 	local pr = type(param) == "table" and (param[1] or param.proposal) or nil
 	if pr == nil then return end
 	local ok, compact = pcall(C.compactProposal, pr)
@@ -8276,6 +8303,7 @@ G.takeToolCopy = function()
 	-- later: 6 frames in the manual test x2 of 2026-11-07; every build of a tool is prepared first, so the last one prepared is
 	-- the one held now)
 	if t and G.frames - t.frame <= ((t.at == "prepare" or t.at == "create") and 120 or 5) then
+		G.lastCopyFrame = t.frame
 		G.toolCopyN = (G.toolCopyN or 0) + 1
 		if G.toolCopyN <= 40 then
 			log("held build: the tool's copy taken (" .. tostring(t.at or "apply") .. " of " .. tostring(t.tool) .. ", " .. (G.frames - t.frame) .. " frame(s) before; the last preview "
@@ -8295,8 +8323,8 @@ G.isWorldAct = function(p)
 		or fn:find("^makeTown") ~= nil or fn:find("Bulldozable", 1, true) ~= nil or fn:find("^asset") ~= nil or fn == "makeScriptingSendEventCmd"
 end
 G.noteOthers = function(p)
-	if not G.restaleOn or type(p) ~= "table" or p.origin == G.me or type(p.at) ~= "number" or not G.isWorldAct(p) then return end
-	G.othersAt[#G.othersAt + 1] = { at = p.at, origin = p.origin }
+	if not (G.restaleOn or G.restaleV2()) or type(p) ~= "table" or p.origin == G.me or type(p.at) ~= "number" or not G.isWorldAct(p) then return end
+	G.othersAt[#G.othersAt + 1] = { at = p.at, origin = p.origin, frame = G.frames }
 	while #G.othersAt > 64 do table.remove(G.othersAt, 1) end
 end
 -- whether the world changed here under a held build since the tool computed it: another player's build or action applied in a
@@ -8311,6 +8339,49 @@ G.restaleWhy = function(r, at)
 	end
 	return nil
 end
+-- (v2) another player builds now or did in the last 20 s (an act of the world received, a replay applied or under way)
+G.othersBusy = function()
+	local last = G.othersAt[#G.othersAt]
+	if last and last.frame and G.frames - last.frame < 1200 then return true end
+	if (G.worldFrame or 0) > 0 and G.frames - G.worldFrame < 1200 then return true end
+	return #(G.nativeQueue or {}) > 0 or (G.replayOut or 0) > 0
+end
+-- (v2) at the click (the held build announced): the act its copy would ship, translated now as a capture does, and the
+-- fingerprint of what it names already standing, as this game has it now
+G.restaleMark = function(r)
+	if not G.restaleV2() or r.lead or type(r.copy) ~= "table" then return end
+	r.copyFrame = G.lastCopyFrame
+	if G.preHasObjects(r.copy) then r.v2skip = "a stop or a signal"; return end
+	if not G.preHasContent(r.copy) then r.v2skip = "its copy has nothing in it"; return end
+	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
+	local aiCo = G.aiNatCo and G.aiNatCo[r.id] or nil
+	if G.cmode == "separate" and not aiCo then pcall(G.preshipOwn, args[1]) end
+	R.translateOut("makeWorldBuildProposalCmd", args, G.rev or {})
+	r.v2args = C.copy(args)
+	r.refs = G.preRefsOf(r.v2args)
+	local okS, sig = pcall(G.refSigOf, r.refs)
+	if not okS then r.refs = nil; r.v2skip = "what it names could not be read"; return end
+	r.refSig = sig
+	-- (a build of another player applied here after the tool's copy was made: the copy was computed before it, the fingerprint
+	-- taken now already has it)
+	r.sigUncertain = (r.copyFrame ~= nil and (G.worldFrame or 0) >= r.copyFrame) or (G.replayOut or 0) > 0 or nil
+end
+-- (v2) at the release: why the held build must be replayed here as on the others (nil: applied as the tool computed it)
+G.restaleNeed = function(r, at)
+	local why = G.restaleWhy(r, at)
+	if not why and r.sigUncertain then why = "another player's build applied here between the tool's computation and the click" end
+	if not why then return nil end
+	if os.getenv("MPFEVER_RESTALEFORCE") == "1" and r.v2args then return "forced (MPFEVER_RESTALEFORCE): " .. why end
+	if r.v2skip or type(r.refs) ~= "table" or not r.v2args then return nil end
+	-- (names nothing already standing: cannot be stale; a collision with a new piece is checked again by the engine everywhere)
+	if #r.refs == 0 then return nil end
+	if r.sigUncertain then return why .. "; the tool's copy was computed before it" end
+	local okS, sig = pcall(G.refSigOf, r.refs)
+	if not okS then return nil end
+	if sig ~= r.refSig then return why .. "; what it names changed since the click (" .. G.refDiff(r.refSig, sig) .. ")" end
+	return nil
+end
+
 -- at the release of the held build r: true when it was shipped and queued here as a replay instead (an error leaves the build as
 -- the tool computed it)
 G.restale = function(r, at)
@@ -8330,17 +8401,29 @@ G.restaleBody = function(r, at)
 		log("restale check " .. tostring(r.id) .. ": copy " .. tostring(r.copy ~= nil) .. ", t0 " .. tostring(r.t0) .. ", at " .. tostring(at)
 			.. ", frame0 " .. tostring(r.frame0) .. ", world frame " .. tostring(G.worldFrame) .. ", others " .. C.ser(G.othersAt):sub(1, 200))
 	end
-	if not G.restaleOn or r.lead or r.preshipped then return false end
+	local v2 = G.restaleV2()
+	if not (G.restaleOn or v2) or r.lead or r.preshipped then return false end
+	-- (v2: the tool's command goes to the engine now, in its turn, and is refused there: the tool gets its answer)
+	local function leaveOut()
+		if r.fn then return end
+		if G.failidOn() then
+			nativeCtl("failid " .. r.id)
+			nativeCtl("releaseid " .. r.id)
+			O.sendCommand(O.event("mpfever", "mpfever", "nop", {}))
+		else
+			nativeCtl("dropid " .. r.id)
+		end
+	end
 	-- One company per player: the tool's copy names the savegame's company (the native module gives the build this player's
 	-- company at the tool's command only), so it cannot be replayed. The build is left out on every game instead, as a refused
 	-- one (the others stop holding for it, its turn of a pause is skipped), and the chat tells its player to make it again:
 	-- before, it was applied as computed and the games reloaded. MPFEVER_RESTALESEP=0: as before. (Only with MPFEVER_RESTALE=1
 	-- since 0.5.12: the tool of the build left out stayed busy, see G.restaleOn)
-	if G.cmode == "separate" then
+	if G.cmode == "separate" and not (v2 and r.v2args) then
 		if os.getenv("MPFEVER_RESTALESEP") == "0" then return false end
-		local whyS = G.restaleWhy(r, at)
+		local whyS = v2 and G.restaleNeed(r, at) or (not v2 and G.restaleWhy(r, at)) or nil
 		if not whyS then return false end
-		if not r.fn then nativeCtl("dropid " .. r.id) end
+		leaveOut()
 		local seq = G.pt.of[G.ptKey(G.me, r.id)]
 		send("nat_cancel", { origin = G.me, id = r.id, pseq = seq, samespot = true })
 		if r.paused and seq then G.ptDone(seq) end
@@ -8351,11 +8434,16 @@ G.restaleBody = function(r, at)
 		return true
 	end
 	if type(r.copy) ~= "table" then return false end
-	local why = G.restaleWhy(r, at)
+	local why
+	if v2 then why = G.restaleNeed(r, at) else why = G.restaleWhy(r, at) end
 	if not why then return false end
-	-- the act a capture of this build would have shipped (the compact proposal, its references translated as the capture does)
-	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
-	R.translateOut("makeWorldBuildProposalCmd", args, G.rev or {})
+	-- the act a capture of this build would have shipped (the compact proposal, its references translated as the capture does;
+	-- v2: translated at the click, as the tool named them then)
+	local args = r.v2args
+	if not args then
+		args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
+		R.translateOut("makeWorldBuildProposalCmd", args, G.rev or {})
+	end
 	args = C.copy(args)
 	G.oseq = G.oseq + 1
 	local a = { fn = "makeWorldBuildProposalCmd", args = args, at = at, origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
@@ -8364,8 +8452,8 @@ G.restaleBody = function(r, at)
 	if G.natCtx then G.natCtx[r.id] = nil end
 	if G.natRefund then G.natRefund[r.id] = nil end
 	if a.paused then a.pseq = G.pt.of[G.ptKey(G.me, r.id)] end
-	-- (the tool's command, held by the native module, is never given to the engine: dropped there at the next command)
-	if not r.fn then nativeCtl("dropid " .. r.id) end
+	-- (the tool's command, held by the native module: refused by the engine in its turn, v2; else dropped there at the next command)
+	leaveOut()
 	send("act", a)
 	-- (here: in the replays' queue at once; in a pause it keeps its turn, which the queue takes when it applies it, so that no
 	-- later turn goes before it here)
@@ -8373,7 +8461,9 @@ G.restaleBody = function(r, at)
 	here.recvFrame = G.frames
 	G.nativeQueue[#G.nativeQueue + 1] = here
 	G.restaled = (G.restaled or 0) + 1
-	log("native build " .. r.id .. " shipped as " .. a.uid .. " and replayed here as the others replay it: " .. why)
+	G.restaleN = (G.restaleN or 0) + 1
+	log("RESTALE native build " .. r.id .. " shipped as " .. a.uid .. " and replayed here as the others replay it (" .. G.restaleN .. " so far"
+		.. (G.failidOn() and ", the tool's command refused by the engine" or "") .. "): " .. why)
 	-- (an autotest's build: its answer, as the replay's)
 	if r.cb then G.waits[#G.waits + 1] = { at = G.frames + 30, fn = function() pcall(r.cb, nil, true) end } end
 	return true
