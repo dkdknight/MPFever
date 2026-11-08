@@ -1108,6 +1108,35 @@ namespace MPFever
                 + "Players: " + (ready.Length > 0 ? string.Join(", ", ready.Select(BaseName)) : "-") + "; game running: " + running;
         }
 
+        // (0.7.7) the games that reported a build they could not reproduce, by the build's uid (see "replay_failed")
+        readonly Dictionary<string, HashSet<string>> failedBy = new Dictionary<string, HashSet<string>>();
+
+        /// <summary>(0.7.7) The uid of a "replay_failed" report, or null.</summary>
+        internal static string FailedUid(string payload)
+        {
+            try
+            {
+                var d = LuaLit.Parse(payload) as Dictionary<object, object>;
+                return d != null && d.TryGetValue("uid", out var v) && v is string s && s.Length > 0 ? s : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>(0.7.7) Whether a build was refused on every game, its builder's own too (its uid: "builder:n"): then no
+        /// game built it and the games did not part.</summary>
+        internal static bool RefusedEverywhere(string uid, ICollection<string> refusedBy, IEnumerable<string> players)
+        {
+            if (string.IsNullOrEmpty(uid) || refusedBy == null || players == null) return false;
+            int c = uid.LastIndexOf(':');
+            if (c <= 0) return false;
+            var builder = BaseName(uid.Substring(0, c));
+            var set = new HashSet<string>(refusedBy.Select(BaseName), StringComparer.OrdinalIgnoreCase);
+            if (!set.Contains(builder)) return false;
+            int n = 0;
+            foreach (var p in players) { n++; if (!set.Contains(BaseName(p))) return false; }
+            return n > 0;
+        }
+
         // (0.7.7) a player's view of the session, for its reports: the names the host's messages came with (the host and the
         // players it relays) and whether the host's game runs (its "session" messages: -1 none yet, 0 no, 1 yes)
         readonly HashSet<string> clientPeers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -4255,7 +4284,46 @@ namespace MPFever
                         // for the next checkpoints (and for the long cooldown) before reloading the host's game
                         Log.Warn(F("{0} : une construction n'a pas pu être reproduite {1}", "{0}: a build could not be reproduced {1}", m.From, m.Payload));
                         int others; lock (players) others = players.Count(p => p != hostName);
-                        if (started && !resyncing && !autotest && others > 0 && Now - lastResync > 15)
+                        // (0.7.7) a build refused on every game, its builder's own replay too (a computer company's builds are
+                        // replayed on the host's game as well): the games did not part, nobody built it. A garage of the AI
+                        // refused everywhere (Test Gameplay, 2026-11-08 01:30) reloaded every game for nothing, and in the
+                        // autotests (no reload) the players' games left the next builds out, waiting for a reload that never
+                        // came. The reports are waited for 1.5 s, as before; refused everywhere, every game is told
+                        // (replay_alike) and nothing is reloaded. MPFEVER_FAILALIKE=0: reloaded as before
+                        string fuid = FailedUid(m.Payload);
+                        bool alikeOn = Environment.GetEnvironmentVariable("MPFEVER_FAILALIKE") != "0" && fuid != null;
+                        bool first = false;
+                        if (alikeOn)
+                            lock (failedBy)
+                            {
+                                if (!failedBy.TryGetValue(fuid, out var who)) { failedBy[fuid] = who = new HashSet<string>(StringComparer.OrdinalIgnoreCase); first = true; }
+                                who.Add(BaseName(m.From));
+                                while (failedBy.Count > 64) failedBy.Remove(failedBy.Keys.First());
+                            }
+                        if (alikeOn && first)
+                        {
+                            new Thread(() =>
+                            {
+                                Thread.Sleep(1500);
+                                HashSet<string> who; lock (failedBy) who = failedBy.TryGetValue(fuid, out var w) ? new HashSet<string>(w, StringComparer.OrdinalIgnoreCase) : new HashSet<string>();
+                                string[] all; lock (players) all = players.ToArray();
+                                if (RefusedEverywhere(fuid, who, all.Select(BaseName)))
+                                {
+                                    Log.Ok(F("{0} : refusée sur tous les jeux, celui de son constructeur aussi : les parties sont restées identiques, pas de resynchronisation",
+                                        "{0}: refused on every game, its builder's too: the games stayed alike, no resynchronisation", fuid));
+                                    var alike = Msg.Make("replay_alike", hostName ?? "", "{[\"uid\"]=" + LuaLit.Quote(fuid) + "}");
+                                    lock (sendGate) { hostGame?.ToGame(alike); relay.Broadcast(alike, null); }
+                                    return;
+                                }
+                                int oth; lock (players) oth = players.Count(p => p != hostName);
+                                if (started && !resyncing && !autotest && oth > 0 && Now - lastResync > 15)
+                                {
+                                    resyncing = true;
+                                    Resync(T("construction non reproduite", "build not reproduced"));
+                                }
+                            }) { IsBackground = true, Name = "Resync" }.Start();
+                        }
+                        else if (!alikeOn && started && !resyncing && !autotest && others > 0 && Now - lastResync > 15)
                         {
                             resyncing = true;
                             new Thread(() => { Thread.Sleep(1500); Resync(T("construction non reproduite", "build not reproduced")); }) { IsBackground = true, Name = "Resync" }.Start();

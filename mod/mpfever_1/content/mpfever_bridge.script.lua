@@ -8801,6 +8801,16 @@ function G.brokenSkip(a)
 	return true
 end
 
+-- (0.7.7) the host's launcher: that build was refused on every game, its builder's too (a computer company's garage refused
+-- everywhere, 2026-11-08): this game does not differ, the next builds are applied (see "replay_failed" in the launcher)
+H.replay_alike = function(from, p)
+	local b = G.replayBroken
+	if b and type(p) == "table" and tostring(p.uid) == b.uid then
+		G.replayBroken = nil
+		log("NATIVE REPLAY: " .. b.uid .. " was refused on every game, its builder's too: this game does not differ, the builds go on")
+	end
+end
+
 -- Another game's terrain edit, in two phases so that a failure never reaches the engine: (1) the cells go to the DLL (a file and
 -- a control line, read when the next command enters the command list: a nop event is sent for that) and the DLL says "ready";
 -- (2) only then a command with an empty grid of the same size goes to the engine, and the DLL copies the cells into it as it

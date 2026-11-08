@@ -1483,6 +1483,19 @@
       "zh-CN": "{0}：无法重现一项建造 {1}",
       "zh-TW": "{0}：無法重現一項建造 {1}"
     },
+    "{0}: refused on every game, its builder's too: the games stayed alike, no resynchronisation": {
+      "de": "{0}: auf jedem Spiel abgelehnt, auch auf dem seines Erbauers: die Spiele sind gleich geblieben, keine Resynchronisierung",
+      "es": "{0}: rechazada en todas las partidas, también en la de quien la construyó: las partidas siguen iguales, sin resincronización",
+      "it": "{0}: rifiutata su ogni partita, anche su quella di chi l'ha costruita: le partite sono rimaste uguali, nessuna risincronizzazione",
+      "nl": "{0}: op elk spel geweigerd, ook op dat van de bouwer: de spellen zijn gelijk gebleven, geen hersynchronisatie",
+      "pl": "{0}: odrzucona we wszystkich grach, także u budującego: gry pozostały takie same, bez ponownej synchronizacji",
+      "pt-BR": "{0}: recusada em todos os jogos, também no de quem construiu: os jogos continuaram iguais, sem ressincronização",
+      "ru": "{0}: отклонена во всех играх, в том числе у строителя: игры остались одинаковыми, без повторной синхронизации",
+      "ja": "{0}：建設者を含むすべてのゲームで拒否されました。ゲームは同じままなので再同期しません",
+      "ko": "{0}: 건설자의 게임을 포함한 모든 게임에서 거부되었습니다. 게임이 같으므로 재동기화하지 않습니다",
+      "zh-CN": "{0}：在所有游戏中都被拒绝，包括建造者的游戏：各游戏保持一致，不重新同步",
+      "zh-TW": "{0}：在所有遊戲中都被拒絕，包括建造者的遊戲：各遊戲保持一致，不重新同步"
+    },
     "build not reproduced": {
       "de": "Bau nicht nachgebaut",
       "es": "construcción no reproducida",

@@ -97,6 +97,18 @@ namespace MPFever
             }
             catch (Exception e) { C(false, "the game's log: " + e.Message); }
             finally { try { File.Delete(f); } catch { } }
+            // (FAILALIKE) a build refused on every game, its builder's own too: the games did not part
+            C(MainForm.FailedUid("{[\"why\"]=\"native construction refused\",[\"uid\"]=\"Host:58\"}") == "Host:58" && MainForm.FailedUid("{}") == null,
+                "a failed replay's uid");
+            C(MainForm.RefusedEverywhere("Host:58", new[] { "Client", "Host" }, new[] { "Host", "Client#1" }),
+                "refused on every game, the builder's (the host, an AI's build) too: alike, no reload");
+            C(!MainForm.RefusedEverywhere("Host:58", new[] { "Client" }, new[] { "Host", "Client#1" }),
+                "  the builder's game built it (a player's own build, or its report not there yet): reloaded, as before");
+            C(!MainForm.RefusedEverywhere("Bence#11:3", new[] { "Bence", "yoyo" }, new[] { "yoyo", "Bence#11", "YkeWoudstra#2" }),
+                "  a game that did not say it refused: reloaded");
+            C(MainForm.RefusedEverywhere("Bence#11:3", new[] { "Bence#11", "yoyo", "YkeWoudstra#2" }, new[] { "yoyo", "Bence#11", "YkeWoudstra#2" })
+                && !MainForm.RefusedEverywhere("nocolon", new[] { "a" }, new[] { "a" }) && !MainForm.RefusedEverywhere("a:1", new[] { "a" }, new string[0]),
+                "  a player's build refused everywhere: alike; nothing known: reloaded");
             return ok;
         }
 
