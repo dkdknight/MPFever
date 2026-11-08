@@ -150,6 +150,21 @@ namespace MPFever
                 C(ReferenceEquals(big.Zipped(), big.Zipped()), "  compressed once per message (a relay to several players reuses it)");
             }
             catch (Exception e) { C(false, "msgz: " + e.Message); }
+            // (HOSTAUTOSAVE) the session's autosave: two names in turn, never the savegame the player started from
+            C(MainForm.HostAutosaveName("Game Knight 6", 1) == "autosave_Game Knight 6_MPFever 1" && MainForm.HostAutosaveName("Game Knight 6", 2) == "autosave_Game Knight 6_MPFever 2"
+                && MainForm.HostAutosaveName("Game Knight 6", 3) == "autosave_Game Knight 6_MPFever 1" && MainForm.HostAutosaveName("", 1) == "autosave_MPFever_MPFever 1",
+                "session autosave: two names in turn, the savegame played never written");
+            {
+                var was = Environment.GetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE");
+                try
+                {
+                    Environment.SetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE", "15"); bool a = MainForm.HostAutosaveMinutes(false) == 15 && MainForm.HostAutosaveMinutes(true) == 15;
+                    Environment.SetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE", "0"); bool b = MainForm.HostAutosaveMinutes(false) == 0;
+                    Environment.SetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE", null); bool c = MainForm.HostAutosaveMinutes(true) == 0 && MainForm.HostAutosaveMinutes(false) >= 0;
+                    C(a && b && c, "  MPFEVER_HOSTAUTOSAVE=<minutes> (0: off); none in the autotests unless asked; else the game's option");
+                }
+                finally { Environment.SetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE", was); }
+            }
             // (MODLOCALFIRST) a mod installed twice: the local copy the game runs is named in the "other version" message
             C(Mods.DiffersName("Industry Evolution", null) == "Industry Evolution", "a mod of another version: its name");
             C(Mods.DiffersName("Industry Evolution", @"E:\Steam\userdata\1\3493540\local\mods\spy_industry_evolution").Contains(@"local\mods\spy_industry_evolution"),

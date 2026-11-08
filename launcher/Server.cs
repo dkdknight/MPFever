@@ -874,6 +874,88 @@ namespace MPFever
             }
         }
 
+        // ---------------------------------------------------------------- the session's autosave on a player's own game hosting
+
+        // (0.7.7, HOSTAUTOSAVE) TF3's own autosave is off in a session (the native module, InstallNoGameAutosave: one game saving
+        // alone stalled it 2.4 to 4 s mid-run, and the vehicles drifted after it twice in four). A player's own game hosting saves
+        // the session's world instead, every N minutes (the host's TF3 option autosaveIntervalMinutes, 10 without it; 0: never),
+        // at a pause of every game, like a dedicated server's autosave: under "autosave_<world>_MPFever 1" and "... 2" in turn
+        // (the last two kept, the savegame the player started from never written; the game's current name unchanged). Nothing
+        // is saved when nothing happened since the last one. MPFEVER_HOSTAUTOSAVE=<minutes> (0: off); MPFEVER_GAMEAUTOSAVE=1
+        // (the game's own kept): none.
+        double hostAutosaveAt = -1;
+        int hostAutosaveBusy, hostAutosaveN, hostSavedActs = -1;
+        long hostSavedClock = -1;
+        bool hostAutosaveTold;
+
+        internal static int HostAutosaveMinutes(bool autotest)
+        {
+            var e = Environment.GetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE");
+            if (!string.IsNullOrEmpty(e)) return int.TryParse(e, out var m) ? Math.Max(0, Math.Min(1440, m)) : 0;
+            if (Environment.GetEnvironmentVariable("MPFEVER_GAMEAUTOSAVE") == "1" || autotest) return 0;
+            return GameInstall.GameAutosaveMinutes() ?? 10;
+        }
+
+        internal static string HostAutosaveName(string world, int n)
+        {
+            var w = string.IsNullOrWhiteSpace(world) ? "MPFever" : world.Trim();
+            return "autosave_" + w + "_MPFever " + (n % 2 == 0 ? 2 : 1);
+        }
+
+        /// <summary>(HostLoop, every 250 ms) the session's autosave when it is due.</summary>
+        void HostAutosaveTick()
+        {
+            if (server != null || !started || hostGame == null) { hostAutosaveAt = -1; return; }
+            if (hostAutosaveAt < 0) hostAutosaveAt = Now;
+            int minutes = HostAutosaveMinutes(autotest);
+            if (minutes <= 0) return;
+            if (!hostAutosaveTold)
+            {
+                hostAutosaveTold = true;
+                Log.W(F("Sauvegarde automatique de la session toutes les {0} min (celle du jeu est coupée pendant la session).", "Session autosave every {0} min (the game's own is off during the session).", minutes));
+            }
+            if (resyncing || Now - hostAutosaveAt < minutes * 60.0 || Interlocked.CompareExchange(ref hostAutosaveBusy, 1, 0) != 0) return;
+            hostAutosaveAt = Now;
+            new Thread(() => { try { HostAutosave(); } finally { hostAutosaveAt = Now; Interlocked.Exchange(ref hostAutosaveBusy, 0); } }) { IsBackground = true, Name = "Session autosave" }.Start();
+        }
+
+        void HostAutosave()
+        {
+            if (!Monitor.TryEnter(worldGate, TimeSpan.FromSeconds(1))) return;   // (a resynchronisation under way: it saves anyway)
+            try
+            {
+                if (!started || hostGame == null || resyncing) return;
+                int acts = actsRelayed;
+                long clock = MaxClock();
+                if (acts == hostSavedActs && clock == hostSavedClock) return;   // (paused all along, nothing built)
+                var t0 = DateTime.UtcNow;
+                bool wasRunning; int prevSpeed;
+                lock (sessionGate) { wasRunning = !pauseAt.HasValue; prevSpeed = Math.Max(1, speed); }
+                if (wasRunning) Pause(T("sauvegarde automatique", "autosave"));
+                long at; lock (sessionGate) at = pauseAt ?? 0;
+                // (every game stopped at the pause: the world saved is the one every game has)
+                bool stopped = WaitUntil(() => { lock (clocks) return clocks.TryGetValue(hostName, out var c) && c.T >= at && c.Sp == 0; }, 60);
+                int id = ServerSaveIdBase + Interlocked.Increment(ref serverSaveSeq);
+                string name = HostAutosaveName(lobbySave, ++hostAutosaveN);
+                serverSaveDone = null;
+                if (stopped && !resyncing)
+                {
+                    hostGame.ToGame(Msg.Make("resync_save", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(name) + "}"));
+                    bool answered = WaitUntil(() => serverSaveDone is Dictionary<object, object> d && d.TryGetValue("id", out var v) && v is double dv && (int)dv == id, 180);
+                    var done = serverSaveDone;
+                    bool ok = answered && done != null && done.TryGetValue("ok", out var okv) && okv is bool b && b;
+                    if (ok) { hostSavedActs = acts; hostSavedClock = clock; Log.Ok(F("Sauvegarde automatique de la session : « {0} » ({1:0.0} s).", "Session autosave: « {0} » ({1:0.0} s).", name, (DateTime.UtcNow - t0).TotalSeconds)); }
+                    else if (answered) Log.Warn(F("Sauvegarde automatique de la session refusée par le jeu : {0}", "Session autosave refused by the game: {0}", done != null && done.TryGetValue("err", out var err) ? Convert.ToString(err, CultureInfo.InvariantCulture) : "?"));
+                    else Log.Warn(T("Sauvegarde automatique de la session : pas de réponse du jeu.", "Session autosave: no answer from the game."));
+                }
+                // (resumed only when the pause is still this one: a player who paused meanwhile keeps the game paused)
+                bool ours; lock (sessionGate) ours = pauseAt.HasValue && pauseAt.Value == at;
+                if (wasRunning && ours && !resyncing && started) SetSpeed(prevSpeed, T("fin de la sauvegarde", "end of the save"));
+            }
+            catch (Exception e) { Log.W("session autosave: " + e.Message); }
+            finally { Monitor.Exit(worldGate); }
+        }
+
         /// <summary>A copy of the world's files (name.sav and the files next to it) in server\backups\name, the newest kept.</summary>
         /// <summary>The picture of the world's savegame (the .jpg next to it, shown in the game's load list), or null when
         /// there is none or it is black (a save made without display).</summary>

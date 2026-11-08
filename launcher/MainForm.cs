@@ -4161,6 +4161,7 @@ namespace MPFever
                 lock (clocks) clocks.TryGetValue(hostName, out hc);
 
                 if (Now - lastSession > 3) { lastSession = Now; BroadcastSession(); }   // late joiners and lost messages
+                HostAutosaveTick();   // (0.7.7, a player's own game hosting: the session's autosave at a pause of every game)
                 bool paused; long? pausedAt; lock (sessionGate) { paused = pauseAt.HasValue; pausedAt = pauseAt; }
                 // paused: builds and actions still apply, so the games are checked when actions went through since the last
                 // check, once every game has stopped (issue #12: 9 minutes of builds in a pause went unchecked)

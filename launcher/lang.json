@@ -23881,6 +23881,58 @@
       "ko": "호스트가 이번 세션에서 끈 DLC: {0}",
       "zh-CN": "主机在本次会话中关闭的 DLC：{0}",
       "zh-TW": "主機在本次工作階段中關閉的 DLC：{0}"
+    },
+    "Session autosave every {0} min (the game's own is off during the session).": {
+      "de": "Automatische Speicherung der Sitzung alle {0} Min. (die des Spiels ist während der Sitzung aus).",
+      "es": "Guardado automático de la sesión cada {0} min (el del juego está desactivado durante la sesión).",
+      "it": "Salvataggio automatico della sessione ogni {0} min (quello del gioco è disattivato durante la sessione).",
+      "nl": "Automatisch opslaan van de sessie elke {0} min (dat van het spel staat uit tijdens de sessie).",
+      "pl": "Autozapis sesji co {0} min (autozapis gry jest wyłączony podczas sesji).",
+      "pt-BR": "Salvamento automático da sessão a cada {0} min (o do jogo fica desligado durante a sessão).",
+      "ru": "Автосохранение сессии каждые {0} мин (автосохранение игры во время сессии отключено).",
+      "ja": "セッションの自動セーブ: {0} 分ごと（セッション中はゲーム自身の自動セーブはオフ）。",
+      "ko": "세션 자동 저장: {0}분마다 (세션 중에는 게임 자체 자동 저장이 꺼집니다).",
+      "zh-CN": "会话每 {0} 分钟自动保存一次（会话期间游戏自带的自动保存已关闭）。",
+      "zh-TW": "工作階段每 {0} 分鐘自動存檔一次（工作階段期間遊戲本身的自動存檔已關閉）。"
+    },
+    "Session autosave: « {0} » ({1:0.0} s).": {
+      "de": "Automatische Speicherung der Sitzung: « {0} » ({1:0.0} s).",
+      "es": "Guardado automático de la sesión: « {0} » ({1:0.0} s).",
+      "it": "Salvataggio automatico della sessione: « {0} » ({1:0.0} s).",
+      "nl": "Automatisch opslaan van de sessie: « {0} » ({1:0.0} s).",
+      "pl": "Autozapis sesji: « {0} » ({1:0.0} s).",
+      "pt-BR": "Salvamento automático da sessão: « {0} » ({1:0.0} s).",
+      "ru": "Автосохранение сессии: « {0} » ({1:0.0} с).",
+      "ja": "セッションの自動セーブ: « {0} »（{1:0.0} 秒）。",
+      "ko": "세션 자동 저장: « {0} » ({1:0.0}초).",
+      "zh-CN": "会话自动保存：« {0} »（{1:0.0} 秒）。",
+      "zh-TW": "工作階段自動存檔：« {0} »（{1:0.0} 秒）。"
+    },
+    "Session autosave refused by the game: {0}": {
+      "de": "Automatische Speicherung der Sitzung vom Spiel abgelehnt: {0}",
+      "es": "El juego rechazó el guardado automático de la sesión: {0}",
+      "it": "Salvataggio automatico della sessione rifiutato dal gioco: {0}",
+      "nl": "Automatisch opslaan van de sessie door het spel geweigerd: {0}",
+      "pl": "Gra odrzuciła autozapis sesji: {0}",
+      "pt-BR": "Salvamento automático da sessão recusado pelo jogo: {0}",
+      "ru": "Игра отклонила автосохранение сессии: {0}",
+      "ja": "ゲームがセッションの自動セーブを拒否しました: {0}",
+      "ko": "게임이 세션 자동 저장을 거부했습니다: {0}",
+      "zh-CN": "游戏拒绝了会话自动保存：{0}",
+      "zh-TW": "遊戲拒絕了工作階段自動存檔：{0}"
+    },
+    "Session autosave: no answer from the game.": {
+      "de": "Automatische Speicherung der Sitzung: keine Antwort vom Spiel.",
+      "es": "Guardado automático de la sesión: el juego no responde.",
+      "it": "Salvataggio automatico della sessione: nessuna risposta dal gioco.",
+      "nl": "Automatisch opslaan van de sessie: geen antwoord van het spel.",
+      "pl": "Autozapis sesji: brak odpowiedzi gry.",
+      "pt-BR": "Salvamento automático da sessão: sem resposta do jogo.",
+      "ru": "Автосохранение сессии: игра не отвечает.",
+      "ja": "セッションの自動セーブ: ゲームから応答がありません。",
+      "ko": "세션 자동 저장: 게임의 응답이 없습니다.",
+      "zh-CN": "会话自动保存：游戏没有响应。",
+      "zh-TW": "工作階段自動存檔：遊戲沒有回應。"
     }
   }
 }

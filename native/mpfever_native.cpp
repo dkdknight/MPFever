@@ -3697,6 +3697,65 @@ static void PatchSaveCleanup()
     Buf b; b.str(ok ? "saves: no change to the world (the tile clean-up of the GameSave command left out)" : "saves: the tile clean-up NOT found (a save changes the world of the game that saves)"); LogLine(b);
 }
 
+// ---------------------------------------------------------------- the game's own autosave, off in a session (0.7.7)
+// TF3 saves on its own every N minutes of real time (its options: autosaveIntervalMinutes), on every PC by its own clock:
+// CGameUI's frame (vfunc 0x65ecd0 in 40425) adds the frame's time to [ui+0xe38] while the game runs, and calls
+// UI::CGameUI::AutoSave (0x65a150) once it passes the interval, unless the byte [ui+0x1170] says not to. In a session that save
+// stalled one game alone for 2.4 to 4 s in the middle of a run, the others waiting at the barrier, and twice in four the
+// vehicles drifted within a minute after it (the user's server 2026-11-07 22:40 and 2026-11-08 01:39, 1.7 to 2.8 s before the
+// session's own pause). While an MPFever session runs in this game (holding on, the mod's heartbeat fresh), the time counted
+// is set back to 0 before the test: the game never saves on its own then, on no PC; MPFever.exe saves the host's world at a
+// pause of every game instead (HostAutosave). Outside a session: the game's own test, as always. The site is found by its
+// bytes (the offsets 0x1170 and 0xe38 in them), once in the code, else nothing is changed. MPFEVER_GAMEAUTOSAVE=1: the
+// game's own autosave kept.
+static KeptFile g_gasAliveFile = { 0, 0 };
+static char g_gasLast[24];
+static int g_gasN = -1;
+static u64 g_gasAliveAt = 0, g_gasRead = 0;
+static volatile long g_gasSkipped = 0;
+static bool g_gasLogged = false;
+static void GameAutosaveGate(SavedRegs* r)
+{
+    if (!g_enabled) return;
+    u64 now = GetTickCount64();
+    if (now - g_gasRead >= 1000) {
+        g_gasRead = now;
+        HANDLE f = KeptHandle(g_gasAliveFile, "bridge_alive.txt");
+        if (f != INVALID_HANDLE_VALUE) {
+            char b[24]; DWORD got = 0;
+            SetFilePointer(f, 0, 0, 0);
+            if (ReadFile(f, b, sizeof(b), &got, 0) && got > 0 && ((int)got != g_gasN || memcmp(b, g_gasLast, got) != 0)) {
+                memcpy(g_gasLast, b, got); g_gasN = (int)got; g_gasAliveAt = now;
+            }
+        }
+    }
+    if (!g_gasAliveAt || now - g_gasAliveAt > 10000) return;
+    u8* ui = (u8*)r->rsi;
+    i64 interval = (i64)r->rax;      // (the interval in microseconds, computed just before the test)
+    i64* counted = (i64*)(ui + 0xe38);
+    if (interval > 0 && *counted >= interval) {
+        _InterlockedIncrement(&g_gasSkipped);
+        if (!g_gasLogged) {
+            g_gasLogged = true;
+            Buf b; b.str("game autosave: due after ").dec((long)(interval / 60000000)).str(" min, skipped in the session (the host's world is saved at a pause of every game)"); LogLine(b);
+        }
+    }
+    *counted = 0;
+}
+
+static void InstallNoGameAutosave()
+{
+    char v[4] = {};
+    if (GetEnvironmentVariableA("MPFEVER_GAMEAUTOSAVE", v, 3) > 0 && v[0] == '1') { Buf b; b.str("game autosave: kept in sessions (MPFEVER_GAMEAUTOSAVE=1)"); LogLine(b); return; }
+    u32 at = FindSigRva("80 BE 70 11 00 00 00 75 ?? 48 3B 86 38 0E 00 00 7D ?? 48 8B CE E8");
+    u8* mem = at ? AllocNear(0x100) : 0;
+    bool ok = mem && Splice(mem, at, 7, GameAutosaveGate);
+    Buf b;
+    if (ok) b.str("game autosave: off in sessions (the test at ").hex(at).str(")");
+    else b.str("game autosave: its test NOT found (the game still saves on its own in a session)");
+    LogLine(b);
+}
+
 // ---------------------------------------------------------------- one industry-demand history (0.6, ported from TPF3-MP, MIT)
 // Ported from TPF3-MP's "Shared industry-demand history" (pull request #192 of Juliansgith/Transport-Fever-3-Multiplayer-Mod,
 // "Stabilize industry spawning and reloads", 2026-10-29: docs/HOOKS.md, crates/tpf3mp-hook/src/industry_shared.rs, signature
@@ -5198,6 +5257,7 @@ static DWORD WINAPI Init(void*)
     InstallDecisionSync();
     InstallFreshIds();
     PatchSaveCleanup();
+    InstallNoGameAutosave();
     if (g_layout) InstallToolCompany();
     if (g_layout) InstallHudShare();
     if (g_layout) InstallStopSnap();

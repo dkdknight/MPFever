@@ -40,6 +40,13 @@ MPFever - Changelog
     for nothing, and without a reload (the autotests) the players' games left the next builds out, waiting for it. Refused
     everywhere, no game built it: every game is told and nothing is reloaded (MPFEVER_FAILALIKE=0: as before). Test:
     tests/test_failalike077.py.
+  - FIX (desync, the user's server 2026-11-07 22:40 and 2026-11-08 01:39, "vehicles"): TF3's own autosave ran on every PC
+    by its own clock during a session, stalled that game alone 2.4 to 4 s in the middle of a run, and twice in four the
+    vehicles drifted within a minute after it. It is off in a session on every game now (outside a session: as always;
+    MPFEVER_GAMEAUTOSAVE=1: kept); a player's own game hosting saves the session's world instead, every N minutes (its TF3
+    option, 10 without it), at a pause of every game, as "autosave_<world>_MPFever 1" and "2" in turn (the savegame played
+    is never written; MPFEVER_HOSTAUTOSAVE=<minutes>, 0: never). A dedicated server keeps its own autosave. Test:
+    tests/test_gameautosave077.py (and MPFever.exe --selftest).
   - LAG (big stations, issue #133 22:08-22:16 and #126): a station edit's build is 600 to 838 KB of text; it went as is over
     each player's ordered link and held it 0.8 to 3.3 s per hop, while the other games waited for it (2.6 s in the middle,
     10.6 s at most). Text messages of 16 KB or more now go compressed (12 to 16 times smaller, 2 to 5 ms) and come out exactly

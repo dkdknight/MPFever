@@ -2456,6 +2456,27 @@ namespace MPFever
             return n;
         }
 
+        /// <summary>(0.7.7) The game's autosave interval in minutes (its options, settings.lua: autosaveIntervalMinutes) from the
+        /// most recently written settings.lua of the Steam users of this computer; null when none says it.</summary>
+        public static int? GameAutosaveMinutes()
+        {
+            try
+            {
+                var steam = SteamPath();
+                var userdata = steam == null ? null : Path.Combine(steam, "userdata");
+                if (userdata == null || !Directory.Exists(userdata)) return null;
+                var files = Directory.GetDirectories(userdata).Select(u => Path.Combine(u, AppId, "local", "settings.lua"))
+                    .Where(File.Exists).OrderByDescending(File.GetLastWriteTimeUtc);
+                foreach (var f in files)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(f), @"autosaveIntervalMinutes\s*=\s*(\d+)");
+                    if (m.Success && int.TryParse(m.Groups[1].Value, out var v)) return Math.Max(0, Math.Min(1440, v));
+                }
+            }
+            catch { }
+            return null;
+        }
+
         /// <summary>Adds the mod to the game's default mod selection (settings.lua, mainMenuState.activeModsState), so
         /// that every new game includes it. Only while the game is closed (it rewrites settings.lua on exit).</summary>
         public static void EnsureModActive()
