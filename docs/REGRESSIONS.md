@@ -14,6 +14,7 @@ with its cause and the test that now guards it.
 | **Reports** keep taking out the personal data (Windows and PC names, Steam numbers, public IPs, e-mails). | 0.3 | Reporter.Redact | test_reportshare079.py |
 | A **player's tool** (vehicle window, line window, construction tool) leads; a computer company never does. | 0.7.4 / 0.7.10 | G.lineLeadStamp | test_ailead079.py |
 | **Auto Signals and other mods' script signals and stops** are built on every game. | 0.7.8 | C.scriptEdgeObjects | test_scripteo077.py |
+| A **mod's custom entity** (L-Signalsystem's previews...) that exists on a game is still moved, changed and taken away there; only one that is not there is skipped (#156). | 0.7.11 | executeActionOnce, C.CUSTOM_ENTITY_FNS | test_customguard0711.py |
 
 ## Regressions found
 

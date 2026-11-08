@@ -895,6 +895,20 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 			return result
 		end
 	end
+	-- (0.7.11, #156: Julian's game, 2026-11-08 18:07, the host's L-Signalsystem previews: a custom entity made, moved and taken
+	-- away by commands that name the host's id; on Julian's game that id was no custom entity, the engine applied the move all the
+	-- same (an entity missing in both of its states passes its check) and stopped on "Engine.h:323 GetComponentDataIndex
+	-- 'it != components.end()'". A custom entity's move, state or removal on an entity that is not one here is skipped: it would
+	-- have been refused, or stopped the game. MPFEVER_CUSTOMGUARD=0: as before)
+	if C.CUSTOM_ENTITY_FNS[a.fn] and type(a.args) == "table" and type(a.args[1]) == "number" and os.getenv("MPFEVER_CUSTOMGUARD") ~= "0" then
+		local e = a.args[1]
+		local okB, has = pcall(function() return api.engine.entityExists(e) and api.engine.getComponent(e, api.type.ComponentType.BOUNDING_VOLUME) ~= nil end)
+		if okB and not has then
+			result.err = "custom entity " .. tostring(e) .. " is not one here (its id on its maker's game)"
+			log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " SKIPPED, " .. result.err)
+			return result
+		end
+	end
 	local okm, missing = pcall(missingEntities, a.fn, a.args or {})
 	if okm and #missing > 0 then
 		result.err = "DESYNC missing entities: " .. table.concat(missing, ",")

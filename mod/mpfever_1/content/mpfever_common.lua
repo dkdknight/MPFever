@@ -11,6 +11,8 @@ C.TAB = string.char(9)
 -- warns when the game runs another copy of the mod than the one it installed (issue #136: an old copy in the game's own
 -- mods folder, mods/release/MPFever/mod/mpfever_1, which the game takes before the player's mods folder)
 C.MODVERSION = "0.7.11"
+-- (0.7.11, #156) a custom entity's commands that name one (its move, its state, its removal), see the bridge's guard
+C.CUSTOM_ENTITY_FNS = { makeCustomEntityUpdateTransformationCmd = true, makeCustomEntityUpdateStateCmd = true, makeCustomEntityDestroyCmd = true }
 local BS, NL, CR, TAB, QUOTE = C.BS, C.NL, C.CR, C.TAB, string.char(34)
 
 do

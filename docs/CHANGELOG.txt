@@ -2,6 +2,11 @@ MPFever - Changelog
 ===================
 
 0.7.11 - (in progress)
+  - FIX (crash, #156, Julian's game 2026-11-08 18:07): the host's L-Signalsystem mod made, moved and took away a preview object
+    (a custom entity) by commands that name the host's id. On Julian's game that id was no custom entity (it got another one),
+    the engine applied the move all the same and stopped ("Engine.h:323 GetComponentDataIndex 'it != components.end()'"). A
+    custom entity's move, state or removal on an entity that is not one on this game is now skipped: it would have been
+    refused, or stopped the game (MPFEVER_CUSTOMGUARD=0: as before). Test: tests/test_customguard0711.py.
   - WARNING (#151, tsuhr 2026-11-08): a player took 9 of the host's mods for personal, vehicle and aircraft packs among them;
     the game loaded the host's game without them and stopped right after, on a model it could not find (a game bug that the
     missing models trigger, not MPFever's code: the crash dump points into the game's menu, StartGame). Taking a mod of objects
