@@ -2,6 +2,11 @@ MPFever - Changelog
 ===================
 
 0.7.11 - (in progress)
+  - FIX (#156, side find): a mod's custom entity commands (L-Signalsystem's previews: made, moved, changed, taken away) were
+    counted as replayed builds although they build nothing. In a pause the count grew (76 on Julian's game), and the player's
+    own next build at that game time would have been taken as one of them and never shipped (built on one game only, a resync),
+    the same fault as the industry "extend" of 0.5.13. Not counted any more (MPFEVER_CUSTOMCOUNT=1: counted as before). Test:
+    tests/test_customcount0711.py.
   - FIX (crash, #156, Julian's game 2026-11-08 18:07): the host's L-Signalsystem mod made, moved and took away a preview object
     (a custom entity) by commands that name the host's id. On Julian's game that id was no custom entity (it got another one),
     the engine applied the move all the same and stopped ("Engine.h:323 GetComponentDataIndex 'it != components.end()'"). A

@@ -1052,6 +1052,10 @@ local NO_PROPOSAL_PREFIXES = { "makeVehicle", "makeLine", "makeEntitySet", "make
 -- Counted, every replayed click made the player's next own build look like a replay, never shipped, cancelled and built on
 -- one game only: every resync of a 3.5 h session, 2026-10-28. MPFEVER_EXTENDCOUNT=1: counted as before)
 if os.getenv("MPFEVER_EXTENDCOUNT") ~= "1" then NO_PROPOSAL_PREFIXES[#NO_PROPOSAL_PREFIXES + 1] = "makeCreateIndustryExtendProposalCmd" end
+-- (0.7.11, #156: a mod's custom entity, L-Signalsystem's previews: made, moved, changed, taken away, never a build. Counted, the
+-- host's previews in a pause brought Julian's count to 76 replays, none of them a build; the player's own next build at that game
+-- time would have been taken as one of them and never shipped, built on one game only. MPFEVER_CUSTOMCOUNT=1: counted as before)
+if os.getenv("MPFEVER_CUSTOMCOUNT") ~= "1" then NO_PROPOSAL_PREFIXES[#NO_PROPOSAL_PREFIXES + 1] = "makeCustomEntity" end
 function C.makesProposal(fn)
 	fn = tostring(fn)
 	for _, p in ipairs(NO_PROPOSAL_PREFIXES) do
