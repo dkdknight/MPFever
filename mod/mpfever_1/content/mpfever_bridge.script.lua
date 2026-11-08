@@ -4186,6 +4186,11 @@ G.actLeadWindow = function(what)
 	terrainLead(what, "ACTLEAD: " .. what)
 end
 G.lineLeadStamp = function(a, now)
+	-- (0.7.9) a computer company's command (tok "ai": the host's AI buys, sells, sends vehicles to lines every few minutes) has
+	-- no window anybody waits for: it started the lead like a player's vehicle window, and the other games stood behind the
+	-- host 7 to 11 s each time (the user's server 2026-11-08 14:41-14:58, 8 times in 18 minutes). Stamped as usual now.
+	-- MPFEVER_AILEAD=1: as before
+	if a.tok == "ai" and os.getenv("MPFEVER_AILEAD") ~= "1" then return end
 	local act = G.actLeadOn and G.ACT_LEAD_FNS[a.fn]
 	if not act and (not G.LINE_LEAD_FNS[a.fn] or os.getenv("MPFEVER_LINELEAD") ~= "1") then return end
 	if not G.buildLead then return end

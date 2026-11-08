@@ -1,6 +1,13 @@
 MPFever - Changelog
 ===================
 
+0.7.10 - (in progress)
+  - FIX (lag, the user's server 2026-11-08 14:41-14:58, separate companies with a computer company): every time the host's
+    computer company bought, sold or sent a vehicle to a line, the "vehicle or line window" lead (ACTLEAD, part of « several
+    players building without stopping ») took it for a player with a window open: the host led and the other games stood
+    behind it 7 to 11 s, 8 times in 18 minutes. A computer company's commands are stamped as usual now (MPFEVER_AILEAD=1: as
+    before). Test: tests/test_ailead079.py.
+
 0.7.9 - 2026-11-08: an old copy of the mod in the game folder found and moved out (#136), every player's report in one, sent without a file to drag, the "back up your savegames" warning gone
   - FIX (desync, issue #136, Jakobsmuschel and Peter 2026-11-08: a resynchronisation every 3 minutes, 19 in half an hour):
     the host had once unpacked MPFever into the game's own mods folder (mods\release\MPFever). The game found two mods
