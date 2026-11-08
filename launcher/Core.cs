@@ -802,6 +802,8 @@ namespace MPFever
             psi.Arguments = "--script mpfever_1::/mpfever_auto.lua";
             if (AutoSave != null) psi.EnvironmentVariables["MPFEVER_SAVE"] = AutoSave;
             GameInstall.DiagEnv(psi.EnvironmentVariables);
+            // (0.7.10) this player's settings the native module reads at the game's start (« Same platform order (test) »)
+            foreach (var kv in Options.NativeEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;
             // tests: settings for one game only, MPFEVER_ENV_HOST / MPFEVER_ENV_CLIENT = "NAME=value;NAME=value"
             var roleEnv = Environment.GetEnvironmentVariable("MPFEVER_ENV_" + (Role ?? "").ToUpperInvariant());
             if (!string.IsNullOrEmpty(roleEnv))

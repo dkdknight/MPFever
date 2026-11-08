@@ -140,8 +140,10 @@ def launcher():
     check("host: gone, or the session ended: forgotten", "lock (reviewing) reviewing.Remove(p.Name);" in form and "lock (reviewing) reviewing.Clear();" in form)
     check("MPFEVER_JOINREVIEW=0: as before", 'Environment.GetEnvironmentVariable("MPFEVER_JOINREVIEW") != "0"' in form)
     # the player's side
-    check("player: nothing to look at (same mods and DLCs) or accepted already: joins at once",
-          "if (review && !JoinReviewClear() && reviewAccepted != key)" in form and "else send(false);" in form)
+    # (0.7.10, the user: the review every time; MPFEVER_REVIEWALWAYS=0: only when something differs, as 0.7.0 to 0.7.9)
+    check("player: the review every time a running game is joined, accepted already (back after a cut): joins at once",
+          "if (review && (always || !JoinReviewClear()) && reviewAccepted != key)" in form and "else send(false);" in form
+          and 'bool always = Environment.GetEnvironmentVariable("MPFEVER_REVIEWALWAYS") != "0";' in form)
     check("player: else the review page, resync_have held until « Join the game »",
           'menuPhase = "review";' in form and 'reviewSend = () => { reviewAccepted = key; send(true); };' in form and 'else if (cmd == "joinready")' in form)
     check("player: the connection's « connected » does not hide the review", 'if (!clientCancelled && menuPhase != "review")' in form)

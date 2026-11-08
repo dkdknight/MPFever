@@ -24167,6 +24167,45 @@
       "ko": "{0}이(가) 문제 보고서를 만드는 중: 플레이어들의 보고서가 전송됩니다",
       "zh-CN": "{0} 正在制作问题报告：玩家的报告会发送给对方",
       "zh-TW": "{0} 正在製作問題報告：玩家的報告會傳送給對方"
+    },
+    "Same platform order (test)": {
+      "de": "Gleiche Bahnsteig-Reihenfolge (Test)",
+      "es": "Mismo orden de andenes (prueba)",
+      "it": "Stesso ordine dei binari (test)",
+      "nl": "Zelfde perronvolgorde (test)",
+      "pl": "Ta sama kolejność peronów (test)",
+      "pt-BR": "Mesma ordem de plataformas (teste)",
+      "ru": "Одинаковый порядок платформ (тест)",
+      "ja": "ホームの順序を統一（テスト）",
+      "ko": "같은 승강장 순서(테스트)",
+      "zh-CN": "相同的站台顺序（测试）",
+      "zh-TW": "相同的月台順序（測試）"
+    },
+    "A test against vehicles drifting apart in stations: the vehicles pick their platform or terminal in the same order on every game. Every player of the game must turn it on, the host too, then start the game again.": {
+      "de": "Ein Test gegen Fahrzeuge, die in Bahnhöfen auseinanderlaufen: die Fahrzeuge wählen ihren Bahnsteig oder ihr Terminal auf jedem Spiel in derselben Reihenfolge. Alle Spieler der Partie müssen es einschalten, auch der Host, und das Spiel neu starten.",
+      "es": "Una prueba contra los vehículos que divergen en las estaciones: los vehículos eligen su andén o terminal en el mismo orden en cada partida. Todos los jugadores deben activarlo, también el anfitrión, y reiniciar el juego.",
+      "it": "Un test contro i veicoli che divergono nelle stazioni: i veicoli scelgono il binario o il terminal nello stesso ordine su ogni partita. Tutti i giocatori devono attivarlo, anche l'host, poi riavviare il gioco.",
+      "nl": "Een test tegen voertuigen die in stations uit elkaar lopen: de voertuigen kiezen hun perron of terminal in dezelfde volgorde op elk spel. Elke speler moet het aanzetten, ook de host, en daarna het spel opnieuw starten.",
+      "pl": "Test przeciw pojazdom, które rozjeżdżają się na stacjach: pojazdy wybierają peron lub terminal w tej samej kolejności w każdej grze. Każdy gracz musi to włączyć, także host, a potem ponownie uruchomić grę.",
+      "pt-BR": "Um teste contra veículos que divergem nas estações: os veículos escolhem a plataforma ou o terminal na mesma ordem em cada jogo. Todos os jogadores precisam ativar, o anfitrião também, e reiniciar o jogo.",
+      "ru": "Тест против расхождения транспорта на станциях: транспорт выбирает платформу или терминал в одном порядке в каждой игре. Включить должны все игроки, и хост тоже, затем перезапустить игру.",
+      "ja": "駅で車両がずれる問題へのテスト：車両がどのゲームでも同じ順序でホームやターミナルを選びます。ホストを含む全プレイヤーが有効にし、ゲームを再起動する必要があります。",
+      "ko": "역에서 차량이 어긋나는 문제에 대한 테스트: 차량이 모든 게임에서 같은 순서로 승강장이나 터미널을 고릅니다. 호스트를 포함한 모든 플레이어가 켜고 게임을 다시 시작해야 합니다.",
+      "zh-CN": "针对车辆在车站中出现偏差的测试：车辆在每个游戏中以相同的顺序选择站台或终点站。所有玩家（包括主机）都必须开启，然后重新启动游戏。",
+      "zh-TW": "針對車輛在車站中出現偏差的測試：車輛在每個遊戲中以相同的順序選擇月台或終點站。所有玩家（包括主機）都必須開啟，然後重新啟動遊戲。"
+    },
+    "« Same platform order (test) »: {0} has it {1}, the host has it {2}. Every player needs the same setting (the launcher's settings, then start the game again), or the games desync.": {
+      "de": "« Gleiche Bahnsteig-Reihenfolge (Test) »: {0} hat es {1}, der Host {2}. Alle Spieler brauchen dieselbe Einstellung (Einstellungen des Launchers, dann das Spiel neu starten), sonst desynchronisieren die Spiele.",
+      "es": "« Mismo orden de andenes (prueba) »: {0} lo tiene {1}, el anfitrión {2}. Todos los jugadores necesitan el mismo ajuste (ajustes del launcher y reiniciar el juego), o las partidas se desincronizan.",
+      "it": "« Stesso ordine dei binari (test) »: {0} ce l'ha {1}, l'host {2}. Tutti i giocatori devono avere la stessa impostazione (impostazioni del launcher, poi riavviare il gioco), altrimenti le partite si desincronizzano.",
+      "nl": "« Zelfde perronvolgorde (test) »: {0} heeft het {1}, de host {2}. Elke speler heeft dezelfde instelling nodig (instellingen van de launcher, dan het spel opnieuw starten), anders raken de spellen uit sync.",
+      "pl": "« Ta sama kolejność peronów (test) »: {0} ma to {1}, host {2}. Każdy gracz potrzebuje tego samego ustawienia (ustawienia launchera, potem ponowne uruchomienie gry), inaczej gry się rozsynchronizują.",
+      "pt-BR": "« Mesma ordem de plataformas (teste) »: {0} está com {1}, o anfitrião com {2}. Todos os jogadores precisam do mesmo ajuste (ajustes do launcher e reiniciar o jogo), senão os jogos dessincronizam.",
+      "ru": "« Одинаковый порядок платформ (тест) »: у {0} — {1}, у хоста — {2}. Всем игрокам нужна одна и та же настройка (настройки лаунчера, затем перезапуск игры), иначе игры рассинхронизируются.",
+      "ja": "「ホームの順序を統一（テスト）」：{0} は {1}、ホストは {2} です。全プレイヤーが同じ設定にする必要があります（ランチャーの設定、その後ゲームを再起動）。そうしないとゲームが非同期になります。",
+      "ko": "« 같은 승강장 순서(테스트) »: {0}은(는) {1}, 호스트는 {2}입니다. 모든 플레이어가 같은 설정이어야 합니다(런처 설정 후 게임 재시작). 그렇지 않으면 게임이 동기화되지 않습니다.",
+      "zh-CN": "« 相同的站台顺序（测试）»：{0} 为{1}，主机为{2}。所有玩家都需要相同的设置（在启动器设置中，然后重新启动游戏），否则游戏会失去同步。",
+      "zh-TW": "« 相同的月台順序（測試）»：{0} 為{1}，主機為{2}。所有玩家都需要相同的設定（在啟動器設定中，然後重新啟動遊戲），否則遊戲會失去同步。"
     }
   }
 }

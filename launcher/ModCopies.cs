@@ -87,6 +87,16 @@ namespace MPFever
             return dst;
         }
 
+        /// <summary>(0.7.10) A game's hello with this player's « Same platform order (test) » added (["order2"]=true/false).</summary>
+        public static string WithOrder2(string payload, bool on)
+        {
+            if (string.IsNullOrEmpty(payload)) return payload;
+            int end = payload.LastIndexOf('}');
+            if (end < 0 || payload.Contains("[\"order2\"]")) return payload;
+            var inner = payload.Substring(0, end).TrimEnd();
+            return inner + (inner.EndsWith("{", StringComparison.Ordinal) ? "" : ",") + "[\"order2\"]=" + (on ? "true" : "false") + payload.Substring(end);
+        }
+
         /// <summary>The text of a game whose mod is not the host's MPFever's (null: the same). mv: the version its "hello" said
         /// (null or "": a mod before 0.7.9).</summary>
         public static string VersionProblem(string who, string mv, string mine)
@@ -100,6 +110,27 @@ namespace MPFever
 
     sealed partial class MainForm
     {
+        // (0.7.10) « Same platform order (test) » (MPFEVER_ORDER2): it changes how every game simulates, so a game without it in a
+        // session with it (or the other way) drifts apart. The players' games tell theirs with their hello, the host warns.
+        readonly HashSet<string> order2Warned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void WarnOrder2(string who, string payload)
+        {
+            try
+            {
+                var h = LuaLit.Parse(payload) as Dictionary<object, object>;
+                bool theirs = h != null && h.TryGetValue("order2", out var v) && v is bool b && b;
+                bool mine = Options.Order2On();
+                if (theirs == mine) return;
+                lock (order2Warned) if (!order2Warned.Add(BaseName(who ?? "") + "|" + theirs)) return;
+                var text = F("« Ordre des quais identique (test) » : {0} l'a {1}, l'hôte l'a {2}. Tous les joueurs doivent avoir le même réglage (réglages du launcher, puis relancer le jeu), sinon les parties se désynchronisent.",
+                    "« Same platform order (test) »: {0} has it {1}, the host has it {2}. Every player needs the same setting (the launcher's settings, then start the game again), or the games desync.",
+                    BaseName(who ?? ""), theirs ? T("activé", "on") : T("désactivé", "off"), mine ? T("activé", "on") : T("désactivé", "off"));
+                Log.Err(text);
+                HostChat("msg", "MPFever", text);
+            }
+            catch { }
+        }
+
         List<string> staleMods;
         readonly HashSet<string> modVersionWarned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

@@ -19,6 +19,7 @@ namespace MPFever
         public bool Expert;           // shown only with « Expert settings »
         public bool DefaultOn;
         public string OnValue = "", OffValue = "";   // what the mod reads (empty: the variable is not set)
+        public bool Native;           // (0.7.10) also set in the game's environment when on (the native module reads it at its start)
         public Func<string> Name, Help;
     }
 
@@ -53,6 +54,11 @@ namespace MPFever
             new Opt { Key = "MPFEVER_ADAPTAHEAD", DefaultOn = false, OnValue = "1",
                 Name = () => T("Mode PC lent", "Slow PC mode"),
                 Help = () => T("Donne plus de marge aux constructions quand ce PC est très chargé.", "Gives builds more room when this PC is very busy.") },
+            // (0.7.10, test) the platform-order fixes of TPF3-MP ported in 0.5.0 and off since: every player of a session the same
+            new Opt { Key = "MPFEVER_ORDER2", DefaultOn = false, OnValue = "1", Native = true,
+                Name = () => T("Ordre des quais identique (test)", "Same platform order (test)"),
+                Help = () => T("Test contre les véhicules qui divergent dans les gares : les véhicules choisissent leur quai ou leur terminal dans le même ordre sur chaque jeu. Tous les joueurs de la partie doivent l'activer, l'hôte aussi, puis relancer le jeu.",
+                    "A test against vehicles drifting apart in stations: the vehicles pick their platform or terminal in the same order on every game. Every player of the game must turn it on, the host too, then start the game again.") },
             new Opt { Key = "MPFEVER_STEPLOG", DefaultOn = false, OnValue = "1",
                 Name = () => T("Journaux détaillés", "Detailed logs"),
                 Help = () => T("Plus de détails dans les rapports de problème (fichiers plus gros).", "More details in problem reports (bigger files).") },
@@ -126,6 +132,13 @@ namespace MPFever
             }
             return d;
         }
+
+        /// <summary>(0.7.10) Whether this player turned « Same platform order (test) » on.</summary>
+        public static bool Order2On() => All.Where(o => o.Key == "MPFEVER_ORDER2").Select(IsOn).FirstOrDefault();
+
+        /// <summary>(0.7.10) This player's own settings the game's native module reads at its start: KEY=value of each one on.</summary>
+        public static IEnumerable<KeyValuePair<string, string>> NativeEnv() =>
+            All.Where(o => o.Native && !o.Session && IsOn(o) && o.OnValue != "").Select(o => new KeyValuePair<string, string>(o.Key, o.OnValue));
 
         /// <summary>settings.txt for the mod: the session settings (the host's when received) and this player's own.</summary>
         public static string ModFile()

@@ -7,7 +7,7 @@ with its cause and the test that now guards it.
 
 | Behaviour | Since | Where | Test |
 |---|---|---|---|
-| **Join review**: a player joining a game already running sees its mods and DLCs on the Multiplayer page and presses « Join the game » before the game loads, when anything differs (a mod missing, in another version, incompatible, **or different DLCs either way**). The same mods and DLCs join at once; a player who accepted already, back after a cut, too. | 0.7.0 | MainForm.JoinReviewClear, welcome "review" | test_joinreview.py, test_reviewdlc0710.py |
+| **Join review**: a player joining a game already running sees its mods and DLCs on the Multiplayer page and presses « Join the game » before the game loads, **every time** (0.7.10, the user's choice; before: only when something differed). A player who accepted already, back after a cut to the same game, is not asked again. | 0.7.0 / 0.7.10 | MainForm.JoinReviewClear, welcome "review" | test_joinreview.py, test_reviewdlc0710.py |
 | **Lobby** of a player's own game: the players wait in the lobby with the savegame's mods and DLCs until the host starts. | 0.4 | MainForm lobby, mpfever_menu.lua | test_lobbylayout.py, test_lobbyrules.py |
 | A **personal mod** (taken for personal on the Multiplayer page) is not compared with the host's. | 0.4.6 | Mods, modpersonal | test_modlocal077.py |
 | The **savegame played is never written** by MPFever: session saves have names of their own. | 0.5 | resync_save, HostAutosave | test_gameautosave077.py |

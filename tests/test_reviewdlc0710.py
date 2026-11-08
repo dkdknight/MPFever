@@ -36,8 +36,8 @@ ch = ch[:ch.index("\n        }\n")]
 check("dlcsDiffer = !string.IsNullOrEmpty(hostList) && (hostOnly.Count > 0 || mineOnly.Count > 0);" in ch
       and ch.index("Mods.DlcDiff(hostList, mine)") < ch.index("dlcsDiffer ="), "  either way, whatever the warnings say; an older host that says nothing: no difference")
 check(form.count('lastHostDlcs = null; dlcWarn = ""; dlcsDiffer = false;') == 3, "  forgotten with the host, where the DLC warning is")
-check("if (review && !JoinReviewClear() && reviewAccepted != key)" in form and "else send(false);" in form,
-      "the same mods and DLCs, or accepted already: joins at once, as designed in 0.7.0")
+check("if (review && (always || !JoinReviewClear()) && reviewAccepted != key)" in form and "else send(false);" in form,
+      "the review every time (the user's choice, 0.7.10), with MPFEVER_REVIEWALWAYS=0 only when something differs; accepted already: joins at once")
 check(os.path.isfile(os.path.join(ROOT, "docs", "REGRESSIONS.md")) and "join review" in open(os.path.join(ROOT, "docs", "REGRESSIONS.md"), encoding="utf-8").read(),
       "docs/REGRESSIONS.md records it")
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")

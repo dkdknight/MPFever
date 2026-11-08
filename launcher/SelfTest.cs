@@ -114,6 +114,10 @@ namespace MPFever
                 C(ModCopies.Stale(game, src).Count == 0, "  then none left");
                 // (MODVERCHECK) the version a game's mod says in its "hello"
                 C(ModCopies.VersionProblem("Peter", "0.7.9", "0.7.9") == null, "the same mod version: nothing said");
+                // (0.7.10, ORDER2) the player's « Same platform order (test) » with its game's hello
+                C(ModCopies.WithOrder2("{[\"name\"]=\"Kev\",[\"mv\"]=\"0.7.10\"}", true) == "{[\"name\"]=\"Kev\",[\"mv\"]=\"0.7.10\",[\"order2\"]=true}"
+                    && ModCopies.WithOrder2("{}", false) == "{[\"order2\"]=false}"
+                    && ModCopies.WithOrder2("{[\"order2\"]=true}", false) == "{[\"order2\"]=true}", "the hello says this player's platform-order setting (once)");
                 var vp = ModCopies.VersionProblem("Peter", null, "0.7.9");
                 C(vp != null && vp.StartsWith("Peter") && vp.Contains("0.7.9"), "a mod that says no version (before 0.7.9): warned (" + vp + ")");
                 var vp2 = ModCopies.VersionProblem("Jakob", "0.7.8", "0.7.9");
