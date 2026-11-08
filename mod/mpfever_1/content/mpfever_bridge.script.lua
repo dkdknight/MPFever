@@ -899,12 +899,12 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	-- away by commands that name the host's id; on Julian's game that id was no custom entity, the engine applied the move all the
 	-- same (an entity missing in both of its states passes its check) and stopped on "Engine.h:323 GetComponentDataIndex
 	-- 'it != components.end()'". A custom entity's move, state or removal on an entity that is not one here is skipped: it would
-	-- have been refused, or stopped the game. MPFEVER_CUSTOMGUARD=0: as before)
+	-- have been refused, or stopped the game. #158, 18:33: that id was a node of Julian's tracks there, see C.notCustomEntity.
+	-- MPFEVER_CUSTOMGUARD=0: as before)
 	if C.CUSTOM_ENTITY_FNS[a.fn] and type(a.args) == "table" and type(a.args[1]) == "number" and os.getenv("MPFEVER_CUSTOMGUARD") ~= "0" then
-		local e = a.args[1]
-		local okB, has = pcall(function() return api.engine.entityExists(e) and api.engine.getComponent(e, api.type.ComponentType.BOUNDING_VOLUME) ~= nil end)
-		if okB and not has then
-			result.err = "custom entity " .. tostring(e) .. " is not one here (its id on its maker's game)"
+		local why = C.notCustomEntity(a.args[1], true)
+		if why then
+			result.err = "custom entity " .. tostring(a.args[1]) .. ": " .. why .. " (its id on its maker's game)"
 			log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " SKIPPED, " .. result.err)
 			return result
 		end
@@ -1790,8 +1790,40 @@ function DET.installModCmds()
 			end)
 		end
 	end
+	-- (0.7.11, #158: Julian's game, 2026-11-08 18:33) a mod's own custom entity commands, from its game script on every game
+	-- (L-Signalsystem moves its previews when it hears of them, by the ids they have on the game that made them): one that names
+	-- no custom entity here (a node of this game's tracks had that id) is not sent, the game stopped on it. Not one of these
+	-- commands, or one on a custom entity: as before. MPFEVER_CUSTOMGUARD=0: sent as before
+	local ctags = setmetatable({}, { __mode = "k" })
+	local customDropped = 0
+	if os.getenv("MPFEVER_CUSTOMGUARD") ~= "0" then
+		for name, _ in pairs(C.CUSTOM_ENTITY_FNS) do
+			local okF, fn = pcall(function() return api.cmd[name] end)
+			if okF and fn ~= nil then
+				pcall(function()
+					api.cmd[name] = function(...)
+						local cmd = fn(...)
+						if cmd ~= nil then ctags[cmd] = { name = name, e = (...) } end
+						return cmd
+					end
+				end)
+			end
+		end
+	end
 	local seen, dropped = {}, 0
 	api.cmd.sendCommand = function(cmd, cb, ...)
+		local ct = cmd ~= nil and ctags[cmd] or nil
+		if ct and (C.ROLE == "host" or C.ROLE == "client") then
+			local why = C.notCustomEntity(ct.e)
+			if why then
+				customDropped = customDropped + 1
+				if customDropped <= 5 or customDropped % 100 == 0 then
+					log("mod command " .. ct.name .. " on entity " .. tostring(ct.e) .. " not sent: " .. why .. " (x" .. customDropped .. ")")
+				end
+				if cb then pcall(cb, nil, false, {}) end
+				return
+			end
+		end
 		local tag = cmd ~= nil and tags[cmd] or nil
 		-- (the first Lua function up the stack: MPFever applies the commands it ships through pcall, a C function)
 		local src = ""

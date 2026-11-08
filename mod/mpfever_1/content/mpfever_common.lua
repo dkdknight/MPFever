@@ -13,6 +13,27 @@ C.TAB = string.char(9)
 C.MODVERSION = "0.7.11"
 -- (0.7.11, #156) a custom entity's commands that name one (its move, its state, its removal), see the bridge's guard
 C.CUSTOM_ENTITY_FNS = { makeCustomEntityUpdateTransformationCmd = true, makeCustomEntityUpdateStateCmd = true, makeCustomEntityDestroyCmd = true }
+-- (0.7.11, #156/#158) Is entity e no mod's custom entity on this game? Such a command names it by its id on the game that made
+-- it; on another game that id can be missing, or be something else: on Julian's game (2026-11-08 18:33) the id of marcu's
+-- L-Signalsystem preview, 138059, was a node of Julian's tracks, and the preview's move stopped the game (GetComponentDataIndex,
+-- OctreeSystemNode). Returns why (a text), or nil when it may be one (or when it cannot be told). A custom entity has none of the
+-- world's components below. strict: one without a bounding volume is not one either (a custom entity has one)
+C.CUSTOM_NOT = { "BASE_NODE", "BASE_EDGE", "CONSTRUCTION", "TOWN_BUILDING", "TRANSPORT_VEHICLE", "SIM_PERSON", "ANIMAL", "STATION", "LINE", "TOWN", "INDUSTRY" }
+function C.notCustomEntity(e, strict)
+	if type(e) ~= "number" then return nil end
+	local okE, there = pcall(function() return api.engine.entityExists(e) end)
+	if not okE then return nil end
+	if not there then return "not here" end
+	for _, k in ipairs(C.CUSTOM_NOT) do
+		local okC, has = pcall(function() return api.engine.getComponent(e, api.type.ComponentType[k]) ~= nil end)
+		if okC and has then return "a " .. k:lower() .. " here" end
+	end
+	if strict then
+		local okB, bv = pcall(function() return api.engine.getComponent(e, api.type.ComponentType.BOUNDING_VOLUME) ~= nil end)
+		if okB and not bv then return "no custom entity here" end
+	end
+	return nil
+end
 local BS, NL, CR, TAB, QUOTE = C.BS, C.NL, C.CR, C.TAB, string.char(34)
 
 do
