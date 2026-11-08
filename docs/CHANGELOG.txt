@@ -2,6 +2,11 @@ MPFever - Changelog
 ===================
 
 0.7.12 - (in progress)
+  - FIX (crash, #162, rasma's game 2026-11-08 20:03): a game script mod of the host named its new station ("Avenue de la
+    Scierie") by the host's id; on rasma's game that id was a cargo item, which has no name, and the game stopped
+    ("GetComponentDataIndex", Name). The game scripts' interface commands were not checked as the simulation's mods' are. A
+    name, whoever gives it, and a game script's colour now go only on an entity that has one on this game; else skipped
+    (MPFEVER_NAMEGUARD=0: as before). Test: tests/test_nameguard0712.py.
   - FIX (reports, #157/#161, yoyo 2026-11-08, three players): the report had none of the other players' reports (0 of 1, then
     0 of 2). A player's report is made before any of it is sent, 20 s and more after a long session, and the one asking gave up
     after 25 s without news. While a player's report is made, a word every 8 s now says it is coming, and the one asking waits

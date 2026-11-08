@@ -882,9 +882,16 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	-- vehicles after their destination, every name was skipped, the mod saw the old name 2 s later and sent it again, without
 	-- end: 206000 commands in a session, the game at half its speed. A line update still needs a line. MPFEVER_MODANYTARGET=0:
 	-- lines only, as before)
-	if a.tok == "mod" and type(a.args) == "table" then
+	-- (0.7.12, #162: rasma's game, 2026-11-08 20:03: a game script mod of the host named its new station "Avenue de la Scierie"
+	-- by the host's id, 215954; on rasma's game that id was a cargo item, with no name, and the game stopped on
+	-- GetComponentDataIndex (Name). The game scripts' interface commands ("gsmod-...") were not checked as the simulation's mods'
+	-- are. A name, whoever gives it, and a game script's colour now go only on an entity that has one here. MPFEVER_NAMEGUARD=0:
+	-- the simulation's mods' commands only, as before)
+	local nameGuard = os.getenv("MPFEVER_NAMEGUARD") ~= "0" and a.tok ~= "mod" and (a.fn == "makeEntitySetNameCmd"
+		or (a.fn == "makeEntitySetColorCmd" and type(a.tok) == "string" and a.tok:sub(1, 6) == "gsmod-"))
+	if (a.tok == "mod" or nameGuard) and type(a.args) == "table" then
 		local need, what = api.type.ComponentType.LINE, "a line"
-		if os.getenv("MPFEVER_MODANYTARGET") ~= "0" then
+		if nameGuard or os.getenv("MPFEVER_MODANYTARGET") ~= "0" then
 			if a.fn == "makeEntitySetNameCmd" then need, what = api.type.ComponentType.NAME, "something with a name"
 			elseif a.fn == "makeEntitySetColorCmd" then need, what = api.type.ComponentType.COLOR, "something with a colour" end
 		end
