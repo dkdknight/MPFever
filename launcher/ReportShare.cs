@@ -73,7 +73,23 @@ namespace MPFever
             return sb.ToString();
         }
 
+        // (0.7.11, #146) one report at a time, whichever button asked: two clicks a few seconds apart (the launcher's button has
+        // no guard of its own) made two reports, and the second one, asking while the first one's wait was under way, got no
+        // other player's report (its request replaced the first one's). MPFEVER_REPORTONE=0: as before
+        int reportRunning;
+
         void Report(bool crashed)
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_REPORTONE") != "0" && System.Threading.Interlocked.CompareExchange(ref reportRunning, 1, 0) != 0)
+            {
+                Log.W(F("Rapport déjà en cours de création : demande ignorée.", "A report is already being made: request ignored."));
+                return;
+            }
+            try { ReportOnce(crashed); }
+            finally { System.Threading.Interlocked.Exchange(ref reportRunning, 0); }
+        }
+
+        void ReportOnce(bool crashed)
         {
             try
             {

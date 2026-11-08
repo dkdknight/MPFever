@@ -2,6 +2,9 @@ MPFever - Changelog
 ===================
 
 0.7.11 - (in progress)
+  - FIX (#146, Domenik 2026-11-08): one problem report at a time, whichever button asked. Two clicks a few seconds apart
+    made two reports, and the second one, asking the other players while the first one's wait was under way, got none of
+    their reports (MPFEVER_REPORTONE=0: as before). Test: tests/test_reportone0711.py.
 
 0.7.10 - 2026-11-08: the join page opens every time, a computer company no longer freezes the other games, « Same platform order (test) » in the settings
   - CHANGE (the user 2026-11-08: « je souhaite que la page du salon s'ouvre systématiquement »): the join review opens every
