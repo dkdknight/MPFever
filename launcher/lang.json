@@ -24219,6 +24219,19 @@
       "ko": "다른 MPFever 설치가 끝나지 않습니다: 기다리지 않고 계속합니다.",
       "zh-CN": "另一个 MPFever 安装未结束：不再等待，继续进行。",
       "zh-TW": "另一個 MPFever 安裝未結束：不再等待，繼續進行。"
+    },
+    "{0} adds vehicles, buildings or objects the host's game uses: without it they are missing on this PC and the game may crash while it loads the host's game. Install it rather than take it for personal.": {
+      "de": "{0} fügt Fahrzeuge, Gebäude oder Objekte hinzu, die das Spiel des Hosts nutzt: ohne ihn fehlen sie auf diesem PC und das Spiel kann beim Laden des Host-Spiels abstürzen. Installiere ihn lieber, statt ihn als persönlich zu nehmen.",
+      "es": "{0} añade vehículos, edificios u objetos que usa la partida del anfitrión: sin él faltan en este PC y el juego puede cerrarse al cargar la partida del anfitrión. Instálalo en lugar de tomarlo como personal.",
+      "it": "{0} aggiunge veicoli, edifici o oggetti usati dalla partita dell'host: senza di esso mancano su questo PC e il gioco può bloccarsi caricando la partita dell'host. Installalo invece di prenderlo come personale.",
+      "nl": "{0} voegt voertuigen, gebouwen of objecten toe die het spel van de host gebruikt: zonder deze ontbreken ze op deze pc en kan het spel crashen bij het laden van het spel van de host. Installeer hem liever dan hem als persoonlijk te nemen.",
+      "pl": "{0} dodaje pojazdy, budynki lub obiekty używane w grze hosta: bez niego brakuje ich na tym komputerze i gra może się zawiesić przy wczytywaniu gry hosta. Zainstaluj go, zamiast brać go jako osobisty.",
+      "pt-BR": "{0} adiciona veículos, prédios ou objetos que o jogo do anfitrião usa: sem ele, eles faltam neste PC e o jogo pode travar ao carregar o jogo do anfitrião. Instale-o em vez de tomá-lo como pessoal.",
+      "ru": "{0} добавляет транспорт, здания или объекты, которые использует игра хоста: без него их нет на этом ПК, и игра может вылететь при загрузке игры хоста. Установите его, а не берите как личный.",
+      "ja": "{0} はホストのゲームが使う車両・建物・オブジェクトを追加します。これがないとこの PC ではそれらが欠け、ホストのゲームの読み込み中にゲームがクラッシュすることがあります。個人用にせずインストールしてください。",
+      "ko": "{0}은(는) 호스트 게임이 사용하는 차량, 건물 또는 오브젝트를 추가합니다. 없으면 이 PC에서 그것들이 빠지고 호스트 게임을 불러오는 중 게임이 충돌할 수 있습니다. 개인용으로 두지 말고 설치하세요.",
+      "zh-CN": "{0} 添加了主机游戏使用的车辆、建筑或物体：没有它，本电脑上会缺少这些内容，游戏在载入主机游戏时可能崩溃。请安装它，而不是设为个人模组。",
+      "zh-TW": "{0} 新增了主機遊戲使用的車輛、建築或物件：沒有它，本電腦上會缺少這些內容，遊戲在載入主機遊戲時可能當機。請安裝它，而不是設為個人模組。"
     }
   }
 }

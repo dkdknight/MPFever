@@ -2377,6 +2377,16 @@ namespace MPFever
                 mineAt = DateTime.MinValue;
                 Log.W(F("Mod {0} : {1}", "Mod {0}: {1}", id, cmd == "modpersonal" ? (on ? T("pris pour personnel (il peut désynchroniser la partie)", "taken for personal (it may desynchronise the game)") : T("de nouveau partagé", "shared again"))
                     : (on ? T("mod personnel activé", "personal mod on") : T("mod personnel désactivé", "personal mod off"))));
+                // (0.7.11, #151: tsuhr took 9 of the host's mods for personal, vehicle and aircraft packs among them; the game loaded
+                // the host's game without them and stopped right after, on a model it could not find, a game bug the missing models
+                // trigger) a mod of objects the host's game uses, taken for personal: said plainly. MPFEVER_PERSONALWARN=0: not said
+                if (cmd == "modpersonal" && on && Environment.GetEnvironmentVariable("MPFEVER_PERSONALWARN") != "0")
+                {
+                    var me = Mods.Parse(lobbyMods).FirstOrDefault(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase));
+                    if (me != null && me.Kind == Mods.Assets)
+                        Log.Warn(F("{0} ajoute des véhicules, bâtiments ou objets que la partie de l'hôte utilise : sans lui, ils manquent sur ce PC et le jeu peut planter en chargeant la partie de l'hôte. Installez-le plutôt que de le prendre pour personnel.",
+                            "{0} adds vehicles, buildings or objects the host's game uses: without it they are missing on this PC and the game may crash while it loads the host's game. Install it rather than take it for personal.", me.Name));
+                }
                 if (lobbyOpen)
                 {
                     // the host's own: its list as the players see it changes

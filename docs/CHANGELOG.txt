@@ -2,6 +2,18 @@ MPFever - Changelog
 ===================
 
 0.7.11 - (in progress)
+  - WARNING (#151, tsuhr 2026-11-08): a player took 9 of the host's mods for personal, vehicle and aircraft packs among them;
+    the game loaded the host's game without them and stopped right after, on a model it could not find (a game bug that the
+    missing models trigger, not MPFever's code: the crash dump points into the game's menu, StartGame). Taking a mod of objects
+    the host's game uses for personal now says plainly that the game may crash and that it should be installed instead
+    (MPFEVER_PERSONALWARN=0: not said). Test: tests/test_personalwarn0711.py.
+  - FIX (money, #147/#149, Tim and Domenik 2026-11-08, separate companies): a game a few steps behind the host got the host's
+    money at each check before it had taken that check itself; the values were dropped without a word and its money was never
+    corrected (company 2 stayed 9000 apart for half an hour, then the games reloaded). They are now kept and applied when that
+    game takes the check, a check corrected once only (MPFEVER_AUTHEARLY=0: as before). And a refund booked by the simulation
+    was counted one step too long: a check right after it took a value off by the refund, and every other game was "corrected"
+    by it and back at the next check (keviK 2026-11-07: -252676 then +252676). Counted during its own update only
+    (MPFEVER_REFUNDSTEP=0: as before). Test: tests/test_authearly0711.py.
   - FIX (crash, #152, Pascal's game 2026-11-08 17:48): a station open in the module editor while another player's build
     removed it stopped the game ("Assertion `m_entity.GetId() < 0 || (EntityExists(m_entity) && HasComponent(m_entity,
     Construction))' failed", ModuleBuilder.cpp:268). The editor's four reads of its construction are checked by the native

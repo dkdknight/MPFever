@@ -466,6 +466,11 @@ function REFUND.book(st, now)
 					-- (the simulation's states take no callback: applied with the next iteration all the same, counted until then,
 					-- without the "not answered" note)
 					if not okcb then api.cmd.sendCommand(cmd); p.quiet = true end
+					-- (0.7.11, #147: the simulation's booking is applied with the next step's commands; counted two steps, a check
+					-- one step later counted it on top of the balance that had it already, the host's value was off by the refund
+					-- and every other game was "corrected" by it, then back at the next check (keviK 2026-11-07: -252676, +252676).
+					-- Counted during this update only. MPFEVER_REFUNDSTEP=0: two steps, as before)
+					if p.quiet and os.getenv("MPFEVER_REFUNDSTEP") ~= "0" then p.till = now end
 					log("refund: build " .. tostring(rc.uid) .. " cost its builder " .. rc.cost .. ", its replay here " .. rc.got .. " (" .. rc.n
 						.. " proposal(s)): " .. d .. " booked on company " .. tostring(rc.co or "-") .. " as " .. (sub and ("construction " .. rc.kind) or "other") .. " at t=" .. now)
 				else
@@ -1507,6 +1512,21 @@ local function simApplyDue(state)
 					st.authOwn = st.authOwn or {}
 					st.authOwn[#st.authOwn + 1] = { n = a.n, auth = okA and auth or nil }
 					while #st.authOwn > 10 do table.remove(st.authOwn, 1) end
+					-- (0.7.11, #147) the host's values for this checkpoint that came before it: applied now
+					if st.authEarly and okA then
+						local keepE = {}
+						for _, e in ipairs(st.authEarly) do
+							if e.n == a.n and not (st.authDone and st.authDone[a.n]) then
+								log("host authority: checkpoint " .. tostring(a.n) .. " of the host came before this game took it: applied now")
+								correctMoney(auth, e, a.n, api.cmd.sendCommand, st.co)
+								st.authDone = st.authDone or {}
+								st.authDone[a.n] = true
+							elseif e.n > a.n then keepE[#keepE + 1] = e end
+						end
+						st.authEarly = #keepE > 0 and keepE or nil
+					end
+					-- (the corrected checkpoints remembered for the last 20)
+					if st.authDone then for k, _ in pairs(st.authDone) do if k < a.n - 20 then st.authDone[k] = nil end end end
 				elseif a.fn == "mpfCoJoin" then
 					local okc, errc = pcall(coApply, st, a)
 					if not okc then log("companies: " .. tostring(a.fn) .. " failed: " .. tostring(errc)) end
@@ -3745,8 +3765,25 @@ local function handleEvent(userParams, state, src, id, name, param)
 			-- (in the state: the simulation's script runs in more than one Lua state. Cleared at every load, see resumeAfterLoad)
 			st.solo = param.on ~= false or nil
 		elseif name == "auth" then
+			local matched = false
 			for _, o in ipairs(st.authOwn or {}) do
-				if o.n == param.n then correctMoney(o.auth, param, param.n, api.cmd.sendCommand, st.co) end
+				if o.n == param.n then
+					matched = true
+					-- (0.7.11) a checkpoint corrected once only (its early copy applied already, or the message twice)
+					if not (st.authDone and st.authDone[param.n]) then
+						correctMoney(o.auth, param, param.n, api.cmd.sendCommand, st.co)
+						st.authDone = st.authDone or {}
+						st.authDone[param.n] = true
+					end
+				end
+			end
+			-- (0.7.11, #147: a game a few steps behind the host gets the host's values before it takes that checkpoint itself; they
+			-- were dropped and its money was never corrected, Domenik's game for half an hour. Kept here, applied when it takes it,
+			-- see the checkpoint below. MPFEVER_AUTHEARLY=0: dropped, as before)
+			if not matched and type(param.n) == "number" and os.getenv("MPFEVER_AUTHEARLY") ~= "0" then
+				st.authEarly = st.authEarly or {}
+				st.authEarly[#st.authEarly + 1] = param
+				while #st.authEarly > 8 do table.remove(st.authEarly, 1) end
 			end
 		end
 		state:set(st)
@@ -9708,6 +9745,12 @@ H.auth = function(from, p)
 		local ok, err = pcall(correctMoney, own, p, p.n, O.sendCommand, G.co)
 		if not ok then log("money correction failed: " .. tostring(err)) end
 	else
+		-- (0.7.11, #147) a paused checkpoint of the host before this game took it: kept, applied when it takes it (see the paused
+		-- checkpoints). MPFEVER_AUTHEARLY=0: as before
+		if type(p.ptd) == "number" and from ~= "early" and os.getenv("MPFEVER_AUTHEARLY") ~= "0" then
+			G.authEarly = G.authEarly or {}
+			G.authEarly[p.n] = p
+		end
 		toSim("auth", p)
 	end
 end
@@ -10704,6 +10747,12 @@ local function runPausedActions()
 				if okA and type(auth) == "table" and G.ptOn and G.pt.seen then auth.ptd = G.pt.done end
 				G.authOwn = G.authOwn or {}
 				G.authOwn[a.n] = okA and auth or nil
+				-- (0.7.11, #147) the host's values for this paused checkpoint that came before it: applied now
+				if G.authEarly then
+					local e = G.authEarly[a.n]
+					for k, _ in pairs(G.authEarly) do if k <= a.n then G.authEarly[k] = nil end end
+					if e and okA then pcall(H.auth, "early", e) end
+				end
 				-- (with the turns this game has applied in the pause: a game a turn behind the others is not compared, see the launcher)
 				local nameSync = K.nameSyncOn()
 				if nameSync then R.nameCollect = {} end
