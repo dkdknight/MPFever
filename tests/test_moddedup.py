@@ -116,7 +116,8 @@ shipped_bad = run(False)
 check(shipped_bad <= 200 * 13 * 3, "names refused everywhere: at most 3 per vehicle and value (%d; before: %d)" % (shipped_bad, 200 * 1800))
 
 print("the other games apply the names")
-i = bridge.find('if a.tok == "mod" and type(a.args) == "table" then')
+# (0.7.12, #162: the same check covers a name from anyone and a game script's colour too, see test_nameguard0712.py)
+i = bridge.find('if (a.tok == "mod" or nameGuard) and type(a.args) == "table" then')
 seg = bridge[i:i + 1200]
 check("api.type.ComponentType.NAME" in seg and "api.type.ComponentType.COLOR" in seg and 'need, what = api.type.ComponentType.LINE, "a line"' in seg,
       "a name on anything with a name, a colour on anything with a colour, a line update on a line")

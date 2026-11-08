@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.12 - (in progress)
+0.7.12 - 2026-11-08: mods that need another mod no longer taken for it (false "not the same version"), a crash on a mod's station name fixed, the other players' reports come in
   - FIX (crash, #162, rasma's game 2026-11-08 20:03): a game script mod of the host named its new station ("Avenue de la
     Scierie") by the host's id; on rasma's game that id was a cargo item, which has no name, and the game stopped
     ("GetComponentDataIndex", Name). The game scripts' interface commands were not checked as the simulation's mods' are. A
