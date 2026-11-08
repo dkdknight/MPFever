@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.9 - (in progress)
+0.7.9 - 2026-11-08: an old copy of the mod in the game folder found and moved out (#136), every player's report in one, sent without a file to drag, the "back up your savegames" warning gone
   - FIX (desync, issue #136, Jakobsmuschel and Peter 2026-11-08: a resynchronisation every 3 minutes, 19 in half an hour):
     the host had once unpacked MPFever into the game's own mods folder (mods\release\MPFever). The game found two mods
     "mpfever_1" and took that old one (before 0.7.5) in place of the one its MPFever 0.7.8 installed: the two games ran two
