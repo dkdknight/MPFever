@@ -45,11 +45,15 @@ Most of them can be turned off in MPFever's ⚙ Settings window. They are kept i
 - Missing mods: when you join a game, the game's Mod Hub installs the host's mods you lack (turn off: automods=0), and
   the host can send you the mods the Mod Hub does not have.
 
-- « Report a problem »: MPFever puts the logs of the session in a zip in its reports folder and opens a new GitHub issue in
-  your browser. Nothing is sent by MPFever itself: you choose to attach the zip and to post the issue, with your own GitHub
-  account, and GitHub issues are public. Before writing the zip, MPFever takes out of the text logs your Windows account's
-  and PC's names, your Steam account numbers, public IP addresses and e-mail addresses. Player names, savegame names and
-  the game's settings stay: the logs are about them.
+- « Report a problem »: MPFever puts the logs of the session in a zip in its reports folder. Before writing the zip, it
+  takes out of the text logs your Windows account's and PC's names, your Steam account numbers, public IP addresses and
+  e-mail addresses. Player names, savegame names and the game's settings stay: the logs are about them.
+  Since 0.7.9, in a session, the zip also holds the other players' reports (made the same way on their PCs and sent through
+  the session's connections), and it is sent to MPFever's report service (mpfever.knight-hd.fr, the server list's PC), which
+  keeps it 60 days and opens a public GitHub issue with a link to it, in the project's name. GitHub issues and their links are
+  public. Turn off: reportshare=0 in mpfever_settings.txt (your report is never sent for another player's, and you ask for
+  none), reportupload=0 (nothing is sent: the zip is shown and a new GitHub issue opens in your browser, to post yourself,
+  as before 0.7.9).
 
 - Links (Discord, Ko-fi, Nexus Mods, GitHub): they open in your browser only when you click them.
 

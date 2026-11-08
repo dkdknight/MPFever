@@ -30,7 +30,7 @@ def read(*p):
 
 def main():
     mods = read("launcher", "Mods.cs")
-    form = read("launcher", "MainForm.cs")
+    form = read("launcher", "MainForm.cs") + read("launcher", "ReportShare.cs")   # (0.7.9: the report in ReportShare.cs)
     core = read("launcher", "Core.cs")
     st = read("launcher", "SelfTest.cs")
     menu = read("mod", "mpfever_1", "content", "mpfever_menu.lua")

@@ -17,6 +17,8 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 L = os.path.join(HERE, "..", "launcher")
 mf = open(os.path.join(L, "MainForm.cs"), encoding="utf-8-sig").read().replace("\r\n", "\n")
+# (0.7.9: the report's text moved to ReportShare.cs)
+mf += open(os.path.join(L, "ReportShare.cs"), encoding="utf-8-sig").read().replace("\r\n", "\n")
 rep = open(os.path.join(L, "Reporter.cs"), encoding="utf-8-sig").read().replace("\r\n", "\n")
 st = open(os.path.join(L, "SelfTest.cs"), encoding="utf-8-sig").read()
 fails = []

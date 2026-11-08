@@ -103,6 +103,7 @@ namespace MPFever.ServerList
         static readonly TimeSpan Expiry = TimeSpan.FromSeconds(90), Recheck = TimeSpan.FromMinutes(5);
         readonly Dictionary<string, Entry> servers = new Dictionary<string, Entry>();   // by id
         readonly Dictionary<string, DateTime> lastAnnounce = new Dictionary<string, DateTime>();   // by ip:port
+        readonly Reports reports = new Reports();
         TcpListener listener;
         volatile bool running;
 
@@ -154,6 +155,7 @@ namespace MPFever.ServerList
                     }
                     foreach (var k in lastAnnounce.Where(kv => now - kv.Value > Expiry).Select(kv => kv.Key).ToList()) lastAnnounce.Remove(k);
                 }
+                reports.Sweep();
             }
         }
 
@@ -181,6 +183,15 @@ namespace MPFever.ServerList
                     int len = 0;
                     foreach (var l in lines.Skip(1))
                         if (l.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) int.TryParse(l.Substring(15).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out len);
+                    // (0.7.9) a problem report: up to 32 MB, read slowly enough for a player's upload (see Reports)
+                    if (method == "POST" && path == "/api/report")
+                    {
+                        c.ReceiveTimeout = 60000; c.SendTimeout = 60000;
+                        var r = reports.Receive(s, ip.ToString(), early, len, out int code);
+                        Reply(s, code, r);
+                        return;
+                    }
+                    if (method == "GET" && path.StartsWith("/r/", StringComparison.Ordinal)) { c.SendTimeout = 60000; reports.Serve(s, path.Substring(3)); return; }
                     if (len < 0 || len > MaxBody) { Reply(s, 413, "{\"error\":\"too large\"}"); return; }
                     var body = new byte[len];
                     int got = Math.Min(early.Length, len);
@@ -272,10 +283,10 @@ namespace MPFever.ServerList
             return null;
         }
 
-        static void Reply(Stream s, int code, string json)
+        internal static void Reply(Stream s, int code, string json)
         {
             var b = Encoding.UTF8.GetBytes(json);
-            var reason = code == 200 ? "OK" : code == 404 ? "Not Found" : code == 413 ? "Payload Too Large" : "Bad Request";
+            var reason = code == 200 ? "OK" : code == 404 ? "Not Found" : code == 413 ? "Payload Too Large" : code == 429 ? "Too Many Requests" : "Bad Request";
             var h = Encoding.ASCII.GetBytes("HTTP/1.1 " + code + " " + reason + "\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + b.Length
                 + "\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");
             s.Write(h, 0, h.Length);

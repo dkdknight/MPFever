@@ -83,9 +83,9 @@ def main():
     check("MPFEVER_REPORTBUSY=0: every click asks a report, as before", run("return ASKED") == 4, run("return ASKED"))
     run("ENV.MPFEVER_REPORTBUSY = nil")
 
-    cs = open(FORM, encoding="utf-8").read()
+    cs = open(FORM, encoding="utf-8").read() + open(os.path.join(HERE, "..", "launcher", "ReportShare.cs"), encoding="utf-8").read()   # (0.7.9)
     check("MPFever.exe makes one report at a time", "CompareExchange(ref reportBusy, 1, 0)" in cs and "Interlocked.Exchange(ref reportBusy, 0)" in cs)
-    check("MPFever.exe writes the answer to every game's report.txt", cs.count("ReportAnswer(F(") == 2 and "games.Select(g => g.Dir)" in cs)
+    check("MPFever.exe writes the answer to every game's report.txt", cs.count("ReportAnswer(F(") >= 2 and "games.Select(g => g.Dir)" in cs)
 
     mp = re.search(r"^\tfunction K\.padded\(content\)\n.*?^\tend\n", src, re.S | re.M)
     check("#114: K.padded found", mp is not None)

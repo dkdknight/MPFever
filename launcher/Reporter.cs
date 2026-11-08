@@ -373,29 +373,154 @@ namespace MPFever
             catch (Exception e) { Log.W("report: " + e.Message); }
         }
 
+        /// <summary>(0.7.9) A player's name as a folder of the zip.</summary>
+        public static string SafeName(string who)
+        {
+            var s = new string((who ?? "").Select(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' || ch == '.' ? ch : '_').ToArray()).Trim('.');
+            return s == "" ? "player" : s.Length > 40 ? s.Substring(0, 40) : s;
+        }
+
+        /// <summary>(0.7.9) The other players' reports (their zips, by name) put into this one under players\&lt;name&gt;\, and
+        /// players.txt saying who sent one and who did not.</summary>
+        public static void AddPlayers(string zip, IDictionary<string, byte[]> others, IEnumerable<string> notes)
+        {
+            using (var z = ZipFile.Open(zip, ZipArchiveMode.Update))
+            {
+                foreach (var kv in others)
+                {
+                    var dir = "players/" + SafeName(kv.Key) + "/";
+                    try
+                    {
+                        using (var src = new ZipArchive(new MemoryStream(kv.Value), ZipArchiveMode.Read))
+                            foreach (var e in src.Entries)
+                            {
+                                var name = e.FullName.Replace('\\', '/');
+                                if (name.EndsWith("/", StringComparison.Ordinal) || name.Contains("..")) continue;
+                                using (var from = e.Open())
+                                using (var to = z.CreateEntry(dir + name, CompressionLevel.Optimal).Open())
+                                    from.CopyTo(to);
+                            }
+                    }
+                    catch (Exception ex)
+                    {
+                        // (not a zip, cut short: kept as it came)
+                        using (var to = z.CreateEntry(dir + "report.zip").Open()) to.Write(kv.Value, 0, kv.Value.Length);
+                        Log.W("report of " + kv.Key + ": " + ex.Message);
+                    }
+                }
+                var info = z.CreateEntry("players.txt");
+                using (var w = new StreamWriter(info.Open(), new UTF8Encoding(false)))
+                {
+                    w.WriteLine("The other players' reports, asked for when this one was made (MPFever 0.7.9 and later send theirs):");
+                    foreach (var n in notes) w.WriteLine("  " + Redact.Text(n));
+                }
+            }
+        }
+
+        /// <summary>(0.7.9) What MPFever's report service answered: the issue it opened (or ""), the file's link (or "").</summary>
+        public sealed class Uploaded { public string Issue = "", File = ""; }
+
+        /// <summary>(0.7.9) The body POST /api/report takes: a 4-byte length, the JSON {title, body}, then the zip.</summary>
+        public static byte[] UploadBody(string title, string body, byte[] zip)
+        {
+            var json = new UTF8Encoding(false).GetBytes("{\"title\":" + JsonQ(title) + ",\"body\":" + JsonQ(body) + "}");
+            var all = new byte[4 + json.Length + zip.Length];
+            BitConverter.GetBytes(json.Length).CopyTo(all, 0);
+            json.CopyTo(all, 4);
+            zip.CopyTo(all, 4 + json.Length);
+            return all;
+        }
+
+        static string JsonQ(string s)
+        {
+            var sb = new StringBuilder("\"");
+            foreach (var ch in s ?? "")
+            {
+                if (ch == '"' || ch == '\\') sb.Append('\\').Append(ch);
+                else if (ch == '\n') sb.Append("\\n");
+                else if (ch < 0x20) sb.Append("\\u").Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
+                else sb.Append(ch);
+            }
+            return sb.Append('"').ToString();
+        }
+
+        /// <summary>(0.7.9) The report sent to MPFever's report service (the server list's PC, see serverlist\Reports.cs).</summary>
+        public static Uploaded Upload(string url, string zip, string title, string body)
+        {
+            var bytes = File.ReadAllBytes(zip);
+            if (bytes.Length > 32L * 1024 * 1024) throw new IOException((bytes.Length >> 20) + " MB, over the report service's 32 MB");
+            var data = UploadBody(title, body.Length > 19000 ? body.Substring(0, 19000) : body, bytes);
+            try { if (System.Net.ServicePointManager.SecurityProtocol != System.Net.SecurityProtocolType.SystemDefault) System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12; } catch { }
+            var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
+            req.Method = "POST";
+            req.Timeout = req.ReadWriteTimeout = 120000;
+            req.UserAgent = "MPFever/" + MainForm.Version;
+            req.ContentType = "application/octet-stream";
+            req.ServicePoint.Expect100Continue = false;
+            req.ContentLength = data.Length;
+            using (var s = req.GetRequestStream()) s.Write(data, 0, data.Length);
+            string answer;
+            try
+            {
+                using (var resp = (System.Net.HttpWebResponse)req.GetResponse())
+                using (var r = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) answer = r.ReadToEnd();
+            }
+            catch (System.Net.WebException e) when (e.Response is System.Net.HttpWebResponse hr)
+            {
+                string why = "HTTP " + (int)hr.StatusCode;
+                try { using (var r = new StreamReader(hr.GetResponseStream(), Encoding.UTF8)) if (Json.Parse(r.ReadToEnd()) is Dictionary<string, object> ed && ed.TryGetValue("error", out var ev) && ev is string es) why += ": " + es; } catch { }
+                throw new IOException(why);
+            }
+            var d = Json.Parse(answer) as Dictionary<string, object>;
+            if (d == null) throw new IOException("the report service's answer is not JSON");
+            if (d.TryGetValue("error", out var er) && er is string ers) throw new IOException(ers);
+            var u = new Uploaded();
+            if (d.TryGetValue("issue", out var iv) && iv is string ivs && ivs.StartsWith("https://github.com/", StringComparison.Ordinal)) u.Issue = ivs;
+            if (d.TryGetValue("file", out var fv) && fv is string fvs && fvs.StartsWith("http", StringComparison.OrdinalIgnoreCase)) u.File = fvs;
+            if (u.Issue == "" && u.File == "") throw new IOException("the report service kept nothing");
+            return u;
+        }
+
         public static void ShowInExplorer(string file)
         {
             try { Process.Start("explorer.exe", "/select,\"" + file + "\""); }
             catch (Exception e) { Log.W("report: " + e.Message); }
         }
 
-        /// <summary>The issue's text (English: the issues are written in English).</summary>
-        public static string IssueBody(string zipName, long zipSize, string summary, bool crashed)
+        /// <summary>The issue's text (English: the issues are written in English). (0.7.9) sent: the report service opens the
+        /// issue and adds the logs' link itself; link: the logs' link, for an issue the player sends; players: the other players
+        /// whose reports are in the zip.</summary>
+        public static string IssueBody(string zipName, long zipSize, string summary, bool crashed, string link = null, bool sent = false, List<string> players = null)
         {
             summary = Redact.Text(summary);
             var sb = new StringBuilder();
             sb.AppendLine("### What happened");
-            sb.AppendLine(crashed ? "The game crashed. What was I doing just before:" : "What I did just before (built a station, bulldozed a road, bought a vehicle...):");
-            sb.AppendLine();
-            sb.AppendLine("At what time (my clock): " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
-            sb.AppendLine("Does it happen again:");
-            sb.AppendLine();
-            sb.AppendLine("### Logs");
-            if (zipSize <= AttachLimit)
-                sb.AppendLine("**Drag `" + zipName + "` here** (MPFever just showed it in the Explorer, in its `reports` folder). The other players can send theirs with the same button.");
+            if (sent)
+            {
+                sb.AppendLine(crashed ? "The game crashed." : "A player sent this report from MPFever.");
+                sb.AppendLine("At " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " (the player's clock). What they were doing can be added in a comment.");
+            }
             else
-                sb.AppendLine("`" + zipName + "` is " + (zipSize >> 20) + " MB, over GitHub's 25 MB: link to it on Google Drive, Dropbox or WeTransfer.");
-            sb.AppendLine("The savegame helps a lot too (over 25 MB: a link).");
+            {
+                sb.AppendLine(crashed ? "The game crashed. What was I doing just before:" : "What I did just before (built a station, bulldozed a road, bought a vehicle...):");
+                sb.AppendLine();
+                sb.AppendLine("At what time (my clock): " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
+                sb.AppendLine("Does it happen again:");
+            }
+            sb.AppendLine();
+            var others = players != null && players.Count > 0 ? " With the reports of " + string.Join(", ", players) + "." : "";
+            if (!sent)
+            {
+                sb.AppendLine("### Logs");
+                if (link != null)
+                    sb.AppendLine("**Every player's logs:** " + link + others);
+                else if (zipSize <= AttachLimit)
+                    sb.AppendLine("**Drag `" + zipName + "` here** (MPFever just showed it in the Explorer, in its `reports` folder)." + (others != "" ? others : " The other players can send theirs with the same button."));
+                else
+                    sb.AppendLine("`" + zipName + "` is " + (zipSize >> 20) + " MB, over GitHub's 25 MB: link to it on Google Drive, Dropbox or WeTransfer.");
+                sb.AppendLine("The savegame helps a lot too (over 25 MB: a link).");
+            }
+            else if (others != "") sb.AppendLine(others.Trim());
             sb.AppendLine();
             sb.AppendLine("### Session");
             sb.AppendLine("```");

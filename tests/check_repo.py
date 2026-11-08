@@ -41,6 +41,9 @@ def versions():
     found["launcher/MainForm.cs"] = m and m.group(1)
     m = re.search(r"^(\d+\.\d+\.\d+\S*) - ", (ROOT / "docs" / "CHANGELOG.txt").read_text(encoding="utf-8"), re.M)
     found["docs/CHANGELOG.txt"] = m and m.group(1)
+    # (0.7.9) the mod's own version, said by the game in its "hello" (issue #136: an old copy of the mod in the game's folder)
+    m = re.search(r'^C\.MODVERSION = "([^"]+)"', (ROOT / "mod" / "mpfever_1" / "content" / "mpfever_common.lua").read_text(encoding="utf-8"), re.M)
+    found["mpfever_common.lua C.MODVERSION"] = m and m.group(1)
     v = found["build.bat"]
     check(v is not None and all(found.values()) and len(set(found.values())) == 1,
           "one version everywhere: " + ", ".join(f"{k} {x}" for k, x in found.items()))

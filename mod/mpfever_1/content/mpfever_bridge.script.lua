@@ -19866,7 +19866,7 @@ local function guiUpdate(userParams, state, guiState)
 		setSpeed(0)
 		local okn, errn = pcall(neutraliseEmissions)
 		if not okn then log("emissions: " .. tostring(errn)) end
-		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime() })
+		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime(), mv = C.MODVERSION })
 	end
 	-- the native module holds the tools' builds while this script runs, and hears from it here from its first frame on
 	-- (bridge_alive.txt, a counter rewritten every 2 s). A game loaded with MPFever disabled while a lobby was open has no such

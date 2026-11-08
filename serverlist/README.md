@@ -4,7 +4,7 @@ A small service that keeps the public list of MPFever dedicated servers. It runs
 a VPS). Dedicated servers whose `mpfever_server.properties` says `public=true` appear in it, and players see them in the
 **Servers** tab of MPFever's multiplayer page.
 
-Nothing is stored on disk: the list lives in memory, every server announces itself every 30 seconds and leaves the list
+The list is not stored on disk (only the problem reports are, see below): it lives in memory, every server announces itself every 30 seconds and leaves the list
 when it stops or after 90 seconds without news.
 
 ## Install
@@ -49,6 +49,23 @@ A dedicated server appears in the list when its `mpfever_server.properties` has 
 `public-address=` gives the address players should use (a domain name, `name:port`); empty, the list uses the public IP its
 announces come from and the server's `port`.
 
+## Problem reports (0.7.9)
+
+MPFever 0.7.9 sends its problem reports here (the zip of every player's logs of the session): `POST /api/report` keeps the zip
+in `reports\` next to the exe (60 days) and `GET /r/<id>.zip` gives it back (32 random hex digits: only the link leads to it).
+Limits: 32 MB a report, 3 every 10 minutes and 10 a day from one address, 100 a day in all.
+
+With a GitHub key, the service opens the GitHub issue itself, in the name of the key's account: players need no GitHub
+account, and the key stays on this PC. Make a **fine-grained personal access token** on GitHub (Settings > Developer settings >
+Personal access tokens > Fine-grained tokens): repository access **only dkdknight/MPFever**, permission **Issues: Read and
+write**, nothing else. Put it alone in `github_token.txt` next to `MPFeverServerList.exe` (or in the environment variable
+`MPFEVER_GITHUB_TOKEN`) and restart the service. Without it, the service only keeps the zip and MPFever opens a new issue with
+its link for the player to send. Optional: `github_repo.txt` (another repository, `owner/name`), `public_url.txt` (the
+address the links start with, default `https://mpfever.knight-hd.fr`).
+
+Behind Caddy, nothing to change: the reports go through the same `reverse_proxy`. Cloudflare's free plan takes uploads up to
+100 MB.
+
 ## API
 
 | Request | Body | Answer |
@@ -58,6 +75,8 @@ announces come from and the server's `port`.
 | `POST /api/announce` | `{name, port, version, build, mode, world, motd, players, max, password, steam, address, token}` | `{"ok":true, id, token, every}` |
 | `POST /api/announce` (v2, a player's game) | `{"kind":"game", name, port, version, build, mode, world, host, lang, state, players, max, password, joinPlaying, showAddress, steam, address, token}` | `{"ok":true, id, token, every}` |
 | `POST /api/remove` | `{id, token}` | `{"ok":true}` |
+| `POST /api/report` (0.7.9) | 4-byte length (little-endian), that much JSON `{title, body, issue?}`, then the zip | `{"ok":true, file, issue, note?}` |
+| `GET /r/<id>.zip` (0.7.9) | | the report's zip |
 | `GET /api/health` | | `{"ok":true, servers, games, "v":2}` |
 
 - The first announce gets an `id` and a `token`; later announces send the `token` back, and only it can remove the entry.

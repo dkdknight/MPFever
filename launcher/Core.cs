@@ -2595,7 +2595,7 @@ namespace MPFever
                 .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
         }
 
-        static void CopyDir(string src, string dst)
+        internal static void CopyDir(string src, string dst)
         {
             Directory.CreateDirectory(dst);
             foreach (var f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);

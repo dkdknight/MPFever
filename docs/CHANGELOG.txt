@@ -2,6 +2,23 @@ MPFever - Changelog
 ===================
 
 0.7.9 - (in progress)
+  - FIX (desync, issue #136, Jakobsmuschel and Peter 2026-11-08: a resynchronisation every 3 minutes, 19 in half an hour):
+    the host had once unpacked MPFever into the game's own mods folder (mods\release\MPFever). The game found two mods
+    "mpfever_1" and took that old one (before 0.7.5) in place of the one its MPFever 0.7.8 installed: the two games ran two
+    versions of the mod and parted a few seconds after every resynchronisation. Before the game starts, MPFever now looks for
+    other copies of its mod in the game's mods folder and the players' staging_area, and offers to move them out (into
+    old-mod-copies next to MPFever.exe; a dedicated server moves them at once). The game also says its mod's version in its
+    "hello", and the host warns everyone (log and chat) when a game's is not its MPFever's (MPFEVER_STALEMODS=0,
+    MPFEVER_MODVERCHECK=0: as before). Tests: tests/test_modcopies079.py (and MPFever.exe --selftest).
+  - NEW (reports): « Report a problem » in a session gets every player's report in one zip (players\<name>\, players.txt
+    saying who answered): the host asks every player, a player asks the host, which relays (#136 had only a client's report,
+    and the cause was in the host's logs). Then the zip goes to MPFever's report service (the server list's address,
+    /api/report), which keeps it 60 days and opens the GitHub issue itself: nothing to drag, no GitHub account needed, and
+    the browser shows the issue. A service without its GitHub key gives the file's link (a new issue opens with it); out of
+    reach: as before. reportshare=0 / reportupload=0 in mpfever_settings.txt (MPFEVER_REPORTSHARE=0 / MPFEVER_REPORTUPLOAD=0):
+    as before. The service: POST /api/report, GET /r/<id>.zip (serverlist/Reports.cs; 32 MB a report, 3 every 10 minutes and
+    10 a day per address, 100 a day; a fine-grained GitHub key in github_token.txt next to the service). Tests:
+    tests/test_reportshare079.py, tests/test_reportservice079.py (and MPFever.exe --selftest).
   - DOCS: the "still in active development, back up your savegames" warning is gone from the README, the server's guide,
     the mod page texts and the release notes: no savegame was ever damaged by MPFever (it never writes the savegame played;
     the session's saves have names of their own). Features still being finished keep their own note.

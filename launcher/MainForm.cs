@@ -1026,40 +1026,7 @@ namespace MPFever
                 try { File.WriteAllText(Path.Combine(d, "report.txt"), DateTime.Now.Ticks + "\t" + text + "\n"); } catch { }
         }
 
-        void Report(bool crashed)
-        {
-            try
-            {
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("MPFever " + Version + ", game build " + Reporter.GameBuild(gameDir));
-                // (after the game closed: the session it left then, see LeaveOnGameExit)
-                sb.AppendLine(leftSession ?? SessionLines(false));
-                sb.AppendLine("Settings changed: " + Options.Changed() + (GameInstall.DiagOn() ? "; DIAGNOSTIC BUILD (free-id log, state dumps)" : ""));
-                sb.AppendLine("Sync: " + syncText + "; desyncs " + desyncs + ", resynchronisations " + resyncId + ", actions relayed " + actsRelayed + ", refused " + actRefused);
-                sb.AppendLine("Processor: " + Reporter.Processor() + "; " + Reporter.WindowsVersion());
-                // (0.6.9: the game's DLCs here, and what differs from the host's or a player's)
-                sb.AppendLine("DLCs: " + Mods.InstalledDlcs() + (PlayerDlcWarn() != "" ? " | " + PlayerDlcWarn() : "") + (HostDlcWarn() != "" ? " | " + HostDlcWarn() : ""));
-                sb.AppendLine("Report made " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + (crashed ? " after a crash of the game" : ""));
-                var summary = sb.ToString();
-                List<string> left;
-                var dirs = games.Select(g => g.Dir).ToList();
-                var zip = Reporter.Collect(dirs, summary, out left);
-                long size = new FileInfo(zip).Length;
-                Log.Ok(F("Rapport de problème : {0} ({1:0.0} Mo)", "Problem report: {0} ({1:0.0} MB)", zip, size / 1048576.0));
-                if (left.Count > 0) Log.W(F("Laissés de côté (trop gros) : {0}", "Left out (too large): {0}", string.Join(", ", left)));
-                var body = Reporter.IssueBody(Path.GetFileName(zip), size, summary, crashed);
-                var title = (crashed ? "Crash" : "Problem") + " (MPFever " + Version + ", " + (ReportCompanyMode() == "separate" ? "separate companies" : "shared company") + ")";
-                try { BeginInvoke((Action)(() => { try { Clipboard.SetText(body); } catch { } })); } catch { }
-                Reporter.ShowInExplorer(zip);
-                Reporter.OpenIssue(title, body);
-                ReportAnswer(F("Rapport prêt : {0}. La page de l'issue GitHub est ouverte dans le navigateur : glissez-y ce fichier.", "Report ready: {0}. The GitHub issue page is open in your browser: drag that file into it.", Path.GetFileName(zip)));
-            }
-            catch (Exception e)
-            {
-                Log.Err(F("Rapport de problème impossible : {0}", "Could not make the problem report: {0}", e.Message));
-                ReportAnswer(F("Rapport impossible : {0}", "Could not make the report: {0}", e.Message));
-            }
-        }
+        // (0.7.9) Report(bool crashed): see ReportShare.cs
 
         /// <summary>The session as a problem report describes it, two lines: the company mode and this MPFever's role (with the
         /// host), then the players and whether the game runs. joining: a player whose join or reconnection is under way, with no
@@ -1270,6 +1237,8 @@ namespace MPFever
                            "Diagnostic build: detailed logs (the free-id queue, the state at every check). After a resynchronisation, send every player's report."));
             try { GameInstall.EnsureModActive(); } catch (Exception e) { Log.W("settings.lua: " + e.Message); }
             try { GameInstall.InstallMod(); } catch (Exception e) { Log.Warn(T("Installation du mod : ", "Mod installation: ") + e.Message); }
+            // (0.7.9, #136) another copy of the mod in the game's folders, which the game would take (see ModCopies)
+            if (!autotest) FindStaleMods();
             if (!autotest && !ServerMode) WarnIncompatibleMods();
             try { if (LoadSettings().TryGetValue("savedirs", out var sd)) GameInstall.AddGameSaveDirs(sd.Split('|')); } catch { }
         }
@@ -1280,6 +1249,7 @@ namespace MPFever
         {
             if (!autotest) WarnNativeMissing();
             if (!autotest) WarnSmartAppControl();
+            OfferStaleMods();
             if (ServerMode)
             {
                 OpenServerWindow();
@@ -2920,6 +2890,24 @@ namespace MPFever
                 foreach (var role in new[] { "host", "client" })
                 {
                     if (ClosedGames() != "") break;
+                    if (scenario == "report")
+                    {
+                        // (0.7.9) the players' reports in one: asked by the host, then by the client (two games, one MPFever)
+                        var notes = new List<string>();
+                        var got = GatherOthers(notes, role == "client");
+                        AutoLine("report " + role + ": " + got.Count + " report(s) " + string.Join(",", got.Select(kv => kv.Key + "=" + kv.Value.Length))
+                            + " | " + string.Join(" / ", notes));
+                        try
+                        {
+                            var zip = Reporter.Collect(games.Select(x => x.Dir).ToList(), "autotest " + role, out _);
+                            Reporter.AddPlayers(zip, got, notes);
+                            using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                                AutoLine("report " + role + " zip: " + z.Entries.Count(e => e.FullName.StartsWith("players/", StringComparison.Ordinal)) + " entries under players/");
+                        }
+                        catch (Exception e) { AutoLine("report " + role + " zip FAILED: " + e.Message); }
+                        Thread.Sleep(3000);
+                        continue;
+                    }
                     if (scenario == "census")
                     {
                         // every game, paused at the same time, writes its census (MPFEVER_CENSUS): compared afterwards
@@ -3405,6 +3393,8 @@ namespace MPFever
                         return;
                     }
                     if (m.Kind == "resync_file" || m.Kind == "resync_bin") { OnResyncFile(game, m); return; }
+                    // (0.7.9) the reports of every player of the session in one (see ReportShare)
+                    if (OnReportMessage(m, client)) return;
                     if (m.Kind == "resync_use") { OnResyncUse(game, client, name, m); return; }
                     if (m.Kind == "delta_bin") { OnDeltaFile(game, client, name, m); return; }
                     if (m.Kind == "modfile") { OnModFile(m); return; }
@@ -3479,6 +3469,7 @@ namespace MPFever
                     if (m.Kind == "welcome" && LuaLit.Parse(m.Payload) is Dictionary<object, object> w && w.TryGetValue("you", out var you) && you is string youName)
                     {
                         myId = youName;
+                        reportMe = youName;   // (0.7.9) the name the players' reports come back to (see ReportShare)
                         // a host on another version (before 0.3.23 its welcome says none: older than this one): the player leaves
                         // at once rather than play apart (issue #73)
                         var hv = w.TryGetValue("v", out var hvo) && hvo is string hvs ? hvs : "";
@@ -4183,7 +4174,8 @@ namespace MPFever
         // Relayed, a player could have sent the others a mod (code) or a savegame in the host's place.
         static readonly HashSet<string> HostOnlyKinds = new HashSet<string> { "modfile", "modoffer", "resync_file", "resync_bin",
             "resync_use", "delta_bin", "lobby", "mpstatus", "chatmsg", "welcome", "session", "peerclock", "auth", "aijournal", "namesync",
-            "resync_save", "resync_load", "hash", "peerleft", "solo", "det_run", "test_save", "census_now", "tomenu", "camtour", "area_dump" };
+            "resync_save", "resync_load", "hash", "peerleft", "solo", "det_run", "test_save", "census_now", "tomenu", "camtour", "area_dump",
+            "report_req", "report_plan" };
         DateTime hostOnlyWarned;
 
         void OnHostMessage(Msg m, Peer from)
@@ -4206,10 +4198,13 @@ namespace MPFever
                 bool ready; lock (players) ready = players.Contains(m.From);
                 if (!ready) return;
             }
+            // (0.7.9) a player's report asked for, or sent to whoever asked: never passed on to every game (see ReportShare)
+            if (OnHostReportMessage(m, from)) return;
             switch (m.Kind)
             {
                 case "hello":
                     lock (players) players.Add(m.From);
+                    WarnModVersion(m.From, m.Payload);
                     // (0.7.4, MODRETRY: the server's world is loaded, its mods were all there)
                     if (m.From == hostName) serverModRetries = 0;
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));

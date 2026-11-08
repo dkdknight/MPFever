@@ -69,8 +69,86 @@ namespace MPFever
             ok &= RunSharedLog075();
             ok &= RunServer076();
             ok &= RunReport077();
+            ok &= RunReport079();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.9) Issue #136: another copy of the mod in the game's folders, the mod's version said by the game, and the
+        /// players' reports in one zip sent to the report service.</summary>
+        static bool RunReport079()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.9: " + what); ok &= c; }
+            var root = Path.Combine(Path.GetTempPath(), "mpfever-selftest-079-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try
+            {
+                // (STALEMODS) the host of #136: an old MPFever unpacked into the game's mods\release folder
+                var src = Path.Combine(root, "MPFever", "mod", "mpfever_1");
+                void Mod(string dir, string bridge)
+                {
+                    Directory.CreateDirectory(Path.Combine(dir, "content"));
+                    File.WriteAllText(Path.Combine(dir, "mod.json"), "{\"modId\": \"mpfever_1\"}");
+                    File.WriteAllText(Path.Combine(dir, "content", "mpfever_bridge.script.lua"), bridge);
+                }
+                Mod(src, "-- bridge 0.7.9");
+                var game = Path.Combine(root, "Transport Fever 3");
+                var old = Path.Combine(game, "mods", "release", "MPFever", "mod", "mpfever_1");
+                Mod(old, "-- bridge 0.7.4, older");
+                var same = Path.Combine(game, "mods", "release", "mpfever_1");
+                Mod(same, "-- bridge 0.7.9");
+                // (a mod of its own is not looked into)
+                Mod(Path.Combine(game, "mods", "some_mod_1", "res", "mpfever_1"), "x");
+                File.WriteAllText(Path.Combine(game, "mods", "some_mod_1", "mod.lua"), "");
+                var stale = ModCopies.Stale(game, src);
+                C(stale.Count == 1 && stale[0].EndsWith(Path.Combine("MPFever", "mod", "mpfever_1"), StringComparison.OrdinalIgnoreCase),
+                    "an old copy of the mod in the game's mods folder found (" + string.Join("; ", stale) + ")");
+                C(!stale.Any(x => x.EndsWith(Path.Combine("release", "mpfever_1"), StringComparison.OrdinalIgnoreCase)),
+                    "  a copy the same as this MPFever's (its own, under Wine or GOG): no harm, left alone");
+                var staging = Path.Combine(root, "userdata", "staging_area");
+                Mod(Path.Combine(staging, "mpfever_1"), "-- other");
+                C(ModCopies.Stale(game, src, new[] { staging }).Count == 2, "  a player's staging_area looked at too");
+                var to = ModCopies.MoveAside(old, Path.Combine(root, "MPFever", "old-mod-copies"));
+                C(!Directory.Exists(old) && File.Exists(Path.Combine(to, "mod.json")) && File.ReadAllText(Path.Combine(Path.GetDirectoryName(to), "where-it-was.txt")).Contains("release"),
+                    "  moved out, with where it was");
+                C(ModCopies.Stale(game, src).Count == 0, "  then none left");
+                // (MODVERCHECK) the version a game's mod says in its "hello"
+                C(ModCopies.VersionProblem("Peter", "0.7.9", "0.7.9") == null, "the same mod version: nothing said");
+                var vp = ModCopies.VersionProblem("Peter", null, "0.7.9");
+                C(vp != null && vp.StartsWith("Peter") && vp.Contains("0.7.9"), "a mod that says no version (before 0.7.9): warned (" + vp + ")");
+                var vp2 = ModCopies.VersionProblem("Jakob", "0.7.8", "0.7.9");
+                C(vp2 != null && vp2.Contains("0.7.8") && vp2.Contains("0.7.9"), "  another version: warned with both");
+                // (REPORTSHARE) the other players' reports in this one
+                var zip = Path.Combine(root, "own.zip");
+                using (var z = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+                using (var w = new StreamWriter(z.CreateEntry("report.txt").Open())) w.Write("Peter's report");
+                var ms = new MemoryStream();
+                using (var z = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+                using (var w = new StreamWriter(z.CreateEntry("session/Jakob-1/mod.log").Open())) w.Write("Jakob's log");
+                var others = new Dictionary<string, byte[]> { ["Jakob"] = ms.ToArray(), ["Bad/Name"] = new byte[] { 1, 2, 3 } };
+                Reporter.AddPlayers(zip, others, new[] { "Jakob: report included", "Til: no answer" });
+                using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                {
+                    var names = z.Entries.Select(e => e.FullName).ToList();
+                    C(names.Contains("report.txt") && names.Contains("players/Jakob/session/Jakob-1/mod.log"), "a player's report under players/<name>/ (" + string.Join(", ", names) + ")");
+                    C(names.Contains("players/Bad_Name/report.zip"), "  a part that is not a zip kept as it came, its name made safe");
+                    using (var r = new StreamReader(z.GetEntry("players.txt").Open())) C(r.ReadToEnd().Contains("Til: no answer"), "  players.txt says who did not answer");
+                }
+                // (REPORTUPLOAD) the body of POST /api/report
+                var b = Reporter.UploadBody("Problem (MPFever 0.7.9)", "line 1\nline \"2\"", new byte[] { (byte)'P', (byte)'K', 3, 4, 9 });
+                int jl = BitConverter.ToInt32(b, 0);
+                var meta = Json.Parse(System.Text.Encoding.UTF8.GetString(b, 4, jl)) as Dictionary<string, object>;
+                C(meta != null && (string)meta["title"] == "Problem (MPFever 0.7.9)" && (string)meta["body"] == "line 1\nline \"2\"" && b[4 + jl] == 'P' && b.Length == 4 + jl + 5,
+                    "the report's upload: length, JSON (title, body), then the zip");
+                var sent = Reporter.IssueBody("r.zip", 1000, "MPFever 0.7.9", false, sent: true, players: new List<string> { "Jakob" });
+                C(!sent.Contains("Drag") && sent.Contains("Jakob") && sent.Contains("### Session"), "  the issue the service opens: nothing to drag, the players named");
+                var linked = Reporter.IssueBody("r.zip", 1000, "MPFever 0.7.9", false, link: "https://mpfever.knight-hd.fr/r/x.zip");
+                C(linked.Contains("https://mpfever.knight-hd.fr/r/x.zip") && !linked.Contains("Drag"), "  the issue the player sends: the logs' link in it");
+                C(Reporter.IssueBody("r.zip", 1000, "s", false).Contains("Drag"), "  the service out of reach: as before");
+            }
+            catch (Exception e) { C(false, "0.7.9 cases: " + e); }
+            finally { try { Directory.Delete(root, true); } catch { } }
+            return ok;
         }
 
         /// <summary>(0.7.7) A player's report says who plays and whether the game runs (from the host's messages: it read
