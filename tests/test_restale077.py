@@ -156,6 +156,8 @@ G = { cmode = "shared", oseq = 0, me = "Client#1", myCo = 2, loadId = 3, frames 
     check(L.eval("G.othersBusy()") is False, "nobody else building: no copy kept (no cost at the click)")
     L.execute("G.noteOthers({ origin = 'Host', at = 499800, native = true })")
     check(L.eval("G.othersBusy()") is True and L.eval("G.othersAt[1].frame") == 1000, "another player's build received: the copies are kept", L.eval("G.othersAt[1].frame"))
+    fresh(env={"MPFEVER_RESTALEFORCE": "1"})
+    check(L.eval("G.othersBusy()") is True, "  MPFEVER_RESTALEFORCE=1 (tests with a real tool): always")
 
     fresh(); held(COPY)
     keys = [L.eval("RB.refs[%d].key" % k) for k in range(1, int(L.eval("#RB.refs")) + 1)]

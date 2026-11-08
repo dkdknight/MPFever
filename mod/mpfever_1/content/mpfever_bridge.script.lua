@@ -8341,6 +8341,8 @@ G.restaleWhy = function(r, at)
 end
 -- (v2) another player builds now or did in the last 20 s (an act of the world received, a replay applied or under way)
 G.othersBusy = function()
+	-- (tests: with MPFEVER_RESTALEFORCE=1 every tool's build keeps its copy, a real tool's included)
+	if os.getenv("MPFEVER_RESTALEFORCE") == "1" then return true end
 	local last = G.othersAt[#G.othersAt]
 	if last and last.frame and G.frames - last.frame < 1200 then return true end
 	if (G.worldFrame or 0) > 0 and G.frames - G.worldFrame < 1200 then return true end
@@ -8350,7 +8352,8 @@ end
 -- fingerprint of what it names already standing, as this game has it now
 G.restaleMark = function(r)
 	if not G.restaleV2() or r.lead or type(r.copy) ~= "table" then return end
-	r.copyFrame = G.lastCopyFrame
+	-- (a scripted build's copy is its own proposal, made when it was held: frame0)
+	r.copyFrame = r.fn and r.frame0 or G.lastCopyFrame
 	if G.preHasObjects(r.copy) then r.v2skip = "a stop or a signal"; return end
 	if not G.preHasContent(r.copy) then r.v2skip = "its copy has nothing in it"; return end
 	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
@@ -8370,8 +8373,9 @@ end
 G.restaleNeed = function(r, at)
 	local why = G.restaleWhy(r, at)
 	if not why and r.sigUncertain then why = "another player's build applied here between the tool's computation and the click" end
+	-- (tests: a real tool's build alone takes the replay path, nobody else building)
+	if os.getenv("MPFEVER_RESTALEFORCE") == "1" and r.v2args and not r.v2skip then return "forced (MPFEVER_RESTALEFORCE)" .. (why and (": " .. why) or "") end
 	if not why then return nil end
-	if os.getenv("MPFEVER_RESTALEFORCE") == "1" and r.v2args then return "forced (MPFEVER_RESTALEFORCE): " .. why end
 	if r.v2skip or type(r.refs) ~= "table" or not r.v2args then return nil end
 	-- (names nothing already standing: cannot be stale; a collision with a new piece is checked again by the engine everywhere)
 	if #r.refs == 0 then return nil end
@@ -8573,6 +8577,12 @@ local function deferredSend(cmd, cb, proposal, still)
 	if not pt and G.preship then
 		local held = G.natRelease[#G.natRelease]
 		G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() pcall(G.preship, held) end }
+	end
+	-- (0.7.7, RESTALE v2 for a scripted build with a copy - MPFEVER_RESTALETEST=1, the autotests: what it names, a frame later as
+	-- above; a computer company's build has no copy without PRESHIP, and a preshipped one is never replayed this way)
+	if G.natRelease[#G.natRelease].copy ~= nil and G.restaleV2() then
+		local held = G.natRelease[#G.natRelease]
+		G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() if not held.preshipped then pcall(G.restaleMark, held) end end }
 	end
 end
 
