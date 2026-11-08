@@ -2,6 +2,16 @@ MPFever - Changelog
 ===================
 
 0.7.11 - (in progress)
+  - FIX (crash, #152, Pascal's game 2026-11-08 17:48): a station open in the module editor while another player's build
+    removed it stopped the game ("Assertion `m_entity.GetId() < 0 || (EntityExists(m_entity) && HasComponent(m_entity,
+    Construction))' failed", ModuleBuilder.cpp:268). The editor's four reads of its construction are checked by the native
+    module: a construction that no longer exists (or whose number is now another entity's) is let go, the editor's own "no
+    station" state, and the player picks the station again (MPFEVER_MBGUARD=0: as before). Test: tests/test_mbguard0711.py.
+  - FIX (crash, #153, janik 2026-11-08 17:52): MPFever started twice at the same moment (a double click) copied its mod into
+    the same folder twice at once; two files were refused ("access denied") and the game stopped on the half-copied mod ("Mod
+    was not cached in filesystem: mpfever_1::/mpfever_auto.lua"). One install at a time on a PC now: the second MPFever waits
+    for the first one's (60 s at most), then installs as usual (MPFEVER_INSTALLLOCK=0: as before). Test:
+    tests/test_installlock0711.py.
   - FIX (#146, Domenik 2026-11-08): one problem report at a time, whichever button asked. Two clicks a few seconds apart
     made two reports, and the second one, asking the other players while the first one's wait was under way, got none of
     their reports (MPFEVER_REPORTONE=0: as before). Test: tests/test_reportone0711.py.

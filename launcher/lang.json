@@ -24206,6 +24206,19 @@
       "ko": "« 같은 승강장 순서(테스트) »: {0}은(는) {1}, 호스트는 {2}입니다. 모든 플레이어가 같은 설정이어야 합니다(런처 설정 후 게임 재시작). 그렇지 않으면 게임이 동기화되지 않습니다.",
       "zh-CN": "« 相同的站台顺序（测试）»：{0} 为{1}，主机为{2}。所有玩家都需要相同的设置（在启动器设置中，然后重新启动游戏），否则游戏会失去同步。",
       "zh-TW": "« 相同的月台順序（測試）»：{0} 為{1}，主機為{2}。所有玩家都需要相同的設定（在啟動器設定中，然後重新啟動遊戲），否則遊戲會失去同步。"
+    },
+    "Another MPFever install does not end: going on without waiting for it.": {
+      "de": "Eine andere MPFever-Installation wird nicht fertig: es geht weiter, ohne darauf zu warten.",
+      "es": "Otra instalación de MPFever no termina: se continúa sin esperarla.",
+      "it": "Un'altra installazione di MPFever non finisce: si prosegue senza aspettarla.",
+      "nl": "Een andere MPFever-installatie wordt niet afgerond: er wordt verder gegaan zonder te wachten.",
+      "pl": "Inna instalacja MPFever się nie kończy: kontynuacja bez czekania na nią.",
+      "pt-BR": "Outra instalação do MPFever não termina: continuando sem esperar por ela.",
+      "ru": "Другая установка MPFever не завершается: продолжаем, не дожидаясь её.",
+      "ja": "別の MPFever のインストールが終わりません：待たずに続行します。",
+      "ko": "다른 MPFever 설치가 끝나지 않습니다: 기다리지 않고 계속합니다.",
+      "zh-CN": "另一个 MPFever 安装未结束：不再等待，继续进行。",
+      "zh-TW": "另一個 MPFever 安裝未結束：不再等待，繼續進行。"
     }
   }
 }

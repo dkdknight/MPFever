@@ -1225,7 +1225,29 @@ namespace MPFever
         }
 
         /// <summary>The files put into the game: the Steam id, the native module, the mod (beside the window since 0.7.4).</summary>
+        // (0.7.11, #153) one install at a time on this PC: MPFever started twice at the same moment (a double click, janik
+        // 2026-11-08 17:52:24) copied the mod into the same folder twice at once, two files were refused ("access denied"), and
+        // the game found the mod half copied ("Mod was not cached in filesystem: mpfever_1::/mpfever_auto.lua") and stopped.
+        // The second one now waits for the first one's install (60 s at most), then installs as usual. MPFEVER_INSTALLLOCK=0:
+        // as before
         void InitInstall()
+        {
+            System.Threading.Mutex gate = null;
+            bool held = false;
+            if (Environment.GetEnvironmentVariable("MPFEVER_INSTALLLOCK") != "0")
+                try
+                {
+                    gate = new System.Threading.Mutex(false, @"Local\MPFever.Install");
+                    try { held = gate.WaitOne(TimeSpan.FromSeconds(60)); }
+                    catch (System.Threading.AbandonedMutexException) { held = true; }
+                    if (!held) Log.W(T("Une autre installation de MPFever ne finit pas : la mise en place continue sans l'attendre.", "Another MPFever install does not end: going on without waiting for it."));
+                }
+                catch (Exception e) { Log.W("install lock: " + e.Message); }
+            try { InitInstallLocked(); }
+            finally { if (held) try { gate.ReleaseMutex(); } catch { } gate?.Dispose(); }
+        }
+
+        void InitInstallLocked()
         {
             if (GameInstall.NotSteamCopy(gameDir))
                 Log.Warn(T("Copie du jeu hors Steam (GOG ?) : prise en charge expérimentale. Rejoindre par Steam n'y est pas possible, utilisez l'adresse de l'hôte.",

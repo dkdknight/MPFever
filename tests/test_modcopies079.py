@@ -38,7 +38,7 @@ common = read("mod", "mpfever_1", "content", "mpfever_common.lua")
 bridge = read("mod", "mpfever_1", "content", "mpfever_bridge.script.lua")
 version = re.search(r'public const string Version = "([^"]+)"', mf).group(1)
 
-init = mf[mf.index("        void InitInstall()"):]
+init = mf[mf.index("        void InitInstallLocked()"):]   # (0.7.11: the install inside its lock, see InitInstall)
 init = init[:init.index("\n        }\n")]
 check("GameInstall.InstallMod();" in init and "if (!autotest) FindStaleMods();" in init
       and init.index("GameInstall.InstallMod();") < init.index("FindStaleMods();"), "the copies looked for once the mod is installed (not in the autotests)")

@@ -3793,6 +3793,89 @@ static void GameAutosaveGate(SavedRegs* r)
     *counted = 0;
 }
 
+// ---------------------------------------------------------------- (0.7.11, #152) the module builder's construction gone
+// Pascal's game, 2026-11-08 17:48: a station open in the module editor (UI::ModuleBuilder) while janik's build was replayed
+// there; the build removed the station, and the tool's next read stopped the game: "Assertion `m_entity.GetId() < 0 ||
+// (EntityExists(m_entity) && HasComponent(m_entity, Construction))' failed" (ModuleBuilder.cpp:268). The tool keeps its
+// construction at +0x118 and the game state at +0xc0 (the engine at [gs+0x18]); four of its functions read it, then ask the
+// engine (EntityExists, HasComponent with the Construction type) and stop the game when it is gone. Those four reads are
+// spliced: a construction that no longer exists, or whose id is now another entity's, is set to -1, the tool's own "no
+// construction" state, which every one of those checks accepts (the player picks the station again). A construction that
+// exists is left alone: nothing changes then. MPFEVER_MBGUARD=0: not hooked.
+typedef bool (*MbExistsFn)(u64 engine, i32 id);
+typedef bool (*MbHasFn)(u64 engine, i32 id, const void* typeIndex);
+static MbExistsFn g_mbExists = 0;
+static MbHasFn g_mbHas = 0;
+static u64 g_mbConType = 0;            // the type_info of ecs::component::Construction, as the game passes it (a pointer to it)
+static volatile long g_mbCleared = 0;
+static void ModuleBuilderGuard(SavedRegs* r)
+{
+    u64 self = r->rcx;
+    if (!g_mbExists || !g_mbHas || !self || !Readable((void*)(self + 0xc0), 8) || !Readable((void*)(self + 0x118), 4)) return;
+    i32 id = *(i32*)(self + 0x118);
+    if (id < 0) return;
+    u64 gs = *(u64*)(self + 0xc0);
+    if (!gs || !Readable((void*)(gs + 0x18), 8)) return;
+    u64 eng = *(u64*)(gs + 0x18);
+    if (!eng) return;
+    if (g_mbExists(eng, id) && g_mbHas(eng, id, &g_mbConType)) return;
+    *(i32*)(self + 0x118) = -1;
+    long n = _InterlockedIncrement(&g_mbCleared);
+    if (n <= 12) {
+        Buf b; b.str("module builder: its construction ").dec((long)id).str(" is gone (another player's build removed or replaced it): the tool lets it go instead of the game stopping");
+        LogLine(b);
+    }
+}
+
+static void InstallModuleBuilderGuard()
+{
+    if (GetEnvironmentVariableA("MPFEVER_MBGUARD", 0, 0) > 0) {
+        char v[4] = {};
+        GetEnvironmentVariableA("MPFEVER_MBGUARD", v, 3);
+        if (v[0] == '0') { Buf b; b.str("module builder guard: off (MPFEVER_MBGUARD=0)"); LogLine(b); return; }
+    }
+    // { signature, offset of the stolen read in it, stolen bytes }; each one's "call EntityExists" is its E8
+    struct Site { const char* sig; int off; int steal; };
+    static const Site sites[] = {
+        { "4C 8B F1 8B 91 18 01 00 00 85 D2 78 ?? 48 8B 81 C0 00 00 00 48 8B 48 18 E8", 3, 6 },
+        { "48 8D B9 18 01 00 00 8B 17 85 D2 78 ?? 48 8B 81 C0 00 00 00 48 8B 48 18 E8", 0, 7 },
+        { "48 8B FA 48 8B D9 8B 91 18 01 00 00 85 D2 78 ?? 48 8B 81 C0 00 00 00 48 8B 48 18 E8", 6, 6 },
+        { "8B 91 18 01 00 00 48 8D 99 C0 00 00 00 48 89 9C 24 80 00 00 00 85 D2 78 ?? 48 8B 03 48 8B 48 18 E8", 0, 6 },
+    };
+    static const int e8At[] = { 24, 24, 27, 32 };
+    u32 at[4] = {};
+    u64 exists = 0;
+    const char* miss = 0;
+    for (int i = 0; i < 4 && !miss; i++) {
+        at[i] = FindSigRva(sites[i].sig);
+        if (!at[i]) { miss = "a module builder site not found"; break; }
+        const u8* call = (const u8*)(g_base + at[i] + e8At[i]);
+        if (call[0] != 0xE8) { miss = "a module builder site is not the shape expected"; break; }
+        u64 t = (u64)(call + 5 + *(const i32*)(call + 1));
+        if (exists && t != exists) miss = "the module builder sites call different functions";
+        exists = t;
+    }
+    // HasComponent and the Construction type, from the fourth site: "lea rax,[type]" at +0x34, "call HasComponent" at +0x51
+    if (!miss) {
+        const u8* p = (const u8*)(g_base + at[3]);
+        if (p[0x34] != 0x48 || p[0x35] != 0x8D || p[0x36] != 0x05 || p[0x51] != 0xE8) miss = "HasComponent's call not found";
+        else {
+            g_mbConType = (u64)(p + 0x34 + 7 + *(const i32*)(p + 0x37));
+            g_mbHas = (MbHasFn)(p + 0x51 + 5 + *(const i32*)(p + 0x52));
+            g_mbExists = (MbExistsFn)exists;
+            if ((u64)g_mbHas < g_textStart || (u64)g_mbHas >= g_textEnd || exists < g_textStart || exists >= g_textEnd) miss = "the engine's functions are outside the game's code";
+        }
+    }
+    u8* mem = miss ? 0 : AllocNear(0x400);
+    if (!miss && !mem) miss = "no memory near the game's code";
+    int done = 0;
+    for (int i = 0; i < 4 && !miss; i++) if (Splice(mem, at[i] + sites[i].off, sites[i].steal, ModuleBuilderGuard)) done++;
+    Buf b;
+    if (miss) b.str("module builder guard: OFF (").str(miss).str(")");
+    else b.str("module builder guard: ").dec(done).str(" of 4 reads of its construction checked (a construction removed by another player's build is let go)");
+    LogLine(b);
+}
+
 static void InstallNoGameAutosave()
 {
     char v[4] = {};
@@ -5308,6 +5391,7 @@ static DWORD WINAPI Init(void*)
     InstallFreshIds();
     PatchSaveCleanup();
     InstallNoGameAutosave();
+    InstallModuleBuilderGuard();
     if (g_layout) InstallToolCompany();
     if (g_layout) InstallHudShare();
     if (g_layout) InstallStopSnap();
