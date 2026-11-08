@@ -236,6 +236,61 @@ namespace MPFever
         static DateTime dirsAt;
         static readonly Regex ModIdRx = new Regex("\"modId\"\\s*:\\s*\"([^\"]+)\"");
 
+        /// <summary>(0.7.12, #159: Domenik 2026-11-08) A mod's own id: the "modId" at the top level of its mod.json. The first
+        /// "modId" of the file was taken, and a mod that needs another one names that one first, in its "dependencies" (BR189,
+        /// LGNS and the other ModWerkstatt mods: "mw_basis"). MPFever took BR189's folder for ModWerkstatt's Base Mod: "installed
+        /// twice", "not the same version as the host" for a mod that was the same, and BR189 itself not found. Null when there is
+        /// none. MPFEVER_MODIDTOP=0: the first "modId" of the file, as before.</summary>
+        internal static string TopModId(string json)
+        {
+            if (json == null) return null;
+            if (Environment.GetEnvironmentVariable("MPFEVER_MODIDTOP") == "0")
+            {
+                var m0 = ModIdRx.Match(json);
+                return m0.Success ? m0.Groups[1].Value : null;
+            }
+            int depth = 0;
+            for (int i = 0; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (c == '"')
+                {
+                    int end = JsonStrEnd(json, i);
+                    if (end < 0) return null;
+                    if (depth == 1 && end - i - 1 == 5 && string.CompareOrdinal(json, i + 1, "modId", 0, 5) == 0)
+                    {
+                        int j = end + 1;
+                        while (j < json.Length && char.IsWhiteSpace(json[j])) j++;
+                        if (j < json.Length && json[j] == ':')
+                        {
+                            j++;
+                            while (j < json.Length && char.IsWhiteSpace(json[j])) j++;
+                            if (j < json.Length && json[j] == '"')
+                            {
+                                int e2 = JsonStrEnd(json, j);
+                                if (e2 > j + 1) return json.Substring(j + 1, e2 - j - 1);
+                            }
+                        }
+                    }
+                    i = end;
+                }
+                else if (c == '{' || c == '[') depth++;
+                else if (c == '}' || c == ']') depth--;
+            }
+            return null;
+        }
+
+        // the closing quote of the JSON string that opens at q, or -1
+        static int JsonStrEnd(string s, int q)
+        {
+            for (int k = q + 1; k < s.Length; k++)
+            {
+                if (s[k] == '\\') { k++; continue; }
+                if (s[k] == '"') return k;
+            }
+            return -1;
+        }
+
         /// <summary>The folder of an installed mod (mod.io, Steam Workshop, this player's own mods, the game's), or null.</summary>
         public static string Dir(string id)
         {
@@ -339,7 +394,7 @@ namespace MPFever
                         try
                         {
                             var mj = Path.Combine(d, "mod.json");
-                            if (File.Exists(mj)) { var m = ModIdRx.Match(File.ReadAllText(mj)); if (m.Success) id = m.Groups[1].Value; }
+                            if (File.Exists(mj)) id = TopModId(File.ReadAllText(mj));
                         }
                         catch { }
                         id = id ?? Path.GetFileName(d);

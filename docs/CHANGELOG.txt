@@ -2,6 +2,11 @@ MPFever - Changelog
 ===================
 
 0.7.12 - (in progress)
+  - FIX (mods, #159, Domenik 2026-11-08): a mod was known by the first "modId" of its mod.json, and a mod that needs another
+    one names that one first, in its dependencies (BR189, LGNS and the other ModWerkstatt mods need "mw_basis"). MPFever took
+    BR189's folder for ModWerkstatt's Base Mod: "installed twice", "not the same version as the host" for mods that were the
+    same, the game of the host not loaded, and BR189 itself not found. A mod is now known by the "modId" of its mod.json's top
+    level (MPFEVER_MODIDTOP=0: the first one, as before). Test: tests/test_modidtop0712.py (and the selftest).
 
 0.7.11 - 2026-11-08: crashes with L-Signalsystem previews, the station module editor and a double start fixed; separate companies' money corrected again; a warning for object mods taken for personal
   - FIX (crash, #158, Julian's game 2026-11-08 18:33, after #156): the id of marcu's L-Signalsystem preview was, on Julian's

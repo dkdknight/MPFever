@@ -70,8 +70,34 @@ namespace MPFever
             ok &= RunServer076();
             ok &= RunReport077();
             ok &= RunReport079();
+            ok &= RunModIdTop0712();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.12) Issue #159: a mod's own id is the top level's "modId", not a dependency's.</summary>
+        static bool RunModIdTop0712()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.12: " + what); ok &= c; }
+            // (BR189's mod.json, as the game writes it: the dependencies first, in alphabetical order)
+            var br189 = "{\n  \"dependencies\": [\n    {\n      \"mod\": { \"modId\": \"mw_basis\", \"revisionMin\": 1, \"revisionMax\": -1 },\n"
+                + "      \"modInfo\": { \"displayName\": \"ModWerkstatt Base Mod\" }, \"loadBefore\": true, \"optional\": false\n    }\n  ],\n"
+                + "  \"incompatibilities\": [ { \"mod\": { \"modId\": \"other_mod\" } } ],\n  \"modId\": \"mw_br189\",\n  \"revision\": 1\n}";
+            C(Mods.TopModId(br189) == "mw_br189", "a mod that needs another one: its own id, not its dependency's (" + Mods.TopModId(br189) + ")");
+            C(Mods.TopModId("{\"modId\": \"mpfever_1\"}") == "mpfever_1", "  a mod.json with its id only");
+            C(Mods.TopModId("{\"cosmetic\": true, \"dependencies\": null, \"modId\": \"urbangames_campaign\", \"params\": null}") == "urbangames_campaign", "  the game's own mods");
+            C(Mods.TopModId("{\"name\": \"a \\\"modId\\\": \\\"x\\\" in a text\", \"modId\": \"real_1\"}") == "real_1", "  a \"modId\" inside a text is not one");
+            C(Mods.TopModId("{\"dependencies\": [ { \"mod\": { \"modId\": \"mw_basis\" } } ]}") == null, "  none at the top level: none (the folder's name is used)");
+            C(Mods.TopModId("not json") == null && Mods.TopModId(null) == null, "  no mod.json text: none");
+            var was = Environment.GetEnvironmentVariable("MPFEVER_MODIDTOP");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_MODIDTOP", "0");
+                C(Mods.TopModId(br189) == "mw_basis", "MPFEVER_MODIDTOP=0: the first \"modId\" of the file, as before");
+            }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_MODIDTOP", was); }
+            return ok;
         }
 
         /// <summary>(0.7.9) Issue #136: another copy of the mod in the game's folders, the mod's version said by the game, and the
