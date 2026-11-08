@@ -1604,6 +1604,7 @@ namespace MPFever
             lastHostDlcs = hostList;
             var mine = Mods.InstalledDlcs();
             var (hostOnly, mineOnly) = Mods.DlcDiff(hostList, mine);
+            dlcsDiffer = !string.IsNullOrEmpty(hostList) && (hostOnly.Count > 0 || mineOnly.Count > 0);
             var parts = new List<string>();
             if (mineOnly.Count > 0 && !DlcSessionOn()) parts.Add(F("vous avez {0}, pas la partie de l'hôte", "you have the {0}, the host's game does not", string.Join(", ", mineOnly)));
             if (hostOnly.Count > 0 && !DlcSessionOn()) parts.Add(F("la partie de l'hôte utilise {0}, vous ne l'avez pas", "the host's game uses the {0}, you do not have it", string.Join(", ", hostOnly)));
@@ -1621,8 +1622,15 @@ namespace MPFever
         {
             var c = modCheck;
             bool mods = c == null || (c.Missing.Count == 0 && c.Differs.Count == 0 && c.Bad.Count == 0);
-            return mods && string.IsNullOrEmpty(PlayerDlcWarn());
+            // (0.7.10, a regression of 0.7.8) different DLCs open the join review again: 0.7.8 dropped the "different DLCs"
+            // warning (an unused DLC does nothing, a used one is switched off for the session), and the review, which opened on
+            // that warning, no longer showed for most players (the host's DLCs rarely are every player's). MPFEVER_REVIEWDLC=0:
+            // as 0.7.8
+            bool dlcs = !dlcsDiffer || Environment.GetEnvironmentVariable("MPFEVER_REVIEWDLC") == "0";
+            return mods && dlcs && string.IsNullOrEmpty(PlayerDlcWarn());
         }
+        /// <summary>(0.7.10) This PC's DLCs are not the host's game's (either way), whatever the warnings say.</summary>
+        bool dlcsDiffer;
 
         /// <summary>(0.6.9, the host) The DLC warnings of the players whose DLCs are not the host's, for the lobby.</summary>
         string HostDlcWarn()
@@ -1989,7 +1997,7 @@ namespace MPFever
                 Mods.Rescan();
                 modRecvText = F("Mod {0} reçu de l'hôte et installé. S'il reste « manquant », redémarrez le jeu.", "Mod {0} received from the host and installed. If it stays « missing », restart the game.", id);
                 Log.Ok(F("Mod {0} reçu de l'hôte : installé dans {1}", "Mod {0} received from the host: installed in {1}", id, target));
-                var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lastHostBuild = null; buildWarn = "";
+                var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; dlcsDiffer = false; lastHostBuild = null; buildWarn = "";
                 SetHostMods(hm, clients.FirstOrDefault(), menuGame?.Name ?? "");
             }
             catch (Exception e) { modRecvText = F("Mod {0} : installation impossible ({1})", "Mod {0}: cannot be installed ({1})", id, e.Message); Log.Warn(modRecvText); }
@@ -2355,7 +2363,7 @@ namespace MPFever
                 }
                 else if (lobbyMods != "")
                 {
-                    var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lastHostBuild = null; buildWarn = "";
+                    var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; dlcsDiffer = false; lastHostBuild = null; buildWarn = "";
                     SetHostMods(hm, clients.FirstOrDefault(), name);
                 }
                 MenuStatus();
@@ -2515,7 +2523,7 @@ namespace MPFever
             lock (lobbyAi) lobbyAi.Clear();
             lobbyAiText = ""; lobbyRulesText = ""; lobbyOptsText = "";
             lock (sessionDlcOff) sessionDlcOff.Clear(); lock (playerDlcs) playerDlcs.Clear();
-            lobbyOpen = lobbyStarting = false; lobbySave = ""; lobbyPlayers = ""; lobbyPublic = ""; lobbyLocal = ""; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lastHostBuild = null; buildWarn = ""; lobbyModsKnown = false; dlcListView = "";
+            lobbyOpen = lobbyStarting = false; lobbySave = ""; lobbyPlayers = ""; lobbyPublic = ""; lobbyLocal = ""; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; dlcsDiffer = false; lastHostBuild = null; buildWarn = ""; lobbyModsKnown = false; dlcListView = "";
             lock (modIssues) modIssues.Clear();
             lock (dlcIssues) dlcIssues.Clear();
             joinedAddr = null;

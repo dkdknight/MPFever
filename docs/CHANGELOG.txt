@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.7.10 - (in progress)
+  - FIX (a regression of 0.7.8, the user 2026-11-08: "the last update removed the lobby that lets players check the mods
+    before joining"): the join review (a game already running: its mods and DLCs shown on the Multiplayer page, « Join the
+    game » pressed before it loads) opened only on a warning, and 0.7.8 dropped the "different DLCs" warning (DLCSESSION):
+    most players joined at once again. Different DLCs, either way, open it again, as before 0.7.8; the same mods and DLCs still
+    join at once (MPFEVER_REVIEWDLC=0: as 0.7.8). docs/REGRESSIONS.md now lists the behaviours that must stay and every
+    regression found. Test: tests/test_reviewdlc0710.py.
   - FIX (lag, the user's server 2026-11-08 14:41-14:58, separate companies with a computer company): every time the host's
     computer company bought, sold or sent a vehicle to a line, the "vehicle or line window" lead (ACTLEAD, part of « several
     players building without stopping ») took it for a player with a window open: the host led and the other games stood
