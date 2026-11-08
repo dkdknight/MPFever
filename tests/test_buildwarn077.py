@@ -36,7 +36,7 @@ c = mf[mf.index("void CheckHostBuild(string hostTag, Client client, string name)
 c = c[:c.index("\n        }\n")]
 check('Environment.GetEnvironmentVariable("MPFEVER_BUILDWARN") == "0"' in c and 'Msg.Make("buildcheck"' in c, "  and tells its own (MPFEVER_BUILDWARN=0: nothing)")
 check('["dlcWarn"] = (lobbyOpen || hostGame != null) ? HostDlcWarn() : PlayerDlcWarn(),' in mf, "shown in the lobby's warning box")
-check("return mods && string.IsNullOrEmpty(PlayerDlcWarn());" in mf, "  the join review opens for it")
+check("return mods && dlcs && string.IsNullOrEmpty(PlayerDlcWarn());" in mf, "  the join review opens for it")
 check('(PlayerDlcWarn() != "" ? " | " + PlayerDlcWarn() : "")' in mf, "  and the report says it")
 h = mf[mf.index('case "buildcheck":'):]
 h = h[:h.index("\n                    break;\n")]
