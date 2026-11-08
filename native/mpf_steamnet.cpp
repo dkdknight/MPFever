@@ -167,6 +167,7 @@ static i32 g_tmoInit = 30000;                                   // finding a rel
 static i32 g_tmoConn[3] = { 30000, 15000, 30000 };              // a short Wi-Fi blip does not close the main link
 static i32 g_ice = -1;                                          // P2P_Transport_ICE_Enable: -1 = the player's Steam setting, 1 = relay only
 static bool g_aimd = true;
+static bool g_aimdIdle = true;   // (0.7.7) a main link is lowered only for its own data; MPFEVER_AIMDIDLE=0 / conf aimd_idle 0: as before
 
 // configuration values used, checked by name against the library at the start (a self-check of the enumeration: an id the
 // library names otherwise is never set; without the needed ones, Steam networking stays off)
@@ -249,7 +250,7 @@ struct Tunnel {
     short revents;
     // route and rate
     int flags, ping; float qr, ql; i32 pend, unacked, outBps, inBps;
-    i32 rate; u64 aimdLogAt;
+    i32 rate; u64 aimdLogAt; int goodN;
     u64 bytesIn, bytesOut;
     int code; char why[128];
     // the self-test
@@ -714,8 +715,16 @@ static void Aimd(Tunnel* t, const SnRealTime& rt, u64 now)
     i32 ceil = (t->flags & 8) ? g_rateMaxFast : t->kind == K_BULK ? g_rateMaxBulk : g_rate[t->kind];
     i64 r = t->rate;
     float q = rt.qRemote;
-    if (q >= 0 && q < 0.90f) r = r * 7 / 10;
+    // (0.7.7) a main (or test) link with nothing of its own waiting is not lowered: its remote quality then says how the
+    // relay does with the other links (a savegame on the bulk links, #133/#126), and the link stayed at 256 KB/s for
+    // 5 to 7 minutes, when the next big acts came. Nearly everything arriving for 3 refreshes (3 s) gives its start rate
+    // back, even idle. The bulk links: as before
+    bool idle = g_aimdIdle && t->kind != K_BULK;
+    bool restore = false;
+    if (q >= 0 && q < 0.90f) { t->goodN = 0; if (!idle || rt.pendRel > (16 << 10)) r = r * 7 / 10; }
     else if (rt.pendRel > (64 << 10) && q > 0.98f) r = r * 115 / 100;
+    if (idle && q >= 0.98f) { if (++t->goodN >= 3 && r < g_rate[t->kind]) { r = g_rate[t->kind]; restore = true; } }
+    else if (q < 0.98f) t->goodN = 0;
     if (r < (256 << 10)) r = 256 << 10;
     if (r > ceil) r = ceil;
     if (r == t->rate) return;
@@ -723,9 +732,9 @@ static void Aimd(Tunnel* t, const SnRealTime& rt, u64 now)
     F.setConnInt(g_utils, t->h, 11, (i32)r);
     bool down = r < t->rate;
     t->rate = (i32)r;
-    if (down || Since(now, t->aimdLogAt) >= 10000) {
+    if (down || restore || Since(now, t->aimdLogAt) >= 10000) {
         t->aimdLogAt = now;
-        Buf b; b.str("steam networking: ").str(t->id).str(" rate ").str(down ? "lowered" : "raised").str(" to ").dec(ReadBack(t->h, 11)).str(" bytes/s (quality ")
+        Buf b; b.str("steam networking: ").str(t->id).str(" rate ").str(down ? "lowered" : restore ? "restored" : "raised").str(" to ").dec(ReadBack(t->h, 11)).str(" bytes/s (quality ")
             .q2(q).str(", ").dec(rt.pendRel).str(" bytes waiting)");
         LogLine(b);
     }
@@ -994,6 +1003,7 @@ static void Conf(char** a, int n)
     else if (Same(k, "tmo_init") && num && x >= 1000 && x <= 300000) g_tmoInit = (i32)x;
     else if (Same(k, "tmo_conn") && num && x >= 1000 && x <= 300000) { g_tmoConn[0] = g_tmoConn[1] = g_tmoConn[2] = (i32)x; live(25, -1, (i32)x); }
     else if (Same(k, "aimd") && num) g_aimd = x != 0;
+    else if (Same(k, "aimd_idle") && num) g_aimdIdle = x != 0;
     else if (Same(k, "ice") && (num || neg) && CfgOk(104)) g_ice = neg ? -(i32)x : (i32)x;
     else if (Same(k, "debug") && num && x <= 8) { g_debugLevel = (long)x; F.setDebug(g_utils, (int)x, x ? &OnSteamDebug : 0); }
     else if (Same(k, "fake_lag") && num && x <= 10000 && CfgOk(4)) F.setGlobalInt(g_utils, 4, (i32)x);
@@ -1305,6 +1315,7 @@ extern "C" bool MpfSteamNetStart(HMODULE sa, u64 sid, void* friends)
     if (!why) {
         char dv[4];
         if (GetEnvironmentVariableA("MPFEVER_STEAMNET_DEBUG", dv, 3) > 0 && dv[0] == '1') g_debugLevel = 5;
+        if (GetEnvironmentVariableA("MPFEVER_AIMDIDLE", dv, 3) > 0 && dv[0] == '0') g_aimdIdle = false;
         F.setDebug(g_utils, (int)g_debugLevel, &OnSteamDebug);
         F.initRelay(g_utils);           // relay pings measured from now: ready before the player hosts or joins
         auth = F.initAuth(g_sockets);   // the certificate P2P connections need

@@ -227,6 +227,22 @@ def mock(failclosed):
     check(ends(cr) and ends(ce), "a message Steam refuses ends the tunnel on both loopback sides")
     g.wait_log("Steam refused a message"); dll.TestFailSends(0)
 
+    # (0.7.7) the rate control: a main link with nothing of its own waiting keeps its rate whatever the relay's quality;
+    # lowered as before when its data waits; nearly everything arriving for 3 s gives its start rate back, even idle
+    ce, cr = tunnel(g, g, E, eport, R, SID, 28090, "main", "c11", nonce, secret, "lan")
+    rate = lambda: int((g.tunnel("c11") or {}).get("rate", "0") or 0)
+    wait(lambda: rate() > 0, 3); start = rate()
+    dll.TestQuality(50, 0); time.sleep(3.5)
+    check(start > 0 and rate() == start and "c11 rate lowered" not in g.log(), f"quality 0.50, nothing waiting: the main link keeps {start} bytes/s ({rate()})")
+    dll.TestQuality(50, 200000)
+    check(wait(lambda: 0 < rate() < start, 4) and "c11 rate lowered" in g.log(), f"quality 0.50 with 200 KB waiting: lowered, as before ({rate()})")
+    dll.TestQuality(100, 0)
+    check(wait(lambda: rate() == start, 6) and "c11 rate restored" in g.log(), f"then everything arriving, nothing waiting: its start rate back ({rate()})")
+    g.cmd("conf aimd_idle 0"); time.sleep(0.2); dll.TestQuality(50, 0)
+    check(wait(lambda: 0 < rate() < start, 4), f"conf aimd_idle 0: lowered with nothing waiting, as before ({rate()})")
+    dll.TestQuality(-1, 0); g.cmd("conf aimd_idle 1")
+    g.cmd("close c11"); ends(ce); ends(cr)
+
     dll.TestNoFriends(1)
     g.cmd(f"host {rport} {secret} 1"); g.wait_log(", friends only")
     g.cmd(f"connect c10 {SID} 28090 {eport} {nonce} main")

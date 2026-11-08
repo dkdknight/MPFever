@@ -200,11 +200,15 @@ static void Fill(MConn* c, SnConnInfo* i, int state)
     i->listen = c->listen; i->state = state; i->endReason = c->reason; memcpy(i->endDebug, c->dbg, 128); i->flags = c->flags;
 }
 EXP bool SteamAPI_ISteamNetworkingSockets_GetConnectionInfo(void*, u32 h, SnConnInfo* out) { MConn* c = C(h); if (!c) return false; Fill(c, out, c->state); return true; }
+// test (0.7.7, the rate control): every connection's remote quality and bytes waiting, as a relay would report them (q < 0: real)
+static float g_fakeQ = -1; static i32 g_fakePend = 0;
+EXP void TestQuality(int qPercent, int pend) { g_fakeQ = qPercent < 0 ? -1.0f : qPercent / 100.0f; g_fakePend = pend; }
 EXP int SteamAPI_ISteamNetworkingSockets_GetConnectionRealTimeStatus(void*, u32 h, SnRealTime* rt, int, void*)
 {
     MConn* c = C(h); if (!c) return 8;
     memset(rt, 0, sizeof(*rt));
     rt->state = c->state; rt->ping = 1; rt->qLocal = rt->qRemote = 1.0f; rt->sendRate = c->rate; rt->pendRel = (i32)c->outBytes;
+    if (g_fakeQ >= 0) { rt->qRemote = g_fakeQ; if (g_fakePend > rt->pendRel) rt->pendRel = g_fakePend; }
     return 1;
 }
 EXP void SteamAPI_ISteamNetworkingSockets_RunCallbacks(void*)

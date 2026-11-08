@@ -128,6 +128,28 @@ namespace MPFever
                 && Mods.DlcMinus("urbangames_preorder_pack", new[] { "urbangames_preorder_pack" }) == "none", "  the session's DLCs said without those off");
             C(Mods.DlcWarning("Til", "urbangames_deluxe_upgrade_pack", "none") == "" && Mods.DlcWarning("Til", "none", "urbangames_deluxe_upgrade_pack") == "",
                 "  no more 'desyncs possible' warnings: an unused DLC does nothing, a used one some player lacks is switched off");
+            // (MSGZ) a big text message goes compressed and comes back as it was; a small one as text
+            try
+            {
+                var sb = new System.Text.StringBuilder("{[\"args\"]={");
+                for (int i = 0; sb.Length < 800000; i++) sb.Append("[" + i + "]={[\"comp\"]={[\"node0\"]=" + (100000 + i) + ",[\"tangent\"]={[\"x\"]=0.25,[\"y\"]=-1.5}}},");
+                sb.Append("}}");
+                var big = Msg.Make("act", "Knight-HD#2", sb.ToString());
+                var small = Msg.Make("act", "yoyo", "{[\"fn\"]=\"makeVehicleBuyCmd\",[\"at\"]=12345}");
+                var ms = new MemoryStream();
+                var w = new StreamWriter(ms, new System.Text.UTF8Encoding(false));
+                big.WriteTo(w); small.WriteTo(w); big.WriteTo(w); w.Flush();
+                long wire = ms.Length;
+                ms.Position = 0;
+                var r = new NetReader(ms);
+                var b1 = r.Read(); var s1 = r.Read(); var b2 = r.Read();
+                C(b1 != null && b1.Kind == "act" && b1.From == "Knight-HD#2" && b1.Payload == big.Payload && b2 != null && b2.Payload == big.Payload,
+                    "a big act read back exactly as sent (twice)");
+                C(s1 != null && s1.Kind == "act" && s1.Payload == small.Payload, "  a small one as text, as before");
+                C(wire < big.Payload.Length / 4, "  the big one compressed on the wire (" + wire + " bytes for 2 x " + big.Payload.Length + ")");
+                C(ReferenceEquals(big.Zipped(), big.Zipped()), "  compressed once per message (a relay to several players reuses it)");
+            }
+            catch (Exception e) { C(false, "msgz: " + e.Message); }
             // (MODLOCALFIRST) a mod installed twice: the local copy the game runs is named in the "other version" message
             C(Mods.DiffersName("Industry Evolution", null) == "Industry Evolution", "a mod of another version: its name");
             C(Mods.DiffersName("Industry Evolution", @"E:\Steam\userdata\1\3493540\local\mods\spy_industry_evolution").Contains(@"local\mods\spy_industry_evolution"),

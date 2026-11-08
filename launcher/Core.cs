@@ -296,10 +296,68 @@ namespace MPFever
 
         public override string ToString() => Kind + "\t" + From + "\t" + Payload;
 
+        // (0.7.7, MSGZ) see WriteTo
+        internal const string ZipKind = "z_bin";
+        internal const int ZipMin = 16 * 1024;
+        internal static bool ZipOn = Environment.GetEnvironmentVariable("MPFEVER_MSGZ") != "0";
+        byte[] zipped;
+        bool zipTried;
+
+        /// <summary>(0.7.7) This text message deflated, once, when it is big enough and compression is on; else null.</summary>
+        internal byte[] Zipped()
+        {
+            if (!ZipOn || Payload == null || Payload.Length < ZipMin || Kind == null || Kind.EndsWith("_bin", StringComparison.Ordinal)) return null;
+            lock (this)
+            {
+                if (!zipTried)
+                {
+                    zipTried = true;
+                    try
+                    {
+                        var bytes = Encoding.UTF8.GetBytes(Payload);
+                        using (var ms = new MemoryStream())
+                        {
+                            using (var ds = new System.IO.Compression.DeflateStream(ms, System.IO.Compression.CompressionLevel.Fastest, true)) ds.Write(bytes, 0, bytes.Length);
+                            if (ms.Length < bytes.Length) zipped = ms.ToArray();
+                        }
+                    }
+                    catch { zipped = null; }
+                }
+                return zipped;
+            }
+        }
+
+        /// <summary>(0.7.7) A "z_bin" message read from a connection back as the text message it was (null: not one).</summary>
+        internal static Msg Unzip(Msg m)
+        {
+            if (m == null || m.Kind != ZipKind || m.Data == null) return null;
+            var t = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+            var k = t != null && t.TryGetValue("k", out var kv) && kv is string ks ? ks : null;
+            if (string.IsNullOrEmpty(k)) throw new IOException("compressed message without its kind");
+            using (var ms = new MemoryStream(m.Data))
+            using (var ds = new System.IO.Compression.DeflateStream(ms, System.IO.Compression.CompressionMode.Decompress))
+            using (var r = new StreamReader(ds, Encoding.UTF8))
+                return new Msg { Kind = k, From = m.From, Payload = r.ReadToEnd() };
+        }
+
         /// <summary>Writes the message on a connection (its line, then its bytes for a binary one). The caller holds the
         /// connection's lock.</summary>
         public void WriteTo(StreamWriter w)
         {
+            // (0.7.7) a big text message (a station edit's act: 838 KB in #133) goes compressed, as a binary "z_bin" whose bytes
+            // are the payload deflated (12 to 16 times smaller, 2 to 5 ms): NetReader.Read gives it back as it was, so nothing
+            // else sees a difference. Uncompressed, it held its sender's ordered link 0.8 to 3.3 s per hop and the receivers
+            // stood until it came (2.6 s after its announce in the middle, 10.6 s at most). Compressed once per message, a
+            // relay to several players reuses the bytes. MPFEVER_MSGZ=0: as before
+            var z = Data == null ? Zipped() : null;
+            if (z != null)
+            {
+                w.WriteLine(ZipKind + "\t" + From + "\t{[\"k\"]=" + LuaLit.Quote(Kind) + ",[\"len\"]=" + z.Length + "}");
+                w.Flush();
+                w.BaseStream.Write(z, 0, z.Length);
+                w.BaseStream.Flush();
+                return;
+            }
             w.WriteLine(ToString());
             if (Data != null)
             {
@@ -373,6 +431,8 @@ namespace MPFever
                 {
                     int len = LuaLit.Parse(m.Payload) is Dictionary<object, object> t && t.TryGetValue("len", out var lv) && lv is double ld ? (int)ld : -1;
                     m.Data = ReadBytes(len);
+                    // (0.7.7: a compressed text message, as it was sent; a bad one ends the connection, its sender sends it again)
+                    if (m.Kind == Msg.ZipKind) return Msg.Unzip(m);
                 }
                 return m;
             }

@@ -40,6 +40,15 @@ MPFever - Changelog
     for nothing, and without a reload (the autotests) the players' games left the next builds out, waiting for it. Refused
     everywhere, no game built it: every game is told and nothing is reloaded (MPFEVER_FAILALIKE=0: as before). Test:
     tests/test_failalike077.py.
+  - LAG (big stations, issue #133 22:08-22:16 and #126): a station edit's build is 600 to 838 KB of text; it went as is over
+    each player's ordered link and held it 0.8 to 3.3 s per hop, while the other games waited for it (2.6 s in the middle,
+    10.6 s at most). Text messages of 16 KB or more now go compressed (12 to 16 times smaller, 2 to 5 ms) and come out exactly
+    as sent (MPFEVER_MSGZ=0: as before). Test: tests/test_msgz077.py (and MPFever.exe --selftest).
+  - LAG (Steam links, the same sessions): the rate control lowered a player's main link to 256 KB/s while a savegame went
+    over the other links (the relay's quality, nothing of its own waiting), and it stayed there 5 to 7 minutes, when the next
+    big builds came. A main link is now lowered only when its own data waits, and gets its start rate back after 3 s of good
+    quality (MPFEVER_AIMDIDLE=0: as before; the savegame's links unchanged). Test: tests/test_aimdidle077.py (and
+    native/steamnet_test.py mock).
   - DIAGNOSTIC (the user's server 2026-11-08 02:40, a reload on "vehicles" with no dump of them between the last check alike
     and the first apart): a check that finds the simulation apart makes the next check dump every vehicle whole on every game,
     and every dump gives each vehicle's state hash (MPFEVER_SDUMPAFTER=0: not). Test: tests/test_sdumpafter077.py.
