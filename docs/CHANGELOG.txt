@@ -28,6 +28,10 @@ MPFever - Changelog
     six) is chosen by the check's number, the same on every game: counted by each game's own dumps, it fell at other moments on
     each game and the first vehicle that moved otherwise could not be told (MPFEVER_SDUMPWORLDN=0: as before). Test:
     tests/test_sdumpworldn077.py.
+  - NEW (issue #135): a player whose game build is not the host's (another Steam build, a GOG copy) is warned like for the
+    DLCs, in the lobby, the join review and the reports, and the host sees it in its lobby; never refused (two builds do not
+    simulate the game alike: the games reloaded every few minutes and the player did not know why). MPFEVER_BUILDWARN=0:
+    nothing, as before. Test: tests/test_buildwarn077.py (and MPFever.exe --selftest).
   - REPORTS: a player's report says who plays and whether the game runs (it read "Players: -; game running: no" in a running
     game: a player's launcher has no lobby of its own; MPFEVER_REPORTCLIENT=0: as before), and a game build MPFever does not
     know gets the number its log names and whether Steam installed it (issue #135: a GOG copy, build 40393, read "unknown

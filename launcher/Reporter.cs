@@ -217,6 +217,36 @@ namespace MPFever
             catch { return "?"; }
         }
 
+        /// <summary>(0.7.7) This game's build as the host and the players tell it to each other (MainForm.BuildWarning):
+        /// "stamp|number|store", the exe's link stamp (what tells two builds apart), its build number (known stamps, else the
+        /// game's log, else "?") and "steam" or "other" (a copy Steam did not install). "" when the game is not found. Kept
+        /// while the exe does not change (it goes with every lobby message).</summary>
+        internal static string BuildTag(string gameDir)
+        {
+            try
+            {
+                var exe = Path.Combine(gameDir ?? "", "TransportFever3.exe");
+                if (!File.Exists(exe)) return "";
+                var key = exe + "|" + File.GetLastWriteTimeUtc(exe).Ticks;
+                lock (buildTagCache) if (buildTagCache.TryGetValue(key, out var hit)) return hit;
+                uint stamp;
+                using (var f = File.OpenRead(exe))
+                {
+                    var b = new byte[1024];
+                    f.Read(b, 0, b.Length);
+                    int pe = BitConverter.ToInt32(b, 0x3c);
+                    stamp = BitConverter.ToUInt32(b, pe + 8);
+                }
+                string known = stamp == 0x6ad9ce10 ? "40425" : stamp == 0x6ad0e4e5 ? "40423" : stamp == 0x6ac50427 ? "40420" : stamp == 0x6ab69fe5 ? "40408" : null;
+                var tag = stamp.ToString("x8") + "|" + (known ?? BuildInLog(GameLog()) ?? "?") + "|" + (GameInstall.NotSteamCopy(gameDir) ? "other" : "steam");
+                // (an unknown build whose number the log does not give yet: not kept, the log may have it at the next call)
+                if (!tag.Contains("|?|")) lock (buildTagCache) buildTagCache[key] = tag;
+                return tag;
+            }
+            catch { return ""; }
+        }
+        static readonly Dictionary<string, string> buildTagCache = new Dictionary<string, string>();
+
         /// <summary>(0.7.7) The build the game's log names at its start ("Starting up build version: 40393"), or null.</summary>
         internal static string BuildInLog(string logPath)
         {

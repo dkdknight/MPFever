@@ -109,6 +109,14 @@ namespace MPFever
             C(MainForm.RefusedEverywhere("Bence#11:3", new[] { "Bence#11", "yoyo", "YkeWoudstra#2" }, new[] { "yoyo", "Bence#11", "YkeWoudstra#2" })
                 && !MainForm.RefusedEverywhere("nocolon", new[] { "a" }, new[] { "a" }) && !MainForm.RefusedEverywhere("a:1", new[] { "a" }, new string[0]),
                 "  a player's build refused everywhere: alike; nothing known: reloaded");
+            // (BUILDWARN) another game build than the host's: a warning, never a refusal
+            C(MainForm.BuildWarning(null, "6ad9ce10|40425|steam", "6ad9ce10|40425|steam") == "", "the same game build: no warning");
+            var bw = MainForm.BuildWarning(null, "6ad9ce10|40425|steam", "6ab3eec7|40393|other");
+            C(bw.Contains("40393") && bw.Contains("40425"), "a player on another build (a GOG copy, #135): warned with both numbers (" + bw + ")");
+            var hw = MainForm.BuildWarning("Til", "6ad9ce10|40425|steam", "6ab3eec7|?|other");
+            C(hw.StartsWith("Til") && hw.Contains("6ab3eec7") && hw.Contains("40425"), "  the host's view: the player named, an unknown number shown by its stamp");
+            C(MainForm.BuildWarning(null, "", "6ab3eec7|40393|other") == "" && MainForm.BuildWarning("x", "6ad9ce10|40425|steam", "") == "",
+                "  an older MPFever that says nothing: no warning");
             // (SDUMPAFTER) the check after a difference of the simulation: the whole dump on every game
             C(MainForm.WantsWorldDump("vehicles") && MainForm.WantsWorldDump("script:towns") && MainForm.WantsWorldDump("edges"),
                 "a difference of the simulation: the next check's dump whole");

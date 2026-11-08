@@ -23764,6 +23764,45 @@
       "ko": "재동기화가 이미 진행 중입니다.",
       "zh-CN": "重新同步已在进行中。",
       "zh-TW": "重新同步已在進行中。"
+    },
+    "not a Steam copy": {
+      "de": "keine Steam-Kopie",
+      "es": "no es una copia de Steam",
+      "it": "non è una copia Steam",
+      "nl": "geen Steam-kopie",
+      "pl": "nie kopia ze Steam",
+      "pt-BR": "não é uma cópia da Steam",
+      "ru": "не копия Steam",
+      "ja": "Steam版ではありません",
+      "ko": "Steam 사본이 아님",
+      "zh-CN": "非 Steam 副本",
+      "zh-TW": "非 Steam 副本"
+    },
+    "Different game build: you have build {0}, the host build {1}. Two different builds do not simulate the game alike: desyncs are likely. Get the same build (Steam: Properties > Installed Files > Verify integrity). The game can still be played.": {
+      "de": "Andere Spielversion: du hast die Version {0}, der Host die Version {1}. Zwei verschiedene Versionen simulieren das Spiel nicht gleich: Desynchronisierungen sind wahrscheinlich. Sorgt für dieselbe Version (Steam: Eigenschaften > Installierte Dateien > Dateien auf Fehler überprüfen). Das Spiel kann trotzdem gestartet werden.",
+      "es": "Versión del juego diferente: tienes la versión {0}, el anfitrión la versión {1}. Dos versiones distintas no simulan la partida igual: es probable que haya desincronizaciones. Tened la misma versión (Steam: Propiedades > Archivos instalados > Verificar integridad). La partida puede jugarse igualmente.",
+      "it": "Versione del gioco diversa: hai la versione {0}, l'host la versione {1}. Due versioni diverse non simulano la partita allo stesso modo: le desincronizzazioni sono probabili. Usate la stessa versione (Steam: Proprietà > File installati > Verifica integrità). La partita può comunque essere giocata.",
+      "nl": "Andere spelversie: jij hebt versie {0}, de host versie {1}. Twee verschillende versies simuleren het spel niet hetzelfde: desynchronisaties zijn waarschijnlijk. Zorg voor dezelfde versie (Steam: Eigenschappen > Geïnstalleerde bestanden > Integriteit controleren). Het spel kan toch gespeeld worden.",
+      "pl": "Inna wersja gry: masz wersję {0}, gospodarz wersję {1}. Dwie różne wersje nie symulują gry tak samo: desynchronizacje są prawdopodobne. Miejcie tę samą wersję (Steam: Właściwości > Zainstalowane pliki > Zweryfikuj spójność). Grę można mimo to uruchomić.",
+      "pt-BR": "Versão do jogo diferente: você tem a versão {0}, o anfitrião a versão {1}. Duas versões diferentes não simulam o jogo da mesma forma: dessincronizações são prováveis. Tenham a mesma versão (Steam: Propriedades > Arquivos instalados > Verificar integridade). O jogo pode ser jogado mesmo assim.",
+      "ru": "Другая версия игры: у вас версия {0}, у хоста версия {1}. Две разные версии моделируют игру по-разному: рассинхронизации вероятны. Установите одну и ту же версию (Steam: Свойства > Установленные файлы > Проверить целостность). Играть всё равно можно.",
+      "ja": "ゲームのバージョンが異なります：あなたはバージョン {0}、ホストはバージョン {1} です。異なるバージョンは同じようにシミュレーションしないため、非同期が起こりやすくなります。同じバージョンにしてください（Steam：プロパティ > インストール済みファイル > 整合性を確認）。それでもプレイはできます。",
+      "ko": "게임 버전이 다릅니다: 당신은 {0} 버전, 호스트는 {1} 버전입니다. 서로 다른 버전은 게임을 똑같이 시뮬레이션하지 않아 비동기화가 일어나기 쉽습니다. 같은 버전을 사용하세요 (Steam: 속성 > 설치된 파일 > 무결성 확인). 그래도 플레이할 수는 있습니다.",
+      "zh-CN": "游戏版本不同：你的版本是 {0}，主机的版本是 {1}。两个不同的版本模拟游戏的方式不同：很可能出现不同步。请使用相同的版本（Steam：属性 > 已安装文件 > 验证完整性）。游戏仍可进行。",
+      "zh-TW": "遊戲版本不同：你的版本是 {0}，主機的版本是 {1}。兩個不同的版本模擬遊戲的方式不同：很可能出現不同步。請使用相同的版本（Steam：內容 > 已安裝的檔案 > 驗證完整性）。遊戲仍可進行。"
+    },
+    "{0} has build {1} of the game, the host build {2}: desyncs are likely. The game can still be played.": {
+      "de": "{0} hat die Spielversion {1}, der Host die Version {2}: Desynchronisierungen sind wahrscheinlich. Das Spiel kann trotzdem gestartet werden.",
+      "es": "{0} tiene la versión {1} del juego, el anfitrión la versión {2}: es probable que haya desincronizaciones. La partida puede jugarse igualmente.",
+      "it": "{0} ha la versione {1} del gioco, l'host la versione {2}: le desincronizzazioni sono probabili. La partita può comunque essere giocata.",
+      "nl": "{0} heeft versie {1} van het spel, de host versie {2}: desynchronisaties zijn waarschijnlijk. Het spel kan toch gespeeld worden.",
+      "pl": "{0} ma wersję gry {1}, gospodarz wersję {2}: desynchronizacje są prawdopodobne. Grę można mimo to uruchomić.",
+      "pt-BR": "{0} tem a versão {1} do jogo, o anfitrião a versão {2}: dessincronizações são prováveis. O jogo pode ser jogado mesmo assim.",
+      "ru": "У {0} версия игры {1}, у хоста версия {2}: рассинхронизации вероятны. Играть всё равно можно.",
+      "ja": "{0} のゲームはバージョン {1}、ホストはバージョン {2} です：非同期が起こりやすくなります。それでもプレイはできます。",
+      "ko": "{0}의 게임은 {1} 버전, 호스트는 {2} 버전입니다: 비동기화가 일어나기 쉽습니다. 그래도 플레이할 수는 있습니다.",
+      "zh-CN": "{0} 的游戏版本是 {1}，主机的版本是 {2}：很可能出现不同步。游戏仍可进行。",
+      "zh-TW": "{0} 的遊戲版本是 {1}，主機的版本是 {2}：很可能出現不同步。遊戲仍可進行。"
     }
   }
 }

@@ -1038,7 +1038,7 @@ namespace MPFever
                 sb.AppendLine("Sync: " + syncText + "; desyncs " + desyncs + ", resynchronisations " + resyncId + ", actions relayed " + actsRelayed + ", refused " + actRefused);
                 sb.AppendLine("Processor: " + Reporter.Processor() + "; " + Reporter.WindowsVersion());
                 // (0.6.9: the game's DLCs here, and what differs from the host's or a player's)
-                sb.AppendLine("DLCs: " + Mods.InstalledDlcs() + (dlcWarn != "" ? " | " + dlcWarn : "") + (HostDlcWarn() != "" ? " | " + HostDlcWarn() : ""));
+                sb.AppendLine("DLCs: " + Mods.InstalledDlcs() + (PlayerDlcWarn() != "" ? " | " + PlayerDlcWarn() : "") + (HostDlcWarn() != "" ? " | " + HostDlcWarn() : ""));
                 sb.AppendLine("Report made " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + (crashed ? " after a crash of the game" : ""));
                 var summary = sb.ToString();
                 List<string> left;
@@ -1651,11 +1651,50 @@ namespace MPFever
         {
             var c = modCheck;
             bool mods = c == null || (c.Missing.Count == 0 && c.Differs.Count == 0 && c.Bad.Count == 0);
-            return mods && string.IsNullOrEmpty(dlcWarn);
+            return mods && string.IsNullOrEmpty(PlayerDlcWarn());
         }
 
         /// <summary>(0.6.9, the host) The DLC warnings of the players whose DLCs are not the host's, for the lobby.</summary>
-        string HostDlcWarn() { lock (dlcIssues) return Mods.DlcWarningText(dlcIssues.Values.ToList()); }
+        string HostDlcWarn()
+        {
+            string d; lock (dlcIssues) d = Mods.DlcWarningText(dlcIssues.Values.ToList());
+            string b; lock (buildIssues) b = string.Join(" ", buildIssues.Values);
+            return string.Join(" ", new[] { d, b }.Where(x => !string.IsNullOrEmpty(x)));
+        }
+
+        // (0.7.7) a game build other than the host's, like the DLCs: a warning in the lobby, the join review and the report, never
+        // a refusal (issue #135: a GOG copy, build 40393, with a host on Steam's 40425, reloaded every 3 to 5 minutes). The host
+        // tells its build (Reporter.BuildTag, "gbuild" in its lobby and welcome), each player compares and tells its own
+        // (buildcheck), the host shows the players' in its lobby. MPFEVER_BUILDWARN=0: nothing, as before
+        string buildWarn = "", lastHostBuild = null;
+        readonly Dictionary<string, string> buildIssues = new Dictionary<string, string>();
+        string PlayerDlcWarn() => string.Join(" ", new[] { dlcWarn, buildWarn }.Where(x => !string.IsNullOrEmpty(x)));
+
+        void CheckHostBuild(string hostTag, Client client, string name)
+        {
+            if (string.IsNullOrEmpty(hostTag) || hostTag == lastHostBuild || Environment.GetEnvironmentVariable("MPFEVER_BUILDWARN") == "0") return;
+            lastHostBuild = hostTag;
+            var mine = Reporter.BuildTag(gameDir);
+            buildWarn = BuildWarning(null, hostTag, mine);
+            if (buildWarn != "") Log.Err(buildWarn);
+            try { client?.Send(Msg.Make("buildcheck", name, "{[\"gbuild\"]=" + LuaLit.Quote(mine) + "}")); } catch { }
+            MenuStatus();
+        }
+
+        /// <summary>(0.7.7) The warning for a game build other than the host's ("" when the same; player null: this PC's own view).
+        /// A tag is "stamp|build|store" (Reporter.BuildTag): the stamp tells the builds apart, the number and the store are shown.</summary>
+        internal static string BuildWarning(string player, string hostTag, string theirTag)
+        {
+            if (string.IsNullOrEmpty(hostTag) || string.IsNullOrEmpty(theirTag)) return "";
+            var h = hostTag.Split('|'); var t = theirTag.Split('|');
+            if (h[0] == t[0]) return "";
+            string Show(string[] x) => (x.Length > 1 && x[1] != "?" ? x[1] : x[0]) + (x.Length > 2 && x[2] == "other" ? " (" + T("pas une copie Steam", "not a Steam copy") + ")" : "");
+            return player == null
+                ? F("Version du jeu différente : vous avez la version {0}, l'hôte la version {1}. Deux versions différentes ne simulent pas la partie de la même façon : des désynchronisations sont probables. Ayez la même version (Steam : Propriétés > Fichiers installés > Vérifier l'intégrité). La partie peut tout de même être lancée.",
+                    "Different game build: you have build {0}, the host build {1}. Two different builds do not simulate the game alike: desyncs are likely. Get the same build (Steam: Properties > Installed Files > Verify integrity). The game can still be played.", Show(t), Show(h))
+                : F("{0} a la version {1} du jeu, l'hôte la version {2} : des désynchronisations sont probables. La partie peut tout de même être lancée.",
+                    "{0} has build {1} of the game, the host build {2}: desyncs are likely. The game can still be played.", player, Show(t), Show(h));
+        }
 
         /// <summary>(0.7.0) The DLCs of this session as the host tells them to its players: its savegame's when its mods are known
         /// (the host may have switched a DLC off in them), else the DLCs installed on the host's PC. MPFEVER_SAVEDLCS=0: always
@@ -1814,7 +1853,7 @@ namespace MPFever
                     ["modAsk"] = lobbyOpen ? ModAskView() : "",
                     ["modSend"] = lobbyOpen ? modSendText : "",
                     // (0.6.9) players whose DLCs are not the host's (the host's lobby), or this player's own difference
-                    ["dlcWarn"] = (lobbyOpen || hostGame != null) ? HostDlcWarn() : dlcWarn,
+                    ["dlcWarn"] = (lobbyOpen || hostGame != null) ? HostDlcWarn() : PlayerDlcWarn(),
                     // (0.7.0, a player) the host's DLCs and this PC's, for the list of the lobby and of the join review
                     ["dlcList"] = (lobbyOpen || hostGame != null) ? "" : dlcListView,
                     ["modOffer"] = lobbyOpen ? "" : modOffer,
@@ -1919,7 +1958,7 @@ namespace MPFever
                 Mods.Rescan();
                 modRecvText = F("Mod {0} reçu de l'hôte et installé. S'il reste « manquant », redémarrez le jeu.", "Mod {0} received from the host and installed. If it stays « missing », restart the game.", id);
                 Log.Ok(F("Mod {0} reçu de l'hôte : installé dans {1}", "Mod {0} received from the host: installed in {1}", id, target));
-                var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = "";
+                var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lastHostBuild = null; buildWarn = "";
                 SetHostMods(hm, clients.FirstOrDefault(), menuGame?.Name ?? "");
             }
             catch (Exception e) { modRecvText = F("Mod {0} : installation impossible ({1})", "Mod {0}: cannot be installed ({1})", id, e.Message); Log.Warn(modRecvText); }
@@ -2285,7 +2324,7 @@ namespace MPFever
                 }
                 else if (lobbyMods != "")
                 {
-                    var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = "";
+                    var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lastHostBuild = null; buildWarn = "";
                     SetHostMods(hm, clients.FirstOrDefault(), name);
                 }
                 MenuStatus();
@@ -2444,7 +2483,7 @@ namespace MPFever
             lobbyColors = ""; lobbyMode = "";
             lock (lobbyAi) lobbyAi.Clear();
             lobbyAiText = ""; lobbyRulesText = ""; lobbyOptsText = "";
-            lobbyOpen = lobbyStarting = false; lobbySave = ""; lobbyPlayers = ""; lobbyPublic = ""; lobbyLocal = ""; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lobbyModsKnown = false; dlcListView = "";
+            lobbyOpen = lobbyStarting = false; lobbySave = ""; lobbyPlayers = ""; lobbyPublic = ""; lobbyLocal = ""; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lastHostBuild = null; buildWarn = ""; lobbyModsKnown = false; dlcListView = "";
             lock (modIssues) modIssues.Clear();
             lock (dlcIssues) dlcIssues.Clear();
             joinedAddr = null;
@@ -2644,6 +2683,7 @@ namespace MPFever
             relay.Broadcast(Msg.Make("lobby", hostName, "{[\"players\"]=" + LuaLit.Quote(LobbyList()) + ",[\"save\"]=" + LuaLit.Quote(lobbySave)
                 + (lobbySaveSha != "" ? ",[\"sha\"]=" + LuaLit.Quote(lobbySaveSha) + ",[\"size\"]=" + lobbySaveSize : "")
                 + ",[\"host\"]=" + LuaLit.Quote(BaseName(hostName ?? "")) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(SessionDlcs())
+                + ",[\"gbuild\"]=" + LuaLit.Quote(Reporter.BuildTag(gameDir))
                 + ",[\"colors\"]=" + LuaLit.Quote(LobbyColors()) + ",[\"cmode\"]=" + LuaLit.Quote(companyMode)
                 + ",[\"ai\"]=" + LuaLit.Quote(companyMode == "separate" ? LobbyAiView() : "")
                 // (0.5.14: the game's rules, shown to the players of the lobby)
@@ -3040,7 +3080,7 @@ namespace MPFever
                 // (0.7.0) a game already running (no lobby: a player's game started, a dedicated server): the player sees its mods and
                 // DLCs on its page first, gets what it lacks, and says when it joins (joinready); only then does it get the game
                 bool review = menuMode && !lobbyOpen && JoinReviewOn;
-                relay.Send(p, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(SessionDlcs())
+                relay.Send(p, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(SessionDlcs()) + ",[\"gbuild\"]=" + LuaLit.Quote(Reporter.BuildTag(gameDir))
                     + ",[\"rtok\"]=" + LuaLit.Quote(p.Link?.Token ?? "") + (hostSteamId != null ? ",[\"sid\"]=" + LuaLit.Quote(hostSteamId) : "") + (review ? ",[\"review\"]=true" : "") + "}"));
                 Msg[] history; lock (chatLog) history = chatLog.ToArray();
                 foreach (var c in history) relay.Send(p, c);   // the chat so far (a reconnecting player skips what it has)
@@ -3334,6 +3374,7 @@ namespace MPFever
                             lobbyOptsText = lo;
                             SetHostMods(S("mods"), client, name);
                             CheckHostDlcs(S("dlcs"), client, name);
+                            CheckHostBuild(S("gbuild"), client, name);
                             // the host's savegame: maybe on this PC already (copied by hand): then nothing to download
                             if (S("sha") != "" && long.TryParse(S("size"), NumberStyles.Integer, CultureInfo.InvariantCulture, out long hsz)) CheckHostSave(S("sha"), hsz, S("save"), client, name);
                             menuPhase = "lobby";
@@ -3395,6 +3436,7 @@ namespace MPFever
                         }
                         if (w.TryGetValue("mods", out var mv0) && mv0 is string ms0) SetHostMods(ms0, client, name);
                         if (w.TryGetValue("dlcs", out var dv0) && dv0 is string ds0) CheckHostDlcs(ds0, client, name);
+                        if (w.TryGetValue("gbuild", out var gb0) && gb0 is string gbs0) CheckHostBuild(gbs0, client, name);
                         if (w.TryGetValue("sid", out var sv) && sv is string ss && SteamNet.IsSteamId("steam:" + ss, out _)) hostSid = ss;
                         var run = w.TryGetValue("run", out var rv) && rv is string rs ? rs : "";
                         string have = "{[\"id\"]=0}";
@@ -4085,7 +4127,7 @@ namespace MPFever
             // the server, still in its old world) only counts once its game has loaded the server's world: its clock,
             // actions and checks are those of another world
             // (0.7.0: but its word after the join review, and its DLCs, come before its game loads: they are about joining)
-            if (server != null && from != null && m.Kind != "hello" && m.Kind != "chat" && m.Kind != "joinready" && m.Kind != "dlccheck")
+            if (server != null && from != null && m.Kind != "hello" && m.Kind != "chat" && m.Kind != "joinready" && m.Kind != "dlccheck" && m.Kind != "buildcheck")
             {
                 bool ready; lock (players) ready = players.Contains(m.From);
                 if (!ready) return;
@@ -4100,7 +4142,7 @@ namespace MPFever
                     WarnUnknownBuild(m.Payload);
                     WarnOtherBuild(m.From, m.Payload);
                     // a game started again (resynchronisation): it needs its identity again
-                    if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(SessionDlcs())
+                    if (from != null) relay.Send(from, Msg.Make("welcome", hostName, "{[\"you\"]=" + LuaLit.Quote(from.Name) + ",[\"role\"]=\"client\",[\"v\"]=" + LuaLit.Quote(Version) + ",[\"run\"]=" + LuaLit.Quote(myRun) + ",[\"opts\"]=" + LuaLit.Quote(Options.SessionPayload()) + ",[\"mods\"]=" + LuaLit.Quote(lobbyMods) + ",[\"dlcs\"]=" + LuaLit.Quote(SessionDlcs()) + ",[\"gbuild\"]=" + LuaLit.Quote(Reporter.BuildTag(gameDir))
                         + ",[\"rtok\"]=" + LuaLit.Quote(from.Link?.Token ?? "") + (hostSteamId != null ? ",[\"sid\"]=" + LuaLit.Quote(hostSteamId) : "") + "}"));
                     // (a player who reconnected during the resynchronisation answers under its new name: Philippe#2 for Philippe#1)
                     lock (resyncWaiting) resyncWaiting.RemoveWhere(w => w == m.From || BaseName(w) == BaseName(m.From));
@@ -4134,6 +4176,26 @@ namespace MPFever
                         if (differs != "") Log.Warn(F("{0} n'a pas la même version que vous de ces mods : {1}. Il ne pourra pas charger la partie tant qu'il ne les a pas mis à jour.", "{0} does not have your version of these mods: {1}. They cannot load the game until they update them.", BaseName(from.Name), differs));
                         BroadcastLobby();
                         MenuStatus();
+                    }
+                    break;
+
+                case "buildcheck":
+                    {
+                        // (0.7.7) a player's game build compared with the host's (see CheckHostBuild): in the log and the lobby
+                        if (from == null || Environment.GetEnvironmentVariable("MPFEVER_BUILDWARN") == "0") break;
+                        var hb = LuaLit.Parse(m.Payload) as Dictionary<object, object> ?? new Dictionary<object, object>();
+                        var theirB = hb.TryGetValue("gbuild", out var gv) && gv is string gs ? gs : "";
+                        var whoB = BaseName(from.Name);
+                        var warnB = BuildWarning(whoB, Reporter.BuildTag(gameDir), theirB);
+                        bool changedB;
+                        lock (buildIssues)
+                        {
+                            buildIssues.TryGetValue(whoB, out var wasB);
+                            changedB = (wasB ?? "") != warnB;
+                            if (warnB != "") buildIssues[whoB] = warnB; else buildIssues.Remove(whoB);
+                        }
+                        if (changedB && warnB != "") Log.Err(warnB);
+                        if (changedB) { BroadcastLobby(); MenuStatus(); }
                     }
                     break;
 
