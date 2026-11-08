@@ -23855,6 +23855,32 @@
       "ko": "Mod Hub 사본을 대신하는 로컬 사본 {0}",
       "zh-CN": "本地副本 {0}，取代了 Mod Hub 的副本",
       "zh-TW": "本機副本 {0}，取代了 Mod Hub 的副本"
+    },
+    "{0} switched off for this session ({1}): {2} does not have it. Every game runs without it, to stay alike; the original savegame keeps it.": {
+      "de": "{0} für diese Sitzung deaktiviert ({1}): {2} hat es nicht. Alle Spiele laufen ohne, damit sie gleich bleiben; der ursprüngliche Spielstand behält es.",
+      "es": "{0} desactivado para esta sesión ({1}): {2} no lo tiene. Todas las partidas funcionan sin él para seguir iguales; la partida guardada original lo conserva.",
+      "it": "{0} disattivato per questa sessione ({1}): {2} non ce l'ha. Tutte le partite girano senza, per restare uguali; il salvataggio originale lo mantiene.",
+      "nl": "{0} uitgeschakeld voor deze sessie ({1}): {2} heeft het niet. Alle spellen draaien zonder, om gelijk te blijven; de oorspronkelijke opslag houdt het.",
+      "pl": "{0} wyłączony na tę sesję ({1}): {2} go nie ma. Wszystkie gry działają bez niego, by pozostać takie same; oryginalny zapis go zachowuje.",
+      "pt-BR": "{0} desativado nesta sessão ({1}): {2} não o tem. Todos os jogos rodam sem ele para continuar iguais; o salvamento original o mantém.",
+      "ru": "{0} отключён на эту сессию ({1}): у {2} его нет. Все игры работают без него, чтобы оставаться одинаковыми; исходное сохранение его сохраняет.",
+      "ja": "{0} はこのセッションでは無効です（{1}）：{2} が持っていません。同じ状態を保つため、すべてのゲームがそれなしで動きます。元のセーブデータには残ります。",
+      "ko": "{0}가 이번 세션에서 꺼졌습니다 ({1}): {2}에게 없습니다. 같은 상태를 유지하도록 모든 게임이 없이 실행됩니다. 원래 저장 파일에는 남아 있습니다.",
+      "zh-CN": "{0} 在本次会话中已关闭（{1}）：{2} 没有它。为保持一致，所有游戏都在没有它的情况下运行；原始存档仍保留它。",
+      "zh-TW": "{0} 在本次工作階段中已關閉（{1}）：{2} 沒有它。為保持一致，所有遊戲都在沒有它的情況下執行；原始存檔仍保留它。"
+    },
+    "DLCs switched off for this session by the host: {0}": {
+      "de": "Vom Host für diese Sitzung deaktivierte DLCs: {0}",
+      "es": "DLC desactivados por el anfitrión para esta sesión: {0}",
+      "it": "DLC disattivati dall'host per questa sessione: {0}",
+      "nl": "Door de host voor deze sessie uitgeschakelde DLC's: {0}",
+      "pl": "DLC wyłączone przez gospodarza na tę sesję: {0}",
+      "pt-BR": "DLCs desativados pelo anfitrião nesta sessão: {0}",
+      "ru": "DLC, отключённые хостом на эту сессию: {0}",
+      "ja": "ホストがこのセッションで無効にした DLC：{0}",
+      "ko": "호스트가 이번 세션에서 끈 DLC: {0}",
+      "zh-CN": "主机在本次会话中关闭的 DLC：{0}",
+      "zh-TW": "主機在本次工作階段中關閉的 DLC：{0}"
     }
   }
 }

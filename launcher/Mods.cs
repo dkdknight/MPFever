@@ -121,6 +121,30 @@ namespace MPFever
             return ids.Count == 0 ? "none" : string.Join(",", ids);
         }
 
+        /// <summary>(0.7.7) The DLCs of a savegame ("a,b" or "none", SaveDlcs) that some game of the session lacks: those not in every
+        /// known list (a list "" is an older MPFever or an unknown one: skipped; "none": no DLC).</summary>
+        internal static List<string> DlcOff(string saveDlcs, IEnumerable<string> lists)
+        {
+            var save = DlcIds(saveDlcs);
+            var known = (lists ?? new string[0]).Where(l => !string.IsNullOrEmpty(l)).Select(DlcIds).ToList();
+            return save.Where(d => known.Any(l => !l.Contains(d, StringComparer.OrdinalIgnoreCase))).ToList();
+        }
+
+        /// <summary>(0.7.7) Whether a DLC list names this DLC.</summary>
+        internal static bool DlcIn(string list, string id) => DlcIds(list).Contains(id, StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>(0.7.7) A DLC list without these ("none" when nothing is left).</summary>
+        internal static string DlcMinus(string list, IEnumerable<string> off)
+        {
+            if (string.IsNullOrEmpty(list) || list == "none") return list;
+            var o = new HashSet<string>(off ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            var left = DlcIds(list).Where(x => !o.Contains(x)).ToList();
+            return left.Count == 0 ? "none" : string.Join(",", left);
+        }
+
+        static List<string> DlcIds(string list) =>
+            string.IsNullOrEmpty(list) || list == "none" ? new List<string>() : list.Split(',').Select(x => x.Trim()).Where(x => x != "").ToList();
+
         /// <summary>A DLC's name for the players.</summary>
         public static string DlcName(string id)
         {
@@ -157,6 +181,9 @@ namespace MPFever
         public static string DlcWarning(string player, string hostList, string playerList)
         {
             var (hostOnly, playerOnly) = DlcDiff(hostList, playerList);
+            // (0.7.7: a DLC installed and not used by the game does nothing; one the game uses and a player lacks is switched off
+            // for the session, see MainForm.ApplyDlcOff: said then, not here. MPFEVER_DLCSESSION=0: warned as before)
+            if (Environment.GetEnvironmentVariable("MPFEVER_DLCSESSION") != "0") { playerOnly = new List<string>(); hostOnly = new List<string>(); }
             if (hostOnly.Count == 0 && playerOnly.Count == 0) return "";
             var parts = new List<string>();
             if (playerOnly.Count > 0) parts.Add(F("{0} a {1}, pas la partie de l'hôte", "{0} has the {1}, the host's game does not", player, string.Join(", ", playerOnly)));

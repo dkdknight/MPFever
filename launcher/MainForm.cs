@@ -1635,8 +1635,8 @@ namespace MPFever
             var mine = Mods.InstalledDlcs();
             var (hostOnly, mineOnly) = Mods.DlcDiff(hostList, mine);
             var parts = new List<string>();
-            if (mineOnly.Count > 0) parts.Add(F("vous avez {0}, pas la partie de l'hôte", "you have the {0}, the host's game does not", string.Join(", ", mineOnly)));
-            if (hostOnly.Count > 0) parts.Add(F("la partie de l'hôte utilise {0}, vous ne l'avez pas", "the host's game uses the {0}, you do not have it", string.Join(", ", hostOnly)));
+            if (mineOnly.Count > 0 && !DlcSessionOn()) parts.Add(F("vous avez {0}, pas la partie de l'hôte", "you have the {0}, the host's game does not", string.Join(", ", mineOnly)));
+            if (hostOnly.Count > 0 && !DlcSessionOn()) parts.Add(F("la partie de l'hôte utilise {0}, vous ne l'avez pas", "the host's game uses the {0}, you do not have it", string.Join(", ", hostOnly)));
             // (0.7.0: the advice instead of "every player needs the same DLCs"; the game can still be played)
             dlcWarn = Mods.DlcWarningText(parts);
             dlcListView = Mods.DlcListView(hostList, mine);
@@ -1702,7 +1702,68 @@ namespace MPFever
         string SessionDlcs()
         {
             if (Environment.GetEnvironmentVariable("MPFEVER_SAVEDLCS") == "0") return Mods.InstalledDlcs();
-            return Mods.SaveDlcs(lobbyMods, lobbyModsKnown) ?? Mods.InstalledDlcs();
+            var all = Mods.SaveDlcs(lobbyMods, lobbyModsKnown) ?? Mods.InstalledDlcs();
+            // (0.7.7: without the DLCs switched off for this session, see ApplyDlcOff)
+            string[] off; lock (sessionDlcOff) off = sessionDlcOff.ToArray();
+            return Mods.DlcMinus(all, off);
+        }
+
+        // (0.7.7) A DLC works like a mod of the savegame: a game loads its models, its game script (the Deluxe pack's balloon,
+        // math.random in the simulation) and its animals only when the savegame's mods name it; installed and not named, it does
+        // nothing (4404 models known on two PCs, one with both packs and one with none; 4433 with the Deluxe pack named). A
+        // savegame naming a DLC that a player lacks was loaded with it on the others and without it on that player's game: the
+        // games parted. The host now decides, for the whole session, the DLCs of the savegame that some game lacks
+        // (sessionDlcOff, only growing until the session ends); every load of the session leaves them out, the host's own and its
+        // reloads included (dlc_drop.txt next to the game, "dlcoff" to the players, read by mpfever_auto.lua and C.loadWithPlan).
+        // MPFEVER_DLCSESSION=0: as before (warnings only, a player lacking a DLC loads without it alone)
+        readonly HashSet<string> sessionDlcOff = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, string> playerDlcs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static bool DlcSessionOn() => Environment.GetEnvironmentVariable("MPFEVER_DLCSESSION") != "0";
+
+        /// <summary>(0.7.7, the host) Before a load of the session (the lobby's start, a resynchronisation): the savegame's DLCs that
+        /// the host's PC or one of these players lacks are switched off for the session, the host's own load is told (dlc_drop.txt)
+        /// and the players too ("dlcoff", before the savegame they load).</summary>
+        void ApplyDlcOff(IEnumerable<string> names, string why)
+        {
+            if (!DlcSessionOn()) return;
+            try
+            {
+                var save = Mods.SaveDlcs(lobbyMods, lobbyModsKnown) ?? Mods.InstalledDlcs();
+                var lists = new List<string> { Mods.InstalledDlcs() };
+                var lacking = new List<string>();
+                lock (playerDlcs)
+                    foreach (var n in names ?? new string[0])
+                        if (playerDlcs.TryGetValue(BaseName(n), out var l)) lists.Add(l);
+                var off = Mods.DlcOff(save, lists);
+                List<string> added;
+                lock (sessionDlcOff) { added = off.Where(x => sessionDlcOff.Add(x)).ToList(); off = sessionDlcOff.ToList(); }
+                foreach (var d in added)
+                {
+                    var who = new List<string>();
+                    if (!Mods.DlcIn(Mods.InstalledDlcs(), d)) who.Add(BaseName(hostName ?? ""));
+                    lock (playerDlcs) foreach (var kv in playerDlcs) if (!Mods.DlcIn(kv.Value, d)) who.Add(kv.Key);
+                    var text = F("{0} désactivé pour cette session ({1}) : {2} ne l'a pas. Toutes les parties tournent sans lui, pour rester identiques ; la sauvegarde d'origine le garde.",
+                        "{0} switched off for this session ({1}): {2} does not have it. Every game runs without it, to stay alike; the original savegame keeps it.", Mods.DlcName(d), why, string.Join(", ", who.Distinct()));
+                    Log.Warn(text);
+                    HostChat("msg", "MPFever", text);
+                }
+                var host = hostGame ?? menuGame;
+                if (host != null) WriteDlcDrop(host.Dir, off);
+                HostSend(Msg.Make("dlcoff", hostName ?? "", "{[" + "\"ids\"" + "]=" + LuaLit.Quote(string.Join(",", off)) + "}"));
+            }
+            catch (Exception e) { Log.W("dlcoff: " + e.Message); }
+        }
+
+        /// <summary>(0.7.7) The DLCs a game of this session leaves out at its loads (dlc_drop.txt, "off TAB id" lines; always
+        /// written, empty when none: a session folder lives as long as the game).</summary>
+        internal static void WriteDlcDrop(string dir, IEnumerable<string> ids)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+                File.WriteAllText(Path.Combine(dir, "dlc_drop.txt"), string.Concat((ids ?? new string[0]).Select(x => "off\t" + x + "\n")));
+            }
+            catch (Exception e) { Log.W("dlc_drop.txt: " + e.Message); }
         }
 
         /// <summary>(the host) What MPFever knows of each mod of the savegame, in the log.</summary>
@@ -2483,6 +2544,7 @@ namespace MPFever
             lobbyColors = ""; lobbyMode = "";
             lock (lobbyAi) lobbyAi.Clear();
             lobbyAiText = ""; lobbyRulesText = ""; lobbyOptsText = "";
+            lock (sessionDlcOff) sessionDlcOff.Clear(); lock (playerDlcs) playerDlcs.Clear();
             lobbyOpen = lobbyStarting = false; lobbySave = ""; lobbyPlayers = ""; lobbyPublic = ""; lobbyLocal = ""; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; lastHostBuild = null; buildWarn = ""; lobbyModsKnown = false; dlcListView = "";
             lock (modIssues) modIssues.Clear();
             lock (dlcIssues) dlcIssues.Clear();
@@ -2732,6 +2794,8 @@ namespace MPFever
                 resyncBytesSha = sha;
                 // the host's own game loads the savegame from the main menu (mpfever_auto.lua), while the players receive it
                 lastLoadOrder = Now;
+                // (0.7.7: the DLCs some game lacks, off for the session, before the host's load and the players', see ApplyDlcOff)
+                ApplyDlcOff(peers, T("lancement", "start"));
                 menuLoad = lobbySave; menuLoadSeq = "h" + DateTime.Now.Ticks;
                 WriteLoadId(menuGame, id);
                 menuPhase = "loading"; menuText = T("Chargement de la partie...", "Loading the game...");
@@ -3221,6 +3285,7 @@ namespace MPFever
             // (0.7.7: a new session's players, for the reports, see NoteFromHost)
             lock (clientPeers) clientPeers.Clear();
             hostStartedSeen = -1;
+            WriteDlcDrop(game.Dir, null);
             Client current = null;
             string hostSid = null;   // the host's Steam id, from its welcome
             string Targets() => hostSid == null || host.IndexOf("steam:", StringComparison.OrdinalIgnoreCase) >= 0 ? host : host + ",steam:" + hostSid;
@@ -3331,6 +3396,14 @@ namespace MPFever
                     if (m.Kind == "session") { var cm = SessionMode(m.Payload); if (cm != "") hostCompanyMode = cm; }
                     // (0.7.7: who plays and whether the game runs, for this player's reports)
                     try { NoteFromHost(m, name); } catch { }
+                    // (0.7.7) the DLCs off for this session, before the host's savegame comes (see ApplyDlcOff)
+                    if (m.Kind == "dlcoff")
+                    {
+                        var dd = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+                        var ids = dd != null && dd.TryGetValue("ids", out var iv) && iv is string ivs ? ivs : "";
+                        if (DlcSessionOn()) { WriteDlcDrop(game.Dir, ids.Split(',').Select(x => x.Trim()).Where(x => x != "")); if (ids != "") Log.W(F("DLC désactivés pour cette session par l'hôte : {0}", "DLCs switched off for this session by the host: {0}", ids)); }
+                        return;
+                    }
                     if (m.Kind == "resync_file" || m.Kind == "resync_bin") { OnResyncFile(game, m); return; }
                     if (m.Kind == "resync_use") { OnResyncUse(game, client, name, m); return; }
                     if (m.Kind == "delta_bin") { OnDeltaFile(game, client, name, m); return; }
@@ -4206,6 +4279,7 @@ namespace MPFever
                         var h = LuaLit.Parse(m.Payload) as Dictionary<object, object> ?? new Dictionary<object, object>();
                         var theirs = h.TryGetValue("dlcs", out var dv) && dv is string dls ? dls : "";
                         var who = BaseName(from.Name);
+                        lock (playerDlcs) playerDlcs[who] = theirs;
                         var warn = Mods.DlcWarning(who, SessionDlcs(), theirs);
                         bool changed;
                         lock (dlcIssues)
@@ -4776,6 +4850,8 @@ namespace MPFever
                 long at; lock (sessionGate) at = pauseAt ?? 0;
                 bool stopped = WaitUntil(() => { lock (clocks) return clocks.Values.All(c => c.T >= at && c.Sp == 0); }, 120);
                 if (!stopped) { Log.Err(T("Resynchronisation abandonnée : les jeux ne se sont pas arrêtés.", "Resynchronisation cancelled: the games did not stop.")); return; }
+                // (0.7.7: the DLCs some game of the session lacks, off before the save that every game reloads, see ApplyDlcOff)
+                { string[] dlcAll; lock (players) dlcAll = players.ToArray(); ApplyDlcOff(dlcAll, T("resynchronisation", "resynchronisation")); }
                 // 2. the host saves
                 saveDone = null;
                 resyncDropping = true;

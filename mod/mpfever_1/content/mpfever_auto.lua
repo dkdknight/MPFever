@@ -63,6 +63,24 @@ local function dlcOf(descs, m)
 	return os.getenv("MPFEVER_DLCDROP") ~= "0" and d ~= nil and d.modSource == "DLC"
 end
 
+-- (0.7.7) the DLCs the host switched off for this session (dlc_drop.txt next to the game, "off TAB id" lines, see ApplyDlcOff in the
+-- launcher; MPFEVER_DLCOFFTEST=id1,id2 for the tests): every load of the session leaves them out, the host's own too, so that every
+-- game runs the same DLCs. MPFEVER_DLCSESSION=0: none
+local function dlcOffList()
+	if os.getenv("MPFEVER_DLCSESSION") == "0" then return {} end
+	local off = {}
+	for id in tostring(os.getenv("MPFEVER_DLCOFFTEST") or ""):gmatch("[^,%s]+") do off[id] = true end
+	if DIR and IO then
+		local f = IO.open(DIR .. BS .. "dlc_drop.txt", "rb")
+		if f then
+			local s = f:read("*a") or ""
+			f:close()
+			for id in s:gmatch("off" .. string.char(9) .. "([^" .. string.char(10, 13) .. "]+)") do off[id] = true end
+		end
+	end
+	return off
+end
+
 local function descsOf(info)
 	local descs = {}
 	pcall(function()
@@ -154,8 +172,11 @@ local function loadPending()
 		local ok, ex = pcall(function() return rep0:exists(m) end)
 		return ok and ex == false
 	end
+	local off = dlcOffList()
 	for _, m in ipairs(info.mods or {}) do
-		if dlcMissing(m) then dropped[#dropped + 1] = m.name; log("DLC " .. tostring(m.name) .. " of the host's game not on this PC: loaded without it (the games may desynchronise)")
+		local isDlc = descs[m.name] ~= nil and descs[m.name].modSource == "DLC"
+		if off[m.name] and isDlc then dropped[#dropped + 1] = m.name; log("DLC " .. tostring(m.name) .. " switched off for this session (every game runs without it)")
+		elseif dlcMissing(m) then dropped[#dropped + 1] = m.name; log("DLC " .. tostring(m.name) .. " of the host's game not on this PC: loaded without it (the games may desynchronise)")
 		elseif drop[m.name] or (plan and plan.drop[m.name]) then dropped[#dropped + 1] = m.name
 		else
 			mods[#mods + 1] = m

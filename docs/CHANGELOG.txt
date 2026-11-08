@@ -16,6 +16,14 @@ MPFever - Changelog
     moments for a few steps (0.6.8's analysis). The 0.6.8 fresh ids covered only the entities a command makes itself. A
     vehicle bought (or replaced at a depot) now gets a fresh id too, the same on every game (found by signature on the game's
     code; MPFEVER_FRESHBUY=0: as before). Test: tests/test_freshbuy077.py.
+  - FIX (DLCs): a DLC works like a mod of the savegame (its models, the Deluxe pack's balloon script, its animals are loaded
+    only when the savegame names it; installed and not named, it does nothing). A savegame naming a DLC that a player lacked
+    ran with it on the other games and without it on that player's: the games parted (#109). The host now switches such a
+    DLC off for the whole session, at the lobby's start and at every resynchronisation (a player joining among them): every
+    game, the host's own and its reloads included, runs without it, and the chat says which and why (DLC vehicles and
+    landmarks show as placeholders during the session; the original savegame keeps them). The "different DLCs, desyncs
+    possible" warnings are gone: an unused DLC does nothing. MPFEVER_DLCSESSION=0: as before. Test: tests/test_dlcsession077.py
+    (and MPFever.exe --selftest).
   - FIX (mods, the user's PC 2026-11-07/08): a mod installed twice (in the player's own local\mods and from the Mod Hub) runs
     from the local copy, while MPFever compared the Mod Hub's: the user's PC ran an older Industry Evolution than the server
     for a whole evening, with no warning (factories, cargo and vehicles can drift then). MPFever now looks at the copy the game

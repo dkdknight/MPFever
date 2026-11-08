@@ -2090,9 +2090,37 @@ end
 
 -- loads a savegame of this player (the host's game) with the plan: its details are read first, which takes a few frames
 -- (later(fn) calls fn at a coming frame). Without a plan, or without the details, it loads with its own mods as before.
+-- (0.7.7) the DLCs the host switched off for this session (dlc_drop.txt, see ApplyDlcOff in the launcher; MPFEVER_DLCOFFTEST for the
+-- tests), as a set, or nil when none. MPFEVER_DLCSESSION=0: none
+function C.dlcOffList()
+	if os.getenv("MPFEVER_DLCSESSION") == "0" then return nil end
+	local off, n = {}, 0
+	for id in tostring(os.getenv("MPFEVER_DLCOFFTEST") or ""):gmatch("[^,%s]+") do off[id] = true; n = n + 1 end
+	local f = C.IO and C.DIR and C.IO.open(C.DIR .. BS .. "dlc_drop.txt", "rb")
+	if f then
+		local s = f:read("*a") or ""
+		f:close()
+		for id in s:gmatch("off" .. string.char(9) .. "([^" .. NL .. CR .. "]+)") do off[id] = true; n = n + 1 end
+	end
+	return n > 0 and off or nil
+end
+
+-- (0.7.7) a mod list without the session's DLCs that are off (those whose savegame entry says source "DLC"): the list and those left out
+function C.dropDlcs(mods, off, descs)
+	if not off then return mods, {} end
+	local out, dropped = {}, {}
+	for _, m in ipairs(mods or {}) do
+		local d = descs and descs[m.name]
+		if off[m.name] and d and d.modSource == "DLC" then dropped[#dropped + 1] = m.name else out[#out + 1] = m end
+	end
+	return out, dropped
+end
+
 function C.loadWithPlan(id, logf, later)
 	local plan = C.loadPlan()
-	if not plan then app.loadGame(id, false) return end
+	-- (0.7.7: also for the DLCs off for this session, see C.dlcOffList; nothing to change: loaded with its own mods, as before)
+	local off = C.dlcOffList()
+	if not plan and not off then app.loadGame(id, false) return end
 	local ok, async = pcall(app.getSavegameInfo, id)
 	if not ok or not async then
 		logf("personal mods: the savegame's details cannot be read here, loaded with its own mods")
@@ -2115,10 +2143,18 @@ function C.loadWithPlan(id, logf, later)
 			return
 		end
 		local details = api.type.SaveGameDetails.new(info)
-		local mods, dropped, added = C.planMods(info.mods, plan)
+		local mods, dropped, added = info.mods, {}, {}
+		if plan then mods, dropped, added = C.planMods(info.mods, plan) end
+		local descs = {}
+		pcall(function() for _, d in ipairs(info.metadata.gameModDescs or {}) do if d.modId and d.modId.name then descs[d.modId.name] = d end end end)
+		local offOut
+		mods, offOut = C.dropDlcs(mods, off, descs)
 		details.mods = mods
-		logf("personal mods: the host's game loaded without " .. (#dropped > 0 and table.concat(dropped, ", ") or "none") .. ", with "
-			.. (#added > 0 and table.concat(added, ", ") or "none") .. " added")
+		if plan then
+			logf("personal mods: the host's game loaded without " .. (#dropped > 0 and table.concat(dropped, ", ") or "none") .. ", with "
+				.. (#added > 0 and table.concat(added, ", ") or "none") .. " added")
+		end
+		if #offOut > 0 then logf("DLC " .. table.concat(offOut, ", ") .. " switched off for this session (every game runs without it)") end
 		app.loadGame(id, false, details)
 	end
 	later(poll)

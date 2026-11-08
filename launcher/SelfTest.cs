@@ -117,6 +117,17 @@ namespace MPFever
             C(hw.StartsWith("Til") && hw.Contains("6ab3eec7") && hw.Contains("40425"), "  the host's view: the player named, an unknown number shown by its stamp");
             C(MainForm.BuildWarning(null, "", "6ab3eec7|40393|other") == "" && MainForm.BuildWarning("x", "6ad9ce10|40425|steam", "") == "",
                 "  an older MPFever that says nothing: no warning");
+            // (DLCSESSION) the savegame's DLCs some game lacks: off for the whole session
+            var off = Mods.DlcOff("urbangames_deluxe_upgrade_pack", new[] { "urbangames_deluxe_upgrade_pack,urbangames_preorder_pack", "none" });
+            C(off.Count == 1 && off[0] == "urbangames_deluxe_upgrade_pack", "a DLC of the savegame a player lacks: off for the session");
+            C(Mods.DlcOff("urbangames_deluxe_upgrade_pack", new[] { "urbangames_deluxe_upgrade_pack", "urbangames_deluxe_upgrade_pack" }).Count == 0,
+                "  every game has it: kept");
+            C(Mods.DlcOff("none", new[] { "none" }).Count == 0 && Mods.DlcOff("urbangames_deluxe_upgrade_pack", new[] { "", "urbangames_deluxe_upgrade_pack" }).Count == 0,
+                "  a savegame without DLC, or a list not known (an older MPFever): nothing off");
+            C(Mods.DlcMinus("urbangames_deluxe_upgrade_pack,urbangames_preorder_pack", new[] { "urbangames_preorder_pack" }) == "urbangames_deluxe_upgrade_pack"
+                && Mods.DlcMinus("urbangames_preorder_pack", new[] { "urbangames_preorder_pack" }) == "none", "  the session's DLCs said without those off");
+            C(Mods.DlcWarning("Til", "urbangames_deluxe_upgrade_pack", "none") == "" && Mods.DlcWarning("Til", "none", "urbangames_deluxe_upgrade_pack") == "",
+                "  no more 'desyncs possible' warnings: an unused DLC does nothing, a used one some player lacks is switched off");
             // (MODLOCALFIRST) a mod installed twice: the local copy the game runs is named in the "other version" message
             C(Mods.DiffersName("Industry Evolution", null) == "Industry Evolution", "a mod of another version: its name");
             C(Mods.DiffersName("Industry Evolution", @"E:\Steam\userdata\1\3493540\local\mods\spy_industry_evolution").Contains(@"local\mods\spy_industry_evolution"),
@@ -443,6 +454,9 @@ namespace MPFever
             bool ok = true;
             void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
             var kept = Environment.GetEnvironmentVariable("MPFEVER_DLCS");
+            // (0.7.7: the 0.6.9-0.7.6 warnings, still given with MPFEVER_DLCSESSION=0; RunReport077 checks the session's DLC set)
+            var keptSession = Environment.GetEnvironmentVariable("MPFEVER_DLCSESSION");
+            Environment.SetEnvironmentVariable("MPFEVER_DLCSESSION", "0");
             try
             {
                 const string D = "urbangames_deluxe_upgrade_pack", P = "urbangames_preorder_pack";
@@ -471,7 +485,7 @@ namespace MPFever
                 Check(Mods.DlcListView(D, D).Contains("|both|") && Mods.DlcListView("", D) == "", "dlc list: alike; an older MPFever: none");
             }
             catch (Exception e) { Check(false, "dlcs: " + e.Message); }
-            finally { Environment.SetEnvironmentVariable("MPFEVER_DLCS", kept); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_DLCS", kept); Environment.SetEnvironmentVariable("MPFEVER_DLCSESSION", keptSession); }
             return ok;
         }
 
