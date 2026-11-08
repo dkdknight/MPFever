@@ -72,6 +72,10 @@ MPFever - Changelog
     big builds came. A main link is now lowered only when its own data waits, and gets its start rate back after 3 s of good
     quality (MPFEVER_AIMDIDLE=0: as before; the savegame's links unchanged). Test: tests/test_aimdidle077.py (and
     native/steamnet_test.py mock).
+  - LAG (big stations): a station edit's replay counted every segment and edge object of the map (20 to 60 ms on a big map)
+    before sending its conversion, while the game stood at the build's step; they are counted right after now (nothing changes
+    in between; MPFEVER_COUNTSAFTER=0: before). A build ids lookup over 20 ms is logged with its time (research). Test:
+    tests/test_countsafter077.py.
   - MODS: GCT Tram Loop and GCT Curved Station are shown "to check" in the lobby and in docs/MODS.md: in #133 each station,
     placed once, was refused on the two other games and rebuilt there otherwise (two reloads). Their scripts draw nothing at
     random; the cause is still to reproduce with the mods installed.

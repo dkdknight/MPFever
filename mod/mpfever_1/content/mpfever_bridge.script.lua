@@ -2813,7 +2813,15 @@ SIM.idResolve = function(state, force)
 	for _, ck in ipairs(SIM.idChecks) do
 		ck.ticks = ck.ticks + 1
 		if okT and (tCk >= ck.at + 2 * STEP or (force and ck.at <= tCk)) then
+			-- (0.7.7, lag research F4: what this costs the simulation thread on a big map, said in a line of its own when it is more
+			-- than 20 ms; the "build ids" line itself stays the same on every game)
+			local idc0 = os.clock()
 			local si, ni = R.idsAt(ck.segs, ck.nodes)
+			local idMs = (os.clock() - idc0) * 1000
+			if idMs > 20 then
+				SIM.idSlow = (SIM.idSlow or 0) + 1
+				if SIM.idSlow <= 20 or SIM.idSlow % 50 == 0 then log(string.format("build ids t=%.0f: found in %.0f ms (%d segment(s), %d node(s); slow %d time(s))", ck.at, idMs, #si, #ni, SIM.idSlow)) end
+			end
 			-- (and how many of its new nodes have a node configuration: issue #50's drift, nodeConfigs 7418 / 7420 after
 			-- a station of 200 nodes, compares here between the builder's game and the others)
 			local cfg = 0
@@ -5834,10 +5842,19 @@ local function replayNativeConstruction(a)
 	if G.lagMark then G.lagMark("conversion made") end
 	if not okc or not dry then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: conversion command " .. shortErr(dry)) return false end
 	toSim("replaying", { tok = a.tsTok })
-	local edgesBefore = #R.allEdges()
-	local objsBefore = 0
-	pcall(function() for _ in pairs(api.engine.system.streetSystem.getEdgeObject2EdgeMap()) do objsBefore = objsBefore + 1 end end)
+	-- (0.7.7, lag research F5: the map's counts, for the "edges here" line once it is built, read right after the conversion is
+	-- handed to the engine and not before: they walk the whole street map (20 to 60 ms on a big one) while this game stands at
+	-- the build's step, and the conversion is refused on purpose, nothing changes until the build. MPFEVER_COUNTSAFTER=0: before)
+	local edgesBefore, objsBefore = nil, 0
+	local function countNow()
+		edgesBefore = #R.allEdges()
+		objsBefore = 0
+		pcall(function() for _ in pairs(api.engine.system.streetSystem.getEdgeObject2EdgeMap()) do objsBefore = objsBefore + 1 end end)
+	end
+	local countsAfter = os.getenv("MPFEVER_COUNTSAFTER") ~= "0"
+	if not countsAfter then countNow() end
 	G.gateDryNext = true; replaySend(dry, function(res, success)
+		if edgesBefore == nil then countNow() end
 		if success then
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the conversion command was built instead of refused (desync)")
 			replayFailed(a, "conversion built")
@@ -6047,6 +6064,7 @@ local function replayNativeConstruction(a)
 		end
 		finish()
 	end)
+	if countsAfter and edgesBefore == nil then countNow() end
 	return true
 end
 
