@@ -109,6 +109,11 @@ namespace MPFever
             C(MainForm.RefusedEverywhere("Bence#11:3", new[] { "Bence#11", "yoyo", "YkeWoudstra#2" }, new[] { "yoyo", "Bence#11", "YkeWoudstra#2" })
                 && !MainForm.RefusedEverywhere("nocolon", new[] { "a" }, new[] { "a" }) && !MainForm.RefusedEverywhere("a:1", new[] { "a" }, new string[0]),
                 "  a player's build refused everywhere: alike; nothing known: reloaded");
+            // (SDUMPAFTER) the check after a difference of the simulation: the whole dump on every game
+            C(MainForm.WantsWorldDump("vehicles") && MainForm.WantsWorldDump("script:towns") && MainForm.WantsWorldDump("edges"),
+                "a difference of the simulation: the next check's dump whole");
+            C(!MainForm.WantsWorldDump("money") && !MainForm.WantsWorldDump("names") && !MainForm.WantsWorldDump("buildIds") && !MainForm.WantsWorldDump(""),
+                "  not for money, names or a diagnostic part");
             return ok;
         }
 

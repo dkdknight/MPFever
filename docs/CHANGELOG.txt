@@ -21,6 +21,9 @@ MPFever - Changelog
     for nothing, and without a reload (the autotests) the players' games left the next builds out, waiting for it. Refused
     everywhere, no game built it: every game is told and nothing is reloaded (MPFEVER_FAILALIKE=0: as before). Test:
     tests/test_failalike077.py.
+  - DIAGNOSTIC (the user's server 2026-11-08 02:40, a reload on "vehicles" with no dump of them between the last check alike
+    and the first apart): a check that finds the simulation apart makes the next check dump every vehicle whole on every game,
+    and every dump gives each vehicle's state hash (MPFEVER_SDUMPAFTER=0: not). Test: tests/test_sdumpafter077.py.
   - DIAGNOSTIC (the user's server 2026-11-08 00:00, a reload on "vehicles"): the checks' dump of every vehicle (one check of
     six) is chosen by the check's number, the same on every game: counted by each game's own dumps, it fell at other moments on
     each game and the first vehicle that moved otherwise could not be told (MPFEVER_SDUMPWORLDN=0: as before). Test:

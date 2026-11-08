@@ -28,7 +28,7 @@ ext = src[i:j]
 check(i > 0, "extendedParts takes the check's number")
 a = ext.find("local worldTurn = SDUMP.n % 6 == 0")
 b = ext.find('if type(checkN) == "number" and os.getenv("MPFEVER_SDUMPWORLDN") ~= "0" then worldTurn = checkN % 6 == 0 end')
-c = ext.find('local world = dump and (SDUMP.all or worldTurn or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
+c = ext.find('local world = dump and (SDUMP.all or worldTurn or forced or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
 check(0 < a < b < c, "one check of six by its number; none given or MPFEVER_SDUMPWORLDN=0: the dump's own count, as before")
 h = src.find("local function simHash(terrainSig, reg, n, buildIds, at)")
 check(h > 0 and "pcall(extendedParts, parts, n)" in src[h:h + 9000], "simHash passes its check's number")

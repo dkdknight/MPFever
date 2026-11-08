@@ -4005,16 +4005,27 @@ namespace MPFever
             int n = Interlocked.Increment(ref hashN);
             lock (hashes) hashes[n] = new Dictionary<string, Dictionary<object, object>>();
             long? p; lock (sessionGate) p = pauseAt;
+            // (0.7.7: after a difference, this check's dump whole on every game, see WantsWorldDump; MPFEVER_SDUMPAFTER=0: not)
+            string world = "";
+            if (worldDumpNext) { worldDumpNext = false; if (Environment.GetEnvironmentVariable("MPFEVER_SDUMPAFTER") != "0") world = ",[\"world\"]=true"; }
             if (p.HasValue && MaxClock() >= p.Value)
             {
                 // the games may have stopped a batch apart: the check is taken at the latest of their times (the others
                 // catch up to it)
                 long at; lock (clocks) at = Math.Max(p.Value, clocks.Count == 0 ? 0 : clocks.Values.Max(c => c.T));
-                HostSend(Msg.Make("hash", hostName, "{[\"n\"]=" + n + ",[\"at\"]=" + at + ",[\"paused\"]=true}"));
+                HostSend(Msg.Make("hash", hostName, "{[\"n\"]=" + n + ",[\"at\"]=" + at + ",[\"paused\"]=true" + world + "}"));
             }
             else
-                HostSend(Msg.Make("hash", hostName, "{[\"n\"]=" + n + ",[\"at\"]=" + FutureStamp() + "}"));
+                HostSend(Msg.Make("hash", hostName, "{[\"n\"]=" + n + ",[\"at\"]=" + FutureStamp() + world + "}"));
         }
+
+        // (0.7.7) set by a check that found the simulation apart: the next check's dump is whole on every game
+        volatile bool worldDumpNext;
+
+        /// <summary>(0.7.7) Whether a part that differs asks for the whole dump at the next check: the simulation's parts, not money
+        /// (corrected from the host at once), the names (a language's default names) nor the diagnostic ones.</summary>
+        internal static bool WantsWorldDump(string part) =>
+            !string.IsNullOrEmpty(part) && part != "money" && part != "names" && part != "loans" && !DiagnosticParts.Contains(part);
 
         void HostLoop(int gen)
         {
@@ -4591,6 +4602,9 @@ namespace MPFever
             if (diagNow != lastDiagDiffs) foreach (var d in diag) Log.Dim("    (diagnostic) " + d);
             lastDiagDiffs = diagNow;
             diffs = diffs.Where(d => !DiagnosticParts.Contains(DiffKey(d))).ToList();
+            // (0.7.7) a difference of the simulation (not money, which the host corrects, nor the names): the next check asks every
+            // game for the whole dump, every vehicle with its whole state, at the same moment (see RequestHash, SDUMP.forceWorld)
+            if (diffs.Any(d => WantsWorldDump(DiffKey(d)))) worldDumpNext = true;
             // the expensive parts take turns (issue #32): a part checked at this checkpoint is equal or different (its streak:
             // how many of its own checks in a row differed); a part not checked keeps its state until it is checked again
             var nowDiff = new HashSet<string>(diffs.Select(d => DiffKey(d)));

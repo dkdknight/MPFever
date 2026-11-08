@@ -27,7 +27,7 @@ j = src.find("\nend\n", i)
 ext = src[i:j]
 check(i > 0, "extendedParts found")
 flat = ext.find("flatten(c.state, name, dump, 0)")
-world = ext.find('local world = dump and (SDUMP.all or worldTurn or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
+world = ext.find('local world = dump and (SDUMP.all or worldTurn or forced or os.getenv("MPFEVER_SDUMPWORLD") == "1")')
 veh = ext.find('for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do')
 cons = ext.find('for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do')
 check(0 < flat < world, "the game scripts' states dumped at every check, before the world's choice")

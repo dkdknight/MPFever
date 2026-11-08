@@ -47,6 +47,7 @@ function executeAction(a, sendCommand, useCallback, bind, done)
   return {}
 end
 O = { sendCommand = function() end }
+SDUMP = {}   -- (0.7.7: the dump's flag set around the paused checks, see SDUMP.forceWorld)
 K = { nameSyncOn = function() return false end }
 C = { makesProposal = function() return false end, appendFile = function() end, line = function() return "" end, DIR = "x" }
 G = { frames = 1000, pendingPaused = {}, nativeQueue = {}, session = {}, resultsSeen = {},

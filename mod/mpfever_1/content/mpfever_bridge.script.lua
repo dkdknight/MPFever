@@ -183,11 +183,17 @@ local function extendedParts(parts, checkN)
 	-- game's own count, as before)
 	local worldTurn = SDUMP.n % 6 == 0
 	if type(checkN) == "number" and os.getenv("MPFEVER_SDUMPWORLDN") ~= "0" then worldTurn = checkN % 6 == 0 end
-	local world = dump and (SDUMP.all or worldTurn or os.getenv("MPFEVER_SDUMPWORLD") == "1")
+	-- ((0.7.7) and at the check the launcher asks it for, the one after a difference (SDUMP.forceWorld, the same request on every
+	-- game): 2026-11-08 02:40, the vehicles were alike at the dump of t=49442400 and apart at the check of 49452600, with no
+	-- dump of the vehicles between. MPFEVER_SDUMPAFTER=0: not)
+	local forced = SDUMP.forceWorld == true and os.getenv("MPFEVER_SDUMPAFTER") ~= "0"
+	local world = dump and (SDUMP.all or worldTurn or forced or os.getenv("MPFEVER_SDUMPWORLD") == "1")
 	local tWorld = os.clock()
 	if dump and world then
 		-- the vehicles too, by their line and where they are (their ids differ between games): the first vehicle that moved
 		-- otherwise in two games' files shows where a drift of "vehicles" started
+		-- ((0.7.7) with the hash of its whole state, the text the check hashes (the line showed its first 160 characters only:
+		-- two games alike there may differ further on); the whole state in a dump the launcher asked for)
 		pcall(function()
 			for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
 				local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
@@ -197,7 +203,8 @@ local function extendedParts(parts, checkN)
 					local n = tv and tv.line and tv.line >= 0 and api.engine.getComponent(tv.line, api.type.ComponentType.NAME)
 					ln = n and tostring(n.name) or "-"
 				end)
-				dump[#dump + 1] = "~vehicle " .. ln .. " = " .. (mp and C.dump(mp.dyn):sub(1, 160) or "depot")
+				local whole = mp and C.dump(mp.dyn) or nil
+				dump[#dump + 1] = "~vehicle " .. ln .. " = " .. (whole and ((forced and whole or whole:sub(1, 160)) .. " #" .. tostring(C.hashStr(0, whole))) or "depot")
 			end
 		end)
 		-- the lines and the names (the parts "lines" and "names" of the checks)
@@ -1488,7 +1495,9 @@ local function simApplyDue(state)
 					local nameSync = K.nameSyncOn()
 					if nameSync then R.nameCollect = {} end
 					R.namesStore = st
+					SDUMP.forceWorld = a.world == true
 					st.hash = { n = a.n, parts = simHash(terrainSigAt(st, now), st.co, a.n, st.buildIds, now), cost = os.clock() - c0, auth = okA and auth or nil }
+					SDUMP.forceWorld = nil
 					R.namesStore = nil
 					if nameSync then
 						local col = R.nameCollect
@@ -9489,10 +9498,12 @@ local function runNativeReplays()
 end
 
 H.hash = function(from, p)
+	-- (0.7.7: world, the launcher asks every game for the dump's world part at this check, see SDUMP.forceWorld)
+	local w = p.world == true or nil
 	if p.paused then
-		G.pendingPaused[#G.pendingPaused + 1] = { kind = "hash", n = p.n, at = p.at, origin = "", oseq = -1 }
+		G.pendingPaused[#G.pendingPaused + 1] = { kind = "hash", n = p.n, at = p.at, origin = "", oseq = -1, world = w }
 	else
-		toSim("queue", { kind = "hash", n = p.n, at = p.at, origin = "", oseq = -1 })
+		toSim("queue", { kind = "hash", n = p.n, at = p.at, origin = "", oseq = -1, world = w })
 	end
 end
 
@@ -10513,8 +10524,10 @@ local function runPausedActions()
 				-- (with the turns this game has applied in the pause: a game a turn behind the others is not compared, see the launcher)
 				local nameSync = K.nameSyncOn()
 				if nameSync then R.nameCollect = {} end
+				SDUMP.forceWorld = a.world == true
 				send("sync_hash", { n = a.n, parts = simHash(G.simTerrainSig, G.co, a.n, G.simBuildIds, now), cost = 0, auth = okA and auth or nil,
 					ptd = (G.ptOn and G.pt.seen) and G.pt.done or nil })
+				SDUMP.forceWorld = nil
 				if nameSync then
 					local col = R.nameCollect
 					R.nameCollect = nil
