@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.7.11 - (in progress)
+0.7.11 - 2026-11-08: crashes with L-Signalsystem previews, the station module editor and a double start fixed; separate companies' money corrected again; a warning for object mods taken for personal
   - FIX (crash, #158, Julian's game 2026-11-08 18:33, after #156): the id of marcu's L-Signalsystem preview was, on Julian's
     game, a node of Julian's tracks (Julian's own builds had been taken as replays, the fault fixed below, and the ids had moved
     apart). The mod's game script moves its previews by those ids on every game: the move of a track node stopped the game. A
