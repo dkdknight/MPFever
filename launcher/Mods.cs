@@ -44,7 +44,11 @@ namespace MPFever
             ["devers_1"] = () => new Verdict { Level = "caution", Note = T("Ses constructions automatiques ne partent plus que d'un jeu (0.7.0) : à confirmer en partie.", "Its automatic builds now go from one game only (0.7.0): to confirm in a session.") },
             // (0.6.7) the game's own "No costs": nothing is charged, MPFever books no refund difference then (REFUND.freeBuilds)
             ["urbangames_no_costs_1"] = () => new Verdict { Level = "fixed", Note = T("Constructions gratuites : MPFever ne corrige plus leur prix entre les jeux (0.6.7).", "Free building: MPFever no longer evens out its price between the games (0.6.7).") },
-            ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Les signaux ajoutés ne sont construits qu'une fois, par le jeu qui a posé le signal (0.4.0).", "Added signals are built once, by the game where the signal was placed (0.4.0).") },
+            // (0.7.7) the signals a mod's script adds (a script's edge objects) were refused on every game from 0.7.1 to 0.7.6: rebuilt now
+            // (C.scriptEdgeObjects); the same for the other mods that put up signals or stops by script
+            ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux ajoutés sont construits sur chaque jeu (0.7.7 ; refusés partout de la 0.7.1 à la 0.7.6).", "Its added signals are built on every game (0.7.7; refused everywhere from 0.7.1 to 0.7.6).") },
+            ["advanced_station_builder"] = () => new Verdict { Level = "fixed", Note = T("Ses gares sont envoyées à chaque jeu (0.7.2), ses signaux construits sur chaque jeu (0.7.7).", "Its stations are sent to every game (0.7.2), its signals built on every game (0.7.7).") },
+            ["advanced_track_patterns"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux construits par script sont construits sur chaque jeu (0.7.7).", "Its signals built by script are built on every game (0.7.7).") },
         };
 
         // (0.7.0) the 83 most downloaded script mods of mod.io, read one by one (docs/MODS.md): those that work as they are, and

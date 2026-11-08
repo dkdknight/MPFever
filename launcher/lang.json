@@ -6657,18 +6657,18 @@
       "zh-CN": "未测试的脚本可能导致游戏不同步：届时 MPFever 会为所有人重新加载游戏。",
       "zh-TW": "未測試的腳本可能導致遊戲不同步：屆時 MPFever 會為所有人重新載入遊戲。"
     },
-    "Added signals are built once, by the game where the signal was placed (0.4.0).": {
-      "de": "Hinzugefügte Signale werden nur einmal gebaut, vom Spiel, in dem das Signal gesetzt wurde (0.4.0).",
-      "es": "Las señales añadidas se construyen una sola vez, en la partida donde se colocó la señal (0.4.0).",
-      "it": "I segnali aggiunti vengono costruiti una sola volta, dalla partita in cui è stato posato il segnale (0.4.0).",
-      "nl": "Toegevoegde seinen worden één keer gebouwd, door het spel waar het sein is geplaatst (0.4.0).",
-      "pl": "Dodane sygnały są budowane tylko raz, przez grę, w której postawiono sygnał (0.4.0).",
-      "pt-BR": "Os sinais adicionados são construídos uma só vez, pelo jogo onde o sinal foi colocado (0.4.0).",
-      "ru": "Добавленные сигналы строятся один раз — в игре, где был поставлен сигнал (0.4.0).",
-      "ja": "追加された信号は、信号を置いたゲームで一度だけ建設されます（0.4.0）。",
-      "ko": "추가된 신호는 신호를 놓은 게임에서 한 번만 건설됩니다 (0.4.0).",
-      "zh-CN": "添加的信号只会建造一次，由放置信号的那一方的游戏建造（0.4.0）。",
-      "zh-TW": "新增的號誌只會建造一次，由放置號誌的那一方的遊戲建造（0.4.0）。"
+    "Its added signals are built on every game (0.7.7; refused everywhere from 0.7.1 to 0.7.6).": {
+      "de": "Seine zusätzlichen Signale werden auf jedem Spiel gebaut (0.7.7; von 0.7.1 bis 0.7.6 überall abgelehnt).",
+      "es": "Sus señales añadidas se construyen en todas las partidas (0.7.7; rechazadas en todas de la 0.7.1 a la 0.7.6).",
+      "it": "I suoi segnali aggiunti vengono costruiti su ogni partita (0.7.7; rifiutati ovunque dalla 0.7.1 alla 0.7.6).",
+      "nl": "Zijn toegevoegde seinen worden op elk spel gebouwd (0.7.7; van 0.7.1 tot 0.7.6 overal geweigerd).",
+      "pl": "Jego dodane sygnały są budowane w każdej grze (0.7.7; odrzucane wszędzie od 0.7.1 do 0.7.6).",
+      "pt-BR": "Seus sinais adicionados são construídos em todos os jogos (0.7.7; recusados em todos da 0.7.1 à 0.7.6).",
+      "ru": "Его добавленные сигналы строятся в каждой игре (0.7.7; с 0.7.1 по 0.7.6 отклонялись везде).",
+      "ja": "追加された信号はすべてのゲームで建設されます（0.7.7。0.7.1〜0.7.6 ではすべてで拒否されていました）。",
+      "ko": "추가된 신호가 모든 게임에서 건설됩니다 (0.7.7, 0.7.1~0.7.6에서는 모든 게임에서 거부됨).",
+      "zh-CN": "其添加的信号会在每个游戏中建造（0.7.7；0.7.1 至 0.7.6 在所有游戏中被拒绝）。",
+      "zh-TW": "其新增的號誌會在每個遊戲中建造（0.7.7；0.7.1 至 0.7.6 在所有遊戲中被拒絕）。"
     },
     "TPF3-MP (another multiplayer mod) is installed on this PC.\n\nIt is INCOMPATIBLE with MPFever: it changes the same things, and a game where it is active keeps desynchronising.\n\nTurn it off in your savegames' mods (when loading the game) before playing with MPFever, or uninstall it.": {
       "de": "TPF3-MP (ein anderer Mehrspieler-Mod) ist auf diesem PC installiert.\n\nEr ist INKOMPATIBEL mit MPFever: Er verändert dieselben Dinge, und ein Spiel, in dem er aktiv ist, desynchronisiert sich ständig.\n\nDeaktiviere ihn in den Mods deiner Spielstände (beim Laden des Spiels), bevor du mit MPFever spielst, oder deinstalliere ihn.",
@@ -23803,6 +23803,32 @@
       "ko": "{0}의 게임은 {1} 버전, 호스트는 {2} 버전입니다: 비동기화가 일어나기 쉽습니다. 그래도 플레이할 수는 있습니다.",
       "zh-CN": "{0} 的游戏版本是 {1}，主机的版本是 {2}：很可能出现不同步。游戏仍可进行。",
       "zh-TW": "{0} 的遊戲版本是 {1}，主機的版本是 {2}：很可能出現不同步。遊戲仍可進行。"
+    },
+    "Its stations are sent to every game (0.7.2), its signals built on every game (0.7.7).": {
+      "de": "Seine Bahnhöfe werden an jedes Spiel geschickt (0.7.2), seine Signale auf jedem Spiel gebaut (0.7.7).",
+      "es": "Sus estaciones se envían a todas las partidas (0.7.2) y sus señales se construyen en todas (0.7.7).",
+      "it": "Le sue stazioni vengono inviate a ogni partita (0.7.2), i suoi segnali costruiti su ogni partita (0.7.7).",
+      "nl": "Zijn stations worden naar elk spel gestuurd (0.7.2), zijn seinen op elk spel gebouwd (0.7.7).",
+      "pl": "Jego stacje są wysyłane do każdej gry (0.7.2), a sygnały budowane w każdej grze (0.7.7).",
+      "pt-BR": "Suas estações são enviadas a todos os jogos (0.7.2) e seus sinais construídos em todos (0.7.7).",
+      "ru": "Его станции отправляются в каждую игру (0.7.2), сигналы строятся в каждой игре (0.7.7).",
+      "ja": "駅はすべてのゲームに送られ（0.7.2）、信号はすべてのゲームで建設されます（0.7.7）。",
+      "ko": "역은 모든 게임으로 전송되고 (0.7.2), 신호는 모든 게임에서 건설됩니다 (0.7.7).",
+      "zh-CN": "其车站会发送到每个游戏（0.7.2），其信号会在每个游戏中建造（0.7.7）。",
+      "zh-TW": "其車站會傳送到每個遊戲（0.7.2），其號誌會在每個遊戲中建造（0.7.7）。"
+    },
+    "Its signals built by script are built on every game (0.7.7).": {
+      "de": "Seine per Skript gebauten Signale werden auf jedem Spiel gebaut (0.7.7).",
+      "es": "Sus señales construidas por script se construyen en todas las partidas (0.7.7).",
+      "it": "I suoi segnali costruiti via script vengono costruiti su ogni partita (0.7.7).",
+      "nl": "Zijn via script gebouwde seinen worden op elk spel gebouwd (0.7.7).",
+      "pl": "Jego sygnały budowane skryptem są budowane w każdej grze (0.7.7).",
+      "pt-BR": "Seus sinais construídos por script são construídos em todos os jogos (0.7.7).",
+      "ru": "Его сигналы, построенные скриптом, строятся в каждой игре (0.7.7).",
+      "ja": "スクリプトで建設される信号はすべてのゲームで建設されます（0.7.7）。",
+      "ko": "스크립트로 건설하는 신호가 모든 게임에서 건설됩니다 (0.7.7).",
+      "zh-CN": "其通过脚本建造的信号会在每个游戏中建造（0.7.7）。",
+      "zh-TW": "其透過指令碼建造的號誌會在每個遊戲中建造（0.7.7）。"
     }
   }
 }

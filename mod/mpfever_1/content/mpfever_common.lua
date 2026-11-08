@@ -1054,6 +1054,36 @@ function C.makesProposal(fn)
 	return true
 end
 
+-- (0.7.7) The edge objects of a script's street proposal (SimpleStreetProposal.EdgeObject: a mod's game script such as Auto
+-- Signals, a script tool of the interface) name their new segment by edgeEntity (its rank in edgesToAdd, -1, -2...) and say
+-- their kind only through the placeholder the script put in that segment's objects (-400000000 - their rank from 0, with
+-- SIGNAL 2, STOP_LEFT 0 or STOP_RIGHT 1). C.rebuildProposal reads the tool's form (segmentEntity, category): every form set
+-- edgeEntity = nil, "The lua object can't be cast to desired type", refused on every game, the builder's too (Knight-HD
+-- 2026-11-08 01:39, YkeWoudstra #133, torol's paused stops #127). Taken over here: segmentEntity and the script's own kind
+-- (o.scriptKind). Returns how many. MPFEVER_SCRIPTEO=0: as before
+function C.scriptEdgeObjects(st)
+	local list = type(st) == "table" and st.edgeObjectsToAdd or nil
+	if type(list) ~= "table" then return 0 end
+	local edges = st.edgesToAdd or st.addedSegments or {}
+	local n = 0
+	for k, o in ipairs(list) do
+		if type(o) == "table" and o.segmentEntity == nil and type(o.edgeEntity) == "number" then
+			o.segmentEntity = o.edgeEntity
+			local want = -400000000 - (k - 1)
+			for _, s in ipairs(edges) do
+				local objs = type(s) == "table" and s.entity == o.edgeEntity and type(s.comp) == "table" and s.comp.objects or nil
+				for _, p in ipairs(type(objs) == "table" and objs or {}) do
+					if type(p) == "table" and p[1] == want and type(p[2]) == "number" then o.scriptKind = p[2] end
+				end
+			end
+			if o.scriptKind == nil then o.scriptKind = o.left and 0 or 1 end
+			o.category = (o.scriptKind == 2) and 2 or 0
+			n = n + 1
+		end
+	end
+	return n
+end
+
 -- Proposal (native, from the construction tools) or SimpleProposal -> SimpleProposal for makeWorldBuildProposalCmd
 -- opts.noStreet: constructions only (their .con template regenerates its own street connector)
 -- opts.seed: deterministic seed for constructions that have none (a script ConstructionEntity needs params.seed)
@@ -1104,6 +1134,7 @@ function C.rebuildProposal(m, opts)
 		local ssp = sp.streetProposal
 		local variant = opts.variant or "full"
 		local nodeMap, edgeMap = {}, {}
+		local scriptEO = (os.getenv("MPFEVER_SCRIPTEO") ~= "0") and C.scriptEdgeObjects(st) or 0
 		if not opts.raw then nodeMap, edgeMap = C.renumberStreet(st) end
 		local nodes = {}
 		for i, n in ipairs(st.nodesToAdd or st.addedNodes or {}) do
@@ -1147,6 +1178,13 @@ function C.rebuildProposal(m, opts)
 				C.errors[#C.errors + 1] = "segment " .. i .. ": no lanes for template " .. tostring(tmpl)
 			end
 		end
+		if scriptEO > 0 and variant == "full" then
+			for i, e in ipairs(edges) do
+				local s = (st.edgesToAdd or st.addedSegments)[i]
+				local d = type(s) == "table" and type(s.comp) == "table" and s.comp.distance or nil
+				if type(d) == "number" and d ~= 0 then pcall(function() local c = e.comp; c.distance = d; e.comp = c end) end
+			end
+		end
 		local EXP = opts.exp or ""
 		-- the stops added on new segments: each segment lists its new objects as placeholders (-400000000 - k, k the rank
 		-- of the stop in edgeObjectsToAdd, then its side), as the stop replay does; without them the factory fails (a road
@@ -1162,7 +1200,10 @@ function C.rebuildProposal(m, opts)
 								local c = edges[i].comp
 								local list = {}
 								for j = 1, #c.objects do list[#list + 1] = { c.objects[j][1], c.objects[j][2] } end
-								list[#list + 1] = { -400000000 - k, (o.category == 2) and 2 or (o.left and 0 or 1) }
+								-- (a script's placeholder kept by a raw form is not given twice, see C.scriptEdgeObjects)
+								local have = false
+								if o.scriptKind ~= nil then for j = 1, #list do if list[j][1] == -400000000 - k then have = true end end end
+								if not have then list[#list + 1] = { -400000000 - k, o.scriptKind or ((o.category == 2) and 2 or (o.left and 0 or 1)) } end
 								c.objects = list
 								edges[i].comp = c
 							end)
