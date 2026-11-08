@@ -10,7 +10,7 @@ C.TAB = string.char(9)
 -- (0.7.9) this mod's version, the same as MPFever.exe's (tests/check_repo.py): the game says it in its "hello", and the launcher
 -- warns when the game runs another copy of the mod than the one it installed (issue #136: an old copy in the game's own
 -- mods folder, mods/release/MPFever/mod/mpfever_1, which the game takes before the player's mods folder)
-C.MODVERSION = "0.7.10"
+C.MODVERSION = "0.7.11"
 local BS, NL, CR, TAB, QUOTE = C.BS, C.NL, C.CR, C.TAB, string.char(34)
 
 do
