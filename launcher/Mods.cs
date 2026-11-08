@@ -48,6 +48,11 @@ namespace MPFever
             // (C.scriptEdgeObjects); the same for the other mods that put up signals or stops by script
             ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux ajoutés sont construits sur chaque jeu (0.7.7 ; refusés partout de la 0.7.1 à la 0.7.6).", "Its added signals are built on every game (0.7.7; refused everywhere from 0.7.1 to 0.7.6).") },
             ["advanced_station_builder"] = () => new Verdict { Level = "fixed", Note = T("Ses gares sont envoyées à chaque jeu (0.7.2), ses signaux construits sur chaque jeu (0.7.7).", "Its stations are sent to every game (0.7.2), its signals built on every game (0.7.7).") },
+            // (0.7.7) #133: each of these stations, placed once, was refused on the two other games and rebuilt there otherwise (two
+            // reloads). Their construction scripts draw nothing at random (read 2026-11-08): the station and the streets the tool
+            // attaches to it are replayed otherwise. To reproduce with the mods installed
+            ["gct_tramschleife"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
+            ["gct_bogenbahnhof"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
             ["advanced_track_patterns"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux construits par script sont construits sur chaque jeu (0.7.7).", "Its signals built by script are built on every game (0.7.7).") },
         };
 

@@ -23933,6 +23933,19 @@
       "ko": "세션 자동 저장: 게임의 응답이 없습니다.",
       "zh-CN": "会话自动保存：游戏没有响应。",
       "zh-TW": "工作階段自動存檔：遊戲沒有回應。"
+    },
+    "Its station, once placed, was refused on the other games (#133): to check in a session.": {
+      "de": "Seine gesetzte Station wurde in den anderen Spielen abgelehnt (#133): in einer Sitzung zu prüfen.",
+      "es": "Su estación, una vez colocada, fue rechazada en las otras partidas (#133): a comprobar en una sesión.",
+      "it": "La sua stazione, una volta piazzata, è stata rifiutata nelle altre partite (#133): da verificare in una sessione.",
+      "nl": "Het geplaatste station werd in de andere spellen geweigerd (#133): te controleren in een sessie.",
+      "pl": "Postawiona stacja została odrzucona w innych grach (#133): do sprawdzenia w sesji.",
+      "pt-BR": "A estação, depois de colocada, foi recusada nos outros jogos (#133): a verificar em uma sessão.",
+      "ru": "Поставленная станция была отклонена в других играх (#133): нужно проверить в сессии.",
+      "ja": "設置した駅が他のゲームで拒否されました (#133): セッションで要確認。",
+      "ko": "설치한 역이 다른 게임에서 거부되었습니다 (#133): 세션에서 확인 필요.",
+      "zh-CN": "放置的车站在其他游戏中被拒绝 (#133)：需在会话中检查。",
+      "zh-TW": "放置的車站在其他遊戲中被拒絕 (#133)：需在工作階段中檢查。"
     }
   }
 }

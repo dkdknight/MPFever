@@ -67,6 +67,9 @@ MPFever - Changelog
     big builds came. A main link is now lowered only when its own data waits, and gets its start rate back after 3 s of good
     quality (MPFEVER_AIMDIDLE=0: as before; the savegame's links unchanged). Test: tests/test_aimdidle077.py (and
     native/steamnet_test.py mock).
+  - MODS: GCT Tram Loop and GCT Curved Station are shown "to check" in the lobby and in docs/MODS.md: in #133 each station,
+    placed once, was refused on the two other games and rebuilt there otherwise (two reloads). Their scripts draw nothing at
+    random; the cause is still to reproduce with the mods installed.
   - DIAGNOSTIC (the user's server 2026-11-08 02:40, a reload on "vehicles" with no dump of them between the last check alike
     and the first apart): a check that finds the simulation apart makes the next check dump every vehicle whole on every game,
     and every dump gives each vehicle's state hash (MPFEVER_SDUMPAFTER=0: not). Test: tests/test_sdumpafter077.py.

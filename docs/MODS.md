@@ -82,6 +82,7 @@ These mods sent commands **from their interface by themselves** (a timer, a scan
 | Shopping Mall and Auto Dealership | **To check.** With its default efficiency, the production is drawn at random when the mall is built: the same on every game, but maybe not after a player joins (if the game draws it again at load). |
 | Industry Upgrades | **Works, but** the deliveries of its last 2 seconds are lost on a player's game at a resynchronisation, and an order can then complete at another moment there. |
 | Wind turbine assets (ingo) | Visual only: the rotor model can differ between games. |
+| GCT Tram Loop, GCT Curved Station | **To check.** In one session ([#133](https://github.com/dkdknight/MPFever/issues/133)) each station, placed once, was refused on the two other games and rebuilt there otherwise: the game was reloaded twice. Their scripts draw nothing at random; the station and the streets the tool joins to it seem to be replayed otherwise. |
 | Auto Road Upgrade | **Avoid in multiplayer.** Its script upgrades streets by itself, on each game at its own moments ([#119](https://github.com/dkdknight/MPFever/issues/119)). It is no longer listed on mod.io. |
 | TPF3-MP | **Incompatible.** Another multiplayer mod: turn it off in the savegame's mods. |
 | No costs (the game's own mod) | Works since 0.6.7. |
