@@ -23829,6 +23829,32 @@
       "ko": "스크립트로 건설하는 신호가 모든 게임에서 건설됩니다 (0.7.7).",
       "zh-CN": "其通过脚本建造的信号会在每个游戏中建造（0.7.7）。",
       "zh-TW": "其透過指令碼建造的號誌會在每個遊戲中建造（0.7.7）。"
+    },
+    "The mod {0} is installed twice: the game runs the copy in {1}, the Mod Hub's is ignored. Delete the local copy to play the Mod Hub's version.": {
+      "de": "Die Mod {0} ist zweimal installiert: das Spiel nutzt die Kopie in {1}, die des Mod Hub wird ignoriert. Lösche die lokale Kopie, um die Version des Mod Hub zu spielen.",
+      "es": "El mod {0} está instalado dos veces: el juego usa la copia de {1}, la del Mod Hub se ignora. Borra la copia local para jugar la versión del Mod Hub.",
+      "it": "La mod {0} è installata due volte: il gioco usa la copia in {1}, quella del Mod Hub viene ignorata. Elimina la copia locale per giocare la versione del Mod Hub.",
+      "nl": "De mod {0} is twee keer geïnstalleerd: het spel gebruikt de kopie in {1}, die van de Mod Hub wordt genegeerd. Verwijder de lokale kopie om de versie van de Mod Hub te spelen.",
+      "pl": "Mod {0} jest zainstalowany dwa razy: gra używa kopii z {1}, kopia z Mod Hub jest pomijana. Usuń kopię lokalną, aby grać w wersję z Mod Hub.",
+      "pt-BR": "O mod {0} está instalado duas vezes: o jogo usa a cópia em {1}, a do Mod Hub é ignorada. Apague a cópia local para jogar a versão do Mod Hub.",
+      "ru": "Мод {0} установлен дважды: игра использует копию из {1}, копия из Mod Hub игнорируется. Удалите локальную копию, чтобы играть с версией из Mod Hub.",
+      "ja": "Mod {0} は 2 回インストールされています：ゲームは {1} のコピーを使い、Mod Hub のコピーは無視されます。Mod Hub のバージョンを使うにはローカルのコピーを削除してください。",
+      "ko": "모드 {0}가 두 번 설치되어 있습니다: 게임은 {1}의 사본을 사용하고 Mod Hub의 사본은 무시됩니다. Mod Hub 버전을 쓰려면 로컬 사본을 삭제하세요.",
+      "zh-CN": "模组 {0} 安装了两次：游戏使用 {1} 中的副本，Mod Hub 的副本被忽略。删除本地副本即可使用 Mod Hub 的版本。",
+      "zh-TW": "模組 {0} 安裝了兩次：遊戲使用 {1} 中的副本，Mod Hub 的副本被忽略。刪除本機副本即可使用 Mod Hub 的版本。"
+    },
+    "local copy {0}, which replaces the Mod Hub's": {
+      "de": "lokale Kopie {0}, die die des Mod Hub ersetzt",
+      "es": "copia local {0}, que sustituye a la del Mod Hub",
+      "it": "copia locale {0}, che sostituisce quella del Mod Hub",
+      "nl": "lokale kopie {0}, die die van de Mod Hub vervangt",
+      "pl": "kopia lokalna {0}, która zastępuje kopię z Mod Hub",
+      "pt-BR": "cópia local {0}, que substitui a do Mod Hub",
+      "ru": "локальная копия {0}, которая заменяет копию из Mod Hub",
+      "ja": "Mod Hub のコピーの代わりに使われるローカルのコピー {0}",
+      "ko": "Mod Hub 사본을 대신하는 로컬 사본 {0}",
+      "zh-CN": "本地副本 {0}，取代了 Mod Hub 的副本",
+      "zh-TW": "本機副本 {0}，取代了 Mod Hub 的副本"
     }
   }
 }

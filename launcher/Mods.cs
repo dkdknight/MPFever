@@ -273,6 +273,18 @@ namespace MPFever
         {
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var roots = new List<string>();
+            // (0.7.7) the player's own mods (local\mods, local\staging_area) first, as the game takes them: a mod installed twice,
+            // there and from the Mod Hub, runs from the local copy ("Multiple (2) mods with same id found ..., the one from
+            // .../local/mods/... has been selected"), and MPFever compared the Mod Hub's. The user's PC ran an older Industry
+            // Evolution (9 files apart) against the server's for a whole evening, with no warning. MPFEVER_MODLOCALFIRST=0: after
+            // the Mod Hub's, as before
+            var local = new List<string>();
+            // (0.6.7) and the mods being made there, not published (the game's "StagingArea" origin: local\staging_area): the host's
+            // own launcher did not find them, so it never offered them to a player who lacked them (session of 2026-11-01, three
+            // SNCB I11 mods; the player's game refused the host's savegame twice). MPFEVER_NOSTAGING=1: not searched, as before
+            try { foreach (var s in GameInstall.SaveDirs()) local.AddRange(LocalRoots(Path.GetDirectoryName(s))); } catch { }
+            bool localFirst = Environment.GetEnvironmentVariable("MPFEVER_MODLOCALFIRST") != "0";
+            if (localFirst) roots.AddRange(local);
             try
             {
                 var pub = Environment.GetEnvironmentVariable("PUBLIC") ?? @"C:\Users\Public";
@@ -281,10 +293,7 @@ namespace MPFever
                     try { if (Directory.Exists(modio)) foreach (var g in Directory.GetDirectories(modio)) roots.Add(Path.Combine(g, "mods")); } catch { }
             }
             catch { }
-            // (0.6.7) and the mods being made there, not published (the game's "StagingArea" origin: local\staging_area): the host's
-            // own launcher did not find them, so it never offered them to a player who lacked them (session of 2026-11-01, three
-            // SNCB I11 mods; the player's game refused the host's savegame twice). MPFEVER_NOSTAGING=1: not searched, as before
-            try { foreach (var s in GameInstall.SaveDirs()) roots.AddRange(LocalRoots(Path.GetDirectoryName(s))); } catch { }
+            if (!localFirst) roots.AddRange(local);
             try { foreach (var lib in GameInstall.SteamLibraries()) roots.Add(Path.Combine(lib, "steamapps", "workshop", "content", GameInstall.AppId)); } catch { }
             try { var g = GameInstall.FindGameDir(); if (g != null) { roots.Add(Path.Combine(g, "mods")); roots.Add(Path.Combine(g, "mods", "release")); } } catch { }
             foreach (var root in roots)
@@ -303,12 +312,36 @@ namespace MPFever
                         catch { }
                         id = id ?? Path.GetFileName(d);
                         if (!map.ContainsKey(id)) map[id] = d;
+                        else if (localFirst && local.Any(l => map[id].StartsWith(l, StringComparison.OrdinalIgnoreCase)))
+                            lock (dupLocal) if (!dupLocal.ContainsKey(id)) dupLocal[id] = map[id];
                     }
                 }
                 catch { }
             }
             return map;
         }
+
+        // (0.7.7) a mod installed in local\mods (or staging_area) and from the Mod Hub too: id -> the local folder the game runs
+        static readonly Dictionary<string, string> dupLocal = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        static readonly HashSet<string> dupSaid = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>(0.7.7) The local copy the game runs of a mod also installed from the Mod Hub, or null; logged once.</summary>
+        public static string DuplicateLocal(string id)
+        {
+            if (id == null) return null;
+            Dir(id);
+            string d;
+            lock (dupLocal) if (!dupLocal.TryGetValue(id, out d)) return null;
+            lock (dupSaid)
+                if (dupSaid.Add(id))
+                    Log.Warn(F("Le mod {0} est installé deux fois : le jeu utilise la copie de {1}, celle du Mod Hub est ignorée. Supprimez la copie locale pour jouer la version du Mod Hub.",
+                        "The mod {0} is installed twice: the game runs the copy in {1}, the Mod Hub's is ignored. Delete the local copy to play the Mod Hub's version.", id, d));
+            return d;
+        }
+
+        /// <summary>(0.7.7) A differing mod's name for the messages, with the local copy that replaces the Mod Hub's when that is why.</summary>
+        internal static string DiffersName(string name, string localCopy) =>
+            string.IsNullOrEmpty(localCopy) ? name : name + " (" + F("copie locale {0}, qui remplace celle du Mod Hub", "local copy {0}, which replaces the Mod Hub's", localCopy) + ")";
 
         // ---- what a mod is
 
@@ -598,7 +631,7 @@ namespace MPFever
                 {
                     var mine = Info(e.Id);
                     if (Dir(e.Id) == null) { here = "notfound"; if (personal == "") { c.Missing.Add(e.Name); c.MissingIds.Add(e.Id); } }
-                    else if (e.Fp != "" && mine.Item1 != "") { here = mine.Item1 == e.Fp ? "ok" : "differs"; if (here == "differs" && personal == "") c.Differs.Add(e.Name); }
+                    else if (e.Fp != "" && mine.Item1 != "") { here = mine.Item1 == e.Fp ? "ok" : "differs"; if (here == "differs" && personal == "") c.Differs.Add(DiffersName(e.Name, DuplicateLocal(e.Id))); }
                     if (kind == "") kind = mine.Item2;
                 }
                 var v = Judge(e.Id, kind);

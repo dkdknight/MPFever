@@ -27,7 +27,7 @@ def check(cond, name):
 
 
 scan = mods[mods.index("static Dictionary<string, string> Scan()"):]
-check('foreach (var modio in ModioStorages(lad, pub, Environment.GetEnvironmentVariable("MPFEVER_MODIOROOT") == "0"))' in scan[:1500],
+check('foreach (var modio in ModioStorages(lad, pub, Environment.GetEnvironmentVariable("MPFEVER_MODIOROOT") == "0"))' in scan[:4000],
       "the scan looks in every folder mod.io keeps the mods in")
 ms = mods[mods.index("internal static List<string> ModioStorages("):mods.index("static Dictionary<string, string> Scan()")]
 check(ms.index('"10640"') < ms.index('"globalsettings.json"') < ms.index(r'Add(Path.Combine(pub ?? @"C:\Users\Public", "mod.io"));'),

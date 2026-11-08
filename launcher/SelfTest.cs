@@ -117,6 +117,10 @@ namespace MPFever
             C(hw.StartsWith("Til") && hw.Contains("6ab3eec7") && hw.Contains("40425"), "  the host's view: the player named, an unknown number shown by its stamp");
             C(MainForm.BuildWarning(null, "", "6ab3eec7|40393|other") == "" && MainForm.BuildWarning("x", "6ad9ce10|40425|steam", "") == "",
                 "  an older MPFever that says nothing: no warning");
+            // (MODLOCALFIRST) a mod installed twice: the local copy the game runs is named in the "other version" message
+            C(Mods.DiffersName("Industry Evolution", null) == "Industry Evolution", "a mod of another version: its name");
+            C(Mods.DiffersName("Industry Evolution", @"E:\Steam\userdata\1\3493540\local\mods\spy_industry_evolution").Contains(@"local\mods\spy_industry_evolution"),
+                "  installed twice: the local copy that replaces the Mod Hub's named");
             // (SDUMPAFTER) the check after a difference of the simulation: the whole dump on every game
             C(MainForm.WantsWorldDump("vehicles") && MainForm.WantsWorldDump("script:towns") && MainForm.WantsWorldDump("edges"),
                 "a difference of the simulation: the next check's dump whole");
