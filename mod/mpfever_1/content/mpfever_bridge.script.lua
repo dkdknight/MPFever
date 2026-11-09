@@ -10038,6 +10038,13 @@ end
 -- native module's control file again there, unread, as a client cut from its host left them; see its staleCtl)
 H.tomenu = function(from, p)
 	if os.getenv("MPFEVER_SAVE") == nil then return end
+	-- ((0.7.13, test only) once per order: a session whose company mode is kept ("tomenustale") reads its messages again after
+	-- the load, and the order sent the game back to the main menu every 14 s, the night's test of 2026-11-09)
+	local seen, LF = "", string.char(10)
+	pcall(function() local f = C.IO.open(C.DIR .. BS .. "auto_tomenu_seen.txt", "rb"); if f then seen = f:read("*a") or ""; f:close() end end)
+	local mark = tostring(from) .. "#" .. tostring(p.seq or 1) .. (p.stale and "s" or "")
+	if (LF .. seen .. LF):find(LF .. mark .. LF, 1, true) then log("AUTOTEST tomenu " .. mark .. ": done already (read again after the load)"); return end
+	C.appendFile(C.DIR .. BS .. "auto_tomenu_seen.txt", mark .. LF)
 	C.appendFile(C.DIR .. BS .. "auto_reload.txt", (p.stale and "s" or "") .. tostring(p.seq or 1))
 	log("AUTOTEST tomenu: back to the main menu, the test savegame loaded again from there" .. (p.stale and " (this game's last control lines said again there, unread)" or ""))
 	G.waits[#G.waits + 1] = { at = G.frames + 10, fn = function()
