@@ -77,6 +77,7 @@ namespace MPFever
             ok &= RunResyncSpeed0713();
             ok &= RunPersonDigest0713();
             ok &= RunReportPrivate0713();
+            ok &= RunVersionInfo0714();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -139,6 +140,30 @@ namespace MPFever
             {
                 Environment.SetEnvironmentVariable("MPFEVER_REPORTDUMP", oldD);
                 Environment.SetEnvironmentVariable("MPFEVER_REPORTCHAT", oldC);
+            }
+            return ok;
+        }
+
+        /// <summary>(0.7.14, the user's request of 2026-11-09) The files' details (Properties > Details) of this program and of
+        /// the native module next to it: the same publisher, product and copyright (tools/mkres.py for winhttp.dll, the .csproj
+        /// files for the programs). A program without them looks unknown to antivirus programs.</summary>
+        static bool RunVersionInfo0714()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.14 file details: " + what); ok &= c; }
+            const string copy = "Copyright (C) 2026 dkdknight and the MPFever contributors. GPL-3.0-or-later";
+            var exe = System.Diagnostics.FileVersionInfo.GetVersionInfo(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            C(exe.CompanyName == "dkdknight" && exe.ProductName == "MPFever" && exe.LegalCopyright == copy
+                && (exe.FileDescription ?? "").StartsWith("MPFever launcher", StringComparison.Ordinal) && exe.OriginalFilename == "MPFever.exe",
+                "MPFever.exe: dkdknight, MPFever, its description and copyright (" + exe.CompanyName + " / " + exe.FileDescription + ")");
+            C(exe.ProductVersion == MainForm.Version || exe.ProductVersion == "0.1.0",
+                "  MPFever.exe: the release's version (build.bat) or the plain build's (" + exe.ProductVersion + ")");
+            var dll = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".", "winhttp.dll");
+            if (File.Exists(dll))
+            {
+                var n = System.Diagnostics.FileVersionInfo.GetVersionInfo(dll);
+                C(n.CompanyName == "dkdknight" && n.ProductName == "MPFever" && n.LegalCopyright == copy && n.OriginalFilename == "winhttp.dll",
+                    "  winhttp.dll next to it: the same publisher and copyright (" + n.CompanyName + ")");
             }
             return ok;
         }

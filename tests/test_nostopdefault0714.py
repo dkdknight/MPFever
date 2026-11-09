@@ -15,7 +15,7 @@ the field are fixed first:
   (e) NOWAIT v2 (lupa): a street stop by the script forms keeps its wait (its retries, without the tool's pricing, with the street
       cleanup, by the engine's conversion, must come at its step: r161), MPFEVER_NOWAITSTOPS=1 as in 0.7.12; the other replays
       still go without waiting;
-  (f) PRESHIP (lupa): a held build that takes a construction away goes the usual way (#172: CowboyPilot's bulldozer on his
+  (f) PRESHIP (lupa): a held build that takes a construction away (and puts none in its place) goes the usual way (#172: CowboyPilot's bulldozer on his
       modular station, "built here otherwise than shipped at the click" twice, every game had taken it away),
       MPFEVER_PRESHIPREMOVE=1 as in 0.7.12; a street or a construction added still at the click.
 Needs lupa (Lua 5.2). Run: python tests/test_nostopdefault0714.py
@@ -168,7 +168,7 @@ check(run("return G.gateHolds()") is False, "(e) a street by the script forms: o
 pi = src.index("G.preship = function(r)")
 pj = src.index("\tlocal args = { n = 4, [1] = C.copy(r.copy)", pi)
 head = src[pi:pj] + "\treturn true\nend\n"
-check('if #(r.copy.toRemove or {}) > 0 and os.getenv("MPFEVER_PRESHIPREMOVE") ~= "1" then' in head
+check('if #(r.copy.toRemove or {}) > 0 and #(r.copy.toAdd or {}) == 0 and os.getenv("MPFEVER_PRESHIPREMOVE") ~= "1" then' in head
       and "takes a construction away: shipped the usual way" in head, "(f) a copy that takes a construction away: shipped the usual way")
 L3 = lupa.LuaRuntime(unpack_returned_tuples=True)
 L3.execute("ENV = {}\nos.getenv = function(k) return ENV[k] end\nLOGS = {}\nfunction log(s) LOGS[#LOGS + 1] = s end\nG = {}\n"
@@ -180,6 +180,8 @@ check(pre(bull) is False, "(f) #172: the bulldozer on a modular station: not at 
 check(pre(L3.eval("{ proposal = { addedSegments = { 1 }, addedNodes = { 1, 2 } } }")) is True, "(f) a street: at the click, as before")
 check(pre(L3.eval("{ toAdd = { { fileName = 'station.con' } }, proposal = { addedSegments = { 1 } } }")) is True, "(f) a construction added: at the click, as before")
 check(pre(L3.eval("{ proposal = { removedSegments = { 1 } } }")) is True, "(f) a street taken away by the bulldozer: at the click, as before")
+check(pre(L3.eval("{ toRemove = { 1 }, toAdd = { { fileName = 'station.con' } }, proposal = { addedSegments = { 1 } } }")) is True,
+      "(f) a station's edit (one construction for another: 168 in the field, none failed): at the click, as before")
 L3.execute("ENV.MPFEVER_PRESHIPREMOVE = '1'")
 check(pre(bull) is True, "(f) MPFEVER_PRESHIPREMOVE=1: at the click, as in 0.7.12")
 

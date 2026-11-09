@@ -48,7 +48,7 @@ def main():
     check(not has("{}") and not has("'x'") and not has("{ proposal = 'x' }"), "nothing readable: none")
 
     i = src.find("G.preship = function(r)")
-    body = src[i:i + 3000]
+    body = src[i:i + 6000]   # (0.7.14: the construction-removal rule added before the translation, see test_nostopdefault0714.py)
     a = body.find("if not G.preHasContent(r.copy) then")
     b = body.find('if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then')
     c = body.find("R.translateOut(")

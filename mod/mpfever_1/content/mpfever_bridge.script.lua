@@ -10757,12 +10757,13 @@ G.preship = function(r)
 		log("PRESHIP native build " .. tostring(r.id) .. ": a construction: shipped the usual way")
 		return false
 	end
-	-- (0.7.14, #172: CowboyPilot's bulldozer on his modular station, 2026-11-08 16:45 and 16:46, twice) A construction taken away:
-	-- shipped the usual way. The tool's copy lists the construction's own nodes and segments it takes away, the capture of the
-	-- build only the construction (the engine takes its parts away with it): the two never compare alike ("built here otherwise
-	-- than shipped at the click"), and the host's game was reloaded although every game had taken the station away.
-	-- MPFEVER_PRESHIPREMOVE=1: shipped at the click, as in 0.7.12
-	if #(r.copy.toRemove or {}) > 0 and os.getenv("MPFEVER_PRESHIPREMOVE") ~= "1" then
+	-- (0.7.14, #172: CowboyPilot's bulldozer on his modular station, 2026-11-08 16:45 and 16:46, twice) A construction taken away
+	-- (and none put in its place): shipped the usual way. The tool's copy listed the station's own nodes and segments it takes
+	-- away, the capture of the build none ("built here otherwise than shipped at the click"), and the host's game was reloaded
+	-- although every game had taken the station away. The field's copies built from the click (69 sessions): 24 such removals,
+	-- the 2 of #172 failed; 168 replacements (a station's edit: one construction for another), none failed: those stay at the
+	-- click. MPFEVER_PRESHIPREMOVE=1: shipped at the click, as in 0.7.12
+	if #(r.copy.toRemove or {}) > 0 and #(r.copy.toAdd or {}) == 0 and os.getenv("MPFEVER_PRESHIPREMOVE") ~= "1" then
 		log("PRESHIP native build " .. tostring(r.id) .. ": takes a construction away: shipped the usual way")
 		return false
 	end

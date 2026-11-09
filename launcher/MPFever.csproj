@@ -12,6 +12,14 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- (0.7.14) the file's details (Properties > Details), the same publisher and copyright as winhttp.dll (tools/mkres.py): a
+         program without them looks unknown to antivirus programs -->
+    <Company>dkdknight</Company>
+    <Product>MPFever</Product>
+    <AssemblyTitle>MPFever launcher (multiplayer for Transport Fever 3)</AssemblyTitle>
+    <Description>MPFever launcher (multiplayer for Transport Fever 3)</Description>
+    <Copyright>Copyright (C) 2026 dkdknight and the MPFever contributors. GPL-3.0-or-later</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
