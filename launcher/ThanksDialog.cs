@@ -78,7 +78,7 @@ namespace MPFever
             return p;
         }
 
-        static void Open(string url)
+        internal static void Open(string url)
         {
             try { Process.Start(url); }
             catch (Exception ex) { Log.W(ex.Message); }

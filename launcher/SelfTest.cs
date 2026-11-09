@@ -72,8 +72,24 @@ namespace MPFever
             ok &= RunReport079();
             ok &= RunModIdTop0712();
             ok &= RunDeadDirect0713();
+            ok &= RunLinks0713();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.13) The launcher's left card: the old « Connection » card only in developer mode or with MPFEVER_CONNCARD=1;
+        /// the port of a lobby from port= in mpfever_settings.txt, 28090 without it.</summary>
+        static bool RunLinks0713()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13: " + what); ok &= c; }
+            C(!MainForm.ConnCard(false, null), "a player's window: settings, Ko-fi and Discord instead of host / join");
+            C(MainForm.ConnCard(true, null), "  developer mode (--dev, the autotests): the old card and its buttons");
+            C(MainForm.ConnCard(false, "1") && !MainForm.ConnCard(false, "0") && !MainForm.ConnCard(false, ""), "  MPFEVER_CONNCARD=1: the old card, as before");
+            C(MainForm.PortSetting(null) == 28090 && MainForm.PortSetting("") == 28090, "port: 28090 without port= in mpfever_settings.txt, as before");
+            C(MainForm.PortSetting(" 28100 ") == 28100 && MainForm.PortSetting("1024") == 1024 && MainForm.PortSetting("65535") == 65535, "  port=28100: that port");
+            C(MainForm.PortSetting("80") == 28090 && MainForm.PortSetting("70000") == 28090 && MainForm.PortSetting("abc") == 28090 && MainForm.PortSetting("-5") == 28090, "  out of 1024-65535 or not a number: 28090");
+            return ok;
         }
 
         /// <summary>(0.7.13) Issues #164/#165: a direct address that let nothing of the host through is left out of the next joins.</summary>

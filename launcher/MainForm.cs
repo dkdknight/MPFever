@@ -218,7 +218,9 @@ namespace MPFever
 
         readonly TextBox nameBox = new TextBox { Text = SavedName() };
         readonly TextBox hostBox = new TextBox { Text = "127.0.0.1" };
-        readonly NumericUpDown portBox = new NumericUpDown { Minimum = 1024, Maximum = 65535, Value = 28090 };
+        // ((0.7.13) the « Connection » card that showed it is gone from a player's window, see ConnCard: port= in
+        // mpfever_settings.txt instead, 28090 without it as before)
+        readonly NumericUpDown portBox = new NumericUpDown { Minimum = 1024, Maximum = 65535, Value = SavedPort() };
         readonly ModernButton hostBtn = new ModernButton(ButtonKind.Primary);
         readonly ModernButton joinBtn = new ModernButton(ButtonKind.Secondary);
         readonly ModernButton localBtn = new ModernButton(ButtonKind.Ghost);
@@ -457,8 +459,9 @@ namespace MPFever
             var left = new Panel { Dock = DockStyle.Left, Width = S(340), Padding = new Padding(0, 0, S(16), 0) };
             info.Dock = DockStyle.Fill;
             left.Controls.Add(info);
-            // a dedicated server: its settings and its buttons instead of host / join
-            Ui.StackTop(left, ServerMode ? BuildServerCard() : conn, Ui.Gap(14));
+            // a dedicated server: its settings and its buttons instead of host / join; (0.7.13) a player: the settings window,
+            // Ko-fi and Discord instead of host / join, which the game's Multiplayer page does (the old card: --dev, MPFEVER_CONNCARD=1)
+            Ui.StackTop(left, ServerMode ? BuildServerCard() : ConnCardOn ? conn : BuildLinksCard(), Ui.Gap(14));
 
             // ---- right column: session controls, dashboard, log
             var session = new Card { Height = S(74), Padding = new Padding(S(16), S(17), S(16), S(16)) };
@@ -562,12 +565,7 @@ namespace MPFever
             settingsLink.Width = TextRenderer.MeasureText(settingsText, linkFont).Width + S(16);
             settingsLink.MouseEnter += (s, e) => { settingsLink.Font = linkFont; settingsLink.ForeColor = Theme.AccentHover; };
             settingsLink.MouseLeave += (s, e) => { settingsLink.Font = creditFont; settingsLink.ForeColor = Theme.Accent; };
-            settingsLink.Click += (s, e) =>
-            {
-                bool guest = relay == null && clients.Count > 0 && Options.HostSession != null;
-                using (var d = new OptionsDialog(guest)) d.ShowDialog(this);
-                foreach (var g in games.ToList()) g.WriteSettings();
-            };
+            settingsLink.Click += (s, e) => OpenSettings();
             var kofiText = T("♥ Soutenir MPFever", "♥ Support MPFever");
             var kofi = new Label
             {
@@ -613,6 +611,50 @@ namespace MPFever
             Controls.Add(header);
 
             UpdateDashboard();
+        }
+
+        /// <summary>(0.7.13, asked by the user 2026-11-09) Whether the window shows the old « Connection » card (name, host address,
+        /// port, « Host a game », « Join by IP », and « Local test » in developer mode): only in developer mode (--dev and the
+        /// autotests, which have no game menu: those buttons start their sessions) or with MPFEVER_CONNCARD=1. A player hosts and
+        /// joins on the game's Multiplayer page (its lobby, the server list, Steam invitations, +mpfever_connect) since 0.3.18; the
+        /// card's buttons, still clickable until the game was started, opened a session without the menu's lobby (and a second
+        /// game with « Start Transport Fever 3 »), and players took them for the way to play.</summary>
+        internal static bool ConnCard(bool dev, string env) => dev || env == "1";
+        static bool ConnCardOn => ConnCard(Dev, Environment.GetEnvironmentVariable("MPFEVER_CONNCARD"));
+
+        /// <summary>(0.7.13) A player's left card in place of the « Connection » card: the settings window (as « ⚙ Settings » of the
+        /// bottom bar), Ko-fi and Discord (as the bottom bar's links and the thanks window's buttons), and where to host or join.</summary>
+        Card BuildLinksCard()
+        {
+            var card = new Card();
+            var settingsBtn = new ModernButton(ButtonKind.Primary) { Text = T("⚙ Réglages", "⚙ Settings") };
+            var supportBtn = new ModernButton(ButtonKind.Secondary) { Text = T("♥ Soutenir MPFever", "♥ Support MPFever") };
+            var discordBtn = new ModernButton(ButtonKind.Secondary) { Text = "Discord" };
+            settingsBtn.Click += (s, e) => OpenSettings();
+            supportBtn.Click += (s, e) => ThanksDialog.Open(ThanksDialog.KofiUrl);
+            discordBtn.Click += (s, e) => ThanksDialog.Open(ThanksDialog.DiscordUrl);
+            var tips = new ToolTip();
+            tips.SetToolTip(supportBtn, ThanksDialog.KofiUrl.Replace("https://", ""));
+            tips.SetToolTip(discordBtn, ThanksDialog.DiscordUrl.Replace("https://", ""));
+            var where = new Label { Text = PlayWhereText(), AutoSize = false, ForeColor = Theme.Muted, Font = Theme.Ui(9f) };
+            // (as high as its lines need at the card's width: the left column's, less its margin and the card's padding)
+            where.Height = TextRenderer.MeasureText(where.Text, where.Font, new Size(Theme.S(340 - 16 - 36), int.MaxValue), TextFormatFlags.WordBreak).Height + Theme.S(4);
+            Ui.StackTop(card, Ui.Caption(T("Réglages et communauté", "Settings and community")), settingsBtn, Ui.Gap(8), supportBtn, Ui.Gap(8), discordBtn, Ui.Gap(12), where);
+            Ui.FitHeight(card);
+            return card;
+        }
+
+        /// <summary>(0.7.13) Where a player hosts and joins: a player's left card, and the help before the game starts.</summary>
+        static string PlayWhereText() => T("Pour héberger ou rejoindre une partie : la page « Multijoueur (MPFever) » du menu principal du jeu, la liste des serveurs ou une invitation Steam.",
+            "To host or join a game: the « Multiplayer (MPFever) » page of the game's main menu, the server list or a Steam invitation.");
+
+        /// <summary>The settings window (the session settings read only for a guest once joined), then every game gets them: the
+        /// bottom bar's « ⚙ Settings » and (0.7.13) a player's left card.</summary>
+        void OpenSettings()
+        {
+            bool guest = relay == null && clients.Count > 0 && Options.HostSession != null;
+            using (var d = new OptionsDialog(guest)) d.ShowDialog(this);
+            foreach (var g in games.ToList()) g.WriteSettings();
         }
 
         // ---------------------------------------------------------------- language
@@ -831,7 +873,8 @@ namespace MPFever
             else if (host) h = T("Partie en cours. La vitesse choisie s'applique à tous les joueurs ; la synchronisation est vérifiée toutes les 10 s.",
                                  "Game running. The speed you choose applies to every player; sync is checked every 10 s.");
             else if (client) h = T("Connecté. L'hôte démarre la partie et règle la vitesse.", "Connected. The host starts the game and sets the speed.");
-            else h = T("Hébergez une partie ou rejoignez un ami avec son adresse IP.\n\nPort par défaut : 28090 (TCP). Pour jouer par Internet, l'hôte doit rediriger ce port sur sa box.", "Host a game, or join a friend with their IP address.\n\nDefault port: 28090 (TCP). To play over the Internet, the host must forward this port on their router.");
+            // ((0.7.13) a player's window has no host / join buttons any more: where to play; the old text with the old card)
+            else h = !ConnCardOn ? PlayWhereText() : T("Hébergez une partie ou rejoignez un ami avec son adresse IP.\n\nPort par défaut : 28090 (TCP). Pour jouer par Internet, l'hôte doit rediriger ce port sur sa box.", "Host a game, or join a friend with their IP address.\n\nDefault port: 28090 (TCP). To play over the Internet, the host must forward this port on their router.");
             if (hint.Text != h) hint.Text = h;
 
             string g = gameDir != null ? "Transport Fever 3 · " + gameDir : "";
@@ -1449,6 +1492,12 @@ namespace MPFever
         /// <summary>The player name kept from the last host or join in the MPFever window (name= in mpfever_settings.txt),
         /// else the Windows user name. The game and the launcher window both start with it.</summary>
         static string SavedName() => LoadSettings().TryGetValue("name", out var n) && n != "" ? n : Environment.UserName;
+
+        /// <summary>(0.7.13) The port a player's lobby listens on, and the port of an address given without one: port= in
+        /// mpfever_settings.txt, else 28090 as before (the launcher's « Port » field went with its « Connection » card).</summary>
+        static int SavedPort() => PortSetting(LoadSettings().TryGetValue("port", out var p) ? p : null);
+        internal static int PortSetting(string v) =>
+            int.TryParse((v ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 1024 && n <= 65535 ? n : 28090;
 
         /// <summary>MPFever.exe started normally: the game starts at once; hosting or joining is chosen in the MPFever
         /// window of its main menu.</summary>

@@ -24232,6 +24232,32 @@
       "ko": "{0}은(는) 호스트 게임이 사용하는 차량, 건물 또는 오브젝트를 추가합니다. 없으면 이 PC에서 그것들이 빠지고 호스트 게임을 불러오는 중 게임이 충돌할 수 있습니다. 개인용으로 두지 말고 설치하세요.",
       "zh-CN": "{0} 添加了主机游戏使用的车辆、建筑或物体：没有它，本电脑上会缺少这些内容，游戏在载入主机游戏时可能崩溃。请安装它，而不是设为个人模组。",
       "zh-TW": "{0} 新增了主機遊戲使用的車輛、建築或物件：沒有它，本電腦上會缺少這些內容，遊戲在載入主機遊戲時可能當機。請安裝它，而不是設為個人模組。"
+    },
+    "Settings and community": {
+      "de": "Einstellungen und Community",
+      "es": "Ajustes y comunidad",
+      "it": "Impostazioni e community",
+      "nl": "Instellingen en community",
+      "pl": "Ustawienia i społeczność",
+      "pt-BR": "Configurações e comunidade",
+      "ru": "Настройки и сообщество",
+      "ja": "設定とコミュニティ",
+      "ko": "설정 및 커뮤니티",
+      "zh-CN": "设置与社区",
+      "zh-TW": "設定與社群"
+    },
+    "To host or join a game: the « Multiplayer (MPFever) » page of the game's main menu, the server list or a Steam invitation.": {
+      "de": "Ein Spiel hosten oder beitreten: über die Seite « Mehrspieler (MPFever) » im Hauptmenü des Spiels, die Serverliste oder eine Steam-Einladung.",
+      "es": "Para crear una partida o unirte a una: la página « Multijugador (MPFever) » del menú principal del juego, la lista de servidores o una invitación de Steam.",
+      "it": "Per ospitare una partita o unirti a una: la pagina « Multigiocatore (MPFever) » del menu principale del gioco, l'elenco dei server o un invito di Steam.",
+      "nl": "Een spel hosten of meedoen: via de pagina « Multiplayer (MPFever) » in het hoofdmenu van het spel, de serverlijst of een Steam-uitnodiging.",
+      "pl": "Aby hostować grę lub do niej dołączyć: strona « Tryb wieloosobowy (MPFever) » w menu głównym gry, lista serwerów lub zaproszenie Steam.",
+      "pt-BR": "Para hospedar ou entrar em um jogo: a página « Multijogador (MPFever) » do menu principal do jogo, a lista de servidores ou um convite da Steam.",
+      "ru": "Чтобы создать игру или подключиться к ней: страница « Мультиплеер (MPFever) » в главном меню игры, список серверов или приглашение Steam.",
+      "ja": "ゲームのホストや参加は、ゲームのメインメニューの「マルチプレイ（MPFever）」ページ、サーバーリスト、または Steam の招待から行えます。",
+      "ko": "게임을 호스트하거나 참가하려면: 게임 메인 메뉴의 « 멀티플레이 (MPFever) » 페이지, 서버 목록 또는 Steam 초대를 이용하세요.",
+      "zh-CN": "创建或加入游戏：请使用游戏主菜单中的“多人游戏（MPFever）”页面、服务器列表或 Steam 邀请。",
+      "zh-TW": "建立或加入遊戲：請使用遊戲主選單中的「多人遊戲（MPFever）」頁面、伺服器清單或 Steam 邀請。"
     }
   }
 }
