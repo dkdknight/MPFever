@@ -9863,10 +9863,12 @@ end
 
 -- autotest "toshared": back to the game's main menu (the pause menu's "Return to Main Menu"), where mpfever_auto.lua loads the
 -- test's savegame again in this same run of the game (auto_reload.txt)
+-- ((0.7.13, #171) autotest "tomenustale", p.stale: "s<seq>", and mpfever_auto.lua says this game's last player lines of the
+-- native module's control file again there, unread, as a client cut from its host left them; see its staleCtl)
 H.tomenu = function(from, p)
 	if os.getenv("MPFEVER_SAVE") == nil then return end
-	C.appendFile(C.DIR .. BS .. "auto_reload.txt", tostring(p.seq or 1))
-	log("AUTOTEST tomenu: back to the main menu, the test savegame loaded again from there")
+	C.appendFile(C.DIR .. BS .. "auto_reload.txt", (p.stale and "s" or "") .. tostring(p.seq or 1))
+	log("AUTOTEST tomenu: back to the main menu, the test savegame loaded again from there" .. (p.stale and " (this game's last control lines said again there, unread)" or ""))
 	G.waits[#G.waits + 1] = { at = G.frames + 10, fn = function()
 		local ok, err = pcall(app.stopGame)
 		if not ok then log("AUTOTEST tomenu: " .. tostring(err)) end

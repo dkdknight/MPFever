@@ -599,20 +599,56 @@ static HANDLE KeptHandle(KeptFile& k, const char* name)
 }
 
 static KeptFile g_ctlFile = { 0, 0 };
+// (0.7.13, #171) The player lines of the control file written before the game now running began to load are the game before's
+// (ctl_players.h): g_ctlOldEnd is where the file ended then (DropAtLoad), g_ctlLoads counts the loads. The module reads the
+// file only when a command is added: a client cut from its host (a command every 15 s) left its last lines unread, and the
+// next game, loaded from the main menu, took them after the drop at its load: the interface read the player of this machine's
+// company of the game before and the engine closed the game (MrWhiskey1 joining again, 2026-11-08 15:40:34). Left out now;
+// the bridge says them again for the new game with a new token within 30 frames. MPFEVER_CTLSTALE=1: taken, as before
+#include "ctl_players.h"
+static volatile long g_ctlOldEnd = 0, g_ctlLoads = 0, g_ctlOldSaid = 0;
+// (the logs of the player lines taken, setlocal, setcanon and setothers: at most 10 of each in a process, and 3 more after every
+// load, see DropAtLoad; the caps, used up in the game's first seconds, hid the lines taken at #171's load)
+static long g_ctlShown[3] = { 0, 0, 0 };
+static bool CtlStaleKeep()
+{
+    static long v = -1;
+    if (v < 0) { char e[4]; v = (GetEnvironmentVariableA("MPFEVER_CTLSTALE", e, 3) == 1 && e[0] == '1') ? 1 : 0; }
+    return v == 1;
+}
+// the control file's size now (through the kept handle when it is open; 0 when there is no file)
+static DWORD CtlFileSizeNow()
+{
+    HANDLE h = g_ctlFile.h;
+    if (h && h != INVALID_HANDLE_VALUE) { DWORD s = GetFileSize(h, 0); return s == INVALID_FILE_SIZE ? 0 : s; }
+    char path[400];
+    PathOf(path, "native_ctl.txt");
+    h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    DWORD s = GetFileSize(h, 0);
+    CloseHandle(h);
+    return s == INVALID_FILE_SIZE ? 0 : s;
+}
 static void ReadControl()
 {
     HANDLE f = KeptHandle(g_ctlFile, "native_ctl.txt");
     if (f == INVALID_HANDLE_VALUE) return;
     static char buf[16384];
+    // ((0.7.13) the mark of the load of the game now running, read before the file's size: see g_ctlOldEnd)
+    long loads0 = g_ctlLoads, mark = g_ctlOldEnd;
     DWORD size = GetFileSize(f, 0), got = 0;
     if (size == INVALID_FILE_SIZE) return;
-    SetFilePointer(f, size > sizeof(buf) - 1 ? (long)(size - (sizeof(buf) - 1)) : 0, 0, 0);
+    unsigned oldEnd = (unsigned)mark;
+    DWORD bufOff = CtlWindow(size, (unsigned)(sizeof(buf) - 1), &oldEnd);
+    if (mark && !oldEnd) _InterlockedCompareExchange(&g_ctlOldEnd, 0, mark);   // (the file written anew: nothing in it is old)
+    SetFilePointer(f, (long)bufOff, 0, 0);
     if (size > sizeof(buf) - 1) size = sizeof(buf) - 1;
     ReadFile(f, buf, size, &got, 0);
     buf[got] = 0;
-    long wantLocal = 0, wantTok = 0; bool haveLocal = false;
-    long wantOthers[32]; int nWantOthers = 0; long othersTok = 0; bool haveOthers = false;
-    long wantCanon = 0, canonTok = 0; bool haveCanon = false;
+    // ((0.7.13, #171) the player lines, read by ctl_players.h: those of the game before left out, MPFEVER_CTLSTALE=1: taken)
+    bool takeOld = CtlStaleKeep();
+    CtlPlayers pk;
+    CtlPickInit(&pk);
     long hudTok = 0, openTok = 0;
     for (DWORD i = 0; i < got; ) {
         DWORD j = i;
@@ -625,35 +661,8 @@ static void ReadControl()
             for (int k = 10; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
             if (v > g_deferNextTarget) g_deferNextTarget = v;
         }
-        else if (len >= 10 && memcmp(l, "setlocal ", 9) == 0) {
-            // "setlocal <entity> <token>": the last such line of the file wins
-            int k = 9;
-            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) v = v * 10 + (l[k] - '0');
-            long tok = 0;
-            for (k++; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
-            wantLocal = v; wantTok = tok; haveLocal = true;
-        }
-        else if (len >= 11 && memcmp(l, "setothers ", 10) == 0) {
-            // "setothers <token> <entity>...": the last such line of the file wins
-            int k = 10;
-            long tok = 0;
-            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
-            nWantOthers = 0;
-            while (k < len && nWantOthers < 32) {
-                while (k < len && (l[k] < '0' || l[k] > '9')) k++;
-                long e = 0; bool any = false;
-                for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) { e = e * 10 + (l[k] - '0'); any = true; }
-                if (any) wantOthers[nWantOthers++] = e;
-            }
-            othersTok = tok; haveOthers = true;
-        }
-        else if (len >= 10 && memcmp(l, "setcanon ", 9) == 0) {
-            int k = 9;
-            long tok = 0, e = 0;
-            for (; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
-            for (k++; k < len && l[k] >= '0' && l[k] <= '9'; k++) e = e * 10 + (l[k] - '0');
-            wantCanon = e; canonTok = tok; haveCanon = true;
-        }
+        // "setlocal <entity> <token>", "setothers <token> <entity>...", "setcanon <token> <entity>" (ctl_players.h)
+        else if (CtlPickLine(l, len, CtlLineOld(bufOff, j, oldEnd), takeOld, &pk)) {}
         else if (len >= 10 && memcmp(l, "hudshare ", 9) == 0) {
             long tok = 0;
             for (int k = 9; k < len && l[k] >= '0' && l[k] <= '9'; k++) tok = tok * 10 + (l[k] - '0');
@@ -699,23 +708,37 @@ static void ReadControl()
         i = j + 1;
     }
     { long want = g_tinWant; if (want && _InterlockedExchange(&g_tinLoaded, want) != want) TerrainLoadIn(want); }
+    // ((0.7.13, #171) a game began to load while the file was read: every line read is the game before's)
+    if (!takeOld && g_ctlLoads != loads0) { pk.haveLocal = false; pk.haveCanon = false; pk.haveOthers = false; }
+    if (pk.nOld && !takeOld && g_ctlOldSaid != loads0) {
+        g_ctlOldSaid = loads0;
+        Buf b; b.str("control file: ").dec(pk.nOld).str(" player line(s) of the game before left out after the load (the last: local player ").dec(pk.oldLocal).str(")")
+            .str(pk.oldLocalTok && pk.oldLocalTok != g_localTok ? ", the last one never read before the load: taken until 0.7.12" : "");
+        LogLine(b);
+    }
     // (written into the game state by the simulation thread only, at its next iteration: from here, the state known last may be the
     // one of a game just unloaded, freed memory - writing there corrupted the heap and crashed the game after a resynchronisation)
-    if (haveLocal && wantTok != g_localTok) { g_localTok = wantTok; g_localPlayer = wantLocal; }
+    if (pk.haveLocal && pk.localTok != g_localTok) {
+        g_localTok = pk.localTok; g_localPlayer = pk.local;
+        // ((0.7.13) a line taken was never logged: a few after each load, see g_ctlShown; always one written before the load)
+        if (g_ctlShown[0]++ < 10 || pk.localOld) {
+            Buf b; b.str("local player ").dec(pk.local).str(" from the control file (token ").dec(pk.localTok).str(")")
+                .str(pk.localOld ? ", a line written before this game's load (MPFEVER_CTLSTALE=1)" : "");
+            LogLine(b);
+        }
+    }
     if (hudTok && hudTok != g_hudShareTok) { g_hudShareTok = hudTok; LoadHudShare(); }
     if (openTok && openTok != g_openNetTok) { g_openNetTok = openTok; LoadOpenNet(); }
-    if (haveCanon && canonTok != g_canonTok) {
-        g_canonTok = canonTok; g_canon = wantCanon;
-        static long shownC = 0;
-        if (shownC++ < 10) { Buf b; b.str("savegame company ").dec(wantCanon); LogLine(b); }
+    if (pk.haveCanon && pk.canonTok != g_canonTok) {
+        g_canonTok = pk.canonTok; g_canon = pk.canon;
+        if (g_ctlShown[1]++ < 10) { Buf b; b.str("savegame company ").dec(pk.canon); LogLine(b); }
     }
-    if (haveOthers && othersTok != g_othersTok) {
-        g_othersTok = othersTok;
+    if (pk.haveOthers && pk.othersTok != g_othersTok) {
+        g_othersTok = pk.othersTok;
         g_nOthers = 0;
-        for (int i = 0; i < nWantOthers; i++) g_others[i] = wantOthers[i];
-        g_nOthers = nWantOthers;
-        static long shownO = 0;
-        if (shownO++ < 10) { Buf b; b.str("other companies: "); for (int i = 0; i < nWantOthers; i++) b.dec(wantOthers[i]).str(" "); LogLine(b); }
+        for (int i = 0; i < pk.nOthers; i++) g_others[i] = pk.others[i];
+        g_nOthers = pk.nOthers;
+        if (g_ctlShown[2]++ < 10) { Buf b; b.str("other companies: "); for (int i = 0; i < pk.nOthers; i++) b.dec(pk.others[i]).str(" "); LogLine(b); }
     }
     if (g_probeIdx != g_probeApplied) {
         // restore the previous candidate, then patch the new one (1-based; 0 = nothing patched)
@@ -1613,6 +1636,12 @@ static bool LoadKeepLocal()
 // others' of the game before are forgotten until the mod says them again
 static void DropAtLoad()
 {
+    // (0.7.13, #171) the player lines already in the control file are the game before's (see g_ctlOldEnd): marked before this
+    // machine's company is dropped, so that a reading of the file that starts after the drop goes by the mark (marked with
+    // MPFEVER_CTLSTALE=1 too, for the log: the lines are taken there, as before)
+    g_ctlOldEnd = (long)CtlFileSizeNow();
+    _InterlockedIncrement(&g_ctlLoads);
+    for (int k = 0; k < 3; k++) if (g_ctlShown[k] > 7) g_ctlShown[k] = 7;
     long lp = _InterlockedExchange(&g_localPlayer, 0);
     if (lp) { NoteStale(0, lp); Buf b; b.str("local player ").dec(lp).str(" dropped: a game is being loaded"); LogLine(b); }
     if (g_nOthers) { Buf b; b.str("other companies dropped: a game is being loaded"); LogLine(b); }

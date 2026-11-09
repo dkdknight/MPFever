@@ -3075,6 +3075,44 @@ namespace MPFever
                         }
                         continue;
                     }
+                    if (scenario == "tomenustale")
+                    {
+                        // (0.7.13, #171: MrWhiskey1, a client cut from its host, left its last control lines unread, joined again
+                        // from the main menu, and its native module took the company of the game before after the load: the
+                        // interface read an entity the new world does not have, and the engine closed the game) as "toshared",
+                        // the company mode kept: both games back to the game's main menu, where mpfever_auto.lua says their last
+                        // player lines again, unread (no command is added there), the test's savegame loaded again; the mouse
+                        // over the client's world from the order until a minute after the start (the crash came at "Game is
+                        // ready", from the interface's tool that shows what the mouse is over). MPFEVER_CTLSTALE=1: the crash's way
+                        if (role == "host")
+                        {
+                            AutoLine("company mode " + companyMode + " kept: both games back to the main menu, their last control lines said again there, '" + GameLink.AutoSave + "' loaded again");
+                            resyncing = true;
+                            lock (players) players.Clear();
+                            lock (clocks) clocks.Clear();
+                            lock (sessionGate) { started = false; pauseAt = null; speed = 0; }
+                            HostSend(Msg.Make("tomenu", hostName, "{[\"seq\"]=" + DateTime.Now.Ticks + ",[\"stale\"]=true}"));
+                            Func<IntPtr> clientWin = () => { lock (games) return games.FirstOrDefault(x => x.Role == "client")?.Window ?? IntPtr.Zero; };
+                            int hk = 0;
+                            bool back = false;
+                            for (var until = Now + 600; Now < until; )
+                            {
+                                lock (players) back = players.Count >= 2;
+                                if (back) break;
+                                AutoHover(clientWin(), hk++); Thread.Sleep(250);
+                            }
+                            resyncing = false;
+                            AutoLine(back ? "both games back with the savegame: " + companyMode + " session" : "FAILED: the games did not come back from the main menu");
+                            if (back)
+                            {
+                                for (var until = Now + 3; Now < until; ) { AutoHover(clientWin(), hk++); Thread.Sleep(250); }
+                                StartSession();
+                                for (var until = Now + 60; Now < until && ClosedGames() == ""; ) { AutoHover(clientWin(), hk++); Thread.Sleep(250); }
+                            }
+                            AutoLine("after the reload: " + (ClosedGames() == "" ? "both games running" : "CLOSED " + ClosedGames()));
+                        }
+                        continue;
+                    }
                     if (scenario == "pubtest")
                     {
                         // (0.6) the public games' options in a session of two games, both at once (PublicGames.cs's RunPubTest)

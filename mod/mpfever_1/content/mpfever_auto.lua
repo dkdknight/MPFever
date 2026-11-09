@@ -264,6 +264,37 @@ local function menuLoad()
 	if not ok then log("menu load failed: " .. tostring(err)) end
 end
 
+-- (0.7.13, #171, autotest "tomenustale") this game's last player lines of the native module's control file said again with a
+-- new token, here on the main menu: no command is added here, so the native module does not read them before the next load.
+-- MrWhiskey1's game (a client cut from its host, 2026-11-08) left its last lines unread like that and joined again from the
+-- main menu; the native module took them after the load, the interface read the player of the company of the game before,
+-- and the engine closed the game. The native module leaves them out now (MPFEVER_CTLSTALE=1: taken, as before)
+local function staleCtl()
+	local path = DIR .. BS .. "native_ctl.txt"
+	local f = IO.open(path, "rb")
+	if not f then log("tomenustale: no native_ctl.txt") return end
+	local s = f:read("*a") or ""
+	f:close()
+	local last = {}
+	for line in s:gmatch("[^" .. string.char(10, 13) .. "]+") do
+		local k = line:match("^(set%a+) ")
+		if k == "setlocal" or k == "setothers" or k == "setcanon" then last[k] = line end
+	end
+	local out = {}
+	local e, t = (last.setlocal or ""):match("^setlocal (%d+) (%d+)")
+	if e then out[#out + 1] = "setlocal " .. e .. " " .. string.format("%d", tonumber(t) + 1) end
+	for _, k in ipairs({ "setothers", "setcanon" }) do
+		local tk, rest = (last[k] or ""):match("^" .. k .. " (%d+)(.*)$")
+		if tk then out[#out + 1] = k .. " " .. string.format("%d", tonumber(tk) + 1) .. rest end
+	end
+	if #out == 0 then log("tomenustale: no player line in native_ctl.txt") return end
+	local w = IO.open(path, "ab")
+	if not w then log("tomenustale: native_ctl.txt not written") return end
+	w:write(table.concat(out, string.char(10)) .. string.char(10))
+	w:close()
+	log("tomenustale: the last player lines of the game before said again, unread: " .. table.concat(out, " | "))
+end
+
 -- (autotest "toshared") the game was sent back to the main menu to load the test's savegame again (auto_reload.txt, written by
 -- the bridge's H.tomenu): true once, the file emptied
 local function takeReload()
@@ -275,6 +306,11 @@ local function takeReload()
 	if s == "" then return false end
 	local w = IO.open(DIR .. BS .. "auto_reload.txt", "wb")
 	if w then w:close() end
+	-- ((0.7.13) "tomenustale": an "s" from H.tomenu, before the load)
+	if s:find("s", 1, true) then
+		local ok, err = pcall(staleCtl)
+		if not ok then log("tomenustale: " .. tostring(err)) end
+	end
 	return true
 end
 
