@@ -1503,6 +1503,12 @@ namespace MPFever
         internal static int PortSetting(string v) =>
             int.TryParse((v ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 1024 && n <= 65535 ? n : 28090;
 
+        /// <summary>(0.7.13, a hardening of the review) The port of an address joined without one (the game's Multiplayer page, a
+        /// Steam invitation, --join: OnMenuRequest "join"): 28090, the usual port of a lobby, whatever port= in mpfever_settings.txt
+        /// says (the port this player's own lobby listens on: a friend's does not share it, and nothing on screen shows it); with
+        /// the old « Connection » card (--dev, MPFEVER_CONNCARD=1) its « Port » field, shown next to the address, as before.</summary>
+        internal static int JoinPort(bool connCard, int field) => connCard ? field : 28090;
+
         /// <summary>MPFever.exe started normally: the game starts at once; hosting or joining is chosen in the MPFever
         /// window of its main menu.</summary>
         void StartMenuMode()
@@ -2257,7 +2263,8 @@ namespace MPFever
                     EndSession(T("=== Nouvelle connexion : fin de la session précédente ===", "=== New connection: the previous session ends ==="));
                 }
                 joinedAddr = host;
-                int port = (int)portBox.Value;
+                // ((0.7.13) an address without its port: 28090, not port= of this player's own lobby; the old card's field with it)
+                int port = JoinPort(ConnCardOn, (int)portBox.Value);
                 SaveSetting("addr", arg.Trim());
                 menuGame.SetIdentity(name, "client");
                 menuPhase = "connecting"; menuText = F("Connexion à {0}...", "Connecting to {0}...", NetAddr.First(host, port)); MenuStatus();

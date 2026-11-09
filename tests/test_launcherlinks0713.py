@@ -6,8 +6,11 @@
   Transport Fever 3 ». A player's window now shows « ⚙ Settings » (the settings window), « ♥ Support MPFever » (Ko-fi) and
   « Discord » there, and where to host or join. The developer mode (--dev, the autotests) keeps the old card, whose buttons
   start its sessions; MPFEVER_CONNCARD=1 shows it to a player as before. The port of a lobby, which only that card's field
-  changed: port= in mpfever_settings.txt (28090 without it, as before).
-The decisions (ConnCard, PortSetting) are run by the launcher's self-test; this checks the code uses them where it must and that
+  changed: port= in mpfever_settings.txt (28090 without it, as before). (A hardening of the review) port= is only the port this
+  player's own lobby listens on: an address joined without a port (the game's Multiplayer page, a Steam invitation, --join) keeps
+  28090, a friend's lobby does not share port= and nothing on screen would show it; the old card (--dev, MPFEVER_CONNCARD=1)
+  keeps its « Port » field for both, shown next to the address, as before.
+The decisions (ConnCard, PortSetting, JoinPort) are run by the launcher's self-test; this checks the code uses them where it must and that
 nothing the sessions use went with the card.
 Run: python tests/test_launcherlinks0713.py
 """
@@ -93,7 +96,7 @@ kept = [
     ("the autotests' local test", "Guard(StartLocalTest);" in body(main, "void InitFinish()", "/// <summary>(0.6.5, #111)")
      and 'StartClient("Client", "127.0.0.1", (int)portBox.Value, true)' in main),
     ("the Multiplayer page's host and join", "try { StartHost(name, false, menuGame); }" in main and "try { StartClient(name, host, port, false, menuGame," in main),
-    ("the port of the page's lobby and joins, the relay's", main.count("(int)portBox.Value") >= 5 and "int listenPort = server != null ? server.Port : (int)portBox.Value;" in main),
+    ("the port of the page's lobby, the relay's, the old card's field", main.count("(int)portBox.Value") >= 5 and "int listenPort = server != null ? server.Port : (int)portBox.Value;" in main),
     ("Steam invitations and --join", main.count('OnMenuRequest("join", addr, menuGame.Name)') == 2 and 'connect.IndexOf("+mpfever_connect", StringComparison.Ordinal)' in main
      and 'steamConnect = "+mpfever_connect " + viaSteam + pub + ":" + port' in main),
     ("the page's name shown and kept", 'SaveSetting("name", name);' in main and "nameBox.Text = name" in main),
@@ -109,6 +112,23 @@ check("port: port= in mpfever_settings.txt, else 28090", "Value = SavedPort() };
       and 'static int SavedPort() => PortSetting(LoadSettings().TryGetValue("port", out var p) ? p : null);' in main
       and "&& n >= 1024 && n <= 65535 ? n : 28090;" in main)
 
+# 6b. (a hardening of the review) port= is this player's own lobby's port, not the port of every join by address
+mh = body(main, '            if (cmd == "host")\n', '            else if (cmd == "start")')
+mj = body(main, '            else if (cmd == "join")\n', '            else if (cmd == "color")')
+check("join: JoinPort, 28090 for an address without a port unless the old card is shown",
+      "internal static int JoinPort(bool connCard, int field) => connCard ? field : 28090;" in main
+      and "                int port = JoinPort(ConnCardOn, (int)portBox.Value);\n" in mj and "int port = (int)portBox.Value;" not in mj
+      and "NetAddr.First(host, port)" in mj and "try { StartClient(name, host, port, false, menuGame," in mj)
+check("  the host's lobby keeps port= (its listen port, the addresses it shows, +mpfever_connect)",
+      "                int port = (int)portBox.Value;\n                try { StartHost(name, false, menuGame); }" in mh
+      and "lobbyPort = port;" in mh and 'steamConnect = "+mpfever_connect " + viaSteam + pub + ":" + port' in mh
+      and "int listenPort = server != null ? server.Port : (int)portBox.Value;" in main)
+sj = body(main, "        void CheckSteamJoin()", "\n        }\n")
+ja = body(main, "            if (JoinAtStart != null)\n            {", "\n            }\n")
+check("  a Steam invitation and --join go through the menu's join (so the same port)",
+      'OnMenuRequest("join", addr, menuGame.Name);' in sj and "portBox" not in sj
+      and 'OnMenuRequest("join", addr, menuGame.Name);' in ja and "portBox" not in ja)
+
 # 7. the texts in every language (test_lang.py checks every text; these are the new ones and the ones reused)
 LANGS = ["de", "es", "it", "nl", "pl", "pt-BR", "ru", "ja", "ko", "zh-CN", "zh-TW"]
 for k in ["Settings and community", "⚙ Settings", "♥ Support MPFever",
@@ -117,6 +137,7 @@ for k in ["Settings and community", "⚙ Settings", "♥ Support MPFever",
 
 # 8. the self-test runs the decisions
 check("the self-test runs ConnCard and PortSetting", "ok &= RunLinks0713();" in selftest and "MainForm.ConnCard(" in selftest and "MainForm.PortSetting(" in selftest)
+check("  and JoinPort (28090 without the card, its field with it)", "MainForm.JoinPort(false, 28100) == 28090" in selftest and "MainForm.JoinPort(true, 28100) == 28100" in selftest)
 
 print("FAILED: " + ", ".join(fails) if fails else "all passed")
 sys.exit(1 if fails else 0)

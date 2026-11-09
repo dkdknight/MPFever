@@ -17,7 +17,12 @@ MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 / MPFEVER_ORDER2=1 in the environment of eve
   (d) the bridge's switches (lupa): none set, all five parts off; NOSTOP=1 all on; NOSTOP=1 NOWAIT=0 all but NOWAIT; NOWAIT=1 alone;
   (e) why NOWAIT stays off (lupa): a refused stop tried again after its one command was handed is not held, while the default
       holds the game through the retry;
-  (f) the native module: the platform-order fixes still off unless MPFEVER_ORDER2, the other order fixes as they were.
+  (f) the native module: the platform-order fixes still off unless MPFEVER_ORDER2, the other order fixes as they were;
+  (g) (a hardening of the review) in a launcher session settings.txt writes MPFEVER_NOWAIT= and MPFEVER_NOSTOP= (an empty value:
+      the mod's os.getenv gives nil), as the two settings' « off » did before 0.7.13: a MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 left in
+      one PC's environment cannot turn them on for that game alone (it would replay the others' builds otherwise than the other
+      games); the autotests (Options.Disabled: no settings.txt) keep reading their environment; MPFEVER_EXPBLOCK=0 in the
+      launcher's environment: not written. Run in lupa with the mod's own os.getenv wrapper (mpfever_common.lua).
 Needs lupa (Lua 5.2). Run: python tests/test_expopts0713.py
 """
 import json
@@ -86,6 +91,11 @@ check('"the experimental settings are gone (0.7.13)"' in rs and "Options.All.Any
       "(b) selftest: not in Options.All, nor in the host's payload, the mod's settings.txt or the game's environment")
 check('"MPFEVER_NOWAIT", "MPFEVER_NOSTOP", "MPFEVER_ORDER2"' in rs, "(b) selftest: the three of them")
 check("WithOrder2" not in st, "(b) the 0.7.10 selftest of the hello's word gone with it")
+check("!gone.Any(k => mod.Contains(k + \"=\"))" not in rs and '!mod.Contains("MPFEVER_ORDER2=")' in rs
+      and "Options.ExpBlocked.All(k => ml.Count(l => l.StartsWith(k + \"=\")) == (block ? 1 : 0) && (!block || ml.Contains(k + \"=\")))" in rs
+      and 'bool block = Options.ExpBlockOn(Environment.GetEnvironmentVariable("MPFEVER_EXPBLOCK"));' in rs
+      and '!Options.ExpBlockOn("0")' in rs and 'Options.ExpBlockOn(null)' in rs,
+      "(b) selftest: NOWAIT and NOSTOP in the mod's settings.txt once each with an empty value (none with MPFEVER_EXPBLOCK=0), ORDER2 not")
 
 # ---------------------------------------------------------------- (c) lang.json
 gone = ["Other players' builds without waiting (experimental)",
@@ -198,6 +208,67 @@ check('if (i == 8) layout = layout && fieldAt && at + f.offset == fieldAt + 0xba
       "(f) the order fixes that are on (town field, tick epochs, free-id queue) kept by their numbers")
 check("0.7.13:" in nat[nat.index("(three of the four ported in 0.5.0, OFF unless MPFEVER_ORDER2=1"):][:800], "(f) the native comment says the setting is gone")
 check(all(ord(c) < 128 for c in nat), "(f) the native source stays ASCII")
+
+# ---------------------------------------------------------------- (g) a launcher session: settings.txt writes NOWAIT/NOSTOP unset
+mf_i = op.index("        public static string ModFile()")
+modfile = op[mf_i:op.index("\n        }\n", mf_i)]
+check('internal static readonly string[] ExpBlocked = { "MPFEVER_NOWAIT", "MPFEVER_NOSTOP" };' in op
+      and 'internal static bool ExpBlockOn(string env) => env != "0";' in op,
+      "(g) Options.ExpBlocked: NOWAIT and NOSTOP (not ORDER2: the native module reads the game's environment); off only with MPFEVER_EXPBLOCK=0")
+check('            if (ExpBlockOn(Environment.GetEnvironmentVariable("MPFEVER_EXPBLOCK")))\n'
+      '                foreach (var k in ExpBlocked) if (!All.Any(o => o.Key == k)) lines.Add(k + "=");\n'
+      '            return string.Join("\\n", lines) + "\\n";' in modfile,
+      "(g) ModFile writes them unset (\"KEY=\"), after the settings, never twice")
+check("if (Options.Disabled) return;\n            try { lock (writeGate) File.WriteAllText(Path.Combine(Dir, \"settings.txt\"), Options.ModFile(), Utf8); }" in core
+      and 'Options.Disabled = autotest && Environment.GetEnvironmentVariable("MPFEVER_OPTIONS") != "1";' in mf,
+      "(g) settings.txt only in a launcher session (not the autotests, unless MPFEVER_OPTIONS=1): their environment decides")
+check("ExpBlocked" not in op[op.index("        public static string SessionPayload()"):op.index("        public static Dictionary<string, string> ParsePayload")]
+      and "ExpBlocked" not in op[op.index("        public static string InfoFile()"):op.index("        public static string Changed()")],
+      "(g) neither in the host's payload nor in the in-game Settings tab (every game writes them alike)")
+com = read("mod", "mpfever_1", "content", "mpfever_common.lua")
+wi = com.index("C.SETTINGS = {}\n")
+wj = com.index("\treturn rawGetenv(k)\nend\n", wi) + len("\treturn rawGetenv(k)\nend\n")
+wrap = com[wi:wj]
+check("function C.loadSettings()" in wrap and "if v ~= nil then if v == \"\" then return nil end return v end" in wrap,
+      "(g) the mod's os.getenv wrapper found: an empty value of settings.txt is nil")
+# what ModFile writes (its settings, then the two unset lines), and an old one without them
+OWN = "".join(k + "=" + v + "\n" for k, v in (("MPFEVER_BUILDLEAD", "1"), ("MPFEVER_NOREFUND", ""), ("MPFEVER_SMOOTH", ""), ("MPFEVER_STEPLOG", "")))
+BLOCKED = OWN + "MPFEVER_NOWAIT=\nMPFEVER_NOSTOP=\n"
+
+
+def session(settings, env):
+    """The five parts as one game reads them: settings.txt (None: not written, an autotest) over its own environment."""
+    R = lupa.LuaRuntime(unpack_returned_tuples=True)
+    R.execute("ENV = {}\nos.getenv = function(k) return ENV[k] end")
+    for k, v in env.items():
+        R.execute('ENV["%s"] = "%s"' % (k, v))
+    R.globals().FILE = settings
+    R.execute("""
+C = { ACTIVE = true, DIR = "S", BS = string.char(92), NL = string.char(10), CR = string.char(13) }
+C.IO = { open = function(p, m)
+    if FILE == nil or p ~= "S" .. C.BS .. "settings.txt" then return nil end
+    return { read = function(self) return FILE end, close = function(self) end }
+end }
+local BS, NL, CR = C.BS, C.NL, C.CR
+""" + wrap + "\nG = {}\n" + feat + "\nfunction readAll()\n" + reads + "\nend\nreadAll()")
+    g = R.globals().G
+    return {p: g[p] for p in PARTS}
+
+
+STRAY = {"MPFEVER_NOWAIT": "1", "MPFEVER_NOSTOP": "1"}
+r = session(BLOCKED, STRAY)
+check(all(v is False for v in r.values()), "(g) launcher session, MPFEVER_NOWAIT=1 MPFEVER_NOSTOP=1 left in one PC's environment: all five parts off", r)
+r = session(BLOCKED, {"MPFEVER_NOWAIT": "1"})
+check(r["gateWanted"] is False, "(g)   MPFEVER_NOWAIT=1 alone: off too", r)
+r = session(BLOCKED, {})
+check(all(v is False for v in r.values()), "(g)   nothing set: all off, as before", r)
+r = session(BLOCKED, {"MPFEVER_NOSTOP": "1", "MPFEVER_PRESHIP": "1"})
+check(r["preshipWanted"] is True and r["gateWanted"] is False and r["leadAckOn"] is False,
+      "(g)   the research switches never blocked (PRESHIP) still read from the environment, as before 0.7.13", r)
+r = session(OWN, STRAY)
+check(all(v is True for v in r.values()), "(g) without the two lines (MPFEVER_EXPBLOCK=0, 0.7.13 before this hardening): that game's environment decides", r)
+r = session(None, STRAY)
+check(all(v is True for v in r.values()), "(g) an autotest (no settings.txt): its environment decides, as before (tests)", r)
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

@@ -37,7 +37,7 @@ namespace MPFever
             // late without waiting, then a reload; the per-build stand was lower, the session's was not) the host's experimental
             // « Other players' builds without waiting » and « Several players building without stopping » are gone: off on every
             // game, a value kept in mpfever_settings.txt is ignored. MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 in the environment of
-            // every game: as before (tests)
+            // every game: as before (tests: the autotests; a launcher session's settings.txt writes them unset, see ExpBlocked)
             new Opt { Key = "MPFEVER_NOREFUND", Session = true, DefaultOn = true, OffValue = "1",
                 Name = () => T("Remboursements équilibrés", "Balanced refunds"),
                 Help = () => T("Une construction démolie juste après coûte la même chose sur tous les jeux.", "A build demolished right after costs the same on every game.") },
@@ -137,6 +137,16 @@ namespace MPFever
         public static IEnumerable<KeyValuePair<string, string>> NativeEnv() =>
             All.Where(o => o.Native && !o.Session && IsOn(o) && o.OnValue != "").Select(o => new KeyValuePair<string, string>(o.Key, o.OnValue));
 
+        /// <summary>(0.7.13, a hardening of the review) The mod's variables of the host's settings gone in 0.7.13 (« without
+        /// waiting », « without stopping ») that settings.txt still writes unset ("KEY=": the mod's os.getenv gives nil for an empty
+        /// value, see mpfever_common.lua), as their « off » did before: a MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 left in one PC's
+        /// environment (Windows', a .bat, MPFEVER_ENV_HOST/CLIENT) changes nothing of a launcher session, where that game alone
+        /// would replay the others' builds otherwise. The autotests (Disabled: no settings.txt) keep reading their environment;
+        /// MPFEVER_EXPBLOCK=0 in the launcher's environment: not written, each game's environment decides (as 0.7.13 before
+        /// this hardening).</summary>
+        internal static readonly string[] ExpBlocked = { "MPFEVER_NOWAIT", "MPFEVER_NOSTOP" };
+        internal static bool ExpBlockOn(string env) => env != "0";
+
         /// <summary>settings.txt for the mod: the session settings (the host's when received) and this player's own.</summary>
         public static string ModFile()
         {
@@ -148,6 +158,9 @@ namespace MPFever
                 if (o.Key == "MPFEVER_STEPLOG" && GameInstall.DiagOn()) v = "1";
                 lines.Add(o.Key + "=" + v);
             }
+            // (0.7.13: the gone settings unset, see ExpBlocked; never a second line of a setting that would come back)
+            if (ExpBlockOn(Environment.GetEnvironmentVariable("MPFEVER_EXPBLOCK")))
+                foreach (var k in ExpBlocked) if (!All.Any(o => o.Key == k)) lines.Add(k + "=");
             return string.Join("\n", lines) + "\n";
         }
 

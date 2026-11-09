@@ -81,7 +81,8 @@ namespace MPFever
         }
 
         /// <summary>(0.7.13) The launcher's left card: the old « Connection » card only in developer mode or with MPFEVER_CONNCARD=1;
-        /// the port of a lobby from port= in mpfever_settings.txt, 28090 without it.</summary>
+        /// the port of a lobby from port= in mpfever_settings.txt, 28090 without it; an address joined without a port: 28090 (the
+        /// old card's field with it).</summary>
         static bool RunLinks0713()
         {
             bool ok = true;
@@ -92,12 +93,17 @@ namespace MPFever
             C(MainForm.PortSetting(null) == 28090 && MainForm.PortSetting("") == 28090, "port: 28090 without port= in mpfever_settings.txt, as before");
             C(MainForm.PortSetting(" 28100 ") == 28100 && MainForm.PortSetting("1024") == 1024 && MainForm.PortSetting("65535") == 65535, "  port=28100: that port");
             C(MainForm.PortSetting("80") == 28090 && MainForm.PortSetting("70000") == 28090 && MainForm.PortSetting("abc") == 28090 && MainForm.PortSetting("-5") == 28090, "  out of 1024-65535 or not a number: 28090");
+            // (a hardening of the review: port= is the port of this player's own lobby, not of a friend's)
+            C(MainForm.JoinPort(false, 28100) == 28090 && MainForm.JoinPort(false, 28090) == 28090, "a join by an address without a port: 28090, whatever port= says");
+            C(MainForm.JoinPort(true, 28100) == 28100 && MainForm.JoinPort(true, 28090) == 28090, "  with the old card (--dev, MPFEVER_CONNCARD=1): its « Port » field, as before");
             return ok;
         }
 
         /// <summary>(0.7.13) The experimental settings « Other players' builds without waiting », « Several players building
         /// without stopping » (the host's) and « Same platform order (test) » (the player's) are gone: off on every game, a value
-        /// kept in mpfever_settings.txt goes neither to the others nor to the mod nor to the game's environment.</summary>
+        /// kept in mpfever_settings.txt goes neither to the others nor to the mod nor to the game's environment; (a hardening of
+        /// the review) settings.txt writes MPFEVER_NOWAIT and MPFEVER_NOSTOP unset, as their « off » did, so that one game's
+        /// environment cannot turn them on alone in a launcher session.</summary>
         static bool RunExpOpts0713()
         {
             bool ok = true;
@@ -107,8 +113,16 @@ namespace MPFever
             var mod = Options.ModFile();
             C(!Options.All.Any(o => gone.Contains(o.Key)) && !gone.Any(k => payload.Contains(k)) && !Options.NativeEnv().Any(),
                 "the experimental settings are gone (0.7.13)");
-            C(!gone.Any(k => mod.Contains(k + "=")) && !gone.Any(k => Options.InfoFile().Contains(k + "\t")),
-                "  neither in the mod's settings.txt nor in the in-game Settings tab");
+            C(!mod.Contains("MPFEVER_ORDER2=") && !gone.Any(k => Options.InfoFile().Contains(k + "\t")),
+                "  the platform order not in the mod's settings.txt, none of them in the in-game Settings tab");
+            // (MPFEVER_EXPBLOCK=0 in this launcher's environment: not written)
+            var ml = mod.Split('\n');
+            bool block = Options.ExpBlockOn(Environment.GetEnvironmentVariable("MPFEVER_EXPBLOCK"));
+            C(Options.ExpBlocked.SequenceEqual(new[] { "MPFEVER_NOWAIT", "MPFEVER_NOSTOP" })
+                && Options.ExpBlocked.All(k => ml.Count(l => l.StartsWith(k + "=")) == (block ? 1 : 0) && (!block || ml.Contains(k + "="))),
+                "  settings.txt: MPFEVER_NOWAIT= and MPFEVER_NOSTOP= unset (an empty value), a game's own environment cannot turn them on");
+            C(Options.ExpBlockOn(null) && Options.ExpBlockOn("") && Options.ExpBlockOn("1") && !Options.ExpBlockOn("0"),
+                "  MPFEVER_EXPBLOCK=0 only: not written, each game's environment decides");
             C(payload.Contains("MPFEVER_BUILDLEAD=") && payload.Contains("MPFEVER_NOREFUND=") && mod.Contains("MPFEVER_SMOOTH="),
                 "  the other settings as before");
             return ok;
