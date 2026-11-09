@@ -2,6 +2,15 @@ MPFever - Changelog
 ===================
 
 0.7.13 - (in progress)
+  - FIX (#172, CowboyPilot's session of 2026-11-08 15:47, a resynchronisation for « script:gametime »): the calendar's clouds
+    slider sets the sky of its player's game only and sends an event that the game's time and weather script answers, on every
+    game, with that game's own sky as its target: after MrWhiskey1's two moves of the slider his game alone differed, after
+    CowboyPilot's thirty all three, and the host reloaded the game. The slider's value travels with the event: every game sets
+    it first, then applies the event (the players also see the same sky now); the same for the time of day's slider.
+    MPFEVER_SKYSYNC=0: the event alone, as before. Test: tests/test_skysync0713.py; autotest skysync.
+    The session's four other resynchronisations: two builds of MrWhiskey1 released while another player's signal or station
+    was being replayed (taken for that replay, see #161/#166 above: fixed in this version), and two « built otherwise than
+    shipped at the click » (the « without stopping » setting, removed in this version).
   - FIX (an adversarial review of the fixes above, 2026-11-09, each fault confirmed by a second reader before it was fixed):
     - purchases (#148): the purchase's figures went into the result's toll and replaced the depot toll a purchase in a pause
       pays (#122 back): kept apart now, a toll paid in a pause is counted again. The « refused by the game » notice is shown only

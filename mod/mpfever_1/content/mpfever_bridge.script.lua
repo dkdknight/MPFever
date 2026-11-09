@@ -1061,6 +1061,26 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 			return result
 		end
 	end
+	-- (0.7.13, #172: CowboyPilot's session, 2026-11-08 15:47, a resynchronisation for "script:gametime") The calendar's sliders
+	-- (gui/game_bar/game_bar_widgets.tl): the clouds' slider sets this game's sky only (api.gui.rendering.setEnvironment) and sends
+	-- the event "CloudCoverage"/"OnManualCloudCoverageChanged", which game_time.gs answers on every game with that game's own cloud
+	-- coverage as its target: the target was each player's sky, and the games' game_time states differed. The time of day's
+	-- slider does the same with the time of day ("GameTime"/"OnManualGameTimeChanged", its own command sent before it). The value
+	-- the slider gave travels with the event: every game sets it first, then the event finds the same sky everywhere (the players
+	-- also see the same sky now). MPFEVER_SKYSYNC=0: the event alone, as before
+	if a.fn == "makeScriptingSendEventCmd" and type(a.args) == "table" and os.getenv("MPFEVER_SKYSYNC") ~= "0" then
+		local v = tonumber(a.args[4])
+		local sky = nil
+		if v and a.args[2] == "CloudCoverage" and a.args[3] == "OnManualCloudCoverageChanged" then
+			sky = function() return api.cmd.makeGameSetCloudCoverageCmd(math.max(0, math.min(1, v))) end
+		elseif v and a.args[2] == "GameTime" and a.args[3] == "OnManualGameTimeChanged" then
+			sky = function() return api.cmd.makeGameSetTimeOfDayCmd(math.floor(v + 0.5) % 86400) end
+		end
+		if sky then
+			local okS, errS = pcall(function() sendCommand(sky()) end)
+			if not okS then log("action " .. tostring(a.uid) .. ": the slider's value not set first (" .. tostring(errS) .. ")") end
+		end
+	end
 	local isBuild = a.fn == "makeWorldBuildProposalCmd"
 	local cmd, label, errs, cargs = buildCommand(a.fn, C.ser(a.args or {}), isBuild and BUILD_TRIES or { { v = "full" } })
 	local rcfgs = C.rebuiltCfgs
@@ -13986,6 +14006,45 @@ local function uiRequest(fn, margs)
 	R.translateOut(fn, margs, G.rev)
 	AUTO.reqId = (AUTO.reqId or 0) + 1
 	C.appendFile(C.DIR .. BS .. "ui.log", C.line("act_req", { tok = "auto-" .. C.ROLE, id = AUTO.reqId, fn = fn, args = margs }))
+end
+
+-- (0.7.13, #172) The calendar's clouds slider (MPFEVER_SCENARIO=skysync): this game's sky set as the slider sets it
+-- (api.gui.rendering.setEnvironment), then its event, as a player's action. Then game_time's target and the world's cloud coverage
+-- on this game; the sync checks compare script:gametime (MPFEVER_SKYSYNC=0 on both games: the 0.7.12 difference)
+H.skysync = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST skysync: " .. t); AUTO.results[#AUTO.results + 1] = "skysync " .. tostring(C.ROLE) .. ": " .. t end
+	local function world()
+		local okw, w = pcall(function() return api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.WORLD).cloudCoverage end)
+		return okw and w or nil
+	end
+	local function target()
+		local okt, t, mode = pcall(function()
+			local e = api.engine.system.gameScriptSystem.getEntityForGameScript("::/game_mechanics/game_time/game_time.gs")
+			local gs = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT)
+			return gs.state.cloudCoverageTarget, gs.state.weatherMode
+		end)
+		if okt then return t, mode end
+		return nil, nil
+	end
+	local w0 = world()
+	local v = C.ROLE == "host" and 0.83 or 0.17
+	local okE, errE = pcall(function()
+		local e = api.gui.rendering.getEnvironment()
+		e.atmosphere.cloudCoverage = v
+		api.gui.rendering.setEnvironment(e)
+	end)
+	say("world cloud coverage " .. tostring(w0) .. ", after this game's sky set to " .. v .. ": " .. tostring(world()) .. " ("
+		.. (okE and "sky set" or ("sky not set: " .. tostring(errE))) .. ")")
+	uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "", [2] = "CloudCoverage", [3] = "OnManualCloudCoverageChanged", [4] = v })
+	G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
+		local t, mode = target()
+		say("game_time's cloud target " .. tostring(t) .. " (weather " .. tostring(mode) .. "), world " .. tostring(world()))
+		autoFinish()
+	end }
 end
 
 -- Builds from windows that no game can replay (MPFEVER_SCENARIO=badui, with MPFEVER_PAUSED=1 and a build after it, e.g.
