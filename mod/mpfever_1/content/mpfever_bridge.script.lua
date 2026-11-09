@@ -256,7 +256,11 @@ local function extendedParts(parts, checkN)
 			end
 			for f, n in pairs(kinds) do dump[#dump + 1] = "~constructions " .. f .. " = " .. n end
 		end)
-		if SDUMP.persons then
+		-- ((0.7.13, #150/#166: no report had the persons, the dump's persons being a test switch, MPFEVER_SDUMP_PERSONS=1: the
+		-- person that went otherwise first, before the towns' happiness and the fares, could not be told) the persons and the
+		-- town buildings too in the dump the launcher asks for after a difference, on every game at the same check.
+		-- MPFEVER_SDUMPPERSONSAFTER=0: not, as before)
+		if SDUMP.persons or (forced and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "0") then
 			pcall(function()
 				local CT = api.type.ComponentType
 				local function ids(list)
@@ -570,7 +574,10 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 		for _, g in ipairs(groups) do for _, p in ipairs(g) do R.hashSkip[p] = true end end
 		for _, p in ipairs(keep) do R.hashSkip[p] = nil end
 	end
+	-- ((0.7.13) the check's number, for the persons' digest: which eighth of the persons it reads, see R.personsDigest)
+	R.hashCheckN = n
 	local parts = R.contentHash(C.hashStr, C.dump)
+	R.hashCheckN = nil
 	if R.namesDumpOut then
 		local nd = R.namesDumpOut
 		R.namesDumpOut = nil
@@ -20594,7 +20601,10 @@ local function guiUpdate(userParams, state, guiState)
 		setSpeed(0)
 		local okn, errn = pcall(neutraliseEmissions)
 		if not okn then log("emissions: " .. tostring(errn)) end
-		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime(), mv = C.MODVERSION })
+		-- ((0.7.13) and the test switches of the persons and the vehicles in one piece (the native module's InstallPersonSerial),
+		-- when set: the host's log shows every game's with its "game ready" line. Unset: the hello as before)
+		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime(), mv = C.MODVERSION,
+			personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil })
 	end
 	-- the native module holds the tools' builds while this script runs, and hears from it here from its first frame on
 	-- (bridge_alive.txt, a counter rewritten every 2 s). A game loaded with MPFever disabled while a lobby was open has no such

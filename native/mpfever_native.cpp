@@ -3630,6 +3630,100 @@ static const OrderFix ORDER_FIXES[] = {
 };
 static const int ORDER_N = (int)(sizeof(ORDER_FIXES) / sizeof(ORDER_FIXES[0]));
 
+// The persons and the land vehicles in one piece (0.7.13, #150, #166, #170: games drifted apart with no action, one to six game
+// minutes after a load, on the gigantic worlds most (184 and 274 MB), a passenger or a bus first: r166, one bus left a stop later
+// on one game alone, every action and every other vehicle alike) a test, OFF by default until a test with two games proves it.
+// The persons' moves (PersonMoveSystem, two loops), their boarding (SimPersonAtVehicle) and their leaving the buildings
+// (SimEntityAtBuilding) are handed to the engine's thread pool in chunks, as the animals' moves were (see "the animals in one
+// piece" in InstallOrderFixes): a walker's crossing test reads the segments' users that other chunks change at the same time,
+// and each chunk's random draws are seeded by where the chunk starts. The same patch as the animals': each loop's chunk size
+// ("mov r9d, chunk" right before the call of the pool's loop) set larger than any count, so that the pool's loop takes its own
+// one-thread path. Each place is found by its signature (unique in the game's code), and the call it ends with is checked: to a
+// function of the game's code that compares the count with the chunk size ("cmp r8d, r9d / jle") and the pool's size with 1
+// ("sar rax, 4 / cmp eax, 1 / je"), both jumps to the same place (its one-thread path). A place not found, or another function,
+// leaves its loop in chunks (logged). It changes the persons' (the vehicles') random draws: every game of a session needs the
+// same setting. MPFEVER_PERSONSERIAL=1 (the persons' four loops), MPFEVER_VEHSERIAL=1 (the land vehicles' four loops), on
+// every game; unset: in chunks, as before
+struct SerialLoop { const char* name; const char* sig; };
+static const SerialLoop PERSON_LOOPS[] = {
+    { "person moves 512", "41 B9 00 02 00 00 44 8B C6 49 8B D7 48 8B C8 E8" },
+    { "person moves 128", "41 B9 80 00 00 00 44 8B C6 48 8D 54 24 50 48 8B C8 C5 F8 77 E8" },
+    { "persons at vehicles", "41 B9 40 00 00 00 44 8B C5 48 8D 54 24 40 48 8B C8 C5 F8 77 E8" },
+    { "persons at buildings", "41 B9 00 01 00 00 45 8B C6 48 8D 55 E7 48 8B C8 E8" },
+};
+static const SerialLoop VEHICLE_LOOPS[] = {
+    { "land vehicles 1", "41 B9 00 01 00 00 44 8B C3 48 8D 95 10 13 00 00 C5 F8 77 E8" },
+    { "land vehicles 2", "41 B9 40 00 00 00 45 8B C6 48 8D 95 40 01 00 00 49 8B CA C5 F8 77 E8" },
+    { "land vehicles 3", "41 B9 40 00 00 00 44 8B C3 48 8D 95 40 01 00 00 49 8B CA C5 F8 77 E8" },
+    { "land vehicles 4", "41 B9 00 01 00 00 44 8B C3 48 8D 95 40 01 00 00 C5 F8 77 E8" },
+};
+
+// (0.7.13) whether the call a loop's signature ends with (its last byte, E8) goes to the pool's loop with its one-thread path
+static bool SerialPathAt(u32 at, int n)
+{
+    u8* call = (u8*)(g_base + at + n - 1);
+    if (call[0] != 0xE8 || (uptr)(call + 5) > g_textEnd) return false;
+    uptr f = (uptr)((i64)(uptr)(call + 5) + *(i32*)(call + 1));
+    if (f < g_textStart || f + 0x90 > g_textEnd) return false;
+    const u8* p = (const u8*)f;
+    int a = -1, b = -1;
+    for (int k = 0; k + 13 <= 0x90; k++) {
+        if (a < 0 && p[k] == 0x45 && p[k + 1] == 0x3B && p[k + 2] == 0xC1 && p[k + 3] == 0x0F && p[k + 4] == 0x8E) a = k;
+        if (a >= 0 && k > a && p[k] == 0x48 && p[k + 1] == 0xC1 && p[k + 2] == 0xF8 && p[k + 3] == 0x04 && p[k + 4] == 0x83
+            && p[k + 5] == 0xF8 && p[k + 6] == 0x01 && p[k + 7] == 0x0F && p[k + 8] == 0x84) { b = k; break; }
+    }
+    if (a < 0 || b < 0) return false;
+    uptr ja = f + a + 9 + (i64)*(const i32*)(p + a + 5);      // jle: the count not above the chunk size
+    uptr jb = f + b + 13 + (i64)*(const i32*)(p + b + 9);     // je: a pool of one thread
+    return ja == jb;
+}
+
+// (0.7.13) the loops of one group in one piece: how many of n, the names of those left in chunks in miss
+static int SerialLoops(const SerialLoop* loops, int n, Buf& miss)
+{
+    int done = 0;
+    for (int i = 0; i < n; i++) {
+        int len = 0;
+        for (const char* q = loops[i].sig; *q; q++) if (*q != ' ' && (q == loops[i].sig || q[-1] == ' ')) len++;
+        u32 at = FindSigRva(loops[i].sig);
+        bool ok = false;
+        if (at && SerialPathAt(at, len)) {
+            u8* imm = (u8*)(g_base + at + 2);
+            DWORD old;
+            if (VirtualProtect(imm, 4, PAGE_EXECUTE_READWRITE, &old)) {
+                *(u32*)imm = 0x7FFFFFFFu;
+                VirtualProtect(imm, 4, old, &old);
+                FlushInstructionCache(GetCurrentProcess(), imm, 4);
+                ok = true;
+            }
+        }
+        if (ok) done++;
+        else miss.str(miss.n ? ", " : "").str(loops[i].name).str(at ? " (another function)" : " (not found)");
+    }
+    return done;
+}
+
+static void InstallPersonSerial()
+{
+    const int np = (int)(sizeof(PERSON_LOOPS) / sizeof(PERSON_LOOPS[0])), nv = (int)(sizeof(VEHICLE_LOOPS) / sizeof(VEHICLE_LOOPS[0]));
+    char v[4] = {};
+    if (GetEnvironmentVariableA("MPFEVER_PERSONSERIAL", v, 3) > 0 && v[0] == '1') {
+        Buf miss;
+        int k = SerialLoops(PERSON_LOOPS, np, miss);
+        miss.s[miss.n] = 0;
+        Buf a; a.str("persons moved in one piece on the simulation's thread (").dec(k).str(" of ").dec(np).str(" loops").str(miss.n ? "; in chunks: " : "").str(miss.n ? miss.s : "").str(")");
+        LogLine(a);
+    }
+    v[0] = 0;
+    if (GetEnvironmentVariableA("MPFEVER_VEHSERIAL", v, 3) > 0 && v[0] == '1') {
+        Buf miss;
+        int k = SerialLoops(VEHICLE_LOOPS, nv, miss);
+        miss.s[miss.n] = 0;
+        Buf a; a.str("vehicles moved in one piece on the simulation's thread (").dec(k).str(" of ").dec(nv).str(" loops").str(miss.n ? "; in chunks: " : "").str(miss.n ? miss.s : "").str(")");
+        LogLine(a);
+    }
+}
+
 static void InstallOrderFixes()
 {
     if (GetEnvironmentVariableA("MPFEVER_NOORDER", 0, 0) > 0) { Buf b; b.str("order fixes: off (MPFEVER_NOORDER)"); LogLine(b); return; }
@@ -3734,6 +3828,8 @@ static void InstallOrderFixes()
         }
         Buf a; a.str(ok ? "animals moved in one piece on the simulation's thread" : "animals: the pool's chunk size was not found (moved in chunks)"); LogLine(a);
     }
+    // (0.7.13) the persons' and the land vehicles' loops too, each with its own test switch (see InstallPersonSerial)
+    InstallPersonSerial();
     // the simulation's seeds from GameTime.tickCount (the land vehicles' shuffle, a vehicle variant pick, town and street
     // development...): tickCount also counts the frames a game stands still, a different number on every game of a session;
     // those calls now read updateCount (the simulation step, the same everywhere). TPF3-MP's "paused-tick" fix does the same by

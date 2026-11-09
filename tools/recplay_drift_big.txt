@@ -1,0 +1,22 @@
+# MPFever autotest events (MPFEVER_SCENARIO=recplay, see MainForm.RunRecPlay; TAB separated) for the persons' drift test of
+# 0.7.13 (#150/#166): no action, the two games of the test run the same big world at x4, 15 minutes at a time, a check after
+# each. A copy of a big world named "Test Drift Big" (never a Game Knight save), from a copy of release\dist\MPFever:
+#   run A: MPFEVER_SCENARIO=recplay MPFEVER_RECPLAY=<this file> MPFEVER_SDUMP=all MPFEVER_SDUMP_PERSONS=1 MPFEVER_FREEQLOG=1
+#          MPFever.exe --autotest "Test Drift Big"
+#   run B: the same with MPFEVER_PERSONSERIAL=1 (both games: the native log says "persons moved in one piece ... (4 of 4 loops)")
+#   run C (A stayed in sync): MPFEVER_ENV_CLIENT=MPFEVER_THREADS=8;MPFEVER_TESTSPLIT=1
+# autotest_result.txt: "recplay: check: ..." after each run; the launcher's log: the first "(diagnostic) personsDigest" line.
+log	persons drift: 4 x 15 minutes at x4, no action
+speed	4
+run	900
+hash
+log	after 15 minutes
+run	900
+hash
+log	after 30 minutes
+run	900
+hash
+log	after 45 minutes
+run	900
+hash
+log	after 60 minutes

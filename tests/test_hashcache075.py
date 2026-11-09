@@ -32,7 +32,7 @@ COMMON = os.path.join(ROOT, "mod", "mpfever_1", "content", "mpfever_common.lua")
 BRIDGE = os.path.join(ROOT, "mod", "mpfever_1", "content", "mpfever_bridge.script.lua")
 
 MOCK = r'''
-ENV = { MPFEVER_HASHOFF = "vehicles,townBuildings,persons,stations,lines,names,vehicleState,edgeObjects,ages" }
+ENV = { MPFEVER_HASHOFF = "vehicles,townBuildings,persons,personsDigest,stations,lines,names,vehicleState,edgeObjects,ages" }
 os.getenv = function(k) return ENV[k] end
 local function lanes(list)
   local t = {}

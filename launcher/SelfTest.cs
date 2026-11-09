@@ -75,6 +75,7 @@ namespace MPFever
             ok &= RunLinks0713();
             ok &= RunExpOpts0713();
             ok &= RunResyncSpeed0713();
+            ok &= RunPersonDigest0713();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -244,6 +245,18 @@ namespace MPFever
             + "yH3PFRG5N1EguGNPVTqxQa61EURZvcEfiN6iIK5l1KnouPKCxq47rZJCB3GKjSDq+mO+QJoaBLnrNojM4J8Isy2cseE/D7NGnHfi74rZFudnnDBn"
             + "HW60/Wr70MatdzpfvY76uPX11uFH29c8LSvmDKjdhDnp2vkXUT6PbIY/1pnfUDP8MZ35BjTDH88Lo1ChvAXkzRpvtHiL4U0Hzw2BdDAFSgFpMAVO"
             + "gWkgNQS8JAzRCk0AAAhyAQCfgzkQAipmAk0=";
+
+        /// <summary>(0.7.13) Issues #150/#166: the persons' digest of the checks is a diagnostic part, logged only: never a reason to
+        /// reload nor to ask for the whole dump.</summary>
+        static bool RunPersonDigest0713()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13: " + what); ok &= c; }
+            C(!MainForm.WantsWorldDump("personsDigest"), "personsDigest is a diagnostic part (no whole dump asked for it)");
+            C(MainForm.WantsWorldDump("persons") && MainForm.WantsWorldDump("script:towns") && !MainForm.WantsWorldDump("buildIds"), "  the persons' count and the towns as before, buildIds a diagnostic as before");
+            C(MainForm.NotMeasured("off"), "  its \"off\" (MPFEVER_PERSONDIGEST=0) is not measured, not compared");
+            return ok;
+        }
 
         /// <summary>(0.7.13) Issues #164/#165: a direct address that let nothing of the host through is left out of the next joins.</summary>
         static bool RunDeadDirect0713()

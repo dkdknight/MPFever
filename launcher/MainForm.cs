@@ -336,11 +336,15 @@ namespace MPFever
         // parts only logged, never a reason to reload: "buildIds" reads a build's new ids by place a little after the build, and at
         // a speed above 1 the games read it at different steps (one after the next build had replaced the segment): the friends'
         // session of 2026-10-25 22:32 reloaded for nothing (every action's result was the same on both games)
-        static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds" };
+        // ((0.7.13, #150/#166: the persons' drift showed only minutes later, through the towns and the fares) "personsDigest", one
+        // person in eight by where it is and where it goes, tells when the persons went otherwise first; the bridge's
+        // MPFEVER_PERSONDIGEST=0 gives "off", not compared)
+        static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds", "personsDigest" };
         string lastDiagDiffs = "";
         // game state that is never a local measure, even when it differs right after a reload (a company a game missed must be seen)
         // ((0.7.5) "edges2": the segments' second half, see the checks' halves in the bridge's simHash)
-        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "edges2", "ages", "buildIds", "constructions", "lines" };
+        // ((0.7.13) "personsDigest", a diagnostic: still logged after a reload, never "a local measure")
+        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "edges2", "ages", "buildIds", "constructions", "lines", "personsDigest" };
         // the simulation's own state (passengers boarding, vehicle positions, the towns and what follows them): it used to drift
         // by itself (the game's Lua walked its tables in a different order on every PC, fixed in 0.3.4), so it was only reloaded
         // when it lasted. The games now stay identical: a difference there comes from an action applied differently and must be
@@ -4836,7 +4840,9 @@ namespace MPFever
                     var who = names.Where((nm, i) => NotMeasured(vals[i])).ToList();
                     if (who.Count > 0 && who.Count < names.Count)
                     {
-                        if (unmeasuredParts.Add(k))
+                        // ((0.7.13) a diagnostic part not measured on a game, "personsDigest" off there or a game of an older
+                        // version: left out the same, without that advice, which is about the native module)
+                        if (unmeasuredParts.Add(k) && !DiagnosticParts.Contains(k))
                             Log.Warn(F("Mesure « {0} » non faite chez {1} (module natif de MPFever absent ou ancien : réinstallez MPFever en extrayant toute l'archive, winhttp.dll compris) : non comparée",
                                        "Measure \"{0}\" not made on {1} (MPFever's native module missing or an old one: reinstall MPFever, extracting the whole archive, winhttp.dll included): not compared", k, string.Join(", ", who)));
                         continue;

@@ -1088,6 +1088,52 @@ function R.seenList(set)
 	return l
 end
 
+-- (0.7.13, #150/#166: the games' persons drifted apart with no action, seen only minutes later through the towns' happiness
+-- (script:towns) or the fares (money), the persons' part being their number alone; no report showed which person went otherwise
+-- first) the part "personsDigest" of the checks, a diagnostic the launcher only logs, never a reason to reload: one person in
+-- eight, those whose id leaves the check's number's remainder (R.hashCheckN, given by the bridge's simHash: the same persons on
+-- every game, the next eighth at the next check), each by its id, where it is (as the dump's ~person lines read it: in a
+-- vehicle, at a terminal, moving, in a building, idle) and where it goes, summed in any order. MPFEVER_PERSONDIGEST=0: off
+function R.personsDigest(hashStr, checkN)
+	if os.getenv("MPFEVER_PERSONDIGEST") == "0" then return "off" end
+	local want = math.floor(tonumber(checkN) or 0) % 8
+	local get, ct = api.engine.getComponent, api.type.ComponentType
+	local ctP, ctV, ctT, ctM, ctB, ctI = ct.SIM_PERSON, ct.SIM_ENTITY_AT_VEHICLE, ct.SIM_ENTITY_AT_TERMINAL, ct.SIM_ENTITY_MOVING,
+		ct.SIM_ENTITY_AT_BUILDING, ct.SIM_ENTITY_IDLE
+	local function stops(c) return tostring(c.line) .. "/" .. tostring(c.lineStop0) .. ">" .. tostring(c.lineStop1) end
+	local n, acc = 0, 0
+	for _, p in ipairs(R.entitiesWith("SIM_PERSON")) do
+		if type(p) == "number" and p % 8 == want then
+			local okp, sp = pcall(get, p, ctP)
+			if okp and sp then
+				local st = "-"
+				local okv, v = pcall(get, p, ctV)
+				if okv and v then st = "vehicle " .. tostring(v.vehicle) .. " " .. stops(v)
+				else
+					local okt, t = pcall(get, p, ctT)
+					if okt and t then st = "terminal " .. stops(t)
+					else
+						local okm, m = pcall(get, p, ctM)
+						if okm and m then st = "moving " .. stops(m)
+						else
+							local okb, b = pcall(get, p, ctB)
+							if okb and b then st = "building"
+							else
+								local oki, i = pcall(get, p, ctI)
+								if oki and i then st = "idle" end
+							end
+						end
+					end
+				end
+				n = n + 1
+				acc = (acc + hashStr(0, tostring(p) .. " " .. st .. " at " .. tostring(sp.targetOrAtEntity) .. " upd " .. tostring(sp.lastDestinationUpdate))) % 4294967296
+			end
+		end
+	end
+	if R.loopErrors.SIM_PERSON then return "cannot list SIM_PERSON" end
+	return n .. "/" .. acc
+end
+
 function R.lineText(e)
 	local c = comp(e, "LINE")
 	if not c then return nil end
@@ -1310,6 +1356,8 @@ function R.contentHash(hashStr, dumpFn)
 	end) end)
 	part("townBuildings", function() return count("TOWN_BUILDING") end)
 	part("persons", function() return count("SIM_PERSON") end)
+	-- ((0.7.13) and one person in eight of them, by where it is and where it goes: a diagnostic, see R.personsDigest)
+	part("personsDigest", function() return R.personsDigest(hashStr, R.hashCheckN) end)
 	part("stations", function() return count("STATION") end)
 	-- the lines with what the player sets on them: name, and for every stop its station's name, terminal, loading mode
 	-- and waiting times (the ids of the stations differ between games, their names do not)
