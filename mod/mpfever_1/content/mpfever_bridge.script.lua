@@ -1913,6 +1913,38 @@ local function installRandom()
 	log("deterministic math.random installed")
 end
 
+-- (0.7.13, #172, the review of the night's fix) game_time.gs's answer to the calendar's sliders also delays its automatic sky by
+-- 60 s times the engine's speed (game_time.script.tl: interruptDelay * speedup), read in the simulation. The engines' speeds differ
+-- for a moment around a speed change (the session's speed reaches each game at its own step) or a pause (a game stands at the
+-- pause point at its speed while another is at 0), and the delays, part of script:gametime, differed. game_time.gs reads the speed
+-- as 1, the factor of a paused or x1 game: its automatic sky resumes 60 game seconds after a slider, at every speed. Only that
+-- script, only the GAME_SPEED component; once per Lua state (the wrapper is kept in package.loaded). MPFEVER_SKYSPEED=0: the
+-- engine's speed, as before
+DET.installSkySpeed = function()
+	if os.getenv("MPFEVER_SKYSPEED") == "0" then return end
+	local mark = package.loaded["mpfever_skyspeed"]
+	if mark ~= nil and api.engine.getComponent == mark then return end
+	if type(debug) ~= "table" or type(debug.getinfo) ~= "function" then return end
+	local orig, speedType, getinfo = api.engine.getComponent, api.type.ComponentType.GAME_SPEED, debug.getinfo
+	local said = false
+	local wrapper = function(e, ct, ...)
+		local c = orig(e, ct, ...)
+		if ct == speedType and c ~= nil then
+			local info = getinfo(2, "S")
+			if info and tostring(info.source):find("game_time", 1, true) then
+				if not said then said = true; log("game_time.gs reads the engine's speed as 1 (it was " .. tostring(c.speedup) .. "), see #172") end
+				return setmetatable({ speedup = 1 }, { __index = function(_, k) return c[k] end })
+			end
+		end
+		return c
+	end
+	local okW = pcall(function() api.engine.getComponent = wrapper end)
+	if okW and api.engine.getComponent == wrapper then
+		package.loaded["mpfever_skyspeed"] = wrapper
+		log("game_time.gs: the speed of its slider delay read as 1 (#172)")
+	end
+end
+
 -- Mods that rename, recolour or update lines by themselves (Auto Line Namer, Auto Color Lines, Auto Assign Terminals, issue
 -- #58): their simulation script runs on every game, but decides on the computer's clock (os.time, os.clock), so each game
 -- sent its own commands at its own steps and the line names differed. In a session only the host's commands count: they
@@ -2630,6 +2662,7 @@ local function update(userParams, state, dt)
 	installRandom()
 	pcall(DET.installModCmds)
 	pcall(DET.installTownRatings)
+	pcall(DET.installSkySpeed)
 	SIM.evTick = (SIM.evTick or 0) + 1
 	if SIM.evTick % 50 == 1 then pcall(DET.wrapModEvents) end
 	-- (how many engine events this script receives, every one of them: see subscribeToAllEvents below)
@@ -14025,7 +14058,7 @@ H.skysync = function(from, p)
 		local okt, t, mode = pcall(function()
 			local e = api.engine.system.gameScriptSystem.getEntityForGameScript("::/game_mechanics/game_time/game_time.gs")
 			local gs = api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT)
-			return gs.state.cloudCoverageTarget, gs.state.weatherMode
+			return gs.state.cloudCoverageTarget, gs.state.weatherMode .. ", its automatic sky again at t=" .. tostring(gs.state.nextChange)
 		end)
 		if okt then return t, mode end
 		return nil, nil
@@ -14042,7 +14075,8 @@ H.skysync = function(from, p)
 	uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "", [2] = "CloudCoverage", [3] = "OnManualCloudCoverageChanged", [4] = v })
 	G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
 		local t, mode = target()
-		say("game_time's cloud target " .. tostring(t) .. " (weather " .. tostring(mode) .. "), world " .. tostring(world()))
+		say("game_time's cloud target " .. tostring(t) .. " (weather " .. tostring(mode) .. "), world " .. tostring(world()) .. ", engine speed "
+			.. tostring(gameSpeed()))
 		autoFinish()
 	end }
 end

@@ -7,7 +7,10 @@ MPFever - Changelog
     game, with that game's own sky as its target: after MrWhiskey1's two moves of the slider his game alone differed, after
     CowboyPilot's thirty all three, and the host reloaded the game. The slider's value travels with the event: every game sets
     it first, then applies the event (the players also see the same sky now); the same for the time of day's slider.
-    MPFEVER_SKYSYNC=0: the event alone, as before. Test: tests/test_skysync0713.py; autotest skysync.
+    MPFEVER_SKYSYNC=0: the event alone, as before. The same answer also delays the automatic sky by 60 s times the engine's
+    speed, which differs between games for a moment around a speed change or a pause (found by a review of the fix): the
+    game's time and weather script reads the speed as 1 there (its automatic sky resumes 60 game seconds after a slider at
+    every speed). MPFEVER_SKYSPEED=0: the engine's speed, as before. Test: tests/test_skysync0713.py; autotest skysync.
     The session's four other resynchronisations: two builds of MrWhiskey1 released while another player's signal or station
     was being replayed (taken for that replay, see #161/#166 above: fixed in this version), and two « built otherwise than
     shipped at the click » (the « without stopping » setting, removed in this version).

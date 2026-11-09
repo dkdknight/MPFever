@@ -73,5 +73,46 @@ end
     check(run('{ "mpfever", "mpfever", "co_month", { month = 36 } }') == [], "any other event: nothing more")
     L.execute('ENV.MPFEVER_SKYSYNC = "0"')
     check(run('{ "", "CloudCoverage", "OnManualCloudCoverageChanged", 0.62 }') == [], "MPFEVER_SKYSYNC=0: the event alone, as before")
+
+# (the review of the fix) game_time.gs's answer also delays its automatic sky by 60 s times the engine's speed, which differs
+# between games for a moment around a speed change or a pause: game_time.gs reads the speed as 1 (DET.installSkySpeed)
+i = src.index("DET.installSkySpeed = function()")
+sk = src[i:src.index("\nend\n", i) + 5]
+check("pcall(DET.installSkySpeed)" in src[src.index("	installRandom()\n	pcall(DET.installModCmds)"):][:200],
+      "installed in the simulation's update, with the deterministic random numbers")
+check('os.getenv("MPFEVER_SKYSPEED") == "0"' in sk and 'package.loaded["mpfever_skyspeed"]' in sk, "MPFEVER_SKYSPEED=0: as before; once per Lua state")
+if lupa:
+    def runtime():
+        R = lupa.LuaRuntime(unpack_returned_tuples=True)
+        R.execute('''
+ENV = {}
+os.getenv = function(k) return ENV[k] end
+log = function(s) end
+DET = {}
+SPEED = 4
+api = { type = { ComponentType = { GAME_SPEED = "GAME_SPEED", GAME_TIME = "GAME_TIME" } },
+  engine = { getComponent = function(e, ct) if ct == "GAME_SPEED" then return { speedup = SPEED, millisPerDay = 2000 } end return { gameTime = 5 } end } }
+''' + sk + '''
+-- game_time.script.tl's handler, as the game loads it (its chunk named after its file), and another script
+local handler = load("return function() local g = api.engine.getComponent(0, api.type.ComponentType.GAME_SPEED); return 60005 * (g.speedup > 0 and g.speedup or 1), g.millisPerDay end", "@res/game_mechanics/game_time/game_time.script.lua")()
+local other = load("return function() return api.engine.getComponent(0, api.type.ComponentType.GAME_SPEED).speedup end", "@res/mods/x/other.script.lua")()
+function delay() local d, m = handler(); return d, m end
+function otherSpeed() return other() end
+''')
+        return R
+    R = runtime()
+    R.execute("DET.installSkySpeed(); DET.installSkySpeed()")
+    d, m = R.eval("delay()")
+    check(d == 60005 and m == 2000, "game_time.gs at x4: its delay 60 s (speed read as 1), the rest of the component unchanged", (d, m))
+    R.execute("SPEED = 0")
+    check(R.eval("delay()")[0] == 60005, "  a game standing at 0 at the same step: the same delay")
+    R.execute("SPEED = 4")
+    check(R.eval("otherSpeed()") == 4, "another script: the engine's speed, as before")
+    check(R.eval("api.engine.getComponent(0, 'GAME_TIME').gameTime") == 5, "  any other component: unchanged")
+    R.execute("local w = api.engine.getComponent; DET.installSkySpeed(); assert(api.engine.getComponent == w)")
+    check(True, "  installed once (the bridge calls it at every step)")
+    R = runtime()
+    R.execute('ENV.MPFEVER_SKYSPEED = "0"; DET.installSkySpeed()')
+    check(R.eval("delay()")[0] == 4 * 60005, "MPFEVER_SKYSPEED=0: the engine's speed, as before")
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)
