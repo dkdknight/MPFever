@@ -16,10 +16,12 @@ interface sees the simulation's state LAG frames after that. Cases: the #168 rep
 lukas' action; out of the queue; known as applied); MPFEVER_PTPULL=0 (the #168 inversion, logged); the fast path (identical to
 MPFEVER_PTPULL=0, frame for frame); a copy of the state 5 frames late; a game whose queue came from a savegame; the issue order (an
 action made after the paused one stays, one of an earlier load or without a load goes); checkpoints during and before a pull;
-purchases taken out of the queue (one at a time, their creation keys with their own stamps); a simulation that never answers; a
-paused action of another player while a pull is under way, without turns (no deadlock); a session resumed during a pull (the game
-held); paused builds (the diagnostic only); the source; and a port of the design's random model (two games, random swaps, lags and
-message times, a savegame, PTPULL off and always asked).
+purchases taken out of the queue (one at a time, their creation keys with their own stamps); an earlier action due at the pause
+point, late, queued in the same command list as the question (the simulation's own update applies it, by simApplyDue's own rule
+taken from the bridge: never pulled too, once on both games; a purchase held back by the one-purchase-per-step rule still pulled);
+a simulation that never answers; a paused action of another player while a pull is under way, without turns (no deadlock); a
+session resumed during a pull (the game held); paused builds (the diagnostic only); the source; and a port of the design's random
+model (two games, random swaps, lags and message times, a savegame, PTPULL off and always asked).
 Run: python tests/test_ptpull0713.py
 """
 import os
@@ -60,6 +62,8 @@ def globalise(code, name):
 
 SIM_EVENTS = grab(r'^\t\tif name == "queue" then\n.*?(?=^\t\telseif name == "resume" then\n)', "the simulation's queue events")
 GUI_COPY = grab(r"^\tG\.simQ, G\.simPulled = st\.q, st\.pulled\n\tpcall\(G\.pullPrune, st\)\n", "guiUpdate's copy of the queue")
+# (simApplyDue's choice of the due actions, one purchase per step included: the mocked simulation's update applies those)
+SIM_DUE = grab(r"^\t\tlocal due, keep, bought = \{\}, \{\}, false\n.*?^\t\tst\.q = keep\n", "simApplyDue's due actions")
 CODE = "\n".join([
     globalise(grab(r"^local function before\(x, y\)\n.*?^end\n", "before"), "before"),
     globalise(grab(r"^local function doneKey\(a\)\n.*?^end\n", "doneKey"), "doneKey"),
@@ -72,6 +76,10 @@ CODE = "\n".join([
     grab(r"^G\.ptPullOn = .*?(?=^local function runPausedActions\(\)\n)", "G.ptPullOn .. G.pullBuildLog"),
     globalise(grab(r"^local function runPausedActions\(\)\n.*?^end\n", "runPausedActions"), "runPausedActions"),
     "function guiCopy(st)\n" + GUI_COPY + "end\n",
+    "function simApply(st, now)\n\tlocal q = st.q or {}\n\tif #q == 0 then return end\n\ttable.sort(q, before)\n" + SIM_DUE
+    + "\tst.doneUid = st.doneUid or {}\n\tfor _, a in ipairs(due) do\n\t\tlocal dk = doneKey(a)\n"
+    + "\t\tif dk and st.doneUid[dk] then SIMSKIP[#SIMSKIP + 1] = a.uid\n"
+    + "\t\telse if dk then st.doneUid[dk] = now end; simApplied(a) end\n\tend\nend\n",
 ])
 
 MOCK = r'''
@@ -111,6 +119,7 @@ function boot(cfg)
   ENV = cfg.env or {}
   NOW = cfg.now
   LOGS, APPLIED, APPFRAME, ANSWERED, CREATED, SENT, SENTFRAME, SEQ, BATCHES, TRACE = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+  SIMAPPLIED, SIMSKIP = {}, {}
   FIFO, COPIES, ARR, TK, EVT = {}, {}, {}, {}, {}
   SW, PHASE, LAG, NOANSWER, VIOL = cfg.sw or 1, cfg.phase or 0, cfg.lag or 0, cfg.noanswer, 0
   ST = deepcopy(cfg.st or { q = {}, doneUid = {} })
@@ -158,6 +167,12 @@ function trueNeeded(p)
   for _, x in ipairs(q) do if SIM.pullable(x, p) then return true end end
   return false
 end
+-- (an action the simulation's update applies: applied too, by the simulation)
+function simApplied(a)
+  APPLIED[#APPLIED + 1] = a.uid
+  SIMAPPLIED[#SIMAPPLIED + 1] = a.uid
+  SEQ[#SEQ + 1] = "sim:" .. tostring(a.uid)
+end
 function pump()
   local fifo = FIFO
   FIFO = {}
@@ -166,6 +181,8 @@ function pump()
     if e.name ~= "cmd" and not (NOANSWER and e.name == "pt_pull") then simEvent(ST, e.name, deepcopy(e.p)) end
     if e.cb then e.cb() end
   end
+  -- (then the simulation's update, the game standing at NOW: its due actions, see simApplyDue)
+  simApply(ST, NOW)
   COPIES[#COPIES + 1] = { at = G.frames + LAG, st = deepcopy(ST) }
 end
 function deliver(m)
@@ -461,6 +478,75 @@ def case_buys():
     check("(the bridge's creation key is made that way: V/L<uid>@<the action's stamp>)", ck in SRC)
 
 
+def pulled_uids(g, q, now):
+    # (SIM.ptPull alone on a queue q; now None: no time given)
+    code = (f"(function() local st = {{ q = {lua(q)}, buyAt = {T} }}; SIM.ptPull(st, {lua(SALE)}, {lua(now)}); local o = {{}}; "
+            "for _, x in ipairs(st.pulled.list) do o[#o + 1] = x.uid end; return join(o) end)()")
+    return g.ev(code)
+
+
+def case_due():
+    print("-- an earlier action due at the pause point, late: queued in the same command list as the question (the simulation applies it)")
+    late = {"uid": f"{X}:116", "origin": X, "oseq": 116, "ep": E, "at": T, "fn": "makeVehicleSetLineCmd", "args": {"n": 2}}
+    for label, q in (("a set-line stamped for the pause step itself", late),
+                     ("one a step late", dict(late, at=T - STEP)),
+                     ("a purchase, no purchase made at this step yet", dict(late, fn="makeVehicleBuyCmd", args={"n": 3}))):
+        res = []
+        # (game A: it came in time, before the paused sale; game B: late, read in the same frame as the sale, its turn at once, as on
+        # the host)
+        for g, fq, fp, lag in ((GA, 1001, 1010, 0), (GB, 1001, 1001, 2)):
+            g.boot(now=T, lag=lag, sw=1, phase=0, me="host")
+            g.arrive(fq, q)
+            g.arrive(fp, SALE)
+            g.ticket(fp, SALE, 11)
+            g.frames(80)
+            res.append(g)
+        a, b = res
+        bq = b.ev(f'(function() local i = where("queue", "{q["uid"]}"); return i end)()')
+        bp = b.ev(f'(function() for i, fifo in ipairs(BATCHES) do for _, e in ipairs(fifo) do if e.name == "pt_pull" and e.p.uid == "{SALE["uid"]}" then return i end end end end)()')
+        check(f"{label}: on game B the late action's queue event and the question in the same command list (the finding's case)",
+              bq is not None and bq == bp, (bq, bp))
+        for g, n in ((a, "A"), (b, "B")):
+            check(f"{label}: game {n}: applied once, by the simulation, then the sale", g.applied() == [q["uid"], SALE["uid"]]
+                  and list(g.L.eval("SIMAPPLIED").values()) == [q["uid"]], g.applied())
+            check(f"{label}: game {n}: known as applied at the pause point, out of the queue, nothing pulled or left over",
+                  g.ev(f'ST.doneUid["{q["uid"]}@{q["at"]}"] == {T}') and not g.ev(f'inQ("{q["uid"]}")')
+                  and g.ev('count(TRACE, " unqueue ")') == 0 and g.ev("G.pull == nil and #G.pendingPaused == 0 and #G.pullAdd == 0"))
+        check(f"{label}: game B: mod.log says it is left to the simulation ('... due at t={T} left to the simulation's own update')",
+              any(f"ORDER: 1 action(s) of {X} due at t={T} left to the simulation's own update (not pulled), before its paused action {SALE['uid']}" in s
+                  for s in b.logs()), b.logs())
+    print("-- the one-purchase-per-step rule: a due purchase it holds back is still pulled")
+    buy = dict(late, fn="makeVehicleBuyCmd", args={"n": 3})
+    buy2 = dict(buy, uid=f"{X}:115", oseq=115)
+    for label, qs, st, want_sim in (("a purchase made at this step already", [buy], {"q": [], "doneUid": {}, "buyAt": T}, []),
+                                    ("two due purchases: the first by the simulation, the second pulled", [buy2, buy], None, [buy2["uid"]])):
+        res = []
+        for g, fp in ((GA, 1010), (GB, 1001)):
+            g.boot(now=T, lag=1, sw=1, phase=0, me="host", st=st)
+            g.arrive(1001, *qs)
+            g.arrive(fp, SALE)
+            g.ticket(fp, SALE, 11)
+            g.frames(100)
+            res.append(g)
+        for g, n in zip(res, "AB"):
+            uids = [x["uid"] for x in qs]
+            sim = list(g.L.eval("SIMAPPLIED").values())
+            check(f"{label}: game {n}: each once, in their order, then the sale", g.applied() == uids + [SALE["uid"]] and sim == want_sim,
+                  (g.applied(), sim))
+            check(f"{label}: game {n}: the pulled one out of the queue (unqueue), known as applied; nothing left over",
+                  not any(g.ev(f'inQ("{u}")') for u in uids) and g.ev(f'count(TRACE, " unqueue {buy["uid"]}@{T}")') == 1
+                  and all(g.ev(f'ST.doneUid["{u}@{T}"] == {T}') for u in uids) and g.ev("G.pull == nil and #G.pendingPaused == 0"))
+    # (the rule is simApplyDue's, its old form too; and without a time, as before)
+    g = GA.boot(now=T, env={"MPFEVER_OLDBUY": "1"}, me="host")
+    r = pulled_uids(g, [buy2, buy], T)
+    check("MPFEVER_OLDBUY=1 (one purchase per call): the first due purchase left to the simulation, the second pulled", r == buy["uid"], r)
+    g = GA.boot(now=T, me="host")
+    r = pulled_uids(g, [buy2, buy], T)
+    check("a purchase made at this step already (buyAt): both due purchases pulled", r == f"{buy2['uid']},{buy['uid']}", r)
+    r = pulled_uids(g, [COLOURS[0], late], None)
+    check("no time given: every one pulled, as before", r == f"{late['uid']},{COLOURS[0]['uid']}", r)
+
+
 def case_noanswer():
     print("-- a simulation that never answers")
     g = GA.boot(now=T, lag=0, sw=1, phase=0, me="host", noanswer=True)
@@ -549,6 +635,8 @@ def case_source():
     q = grab(r"^local function queueLocal\(a\)\n.*?^end\n", "queueLocal")
     check("queueLocal notes both queue paths (pcall: never in the way)", q.count("pcall(G.pullNote, a)") == 2)
     check("the simulation's events pt_pull, unqueue, pt_pull_done", all(f'elseif name == "{n}" then' in SIM_EVENTS for n in ("pt_pull", "unqueue", "pt_pull_done")))
+    check("the question answered at the simulation's game time (what its own update applies is left to it)",
+          "\t\t\tSIM.ptPull(st, param, gameTime())\n" in SIM_EVENTS)
     fin = grab(r"^local function autoFinish\(\)\n.*?^end\n", "autoFinish")
     check("the autotest scenario H.pauseorder (sale in the pause, the colours' witness, a road, the session resumed)",
           "H.pauseorder = function(from, p)" in SRC and "if AUTO.chain then local f = AUTO.chain; AUTO.chain = nil; return f() end" in fin
@@ -643,8 +731,8 @@ def main():
         case_model()
         print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
         return 1 if fails else 0
-    for case in (case_168, case_off, case_fast, case_lag, case_resync, case_issue_order, case_checkpoints, case_buys, case_noanswer,
-                 case_other_player, case_resumed, case_builds, case_prune, case_source):
+    for case in (case_168, case_off, case_fast, case_lag, case_resync, case_issue_order, case_checkpoints, case_buys, case_due,
+                 case_noanswer, case_other_player, case_resumed, case_builds, case_prune, case_source):
         case()
     # (the random model runs about 900 games in lupa. With that many in one process, lupa's own memory was seen corrupted now and
     # then on this PC: "Windows fatal exception 0xc0000374" inside LuaRuntime.execute, or code text damaged before it ran; never a

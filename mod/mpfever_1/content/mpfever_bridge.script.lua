@@ -1487,12 +1487,32 @@ SIM.pullable = function(a, p)
 end
 -- (the interface asks for them, for its paused action p: in the queue's order, after every queue event it sent before; each stays
 -- in the queue until the interface applies it, see SIM.unqueue)
-SIM.ptPull = function(st, p)
-	local got = {}
-	for _, x in ipairs(st.q or {}) do if SIM.pullable(x, p) then got[#got + 1] = C.copy(x) end end
+-- (0.7.13: not one this simulation's next update applies itself at now, the game standing: due by simApplyDue's rule, its one
+-- purchase per step included (a purchase held back by it is pulled). A late earlier action queued in the same command list as
+-- the question was pulled too and applied twice, on this game only: by that update, then by the interface. That update comes
+-- before anything the interface sends once it read the answer, so the order stays: it, the pulled ones, the paused action. No
+-- time given: every one, as before)
+SIM.ptPull = function(st, p, now)
+	local got, stays, nStay, q, bought = {}, {}, 0, {}, false
+	if type(now) == "number" then
+		for _, x in ipairs(st.q or {}) do q[#q + 1] = x end
+		table.sort(q, before)
+		local oldRule = os.getenv("MPFEVER_OLDBUY") == "1"
+		for _, x in ipairs(q) do
+			local buy = x.fn == "makeVehicleBuyCmd"
+			if type(x.at) == "number" and x.at <= now and not (buy and (bought or (not oldRule and st.buyAt and st.buyAt >= now))) then
+				if buy then bought = true end
+				if SIM.pullable(x, p) then stays[x] = true; nStay = nStay + 1 end
+			end
+		end
+	end
+	for _, x in ipairs(st.q or {}) do if not stays[x] and SIM.pullable(x, p) then got[#got + 1] = C.copy(x) end end
 	table.sort(got, before)
 	st.pulled = { tok = p.tok, uid = p.uid, list = got }
 	if #got > 0 then log("ORDER: " .. #got .. " action(s) of " .. tostring(p.origin) .. " still in the queue go before its paused action " .. tostring(p.uid)) end
+	if nStay > 0 then
+		log("ORDER: " .. nStay .. " action(s) of " .. tostring(p.origin) .. " due at t=" .. tostring(now) .. " left to the simulation's own update (not pulled), before its paused action " .. tostring(p.uid))
+	end
 end
 -- (one of them handed to the engine by the interface, in the same command list: out of the queue, and known as applied)
 SIM.unqueue = function(st, p, now)
@@ -3661,7 +3681,7 @@ local function handleEvent(userParams, state, src, id, name, param)
 			st.pausedAt = nil
 		-- (0.7.13, #168: a paused action's player's earlier actions still in the queue, see SIM.ptPull and G.pullHold)
 		elseif name == "pt_pull" then
-			SIM.ptPull(st, param)
+			SIM.ptPull(st, param, gameTime())
 		elseif name == "unqueue" then
 			SIM.unqueue(st, param, gameTime())
 		elseif name == "pt_pull_done" then
