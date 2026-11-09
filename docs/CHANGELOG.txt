@@ -2,6 +2,22 @@ MPFever - Changelog
 ===================
 
 0.7.13 - (in progress)
+  - FIX (an adversarial review of the fixes above, 2026-11-09, each fault confirmed by a second reader before it was fixed):
+    - purchases (#148): the purchase's figures went into the result's toll and replaced the depot toll a purchase in a pause
+      pays (#122 back): kept apart now, a toll paid in a pause is counted again. The « refused by the game » notice is shown only
+      when the game itself refused; a purchase MPFever refused (another company's depot, missing entities) no longer blames it;
+    - builds at the same step (#161/#166): a build made in a pause also waits for the stops put back after another player's
+      street, and a construction replayed in two parts keeps the engine to itself until its second part is sent;
+    - the order of a player's actions (#168): an earlier action already due at the pause point is left to the simulation, which
+      applies it at that step: taken out too, it was applied a second time on that game;
+    - the persons' drift tools (#150): the persons are written in the dump only at the first check of a lasting difference, and
+      their digest takes its turn with the other heavy parts of the checks (MPFEVER_SDUMPPERSONSAFTER=each,
+      MPFEVER_PERSONDIGEST=each: at every check);
+    - settings.txt again writes MPFEVER_NOWAIT= and MPFEVER_NOSTOP= with no value, as their « off » did: such a variable left in one
+      PC's environment cannot turn them on for that game alone (MPFEVER_EXPBLOCK=0: not written);
+    - port= in mpfever_settings.txt is the port of this player's own lobby only: an address joined without a port keeps 28090.
+    Tests: test_buymoney0713.py, test_ownafterreplay0713.py, test_ptpull0713.py, test_persondigest0713.py, test_expopts0713.py,
+    test_launcherlinks0713.py (and the selftest).
   - FIX (a regression of 0.7.12, found by the night's game test 2026-11-09): a vehicle's colour is applied by the engine, but
     its Color component is not one the scripts can read, so the colour check of 0.7.12 (a game script's colours, #162) and of
     the colour fix above (every colour, #168) skipped every vehicle's colour ("SKIPPED, mod command on entity ..., which is not

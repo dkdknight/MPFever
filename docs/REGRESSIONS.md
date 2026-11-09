@@ -30,6 +30,7 @@ with its cause and the test that now guards it.
 
 | Found | Broken in | What broke | Cause | Fixed in | Test |
 |---|---|---|---|---|---|
+| 2026-11-09 (review of the night's fixes) | 0.7.13 (never released) | A depot toll paid in a pause was no longer noted (#122 back). | The purchase's figures were written into the result's `toll`, which holds the owner guard's { from, to, fee } table: never reuse a result field for another type. | 0.7.13 | test_buymoney0713.py |
 | 2026-11-09 (the night's game test) | 0.7.12 | A game script's colour on a vehicle was skipped (and, before release, every player's vehicle colour in 0.7.13). | The colour check asked for a Color component, which a vehicle has for the engine but not for the scripts. | 0.7.13 | test_colourneg0713.py |
 | 2026-11-08 (the user) | 0.7.8 | The join review no longer opened for most players. | DLCSESSION dropped the "different DLCs" warning, and the review opened on that warning only. | 0.7.10 | test_reviewdlc0710.py |
 | 2026-11-08 (#133) | 0.7.6 | A track upgrade replayed in its rebuilt form was shipped again by every game: several resyncs. | The #131 fix (node configs given again) changed what the replay builds, and the capture compared it with the shipped build. | 0.7.7 | test_rebuiltsig077.py |
