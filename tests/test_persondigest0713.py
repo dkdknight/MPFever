@@ -21,9 +21,18 @@ no report showed which person went otherwise first. Now:
     after a reload, and when a game does not measure it ("off", an older version) no advice about the native module;
   - the bridge: simHash gives the check's number to R.contentHash and takes it back after; the hello says the test switches of
     the persons and the vehicles in one piece only when they are set;
+  - (0.7.13, later: it ran at every check, 0.03 to 0.05 s on a world of 37 000 persons) the digest takes its turn in simHash's
+    rotation, with the last group of each of the three group sets (run through lupa: the rotation's own code): measured at one
+    check in #groups, with "owners"/"edges2" or the constructions and the nodes, every eighth of the persons still met within
+    #groups x 8 checks, and through R.contentHash absent at the other checks; MPFEVER_PERSONDIGEST=each, MPFEVER_HASHROT=0,
+    an autotest (MPFEVER_SAVE) or a check without a number: at every check, as before;
   - extendedParts (run through lupa with a mocked world): the dump the launcher asks for after a difference (SDUMP.forceWorld)
     has the ~person and ~townbuilding lines; MPFEVER_SDUMPPERSONSAFTER=0: not; an ordinary world dump: not, as before;
-    MPFEVER_SDUMP_PERSONS=1: in every world dump, as before.
+    MPFEVER_SDUMP_PERSONS=1: in every world dump, as before;
+  - (0.7.13, later: a lasting difference forces every check, and every one of them dumped every person) a run of forced checks
+    in a row: the persons at its first only, the dump itself still written at each; a forced check after one that was not: the
+    persons again; MPFEVER_SDUMPPERSONSAFTER=each: at every forced check, as before; =0, MPFEVER_SDUMPAFTER=0: never;
+    MPFEVER_SDUMP_PERSONS=1: at every one; a check without a number: at every forced one, as before.
 Run: python tests/test_persondigest0713.py
 """
 import os
@@ -217,11 +226,55 @@ def main():
     check('personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil })' in br,
           "the hello says the test switches of the persons and the vehicles in one piece, only when set")
 
+    # the digest in the rotation of the checks (simHash's own code, from the switch MPFEVER_HASHROT to the check's number)
+    a = sh.index('\tlocal rot = os.getenv("MPFEVER_HASHROT")')
+    b = sh.index("\t-- ((0.7.13) the check's number, for the persons' digest")
+    check(a < b < 6000, "simHash: the rotation's code found")
+    rotcode = sh[a:b]
+    check('if os.getenv("MPFEVER_PERSONDIGEST") ~= "each" then local g = groups[#groups]; g[#g + 1] = "personsDigest" end' in rotcode,
+          "  the digest goes with the rotation's last group (MPFEVER_PERSONDIGEST=each: not)")
+    G = game()
+    G.execute("ROT = function(n) " + rotcode + " return R.hashSkip end")
+
+    def measured(env, n):
+        G.execute("ENV = {" + env + "}")
+        return bool(G.eval("(function(n) local s = ROT(n); R.hashSkip = nil; return not (s and s.personsDigest) end)(" + n + ")"))
+
+    for env, ng, mates, what in [
+        ("", 5, ("edges2", "owners"), "with the halves (5 groups): with edges2 and owners"),
+        ("MPFEVER_HASHHALVES = '0'", 3, ("constructions", "nodeConfigs", "ages"), "without the halves (3 groups): with the constructions, the nodes, the ages"),
+        ("MPFEVER_HASHGROUPS = '0'", 3, ("constructions", "nodeConfigs"), "MPFEVER_HASHGROUPS=0 (3 groups): with the constructions and the nodes"),
+    ]:
+        ns = [n for n in range(ng * 8) if measured(env, str(n))]
+        check(ns == list(range(ng - 1, ng * 8, ng)), "the digest takes its turn, " + what + ": one check in " + str(ng), ns)
+        check(sorted(n % 8 for n in ns) == list(range(8)), "  every eighth of the persons met within " + str(ng * 8) + " checks", ns)
+        G.execute("ENV = {" + env + "}")
+        apart = G.eval("(function() local t = {} for n = 0, " + str(ng * 8 - 1) + " do local s = ROT(n) or {} for _, p in ipairs({ "
+                       + ", ".join("'" + m + "'" for m in mates) + " }) do if (not s.personsDigest) ~= (not s[p]) then t[#t + 1] = n .. p end end end R.hashSkip = nil return table.concat(t, ' ') end)()")
+        check(apart == "", "  measured at the same checks as its group's parts, only those", apart)
+    for env, what in [
+        ("MPFEVER_PERSONDIGEST = 'each'", "MPFEVER_PERSONDIGEST=each: at every check, as before"),
+        ("MPFEVER_HASHROT = '0'", "MPFEVER_HASHROT=0 (no rotation): at every check, as before"),
+        ("MPFEVER_SAVE = 'x'", "an autotest (MPFEVER_SAVE, no rotation): at every check, as before"),
+    ]:
+        check(all(measured(env, str(n)) for n in range(40)), what)
+    check(measured("", "nil"), "  a check without a number (the determinism run): measured, as before")
+    check(not measured("MPFEVER_PERSONDIGEST = '0'", "0") and measured("MPFEVER_PERSONDIGEST = '0'", "4"),
+          "  MPFEVER_PERSONDIGEST=0: its turn kept (its value \"off\" at that check)")
+    G.execute("ENV = {}")
+    G.execute("CHK = function(n) local s = ROT(n); R.hashSkip = setmetatable({}, { __index = function(_, k) if k == 'personsDigest' or k == 'persons' then return s and s[k] else return true end end }); "
+              "R.hashCheckN = n; local p = R.contentHash(HS, tostring); R.hashCheckN = nil; R.hashSkip = nil; return tostring(p.personsDigest) .. ' ' .. tostring(p.persons) end")
+    c16, c19, c24 = G.eval("CHK(16)"), G.eval("CHK(19)"), G.eval("CHK(24)")
+    check(c16 == "nil " + str(pc) and c19 == str(digest(A, "19")) + " " + str(pc) and c24 == str(d0) + " " + str(pc),
+          "  through R.contentHash: absent at another group's check (16), the eighth of its check's number at its turns (19, 24)", f"{c16} | {c19} | {c24}")
+
     # extendedParts: the persons in the dump after a difference
     i = br.index("local function extendedParts(parts, checkN)")
     ext = br[i:br.index("\nend\n", i) + 5]
-    check('if SDUMP.persons or (forced and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "0") then' in ext,
+    check('\t\tlocal pAfter = forced and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "0"\n' in ext and '\t\tif SDUMP.persons or pAfter then\n' in ext,
           "the dump's persons: with MPFEVER_SDUMP_PERSONS=1, or in the dump asked after a difference")
+    check('if pAfter and SDUMP.forcedN == checkN - 1 and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "each" then pAfter = false end\n\t\t\tSDUMP.forcedN = checkN\n' in ext,
+          "  only at the first forced check of a run (SDUMP.forcedN, a field: no new local of the main chunk); =each: at every one")
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
     L.execute(MOCK)
     L.execute("setWorld()")
@@ -266,6 +319,35 @@ C = { DIR = "D", dump = tostring, hashStr = HS,
     check("~person 16 = " in pers and "~townbuilding 100 = " in pers, "MPFEVER_SDUMP_PERSONS=1: in every world dump, as before")
     pers2 = dump("{ on = true, all = false, n = 1, persons = true }", 7)
     check("~person" not in pers2, "  (not in a dump without its world part, as before)")
+
+    # a run of forced checks: the persons at its first only
+    def runs(env, checks, persons="false"):
+        L.execute("SDUMP = { on = true, all = false, n = 1, persons = " + persons + " }; ENV = {" + env + "}")
+        out = []
+        for n, f in checks:
+            L.execute("SDUMP.forceWorld = " + ("true" if f else "nil"))
+            got = str(run(n))
+            out.append(("P" if "~person 16 = " in got and "~townbuilding 100 = " in got else "-")
+                       + ("w" if "sdump_ring_" in got and got.count("|t = 4242") == 1 else "?"))
+        L.execute("SDUMP.forceWorld = nil")
+        return " ".join(out)
+
+    got = runs("", [(7, True), (8, True), (9, True)])
+    check(got == "Pw -w -w", "forced checks in a row (a lasting difference): the persons at the first only, the dump still written at each", got)
+    got = runs("", [(7, True), (9, True)])
+    check(got == "Pw Pw", "  a forced check after a check not taken here: a new run, the persons again", got)
+    got = runs("", [(7, True), (8, False), (9, True), (10, True)])
+    check(got == "Pw -w Pw -w", "  a forced check after one that was not forced: a new run, the persons again", got)
+    got = runs("MPFEVER_SDUMPPERSONSAFTER = 'each'", [(7, True), (8, True), (9, True)])
+    check(got == "Pw Pw Pw", "MPFEVER_SDUMPPERSONSAFTER=each: at every forced check, as before", got)
+    got = runs("MPFEVER_SDUMPPERSONSAFTER = '0'", [(7, True), (8, True)])
+    check(got == "-w -w", "MPFEVER_SDUMPPERSONSAFTER=0: never, as before", got)
+    got = runs("MPFEVER_SDUMPAFTER = '0'", [(7, True), (8, True)])
+    check(got == "-w -w", "MPFEVER_SDUMPAFTER=0: never, as before", got)
+    got = runs("", [(7, True), (8, True), (9, True)], persons="true")
+    check(got == "Pw Pw Pw", "MPFEVER_SDUMP_PERSONS=1: at every world dump, a run's too, as before", got)
+    got = runs("", [(None, True), (None, True)])
+    check(got == "Pw Pw", "a check without a number: at every forced one, as before", got)
 
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0

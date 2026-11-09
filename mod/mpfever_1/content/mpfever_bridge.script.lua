@@ -260,7 +260,17 @@ local function extendedParts(parts, checkN)
 		-- person that went otherwise first, before the towns' happiness and the fares, could not be told) the persons and the
 		-- town buildings too in the dump the launcher asks for after a difference, on every game at the same check.
 		-- MPFEVER_SDUMPPERSONSAFTER=0: not, as before)
-		if SDUMP.persons or (forced and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "0") then
+		-- ((0.7.13, later) a lasting difference forces every check (the launcher asks for it after each check that differs): the
+		-- persons only at the first forced check of a run, one forced after a check that was not, the same check on every game
+		-- (the checks' numbers and the request are the host's, every game reloads at a resynchronisation): 3 to 12 dumps of every
+		-- person in a row held every game's check 2 to 4 times longer. SDUMP.forcedN: the last forced check's number, a field,
+		-- not a local of the main chunk. MPFEVER_SDUMPPERSONSAFTER=each: at every forced check, as before)
+		local pAfter = forced and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "0"
+		if forced and type(checkN) == "number" then
+			if pAfter and SDUMP.forcedN == checkN - 1 and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "each" then pAfter = false end
+			SDUMP.forcedN = checkN
+		end
+		if SDUMP.persons or pAfter then
 			pcall(function()
 				local CT = api.type.ComponentType
 				local function ids(list)
@@ -569,6 +579,11 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 		local groups = os.getenv("MPFEVER_HASHGROUPS") == "0" and { { "conParams" }, { "edges", "ages" }, { "constructions", "nodeConfigs" } }
 			or R.hashHalves and { { "conParams" }, { "edges" }, { "constructions", "nodeConfigs", "ages" }, { "conParams2" }, { "edges2", "owners" } }
 			or { { "conParams" }, { "edges" }, { "constructions", "nodeConfigs", "ages" } }
+		-- ((0.7.13) the persons' digest takes its turn too, with the last group (with "edges2" and "owners", or the constructions
+		-- and the nodes): it lists every person again and reads up to five components of each of its eighth, 0.03 to 0.05 s of
+		-- every check on a world of 37 000 persons, as "owners" before it. Its checks (n % #groups, 5 or 3, both prime to 8) still
+		-- meet every eighth (n % 8), each within 8 of its turns. MPFEVER_PERSONDIGEST=each: at every check, as before)
+		if os.getenv("MPFEVER_PERSONDIGEST") ~= "each" then local g = groups[#groups]; g[#g + 1] = "personsDigest" end
 		local keep = groups[(n % #groups) + 1]
 		R.hashSkip = {}
 		for _, g in ipairs(groups) do for _, p in ipairs(g) do R.hashSkip[p] = true end end
