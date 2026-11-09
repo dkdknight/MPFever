@@ -285,7 +285,8 @@ check("if not (G.restaleOn or pre or v2) or not G.session.started or (G.cmode ==
 check("if not (G.restaleOn or v2) or r.lead or r.preshipped then return false end" in src, "never replayed here the old restale way (nor RESTALE v2's)")
 check('G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")' in src, "on with MPFEVER_NOSTOP=1 (or MPFEVER_PRESHIP=1)")
 opt = open(OPTIONS, encoding="utf-8").read()
-check('Key = "MPFEVER_NOSTOP"' not in opt, "no longer the host's setting in the launcher (0.7.13): environment only, off by default")
+check('new Opt { Key = "MPFEVER_NOSTOP", Session = true, DefaultOn = true, OnValue = "1", OffValue = "0", StoreName = "opt.MPFEVER_NOSTOP.0714",' in opt,
+      "the host's setting again, on by default (0.7.14; gone in 0.7.13), its old kept values not read")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

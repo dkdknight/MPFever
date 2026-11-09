@@ -22,6 +22,9 @@ namespace MPFever
         // (0.7.10) also set in the game's environment when on (the native module reads it at its start; none since 0.7.13, kept
         // for the next one: see NativeEnv)
         public bool Native = false;
+        // (0.7.14) the name it is kept under in mpfever_settings.txt, when not "opt." + Key (a setting whose default changed: the
+        // values kept under its old name are no longer read)
+        public string StoreName;
         public Func<string> Name, Help;
     }
 
@@ -33,11 +36,16 @@ namespace MPFever
             new Opt { Key = "MPFEVER_BUILDLEAD", Session = true, DefaultOn = true, OnValue = "1",
                 Name = () => T("Constructions réactives (expérimental)", "Responsive builds (experimental)"),
                 Help = () => T("Vos constructions apparaissent tout de suite chez vous au lieu d'attendre les autres jeux : vous pouvez y raccrocher la suite aussitôt.", "Your builds show at once on your game instead of waiting for the other games: you can attach the next piece right away.") },
-            // (0.7.13: a stop the engine refused once and built on its second try at its step, r161, would have come several steps
-            // late without waiting, then a reload; the per-build stand was lower, the session's was not) the host's experimental
-            // « Other players' builds without waiting » and « Several players building without stopping » are gone: off on every
-            // game, a value kept in mpfever_settings.txt is ignored. MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 in the environment of
-            // every game: as before (tests: the autotests; a launcher session's settings.txt writes them unset, see ExpBlocked)
+            // (0.7.14, the user's choice of 2026-11-09: on by default for every player, so that the reports tell what is left to fix;
+            // removed in 0.7.13) the host's « Other players' builds without waiting » and « Several players building without
+            // stopping », the host's choice for the whole session (every game the same, never one game alone). Their values kept
+            // before 0.7.14 (off, the default then) are no longer read: kept under new names (StoreName). Off: "0" in settings.txt
+            new Opt { Key = "MPFEVER_NOWAIT", Session = true, DefaultOn = true, OnValue = "1", OffValue = "0", StoreName = "opt.MPFEVER_NOWAIT.0714",
+                Name = () => T("Constructions des autres sans attente (expérimental)", "Other players' builds without waiting (experimental)"),
+                Help = () => T("Votre jeu ne s'arrête plus à chaque construction d'un autre joueur pour attendre la réponse du moteur : elle est appliquée au même moment, sans pause.", "Your game no longer stops at every build of another player to wait for the engine's answer: it is applied at the same moment, without a pause.") },
+            new Opt { Key = "MPFEVER_NOSTOP", Session = true, DefaultOn = true, OnValue = "1", OffValue = "0", StoreName = "opt.MPFEVER_NOSTOP.0714",
+                Name = () => T("Plusieurs constructeurs sans arrêt (expérimental)", "Several players building without stopping (experimental)"),
+                Help = () => T("Quand plusieurs joueurs construisent en même temps, les jeux ne s'arrêtent plus pour attendre les constructions des autres : chacune part dès le clic et chaque jeu vérifie à son heure que rien n'a changé là où elle se fait. Comprend l'option sans attente.", "When several players build at once, the games no longer stop to wait for each other's builds: each one goes at the click and every game checks at its time that nothing changed where it is made. Includes the no-wait setting.") },
             new Opt { Key = "MPFEVER_NOREFUND", Session = true, DefaultOn = true, OffValue = "1",
                 Name = () => T("Remboursements équilibrés", "Balanced refunds"),
                 Help = () => T("Une construction démolie juste après coûte la même chose sur tous les jeux.", "A build demolished right after costs the same on every game.") },
@@ -98,7 +106,7 @@ namespace MPFever
         /// <summary>The session settings received from the host (client), else null: this game uses its own.</summary>
         public static Dictionary<string, string> HostSession;
 
-        static string StoreKey(Opt o) => o.Launcher ? o.Key : "opt." + o.Key;
+        static string StoreKey(Opt o) => o.Launcher ? o.Key : o.StoreName ?? ("opt." + o.Key);
 
         public static bool IsOn(Opt o)
         {

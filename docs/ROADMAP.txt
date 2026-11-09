@@ -42,7 +42,7 @@ it is stable enough.
   [x] Full speed again in multiplayer: two games in step no longer both slow down to half speed (0.7.5)
   [x] Lighter checks: the small hitch every 10 seconds about a third shorter on big worlds (0.7.5)
   [x] Several players building at once without stopping (host setting, experimental, off by default: 0.7.3 to 0.7.5;
-      removed in 0.7.13: a refused stop tried again came late without waiting, and the session's stand was not lower)
+      removed in 0.7.13; back and ON by default in 0.7.14, with its field problems fixed, see 0.8)
   [x] No crash after changing a tunnel during a pause (#131), a dedicated server no longer stuck in a resynchronisation (0.7.6)
   [x] A vehicle bought gets the same number on every game; a track upgrade no longer reloads the games (#133) (0.7.7)
   [x] Two players building at the same place at the same moment: rebuilt alike on every game, the tool never stuck (0.7.8)
@@ -59,8 +59,9 @@ it is stable enough.
 
 0.8 - Building together without stopping
   [x] The builder sees its build at once (0.6.12), vehicles and lines without waiting (0.7.4)
-  [ ] No-stop v2: no wait only for the replays that have no retry path (the 0.7.3 setting was removed in 0.7.13), after
-      test sessions of 3 players or more without a resynchronisation
+  [x] No-stop v2 ON by default (0.7.14): no wait only for the replays that have no retry path (street stops keep theirs),
+      a construction taken away not shipped at the click, the vehicle and line windows no longer lead
+  [ ] The field's reports with it on: sessions of 3 players or more without a resynchronisation
   [ ] Big station edits without their last freeze
   [ ] The last recurring desyncs: vehicles in bus terminals, GCT stations (#133), a new line (#134)
 

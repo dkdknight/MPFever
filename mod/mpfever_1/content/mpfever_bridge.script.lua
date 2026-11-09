@@ -5647,7 +5647,13 @@ local function replayStop(a, plan, variant)
 	local before = stopCount()
 	toSim("replaying", { tok = a.tsTok })
 	-- (0.8: one command: the real sessions' 322 stop replays never needed another try, see G.gateSingle)
-	pcall(G.gateSingle)
+	-- (0.7.14, NOWAIT v2) Not any more: a street stop refused in its first form is tried again (without the tool's pricing, with
+	-- the street cleanup, by the engine's conversion), and that next try must come at the stop's step. The field logs of
+	-- 2026-11-02 to 11-08 (65 sessions): 3 of 736 such stops refused once, every one built by its next try, and r161's built at
+	-- its 4th try; without waiting it would have come steps late, then a reload. The other replays (streets and tracks by the
+	-- script forms: 1 recovery in about 2000; the engine's conversions of stops and signals: 1085 built, none tried again) keep
+	-- going without waiting. MPFEVER_NOWAITSTOPS=1: a street stop without waiting too, as in 0.7.12
+	if os.getenv("MPFEVER_NOWAITSTOPS") == "1" then pcall(G.gateSingle) end
 	replaySend(cmd, function(res, success)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
@@ -7679,8 +7685,12 @@ end
 -- MPFEVER_HELDNOTPAUSED (see G.reallyPaused) and MPFEVER_ACTLEAD (see G.ACT_LEAD_FNS). Each one can still be set alone: =1 on,
 -- =0 off. Read at every start of a session (see resumeAfterLoad: the settings are not known yet when this file is loaded).
 -- (0.7.13: a stop the engine refused once and built on its second try at its step, r161, would have come several steps late
--- without waiting, then a reload) NOWAIT and NOSTOP were the host's settings in the launcher until 0.7.13; they are research
--- switches now, in the environment of every game only: none set, all off (the default, unchanged)
+-- without waiting, then a reload) NOWAIT and NOSTOP were the host's settings in the launcher until 0.7.13, then research switches.
+-- (0.7.14, the user's choice of 2026-11-09) ON by default for every game, the host's settings again (« Other players' builds
+-- without waiting », « Several players building without stopping »: "0" in settings.txt turns them off, for the whole session).
+-- Four parts now: NOWAIT, PRESHIP, LEADACK, HELDNOTPAUSED. ACTLEAD (the vehicle and line windows lead) is no longer one of them:
+-- in the field (#150, beule and Erik, 2026-11-08) its leads moved the stands onto the other game (the share of the time stood
+-- per load 4.7 % -> 7.8 % on the host); MPFEVER_ACTLEAD=1 alone: on, as before
 G.nostopOn = false
 G.featureOn = function(name)
 	local v = os.getenv(name)
@@ -7735,7 +7745,9 @@ end
 -- (a follow-up of a replay after its step: a refused form's next one, logged once per replay)
 G.gateLate = function(why)
 	local g = G.gateCur
-	if g and G.gateOn() and not g.group and (g.handed or 0) > 0 and not g.lateTold then
+	-- ((0.7.14) only a replay that did not hold the game (single, see G.gateHolds) can have a follow-up after its step: a held
+	-- one's retry comes at the step, and the log said otherwise)
+	if g and G.gateOn() and not g.group and g.single and (g.handed or 0) > 0 and not g.lateTold then
 		g.lateTold = true
 		log("NOWAIT " .. tostring(g.uid) .. ": " .. tostring(why) .. " after the build's step (the game did not wait for the answer)")
 	end
@@ -10743,6 +10755,15 @@ G.preship = function(r)
 	-- replayNative. 0.7.3 shipped streets and tracks only. MPFEVER_PRESHIPCON=0: streets and tracks only, as before)
 	if (#(r.copy.toAdd or {}) > 0 or #(r.copy.toRemove or {}) > 0) and os.getenv("MPFEVER_PRESHIPCON") == "0" then
 		log("PRESHIP native build " .. tostring(r.id) .. ": a construction: shipped the usual way")
+		return false
+	end
+	-- (0.7.14, #172: CowboyPilot's bulldozer on his modular station, 2026-11-08 16:45 and 16:46, twice) A construction taken away:
+	-- shipped the usual way. The tool's copy lists the construction's own nodes and segments it takes away, the capture of the
+	-- build only the construction (the engine takes its parts away with it): the two never compare alike ("built here otherwise
+	-- than shipped at the click"), and the host's game was reloaded although every game had taken the station away.
+	-- MPFEVER_PRESHIPREMOVE=1: shipped at the click, as in 0.7.12
+	if #(r.copy.toRemove or {}) > 0 and os.getenv("MPFEVER_PRESHIPREMOVE") ~= "1" then
+		log("PRESHIP native build " .. tostring(r.id) .. ": takes a construction away: shipped the usual way")
 		return false
 	end
 	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
@@ -18647,14 +18668,14 @@ local function resumeAfterLoad(state)
 	pcall(R.nameSeed, not K.nameSyncOn())
 	-- (0.8, MPFEVER_NOWAIT, at every start: the settings are not known yet when this file is loaded; 0.7.3: and the other parts of
 	-- « several players building », MPFEVER_NOSTOP, see G.featureOn; research switches of the environment since 0.7.13)
-	G.nostopOn = os.getenv("MPFEVER_NOSTOP") == "1"
+	G.nostopOn = os.getenv("MPFEVER_NOSTOP") ~= "0"
 	G.gateWanted = G.featureOn("MPFEVER_NOWAIT")
 	G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")
 	G.leadAckOn = G.featureOn("MPFEVER_LEADACK")
 	G.standLogOn = os.getenv("MPFEVER_STANDLOG") == "1"
 	G.heldNotPausedOn = G.featureOn("MPFEVER_HELDNOTPAUSED")
 	-- (0.7.4: vehicles and lines at the click, see G.ACT_LEAD_FNS)
-	G.actLeadOn = G.featureOn("MPFEVER_ACTLEAD")
+	G.actLeadOn = os.getenv("MPFEVER_ACTLEAD") == "1"
 	if G.actLeadOn then log("vehicles and lines at the click: on (a player buying vehicles or editing a line leads, its commands are stamped close)") end
 	if G.nostopOn then log("several players building without stopping: on (MPFEVER_NOSTOP)") end
 	if G.gateWanted then log("no wait: on (once another player's build is handed to the engine, this game does not wait for its answer)") end

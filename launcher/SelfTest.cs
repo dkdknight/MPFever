@@ -100,11 +100,6 @@ namespace MPFever
             return ok;
         }
 
-        /// <summary>(0.7.13) The experimental settings « Other players' builds without waiting », « Several players building
-        /// without stopping » (the host's) and « Same platform order (test) » (the player's) are gone: off on every game, a value
-        /// kept in mpfever_settings.txt goes neither to the others nor to the mod nor to the game's environment; (a hardening of
-        /// the review) settings.txt writes MPFEVER_NOWAIT and MPFEVER_NOSTOP unset, as their « off » did, so that one game's
-        /// environment cannot turn them on alone in a launcher session.</summary>
         /// <summary>(0.7.13, Cowboy Pilot 2026-11-09) A report never carries the game's crash dump (its memory: addresses, Steam
         /// numbers) nor the session's chat, also from another player's report; MPFEVER_REPORTDUMP=1 / MPFEVER_REPORTCHAT=1: as before.</summary>
         static bool RunReportPrivate0713()
@@ -148,25 +143,28 @@ namespace MPFever
             return ok;
         }
 
+        /// <summary>(0.7.13) « Same platform order (test) » (the player's) is gone: off on every game, a value kept in
+        /// mpfever_settings.txt goes neither to the mod nor to the game's environment. (0.7.14, the user's choice) « Other players'
+        /// builds without waiting » and « Several players building without stopping », gone in 0.7.13, are the host's settings again,
+        /// on by default, kept under new names (their values kept before, off then, are not read): settings.txt carries them with a
+        /// value ("1" or "0"), the host's for the whole session.</summary>
         static bool RunExpOpts0713()
         {
             bool ok = true;
-            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13: " + what); ok &= c; }
-            var gone = new[] { "MPFEVER_NOWAIT", "MPFEVER_NOSTOP", "MPFEVER_ORDER2" };
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13/0.7.14: " + what); ok &= c; }
             var payload = Options.SessionPayload();
             var mod = Options.ModFile();
-            C(!Options.All.Any(o => gone.Contains(o.Key)) && !gone.Any(k => payload.Contains(k)) && !Options.NativeEnv().Any(),
-                "the experimental settings are gone (0.7.13)");
-            C(!mod.Contains("MPFEVER_ORDER2=") && !gone.Any(k => Options.InfoFile().Contains(k + "\t")),
-                "  the platform order not in the mod's settings.txt, none of them in the in-game Settings tab");
-            // (MPFEVER_EXPBLOCK=0 in this launcher's environment: not written)
             var ml = mod.Split('\n');
-            bool block = Options.ExpBlockOn(Environment.GetEnvironmentVariable("MPFEVER_EXPBLOCK"));
-            C(Options.ExpBlocked.SequenceEqual(new[] { "MPFEVER_NOWAIT", "MPFEVER_NOSTOP" })
-                && Options.ExpBlocked.All(k => ml.Count(l => l.StartsWith(k + "=")) == (block ? 1 : 0) && (!block || ml.Contains(k + "="))),
-                "  settings.txt: MPFEVER_NOWAIT= and MPFEVER_NOSTOP= unset (an empty value), a game's own environment cannot turn them on");
-            C(Options.ExpBlockOn(null) && Options.ExpBlockOn("") && Options.ExpBlockOn("1") && !Options.ExpBlockOn("0"),
-                "  MPFEVER_EXPBLOCK=0 only: not written, each game's environment decides");
+            C(!Options.All.Any(o => o.Key == "MPFEVER_ORDER2") && !Options.NativeEnv().Any() && !mod.Contains("MPFEVER_ORDER2=")
+                && !Options.InfoFile().Contains("MPFEVER_ORDER2\t"), "the platform order setting is gone (0.7.13)");
+            foreach (var k in new[] { "MPFEVER_NOWAIT", "MPFEVER_NOSTOP" })
+            {
+                var o = Options.All.FirstOrDefault(x => x.Key == k);
+                C(o != null && o.Session && o.DefaultOn && !o.Expert && o.OnValue == "1" && o.OffValue == "0" && o.StoreName == "opt." + k + ".0714",
+                    "  " + k + ": the host's setting again, on by default, kept under a new name (0.7.14)");
+                C(ml.Count(l => l.StartsWith(k + "=")) == 1 && !ml.Contains(k + "=") && payload.Contains(k + "="),
+                    "  " + k + ": once in the mod's settings.txt with a value, and in the host's payload");
+            }
             C(payload.Contains("MPFEVER_BUILDLEAD=") && payload.Contains("MPFEVER_NOREFUND=") && mod.Contains("MPFEVER_SMOOTH="),
                 "  the other settings as before");
             return ok;

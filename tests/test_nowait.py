@@ -119,10 +119,11 @@ for fn, mark in [("replayUpgrade", 'pcall(G.gateGroup, "a street upgrade of "'),
 check(src.count("G.gateDryNext = true; replaySend(dry") == 4 and src.count("G.gateDryNext = true; replaySend(dry2") == 1, "the four dry runs are marked")
 check('pcall(G.gateLate, "a refused form, the next one tried")' in src, "a refused form's next one is logged")
 check('G.gateWanted = G.featureOn("MPFEVER_NOWAIT")' in src[src.index("local function resumeAfterLoad(state)"):][:1600], "the setting is read at every start, the first one too")
-check('G.nostopOn = os.getenv("MPFEVER_NOSTOP") == "1"' in src[src.index("local function resumeAfterLoad(state)"):][:1600], "the several-builders switch too (0.7.3, MPFEVER_NOSTOP)")
+check('G.nostopOn = os.getenv("MPFEVER_NOSTOP") ~= "0"' in src[src.index("local function resumeAfterLoad(state)"):][:1600], "the several-builders switch too (0.7.3, MPFEVER_NOSTOP; on unless \"0\" since 0.7.14)")
 check('name:sub(1, 6) == "replay"' not in src and "gateSend" not in src, "no command is held by the native module (that crashed the game)")
 opt = open(OPTIONS, encoding="utf-8").read()
-check('Key = "MPFEVER_NOWAIT"' not in opt, "no longer a setting of the launcher (0.7.13): environment only, off by default")
+check('new Opt { Key = "MPFEVER_NOWAIT", Session = true, DefaultOn = true, OnValue = "1", OffValue = "0", StoreName = "opt.MPFEVER_NOWAIT.0714",' in opt,
+      "the host's setting again, on by default (0.7.14; gone in 0.7.13), its old kept values not read")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

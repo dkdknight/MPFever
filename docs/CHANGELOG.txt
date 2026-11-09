@@ -2,6 +2,23 @@ MPFever - Changelog
 ===================
 
 0.7.14 - (in progress)
+  - CHANGE (the user's choice of 2026-11-09, removed in 0.7.13): « Other players' builds without waiting » and « Several
+    players building without stopping » are back, ON by default for every player, the host's settings for the whole session (a
+    game never has them alone: "1" or "0" in settings.txt, the host's). Their values kept before (off, the default then) are no
+    longer read (kept under new names). Fixed first, from the field's reports:
+    - without waiting, a street stop the engine refused once was tried again after its step (r161: built at its 4th try; 3 of
+      736 street stops of the field logs refused once): the street stops by the script forms wait for their answer again
+      (MPFEVER_NOWAITSTOPS=1: as in 0.7.12). Every other replay still goes without waiting (streets and tracks by the script
+      forms: 1 recovery in about 2000; the engine's conversions of stops and signals: 1085 built, none tried again);
+    - shipped at the click, a construction taken away (#172: CowboyPilot's bulldozer on his modular station, twice) always came
+      out "built here otherwise than shipped at the click" and reloaded the game, every game having taken the station away: the
+      tool's copy lists the station's own nodes and segments, the capture only the station. Such a build goes the usual way
+      (MPFEVER_PRESHIPREMOVE=1: as in 0.7.12);
+    - the vehicle and line windows no longer lead with « without stopping » (ACTLEAD): in #150 their leads moved the stands onto
+      the other game (the host's share of time stood 4.7 % -> 7.8 %). MPFEVER_ACTLEAD=1 alone: as before;
+    - the log no longer says a retry came "after the build's step" when the game held for it.
+    MPFEVER_NOWAIT=0 / MPFEVER_NOSTOP=0 in an autotest's environment: off, as 0.7.13. Test: tests/test_nostopdefault0714.py
+    (tests/test_expopts0713.py keeps the platform order's removal).
 
 0.7.13 - 2026-11-09: fewer resyncs and crashes: two players' builds at the same moment, a player's actions around a pause, the
   calendar's sliders, joining again after an older save, joining through Steam behind shared addresses; the experimental settings

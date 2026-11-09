@@ -85,9 +85,9 @@ def main():
               "G.session.pauseAt = nil; G.actLeadOn = false; G.actLeadWindow('vehicle store'); return n1 .. ' ' .. LEADS")
     check("(0.7.4) ACTLEAD: the vehicle store open starts the lead, not in a pause, not when off", got == "1 1", got)
     src = open(BRIDGE, encoding="utf-8").read()
-    check("(0.7.4) ACTLEAD: the vehicle store's events start it, read with the host's setting",
+    check("(0.7.4) ACTLEAD: the vehicle store's events start it, read with its own switch (0.7.14: no longer part of NOSTOP)",
           'if G.actLeadOn and id == "vehicleStore" then pcall(G.actLeadWindow, "vehicle store") end' in src
-          and 'G.actLeadOn = G.featureOn("MPFEVER_ACTLEAD")' in src)
+          and 'G.actLeadOn = os.getenv("MPFEVER_ACTLEAD") == "1"' in src)
     print("FAILED: " + ", ".join(fails) if fails else "all passed")
     return 1 if fails else 0
 
