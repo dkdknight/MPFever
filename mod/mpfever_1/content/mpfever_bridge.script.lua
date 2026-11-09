@@ -2895,7 +2895,10 @@ SIM.townClose = function(st, rc)
 		if #shown > 0 then log("town stats of build " .. tostring(rc.uid) .. " as the builder's (" .. rc.n .. " proposal(s) here): " .. table.concat(shown, ", ")) end
 		return
 	end
-	local why = "town stats differ (builder/here): " .. table.concat(diffs, ", ")
+	-- (0.7.13, #161 #166: with the number of proposals added up here, which the host's log then shows without this game's report:
+	-- 2 for one build of the builder's said that a build of this game was taken for the replay. MPFEVER_TOWNWHYN=0: as before)
+	local why = ((os.getenv("MPFEVER_TOWNWHYN") == "0") and "town stats differ (builder/here): " or ("town stats differ (builder/here, " .. tostring(rc.n) .. " proposal(s)): "))
+		.. table.concat(diffs, ", ")
 	log("TOWN STATS DIFFER for build " .. tostring(rc.uid) .. " (" .. rc.n .. " proposal(s) here): " .. table.concat(diffs, ", ")
 		.. " (al/ar terrain alignment added/removed, tr/rk trees/rocks taken away, ba/br terrain brush, tv tunnels)")
 	st.townDiffs = st.townDiffs or {}
@@ -6718,6 +6721,32 @@ G.replayStreetWithObjects = function(a)
 	end)
 end
 
+-- (0.7.13, #161) Whether the stop tool's copy of the segment has other lanes than the segment here: on a street without sidewalks
+-- the tool adds the stop's platform lanes (yoyo:24, 2026-11-08 16:15Z: a Roads Plus one-way tram street of one 5.5 m lane, the
+-- tool's copy 5 + 5.5 + 5 m). replayStop's script copy of that wider segment was laid on the ground again on the other game:
+-- 57.430 / 2062.063 of terrain alignment against the builder's 0 / 0, "TOWN STATS DIFFER" and a resynchronisation. The number of
+-- lanes and their summed width are compared, so a segment that runs the other way round here still matches; anything that cannot
+-- be read: no change
+G.stopLanesChange = function(plan)
+	local new = type(plan) == "table" and type(plan.seg) == "table" and type(plan.seg.comp) == "table" and plan.seg.comp.laneConfigs or nil
+	if type(new) ~= "table" or #new == 0 then return false end
+	local okc, c = pcall(function() return api.engine.getComponent(plan.E, api.type.ComponentType.BASE_EDGE) end)
+	if not (okc and c) then return false end
+	local okl, n, w = pcall(function()
+		local s = 0
+		for k = 1, #c.laneConfigs do s = s + c.laneConfigs[k].width end
+		return #c.laneConfigs, s
+	end)
+	if not (okl and type(n) == "number" and type(w) == "number") then return false end
+	local n2, w2 = 0, 0
+	for _, l in ipairs(new) do
+		local wl = type(l) == "table" and tonumber(l.width) or nil
+		if not wl then return false end
+		n2, w2 = n2 + 1, w2 + wl
+	end
+	return n ~= n2 or math.abs(w - w2) > 0.001
+end
+
 -- A stop or a signal put on a bridge or in a tunnel (and the bulldozer on one), replayed as the tool's own native proposal instead
 -- of replayStop's script proposal: the tool's segment replacement (its maps new2oldSegments / old2newSegments, the segment as the
 -- tool made it), the engine's own removal of the old segment, and the new stops as the engine's own native edge objects of a dry
@@ -6738,6 +6767,11 @@ G.nativeStopWanted = function(a, plan)
 	-- (a signal on any track since 0.5.7: the script's replay of a plain track's segment carries none of the tool's maps; a test
 	-- replayed that way had other node configurations than the builder's, the tool's own proposal none, 2026-10-26)
 	if plan.segType == 1 then return os.getenv("MPFEVER_NATIVESIGNAL") ~= "0" end
+	-- (0.7.13, #161, experimental: a stop on a street without sidewalks, whose segment the tool gave its platform lanes, see
+	-- G.stopLanesChange: the tool's own native proposal, as on a bridge; what it cannot make goes to replayStop as before.
+	-- MPFEVER_NATIVESTOPLANES=1: on; off by default until H.bridgestopprobe (MPFEVER_PROBE_NOSIDEWALK=1,
+	-- MPFEVER_PROBE_LANES=platforms) shows in the game that this form aligns no ground there)
+	if os.getenv("MPFEVER_NATIVESTOPLANES") == "1" and G.stopLanesChange(plan) then return true end
 	local okc, c = pcall(function() return api.engine.getComponent(plan.E, api.type.ComponentType.BASE_EDGE) end)
 	if not (okc and c) or ((type(c.type) == "number") and c.type or 0) == 0 then return false end
 	return true
@@ -8729,6 +8763,9 @@ G.wbp = function(p, ctx, ...)
 	return cmd
 end
 local function deferredSend(cmd, cb, proposal, still)
+	-- (0.7.13, the autotests: the step H.samestep chose for this build, the same on both games; taken by this build only)
+	local stampAt = G.autoStampAt
+	G.autoStampAt = nil
 	-- (as a tool's build: refused during a resynchronisation, see G.resyncRefuse)
 	if G.resyncRefuse("autotest build") then
 		if cb then G.waits[#G.waits + 1] = { at = G.frames + 1, fn = function() pcall(cb, nil, false) end } end
@@ -8765,6 +8802,7 @@ local function deferredSend(cmd, cb, proposal, still)
 		return
 	end
 	local at = paused and pausedStamp(now) or (stampFor(now) + STEP)
+	if stampAt and not paused and stampAt > at then at = stampAt end
 	local pt = paused and G.ptOn or nil
 	-- (MPFEVER_RESTALETEST=1: kept like a tool's proposal, made again at its release when another player built meanwhile, see
 	-- G.restale)
@@ -8953,7 +8991,8 @@ local function runNativeRelease()
 			else
 				keep[#keep + 1] = r
 			end
-		elseif ((now >= r.at and (gameSpeed() == 0 or (now == r.at and G.nstopStanding()))) or (now < r.at and G.nstopWillStand(r.at))) and not (G.eoHoldOwn and G.frames < (G.replayQuiet or 0)) and not G.sameStepWait(r.at, G.me) then
+		elseif ((now >= r.at and (gameSpeed() == 0 or (now == r.at and G.nstopStanding()))) or (now < r.at and G.nstopWillStand(r.at))) and not (G.eoHoldOwn and G.frames < (G.replayQuiet or 0)) and not G.sameStepWait(r.at, G.me) and not G.ownWaitsReplay(r) then
+			-- (0.7.13, #161 #166: not while a replay of another player's build is in the engine's hands, see G.ownWaitsReplay)
 			-- (the simulation about to stand at its time: released for that time, see G.nstopWillStand)
 			local at = math.max(now, r.at)
 			-- (0.7.3, shipped at the click: what it was computed on is checked now, as every other game checks it, see G.preship)
@@ -9707,6 +9746,35 @@ G.sameStepWait = function(at, origin)
 		if w.at == at and w.origin ~= origin and tostring(w.origin) < tostring(origin) then return true end
 	end
 	return false
+end
+
+-- (0.7.13, #161 #166: two players' held builds announced for the same step. This game's, ranked second, waited for the other's
+-- announcement (G.sameStepWait), which nativeArrived drops as soon as that replay's first command is sent: the own build was
+-- released on the next frame. A stop or a signal replayed by the engine's conversion is two commands (a dry run, then the build,
+-- see G.replayNativeStop), and the own build landed between them: the simulation took it for the replay. It was never shipped
+-- ("produced nothing"), its town statistics were counted into the other player's ("TOWN STATS DIFFER", 2 proposals, a
+-- resynchronisation), and the player's next build named entities only its game had ("unresolved references"): YkeWoudstra#11:62
+-- on yoyo's game, 2026-11-08 19:59:33Z; Bence#11:160 on YkeWoudstra's.) Now this game's held build is not released while a replay
+-- is in the engine's hands: its command sent and not answered, the few frames after its answer (room for its next command, longer
+-- for a count of the stops, see G.eoCheckHold), or the stops placed again after a street (G.stopsAfterBusy). It goes once the
+-- replay is applied, at the same step (the game stands there meanwhile, see nativeHoldAt). The builds released at once (BUILDLEAD)
+-- and those of a pause (their branch has the same rule) are unchanged. MPFEVER_OWNAFTERREPLAY=0: as before (released, and said
+-- once: "OWN BUILD ... released while a replay is in the engine's hands").
+G.ownWaitsReplay = function(r)
+	local busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil
+	if not busy then return false end
+	if os.getenv("MPFEVER_OWNAFTERREPLAY") == "0" then
+		if not r.ownRaceLogged then
+			r.ownRaceLogged = true
+			log("OWN BUILD " .. tostring(r.id) .. " released while a replay is in the engine's hands (t=" .. tostring(G.replayAt) .. "): it may be taken for that replay [frame " .. G.frames .. "]")
+		end
+		return false
+	end
+	if not r.replayWaitLogged then
+		r.replayWaitLogged = true
+		log("native build " .. tostring(r.id) .. " for t=" .. tostring(r.at) .. " waits: a replay is in the engine's hands (t=" .. tostring(G.replayAt) .. ") [frame " .. G.frames .. "]")
+	end
+	return true
 end
 
 local function runNativeReplays()
@@ -16734,6 +16802,61 @@ H.dsignal = function(from, p)
 	end
 end
 
+-- (0.7.13, #161 #166) Two players' held builds at the same step (MPFEVER_SCENARIO=samestep with MPFEVER_TOGETHER=1): the game
+-- ranked first (its player's name first, as G.sameStepWait orders them) puts a signal on a plain track as H.dsignal does (its
+-- replay on the other game is the engine's conversion: a dry run, then the build), the other lays a road as the autotest scenario
+-- does (runScenario); both builds are held for the same step T, which the host chooses (3 periods of 50 steps ahead) and sends
+-- (samestep_at; the client computes it itself if it has not come in 10 s). Expected on the game ranked second: "native build
+-- 1000NN for t=T waits: a replay is in the engine's hands", its release at t=T after "native stop BUILT", then the build shipped
+-- and replayed on the other game; never "produced nothing" or "TOWN STATS DIFFER". With MPFEVER_OWNAFTERREPLAY=0 on both games:
+-- the race of #166 ("OWN BUILD ... released while a replay is in the engine's hands"). Not with MPFEVER_DSIG_ROLE.
+H.samestep = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	local peer = nil
+	for name in pairs(G.peers or {}) do
+		if type(name) == "string" and name ~= G.me and (peer == nil or name < peer) then peer = name end
+	end
+	local first = peer == nil or tostring(G.me) < tostring(peer)
+	local per = 50 * STEP
+	local function go(T, how)
+		log("SAMESTEP T=" .. tostring(T) .. " rank=" .. (first and 1 or 2) .. " (" .. tostring(G.me) .. " against " .. tostring(peer) .. ", T " .. how .. ", now " .. tostring(gameTime()) .. ")")
+		G.autoStampAt = T
+		local ok, err = pcall(function()
+			if first then return H.dsignal(from, p) end
+			return runScenario(p)
+		end)
+		-- (only the scenario's first build is held for T, see deferredSend)
+		G.autoStampAt = nil
+		if not ok then
+			log("SAMESTEP failed: " .. tostring(err))
+			AUTO.results = AUTO.results or {}
+			AUTO.results[#AUTO.results + 1] = "samestep error " .. tostring(err)
+			autoFinish()
+		end
+	end
+	if C.ROLE == "host" then
+		local T = (math.floor(gameTime() / per) + 3) * per
+		send("samestep_at", { at = T })
+		return go(T, "chosen here")
+	end
+	local t0 = G.frames
+	local function wait()
+		if type(G.sameStepT) == "number" and G.sameStepT > gameTime() + STEP then
+			local T = G.sameStepT
+			G.sameStepT = nil
+			return go(T, "the host's")
+		end
+		if G.frames - t0 > 600 then return go((math.floor(gameTime() / per) + 3) * per, "computed here (the host's not come in 10 s)") end
+		G.waits[#G.waits + 1] = { at = G.frames + 1, fn = wait }
+	end
+	wait()
+end
+
+-- (H.samestep) the step the host chose
+H.samestep_at = function(from, p)
+	if type(p) == "table" and type(p.at) == "number" then G.sameStepT = p.at end
+end
+
 -- Signals re-created on several track segments in ONE build (MPFEVER_SCENARIO=dsigmulti, the host then the client as builder;
 -- MPFEVER_DSIG_ROLE=host or client: only that game builds): a chain of MPFEVER_DSIG_N (2, at most 8) consecutive plain track
 -- segments, replaced by copies that carry a signal each, as the Auto Signals mod or a track upgrade of a signalled line builds it.
@@ -16885,6 +17008,20 @@ H.bridgestopprobe = function(from, p)
 	AUTO.results = {}
 	AUTO.points = {}
 	local function say(t) log("BRIDGESTOPPROBE " .. t); AUTO.results[#AUTO.results + 1] = t end
+	-- (0.7.13, #161: MPFEVER_PROBE_NOSIDEWALK=1, street segments on the ground without a sidewalk instead of bridges and tunnels;
+	-- MPFEVER_PROBE_LANES=platforms, the new segment with a 5 m platform lane on each side, as the stop tool gives it there:
+	-- yoyo:24, see G.stopLanesChange)
+	local nosw = os.getenv("MPFEVER_PROBE_NOSIDEWALK") == "1"
+	local platforms = os.getenv("MPFEVER_PROBE_LANES") == "platforms"
+	local function noSidewalk(c)
+		local okw, yes = pcall(function()
+			for k = 1, #c.laneConfigs do
+				if c.laneConfigs[k].transportModes[0] == true then return false end
+			end
+			return #c.laneConfigs > 0
+		end)
+		return okw and yes == true
+	end
 	local ok, err = pcall(function()
 		local BE = api.type.ComponentType.BASE_EDGE
 		local list = {}
@@ -16914,7 +17051,8 @@ H.bridgestopprobe = function(from, p)
 			for _, e in ipairs(all) do
 				local c = api.engine.getComponent(e, BE)
 				local okC, con = pcall(function() return api.engine.system.streetConnectorSystem.getConstructionEntityForEdge(e) end)
-				if c and c.type ~= 0 and api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE_STREET) and not (okC and type(con) == "number" and con >= 0) then
+				local kind = c and ((nosw and c.type == 0 and noSidewalk(c)) or (not nosw and c.type ~= 0))
+				if kind and api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE_STREET) and not (okC and type(con) == "number" and con >= 0) then
 					local near = true
 					if ax then
 						near = false
@@ -16925,8 +17063,8 @@ H.bridgestopprobe = function(from, p)
 					end
 					if near then
 						-- (an end of the bridge: a segment on the ground at one of its nodes)
-						local isEnd = false
-						for _, nd in ipairs({ c.node0, c.node1 }) do
+						local isEnd = nosw
+						for _, nd in ipairs(nosw and {} or { c.node0, c.node1 }) do
 							for _, s in ipairs(n2s[nd] or {}) do
 								local cs = s ~= e and api.engine.getComponent(s, BE)
 								if cs and cs.type == 0 then isEnd = true end
@@ -16941,7 +17079,7 @@ H.bridgestopprobe = function(from, p)
 			local cap = math.max(1, tonumber(os.getenv("MPFEVER_PROBE_COUNT") or "4") or 4)
 			for _, e in ipairs(ends) do if #list < cap then list[#list + 1] = e end end
 			for _, e in ipairs(mids) do if #list < cap then list[#list + 1] = e end end
-			say(#ends + #mids .. " bridge or tunnel street segment(s)" .. (ax and string.format(" near %.1f,%.1f", ax, ay) or "") .. ", " .. #ends .. " at an end")
+			say(#ends + #mids .. (nosw and " street segment(s) without a sidewalk" or " bridge or tunnel street segment(s)") .. (ax and string.format(" near %.1f,%.1f", ax, ay) or "") .. ", " .. #ends .. " at an end")
 		end
 		if #list == 0 then say("no segment to probe"); return autoFinish() end
 		local model = os.getenv("MPFEVER_PROBE_MODEL") or "stations/street/small_stops/small_old_twosided.con"
@@ -16955,8 +17093,27 @@ H.bridgestopprobe = function(from, p)
 				objs = { { model = model, category = 0, param = 0.5, left = true, oneWay = false }, { model = model, category = 0, param = 0.5, left = false, oneWay = false } }
 			end
 			local owner = R.ownerOf(E)
-			local plan = { E = E, seg = { comp = {}, playerOwned = (type(owner) == "number" and owner >= 0) and { player = owner } or nil }, objs = objs,
+			local comp = {}
+			if platforms and not track then
+				local okl, lanes = pcall(function()
+					local function platform()
+						local tm = {}
+						for j = 0, 15 do tm[j] = j == 0 end
+						return { width = 5, height = 0.1, forward = true, offset = 0, speed = 10, transportModes = tm }
+					end
+					local l = { platform() }
+					for k = 1, #c.laneConfigs do l[#l + 1] = C.marshal(c.laneConfigs[k]) end
+					l[#l + 1] = platform()
+					return l
+				end)
+				if okl then comp.laneConfigs = lanes else say("segment " .. E .. ": platform lanes not made (" .. shortErr(lanes) .. ")") end
+			end
+			local plan = { E = E, seg = { comp = comp, playerOwned = (type(owner) == "number" and owner >= 0) and { player = owner } or nil }, objs = objs,
 				removeIdx = {}, nodeConfigs = {}, segType = track and 1 or 0, probeOnly = true, probeSink = say }
+			if comp.laneConfigs then
+				say("segment " .. E .. ": " .. #c.laneConfigs .. " lane(s) here, " .. #comp.laneConfigs .. " in the new segment (a 5 m platform on each side), lanes change "
+					.. tostring(G.stopLanesChange(plan)) .. " (MPFEVER_NATIVESTOPLANES=1 would replay it natively)")
+			end
 			say("segment " .. E .. " (" .. tostring(c.roadTemplate):match("[^/]*$") .. ", type " .. tostring(c.type) .. "/" .. tostring(c.typeIndex) .. ", " .. #c.objects .. " object(s) on it)")
 			AUTO.points[#AUTO.points + 1] = nodePosition(c.node0)
 			-- (the stop tool's flags, 32: nothing cleaned up, no terrain alignment)
