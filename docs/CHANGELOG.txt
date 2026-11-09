@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.7.17 - (in progress)
+
 0.7.16 - 2026-11-09: bus stops on maps from mod.io no longer reload the game, trees bulldozed in part go the usual way, the owner
   guard says why
   - FIX (#177-#180, JohnMenssing's game on the map « Germany - Mittellandkanal » from mod.io, 2026-11-09: "Out of sync nach jeder
