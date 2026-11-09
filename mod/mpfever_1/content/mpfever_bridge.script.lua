@@ -4076,7 +4076,7 @@ local function otherLeads()
 	return false
 end
 
--- (0.7.3, MPFEVER_LEADACK=1, or the host's « several players building » setting) A game that leads (a tool in hand) ran ahead of the
+-- (0.7.3, MPFEVER_LEADACK=1, or MPFEVER_NOSTOP=1: the host's setting until 0.7.13) A game that leads (a tool in hand) ran ahead of the
 -- others by the lead's steps at once (pacing), but another game stamps its actions from its own clock by its stamp distance (16
 -- steps at 4x), and adds the lead's steps only once it knows of the lead (from the leader's next clock). An action it stamped in
 -- between was behind the leader's clock and landed there late ("MARGIN nat_pending -18 steps", "LATE native build ... 18 step(s)
@@ -4268,7 +4268,7 @@ end
 -- far enough behind, get them before their time. The first command of an edit keeps the usual stamp (the others do not follow
 -- yet). Off: as before.
 G.LINE_LEAD_FNS = { makeLineCreateCmd = true, makeLineUpdateCmd = true }
--- (0.7.4, ACTLEAD, part of the host's « several players building » setting, MPFEVER_ACTLEAD=1 alone) the same for a vehicle bought,
+-- (0.7.4, ACTLEAD, part of MPFEVER_NOSTOP=1, the host's setting until 0.7.13, MPFEVER_ACTLEAD=1 alone) the same for a vehicle bought,
 -- sold, replaced, sent to a line or a depot, and a line made, edited or taken away: a player buying ten buses or making a line
 -- stop by stop saw each one 1.4 s (7 steps at 1x) after the click. And the vehicle store open (its buy button shown) starts the
 -- lead before the first purchase, as a construction tool in hand does. The stamp is never short of the overshoot of this game's
@@ -7446,11 +7446,14 @@ local function replayNative(a, formIndex)
 	end)
 end
 
--- (0.7.3) The host's setting « several players building without stopping » (MPFEVER_NOSTOP=1, a session option of the launcher, off by
--- default) turns on the three parts of that work: MPFEVER_NOWAIT (below), MPFEVER_PRESHIP (a held build shipped at the click and
--- checked at its time on every game, see G.preship) and MPFEVER_LEADACK (a game that leads takes its lead only once the others'
--- stamps leave it room, see G.leadRoom). Each one can still be set alone: =1 on, =0 off. Read at every start of a session (see
--- resumeAfterLoad: the settings are not known yet when this file is loaded).
+-- (0.7.3) « Several players building without stopping » (MPFEVER_NOSTOP=1) turns on the five parts of that work: MPFEVER_NOWAIT
+-- (below), MPFEVER_PRESHIP (a held build shipped at the click and checked at its time on every game, see G.preship; it needs
+-- NOWAIT), MPFEVER_LEADACK (a game that leads takes its lead only once the others' stamps leave it room, see G.leadRoom),
+-- MPFEVER_HELDNOTPAUSED (see G.reallyPaused) and MPFEVER_ACTLEAD (see G.ACT_LEAD_FNS). Each one can still be set alone: =1 on,
+-- =0 off. Read at every start of a session (see resumeAfterLoad: the settings are not known yet when this file is loaded).
+-- (0.7.13: a stop the engine refused once and built on its second try at its step, r161, would have come several steps late
+-- without waiting, then a reload) NOWAIT and NOSTOP were the host's settings in the launcher until 0.7.13; they are research
+-- switches now, in the environment of every game only: none set, all off (the default, unchanged)
 G.nostopOn = false
 G.featureOn = function(name)
 	local v = os.getenv(name)
@@ -7741,7 +7744,7 @@ end
 -- (a due company join holds the game until it is applied, see nativeHoldAt)
 G.joinHoldDue = os.getenv("MPFEVER_JOINHOLD") ~= "0"
 
--- (0.7.3, MPFEVER_HELDNOTPAUSED, part of the host's « several players building » setting) A held build is captured when its
+-- (0.7.3, MPFEVER_HELDNOTPAUSED, part of MPFEVER_NOSTOP=1, the host's setting until 0.7.13) A held build is captured when its
 -- game stands at its time, and the simulation half takes that stop for a pause (its pause_at is the hold's time): the capture
 -- came marked "paused" though the session was not. The other games then took it for a build of a pause: never sent as the
 -- simulation came to its time (it waited until the game stood there), and the game stood there until the engine's answer
@@ -10287,8 +10290,9 @@ local function shipTerrain(o)
 end
 
 -- ================================================================== builds shipped at the click (0.7.3, MPFEVER_PRESHIP)
--- (on with the host's « several players building » setting, MPFEVER_NOSTOP=1, or MPFEVER_PRESHIP=1 with MPFEVER_NOWAIT; off by
--- default) When several players build at once, a build of this game is held for a step ahead (another game leads, or this one
+-- (on with MPFEVER_NOSTOP=1, the host's « several players building » setting until 0.7.13 and a research switch in the
+-- environment since, or MPFEVER_PRESHIP=1 with MPFEVER_NOWAIT; off by default) When several players build at once, a build of
+-- this game is held for a step ahead (another game leads, or this one
 -- does not), goes to the engine at that step, and only then was it captured and shipped: the other games, at that step too,
 -- stood until its data came (0.3 to 1 s for each build, "LAG ... ms for its data": most of the stand of the two-builder stress
 -- tests of 2026-11-06). Now its copy, the tool's proposal as the tool applied it (the compact form a capture ships, see
@@ -17863,7 +17867,7 @@ local function resumeAfterLoad(state)
 	-- (the names of the savegame as every game loaded it, for the checks made in a pause, see R.nameSeed)
 	pcall(R.nameSeed, not K.nameSyncOn())
 	-- (0.8, MPFEVER_NOWAIT, at every start: the settings are not known yet when this file is loaded; 0.7.3: and the other parts of
-	-- the host's « several players building » setting, see G.featureOn)
+	-- « several players building », MPFEVER_NOSTOP, see G.featureOn; research switches of the environment since 0.7.13)
 	G.nostopOn = os.getenv("MPFEVER_NOSTOP") == "1"
 	G.gateWanted = G.featureOn("MPFEVER_NOWAIT")
 	G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")

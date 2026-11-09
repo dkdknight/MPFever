@@ -1,4 +1,5 @@
-"""Offline test of "no wait for the answer" (0.8 work, MPFEVER_NOWAIT=1, a session setting of the host).
+"""Offline test of "no wait for the answer" (0.8 work, MPFEVER_NOWAIT=1: a session setting of the host until 0.7.13, a research
+switch in the environment of every game since, off by default; see tests/test_expopts0713.py).
 
 Another player's build is replayed at its step: the replay goes to the engine as the simulation comes to that step, and the
 engine applies it at the start of the next batch, at that step. This game then stood there until the engine's answer came back,
@@ -118,10 +119,10 @@ for fn, mark in [("replayUpgrade", 'pcall(G.gateGroup, "a street upgrade of "'),
 check(src.count("G.gateDryNext = true; replaySend(dry") == 4 and src.count("G.gateDryNext = true; replaySend(dry2") == 1, "the four dry runs are marked")
 check('pcall(G.gateLate, "a refused form, the next one tried")' in src, "a refused form's next one is logged")
 check('G.gateWanted = G.featureOn("MPFEVER_NOWAIT")' in src[src.index("local function resumeAfterLoad(state)"):][:1600], "the setting is read at every start, the first one too")
-check('G.nostopOn = os.getenv("MPFEVER_NOSTOP") == "1"' in src[src.index("local function resumeAfterLoad(state)"):][:1600], "the host's several-builders setting too (0.7.3)")
+check('G.nostopOn = os.getenv("MPFEVER_NOSTOP") == "1"' in src[src.index("local function resumeAfterLoad(state)"):][:1600], "the several-builders switch too (0.7.3, MPFEVER_NOSTOP)")
 check('name:sub(1, 6) == "replay"' not in src and "gateSend" not in src, "no command is held by the native module (that crashed the game)")
 opt = open(OPTIONS, encoding="utf-8").read()
-check('Key = "MPFEVER_NOWAIT", Session = true, DefaultOn = false' in opt, "a session setting of the host, off by default")
+check('Key = "MPFEVER_NOWAIT"' not in opt, "no longer a setting of the launcher (0.7.13): environment only, off by default")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

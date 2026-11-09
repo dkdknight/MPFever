@@ -19,7 +19,9 @@ namespace MPFever
         public bool Expert;           // shown only with « Expert settings »
         public bool DefaultOn;
         public string OnValue = "", OffValue = "";   // what the mod reads (empty: the variable is not set)
-        public bool Native;           // (0.7.10) also set in the game's environment when on (the native module reads it at its start)
+        // (0.7.10) also set in the game's environment when on (the native module reads it at its start; none since 0.7.13, kept
+        // for the next one: see NativeEnv)
+        public bool Native = false;
         public Func<string> Name, Help;
     }
 
@@ -31,12 +33,11 @@ namespace MPFever
             new Opt { Key = "MPFEVER_BUILDLEAD", Session = true, DefaultOn = true, OnValue = "1",
                 Name = () => T("Constructions réactives (expérimental)", "Responsive builds (experimental)"),
                 Help = () => T("Vos constructions apparaissent tout de suite chez vous au lieu d'attendre les autres jeux : vous pouvez y raccrocher la suite aussitôt.", "Your builds show at once on your game instead of waiting for the other games: you can attach the next piece right away.") },
-            new Opt { Key = "MPFEVER_NOWAIT", Session = true, DefaultOn = false, OnValue = "1",
-                Name = () => T("Constructions des autres sans attente (expérimental)", "Other players' builds without waiting (experimental)"),
-                Help = () => T("Votre jeu ne s'arrête plus à chaque construction d'un autre joueur pour attendre la réponse du moteur : elle est appliquée au même moment, sans pause.", "Your game no longer stops at every build of another player to wait for the engine's answer: it is applied at the same moment, without a pause.") },
-            new Opt { Key = "MPFEVER_NOSTOP", Session = true, DefaultOn = false, OnValue = "1",
-                Name = () => T("Plusieurs constructeurs sans arrêt (expérimental)", "Several players building without stopping (experimental)"),
-                Help = () => T("Quand plusieurs joueurs construisent en même temps, les jeux ne s'arrêtent plus pour attendre les constructions des autres : chacune part dès le clic et chaque jeu vérifie à son heure que rien n'a changé là où elle se fait. Comprend l'option sans attente.", "When several players build at once, the games no longer stop to wait for each other's builds: each one goes at the click and every game checks at its time that nothing changed where it is made. Includes the no-wait setting.") },
+            // (0.7.13: a stop the engine refused once and built on its second try at its step, r161, would have come several steps
+            // late without waiting, then a reload; the per-build stand was lower, the session's was not) the host's experimental
+            // « Other players' builds without waiting » and « Several players building without stopping » are gone: off on every
+            // game, a value kept in mpfever_settings.txt is ignored. MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 in the environment of
+            // every game: as before (tests)
             new Opt { Key = "MPFEVER_NOREFUND", Session = true, DefaultOn = true, OffValue = "1",
                 Name = () => T("Remboursements équilibrés", "Balanced refunds"),
                 Help = () => T("Une construction démolie juste après coûte la même chose sur tous les jeux.", "A build demolished right after costs the same on every game.") },
@@ -54,11 +55,9 @@ namespace MPFever
             new Opt { Key = "MPFEVER_ADAPTAHEAD", DefaultOn = false, OnValue = "1",
                 Name = () => T("Mode PC lent", "Slow PC mode"),
                 Help = () => T("Donne plus de marge aux constructions quand ce PC est très chargé.", "Gives builds more room when this PC is very busy.") },
-            // (0.7.10, test) the platform-order fixes of TPF3-MP ported in 0.5.0 and off since: every player of a session the same
-            new Opt { Key = "MPFEVER_ORDER2", DefaultOn = false, OnValue = "1", Native = true,
-                Name = () => T("Ordre des quais identique (test)", "Same platform order (test)"),
-                Help = () => T("Test contre les véhicules qui divergent dans les gares : les véhicules choisissent leur quai ou leur terminal dans le même ordre sur chaque jeu. Tous les joueurs de la partie doivent l'activer, l'hôte aussi, puis relancer le jeu.",
-                    "A test against vehicles drifting apart in stations: the vehicles pick their platform or terminal in the same order on every game. Every player of the game must turn it on, the host too, then start the game again.") },
+            // (0.7.13: no measured benefit, every game reloads at a resync, and a player with it and another without drift apart by
+            // design, #150) the player's « Same platform order (test) » of 0.7.10 is gone, with its word in the hello and the
+            // host's warning: off on every game. MPFEVER_ORDER2=1 in the environment of every game: as before (tests)
             new Opt { Key = "MPFEVER_STEPLOG", DefaultOn = false, OnValue = "1",
                 Name = () => T("Journaux détaillés", "Detailed logs"),
                 Help = () => T("Plus de détails dans les rapports de problème (fichiers plus gros).", "More details in problem reports (bigger files).") },
@@ -133,10 +132,8 @@ namespace MPFever
             return d;
         }
 
-        /// <summary>(0.7.10) Whether this player turned « Same platform order (test) » on.</summary>
-        public static bool Order2On() => All.Where(o => o.Key == "MPFEVER_ORDER2").Select(IsOn).FirstOrDefault();
-
-        /// <summary>(0.7.10) This player's own settings the game's native module reads at its start: KEY=value of each one on.</summary>
+        /// <summary>(0.7.10) This player's own settings the game's native module reads at its start: KEY=value of each one on (none
+        /// since 0.7.13: « Same platform order (test) » was the only one).</summary>
         public static IEnumerable<KeyValuePair<string, string>> NativeEnv() =>
             All.Where(o => o.Native && !o.Session && IsOn(o) && o.OnValue != "").Select(o => new KeyValuePair<string, string>(o.Key, o.OnValue));
 

@@ -3632,7 +3632,10 @@ static void InstallOrderFixes()
         bool layout = true;
         if (i == 1) layout = recordsOk;
         // (three of the four ported in 0.5.0, OFF unless MPFEVER_ORDER2=1: 40 minutes at x4 on a large map stayed in sync
-        // without them, as with them; nothing they would fix was ever seen in MPFever's sessions. Kept for a diagnosis. The
+        // without them, as with them; nothing they would fix was ever seen in MPFever's sessions. Kept for a diagnosis. 0.7.13:
+        // "Same platform order (test)", the 0.7.10 launcher setting that set it, is gone: no measured benefit, and every game,
+        // the host's too, loads the same save at a resync (no game keeps running while the others load, TPF3-MP's case); the
+        // variable in the environment of every game only, for tests. The
         // town street field is on since 0.5.3: a game that answered one point of a cell differently answered every later point
         // of it differently, which made a small difference between the games a lasting one)
         if (i >= 6 && i <= 9 && i != 8 && GetEnvironmentVariableA("MPFEVER_ORDER2", 0, 0) == 0) layout = false;

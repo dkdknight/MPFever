@@ -3422,8 +3422,6 @@ namespace MPFever
             game.FromGame += clientFromGame = (g, m) =>
             {
                 if (m.Kind == "hello") { g.InGame = true; if (menuMode) { menuPhase = "ingame"; menuText = T("En partie.", "In game."); MenuStatus(); } }
-                // (0.7.10) this player's « same platform order » setting, which every game of a session needs alike (see ModCopies.Order2)
-                if (m.Kind == "hello") m.Payload = ModCopies.WithOrder2(m.Payload, Options.Order2On());
                 lock (waiting)
                 {
                     var to = current;
@@ -4300,7 +4298,6 @@ namespace MPFever
                 case "hello":
                     lock (players) players.Add(m.From);
                     WarnModVersion(m.From, m.Payload);
-                    if (from != null) WarnOrder2(m.From, m.Payload);
                     // (0.7.4, MODRETRY: the server's world is loaded, its mods were all there)
                     if (m.From == hostName) serverModRetries = 0;
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));

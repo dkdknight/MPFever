@@ -1,4 +1,5 @@
-"""Offline test of the builds shipped at the click (0.7.3, MPFEVER_PRESHIP, on with the host's MPFEVER_NOSTOP=1; off by default).
+"""Offline test of the builds shipped at the click (0.7.3, MPFEVER_PRESHIP, on with MPFEVER_NOSTOP=1, the host's setting until
+0.7.13 and a research switch in the environment since; off by default).
 
 Several players building at once: a build of this game is held for a step ahead and was only captured and shipped at that step,
 so the other games, at that step too, stood until its data came (the two-builder stress test of 2026-11-06: "LAG ... 785 ms for
@@ -282,9 +283,9 @@ check(tool > 0 and src.count("if not paused and G.preship then pcall(G.preship, 
 check("if not (G.restaleOn or pre or v2) or not G.session.started or (G.cmode == \"separate\" and not pre and not v2) then return end" in src,
       "the tool's copy is kept for it, in the separate companies mode too (0.7.7: and for RESTALE v2 while another player builds)")
 check("if not (G.restaleOn or v2) or r.lead or r.preshipped then return false end" in src, "never replayed here the old restale way (nor RESTALE v2's)")
-check('G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")' in src, "on with the host's setting")
+check('G.preshipWanted = G.featureOn("MPFEVER_PRESHIP")' in src, "on with MPFEVER_NOSTOP=1 (or MPFEVER_PRESHIP=1)")
 opt = open(OPTIONS, encoding="utf-8").read()
-check('Key = "MPFEVER_NOSTOP", Session = true, DefaultOn = false' in opt, "the host's setting in the launcher, off by default")
+check('Key = "MPFEVER_NOSTOP"' not in opt, "no longer the host's setting in the launcher (0.7.13): environment only, off by default")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

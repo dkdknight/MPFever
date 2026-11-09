@@ -73,6 +73,7 @@ namespace MPFever
             ok &= RunModIdTop0712();
             ok &= RunDeadDirect0713();
             ok &= RunLinks0713();
+            ok &= RunExpOpts0713();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -89,6 +90,25 @@ namespace MPFever
             C(MainForm.PortSetting(null) == 28090 && MainForm.PortSetting("") == 28090, "port: 28090 without port= in mpfever_settings.txt, as before");
             C(MainForm.PortSetting(" 28100 ") == 28100 && MainForm.PortSetting("1024") == 1024 && MainForm.PortSetting("65535") == 65535, "  port=28100: that port");
             C(MainForm.PortSetting("80") == 28090 && MainForm.PortSetting("70000") == 28090 && MainForm.PortSetting("abc") == 28090 && MainForm.PortSetting("-5") == 28090, "  out of 1024-65535 or not a number: 28090");
+            return ok;
+        }
+
+        /// <summary>(0.7.13) The experimental settings « Other players' builds without waiting », « Several players building
+        /// without stopping » (the host's) and « Same platform order (test) » (the player's) are gone: off on every game, a value
+        /// kept in mpfever_settings.txt goes neither to the others nor to the mod nor to the game's environment.</summary>
+        static bool RunExpOpts0713()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13: " + what); ok &= c; }
+            var gone = new[] { "MPFEVER_NOWAIT", "MPFEVER_NOSTOP", "MPFEVER_ORDER2" };
+            var payload = Options.SessionPayload();
+            var mod = Options.ModFile();
+            C(!Options.All.Any(o => gone.Contains(o.Key)) && !gone.Any(k => payload.Contains(k)) && !Options.NativeEnv().Any(),
+                "the experimental settings are gone (0.7.13)");
+            C(!gone.Any(k => mod.Contains(k + "=")) && !gone.Any(k => Options.InfoFile().Contains(k + "\t")),
+                "  neither in the mod's settings.txt nor in the in-game Settings tab");
+            C(payload.Contains("MPFEVER_BUILDLEAD=") && payload.Contains("MPFEVER_NOREFUND=") && mod.Contains("MPFEVER_SMOOTH="),
+                "  the other settings as before");
             return ok;
         }
 
@@ -174,10 +194,7 @@ namespace MPFever
                 C(ModCopies.Stale(game, src).Count == 0, "  then none left");
                 // (MODVERCHECK) the version a game's mod says in its "hello"
                 C(ModCopies.VersionProblem("Peter", "0.7.9", "0.7.9") == null, "the same mod version: nothing said");
-                // (0.7.10, ORDER2) the player's « Same platform order (test) » with its game's hello
-                C(ModCopies.WithOrder2("{[\"name\"]=\"Kev\",[\"mv\"]=\"0.7.10\"}", true) == "{[\"name\"]=\"Kev\",[\"mv\"]=\"0.7.10\",[\"order2\"]=true}"
-                    && ModCopies.WithOrder2("{}", false) == "{[\"order2\"]=false}"
-                    && ModCopies.WithOrder2("{[\"order2\"]=true}", false) == "{[\"order2\"]=true}", "the hello says this player's platform-order setting (once)");
+                // (0.7.10, ORDER2: the hello's word on « Same platform order (test) » is gone since 0.7.13, see RunExpOpts0713)
                 var vp = ModCopies.VersionProblem("Peter", null, "0.7.9");
                 C(vp != null && vp.StartsWith("Peter") && vp.Contains("0.7.9"), "a mod that says no version (before 0.7.9): warned (" + vp + ")");
                 var vp2 = ModCopies.VersionProblem("Jakob", "0.7.8", "0.7.9");
