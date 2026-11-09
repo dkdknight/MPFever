@@ -1,7 +1,9 @@
 MPFever - Changelog
 ===================
 
-0.7.13 - (in progress)
+0.7.13 - 2026-11-09: fewer resyncs and crashes: two players' builds at the same moment, a player's actions around a pause, the
+  calendar's sliders, joining again after an older save, joining through Steam behind shared addresses; the experimental settings
+  removed, a purchase refused for lack of money says so, and the launcher's join box replaced by Settings, Support and Discord
   - FIX (#172, CowboyPilot's session of 2026-11-08 15:47, a resynchronisation for « script:gametime »): the calendar's clouds
     slider sets the sky of its player's game only and sends an event that the game's time and weather script answers, on every
     game, with that game's own sky as its target: after MrWhiskey1's two moves of the slider his game alone differed, after
