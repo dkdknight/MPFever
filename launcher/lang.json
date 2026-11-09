@@ -8698,6 +8698,19 @@
       "zh-CN": "与上一局的差异：{0:0.0} MB，而不是 {1:0.0} MB（计算 {2:0} 秒）",
       "zh-TW": "與上一局的差異：{0:0.0} MB，而不是 {1:0.0} MB（計算 {2:0} 秒）"
     },
+    " (decompressing {0:0.0} s, comparing {1:0.0} s)": {
+      "de": " (Entpacken {0:0.0} s, Vergleichen {1:0.0} s)",
+      "es": " (descompresión {0:0.0} s, comparación {1:0.0} s)",
+      "it": " (decompressione {0:0.0} s, confronto {1:0.0} s)",
+      "nl": " (uitpakken {0:0.0} s, vergelijken {1:0.0} s)",
+      "pl": " (dekompresja {0:0.0} s, porównanie {1:0.0} s)",
+      "pt-BR": " (descompressão {0:0.0} s, comparação {1:0.0} s)",
+      "ru": " (распаковка {0:0.0} с, сравнение {1:0.0} с)",
+      "ja": "（展開 {0:0.0} 秒、比較 {1:0.0} 秒）",
+      "ko": " (압축 해제 {0:0.0}초, 비교 {1:0.0}초)",
+      "zh-CN": "（解压 {0:0.0} 秒，比较 {1:0.0} 秒）",
+      "zh-TW": "（解壓縮 {0:0.0} 秒，比較 {1:0.0} 秒）"
+    },
     "{0}: differences sent ({1:0.0} MB in {2:0} s)": {
       "de": "{0}: Unterschiede gesendet ({1:0.0} MB in {2:0} s)",
       "es": "{0}: diferencias enviadas ({1:0.0} MB en {2:0} s)",

@@ -74,6 +74,7 @@ namespace MPFever
             ok &= RunDeadDirect0713();
             ok &= RunLinks0713();
             ok &= RunExpOpts0713();
+            ok &= RunResyncSpeed0713();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -111,6 +112,138 @@ namespace MPFever
                 "  the other settings as before");
             return ok;
         }
+
+        /// <summary>(0.7.13) #161/#166: a resynchronisation's savegames read with half the memory (Zstd.ReadSaveRaw: the same bytes
+        /// as Zstd.DecompressFile, whatever the file), its big arrays given back once used (MainForm.FreeResyncMemory).</summary>
+        static bool RunResyncSpeed0713()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13: " + what); ok &= c; }
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-0713-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try
+            {
+                Directory.CreateDirectory(dir);
+                string At(string name) => Path.Combine(dir, name);
+                bool Same(byte[] a, byte[] b) => a != null && b != null && a.Length == b.Length && a.SequenceEqual(b);
+                byte[] Straight(string file) { using (var s = File.OpenRead(file)) return Zstd.ReadRawFrame(s); }
+                string Error(Func<byte[]> read) { try { read(); return "none"; } catch (Exception e) { return e.GetType().Name; } }
+
+                // 1. a savegame MPFever wrote (LoadReceivedSave: WriteRawFrame) is read straight, the same bytes as DecompressFile's
+                var rnd = new Random(713);
+                var data = new byte[5 * 1048576 + 12345];
+                rnd.NextBytes(data);
+                Zstd.WriteRawFrame(At("raw.sav"), data);
+                var fast = Zstd.ReadSaveRaw(At("raw.sav"));
+                C(Straight(At("raw.sav")) != null && Same(fast, data) && Same(fast, Zstd.DecompressFile(At("raw.sav"))),
+                    "a raw frame of 5 MB read straight: the data, as DecompressFile gives it");
+                foreach (int size in new[] { 0, 1, 131072, 262144, 262145 })
+                {
+                    var d = new byte[size];
+                    rnd.NextBytes(d);
+                    Zstd.WriteRawFrame(At("size.sav"), d);
+                    C(Straight(At("size.sav")) != null && Same(Zstd.ReadSaveRaw(At("size.sav")), d) && Same(Zstd.DecompressFile(At("size.sav")), d), "  " + size + " bytes");
+                }
+
+                // 2. a real zstd frame (two compressed blocks and a checksum, as the game's own savegames): decompressed as before
+                var text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 10000).Select(k => "MPFever resync " + (k % 50) + " of " + (k % 13) + "\n")));
+                File.WriteAllBytes(At("zstd.sav"), Convert.FromBase64String(ZstdFrame0713));
+                var dz = Zstd.DecompressFile(At("zstd.sav"));
+                C(Straight(At("zstd.sav")) == null && Same(dz, text) && Same(Zstd.ReadSaveRaw(At("zstd.sav")), dz),
+                    "a compressed zstd frame: not read straight, decompressed as before (" + dz.Length + " bytes)");
+
+                // 3. look-alikes: WriteRawFrame's header with another kind of block, a frame after it, cut short, not zstd, no file
+                var rle = new byte[] { 0x28, 0xB5, 0x2F, 0xFD, 0x80, 0x58, 0xE8, 0x03, 0, 0, 0, 0, 0, 0x41 };
+                int v = (1000 << 3) | (1 << 1) | 1;
+                rle[10] = (byte)v; rle[11] = (byte)(v >> 8); rle[12] = (byte)(v >> 16);
+                File.WriteAllBytes(At("rle.sav"), rle);
+                var drle = Zstd.DecompressFile(At("rle.sav"));
+                C(Straight(At("rle.sav")) == null && drle.Length == 1000 && drle.All(x => x == 0x41) && Same(Zstd.ReadSaveRaw(At("rle.sav")), drle),
+                    "  the same header, an RLE block: decompressed as before");
+                using (var s = new MemoryStream())
+                {
+                    Zstd.WriteRawFrame(s, data);
+                    s.Write(new byte[] { 0x50, 0x2A, 0x4D, 0x18, 4, 0, 0, 0, 1, 2, 3, 4 }, 0, 12);
+                    File.WriteAllBytes(At("skip.sav"), s.ToArray());
+                }
+                C(Straight(At("skip.sav")) == null && Same(Zstd.ReadSaveRaw(At("skip.sav")), data), "  a raw frame, then a skippable frame: decompressed as before");
+                var whole = File.ReadAllBytes(At("raw.sav"));
+                var cut = new byte[whole.Length - 1000];
+                Buffer.BlockCopy(whole, 0, cut, 0, cut.Length);
+                File.WriteAllBytes(At("cut.sav"), cut);
+                string e1 = Error(() => Zstd.ReadSaveRaw(At("cut.sav"))), e2 = Error(() => Zstd.DecompressFile(At("cut.sav")));
+                C(e1 == e2 && e1 != "none", "  a raw frame cut short: the same error as DecompressFile's (" + e1 + ")");
+                File.WriteAllText(At("text.sav"), "not a savegame at all, longer than a header");
+                e1 = Error(() => Zstd.ReadSaveRaw(At("text.sav"))); e2 = Error(() => Zstd.DecompressFile(At("text.sav")));
+                C(e1 == e2 && e1 != "none", "  not zstd: the same error (" + e1 + ")");
+                e1 = Error(() => Zstd.ReadSaveRaw(At("none.sav"))); e2 = Error(() => Zstd.DecompressFile(At("none.sav")));
+                C(e1 == e2 && e1 != "none", "  no file: the same error (" + e1 + ")");
+
+                // 4. the differences applied to a base read straight rebuild the new savegame (SaveDelta.Apply checks its SHA-256)
+                var baseData = new byte[3_000_000];
+                for (int k = 0; k < baseData.Length; k++) baseData[k] = (byte)(k % 251 < 200 ? (k / 977) : rnd.Next(256));
+                var nd = new List<byte>(baseData);
+                nd.InsertRange(1_000_000, new byte[] { 9, 8, 7 });
+                for (int k = 2_000_000; k < 2_000_300; k++) nd[k] ^= 0x33;
+                var newData = nd.ToArray();
+                Zstd.WriteRawFrame(At("base.sav"), baseData);
+                var delta = SaveDelta.Make(baseData, newData);
+                C(Same(SaveDelta.Apply(Zstd.ReadSaveRaw(At("base.sav")), delta), newData), "the differences applied to a base read straight: the new savegame");
+            }
+            catch (Exception e) { C(false, "savegame read straight: " + e.Message); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+
+            // 5. the big arrays dropped are given back to Windows (MPFEVER_RESYNCGC=0: nothing collected, as before)
+            var was = Environment.GetEnvironmentVariable("MPFEVER_RESYNCGC");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_RESYNCGC", "0");
+                Garbage0713(3, 300);
+                long off = MainForm.FreeResyncMemory("selftest, MPFEVER_RESYNCGC=0");
+                Environment.SetEnvironmentVariable("MPFEVER_RESYNCGC", null);
+                long freed = MainForm.FreeResyncMemory("selftest");
+                C(off == -1, "MPFEVER_RESYNCGC=0: nothing collected, as before");
+                C(freed >= 600, "3 x 300 MB dropped: given back (" + freed + " MB)");
+            }
+            catch (Exception e) { C(false, "memory given back: " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_RESYNCGC", was); }
+            string mem = MainForm.MemNow();
+            C(mem.StartsWith("launcher ", StringComparison.Ordinal) && mem.Contains(" MB private, RAM free ") && mem.EndsWith(" MB", StringComparison.Ordinal), "the memory line: " + mem);
+            return ok;
+        }
+
+        /// <summary>(RunResyncSpeed0713) count arrays of mb MB, every page written, all dropped when it returns.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static long Garbage0713(int count, int mb)
+        {
+            var keep = new List<byte[]>();
+            long sum = 0;
+            for (int k = 0; k < count; k++)
+            {
+                var a = new byte[mb << 20];
+                for (int j = 0; j < a.Length; j += 4096) a[j] = (byte)(j >> 12);
+                keep.Add(a);
+                sum += a[a.Length - 4096];
+            }
+            return sum + keep.Count;
+        }
+
+        /// <summary>(RunResyncSpeed0713) "MPFever resync {k % 50} of {k % 13}\n" for k = 0..9999 (230307 bytes), compressed by
+        /// zstd 1.5 at level 3 with a checksum (python zstandard 0.25): two compressed blocks.</summary>
+        const string ZstdFrame0713 =
+            "KLUv/aSjgwMAFCIAJuM9FqApywEAdfFkA+IojBGy904yUVjx1AhPAC4AMABJkhxGAnEYxbFDAnEYxfGQGPGxcfFn78OJIHLESJGTmHJIQoSHhoUb"
+            + "VaOiS1aqSiQQiOMwjKL4RAvgEHCQEHAIKEBoWDBQCFAwYDAQIBgIVf//nyRJkqiqalVVIYrY//8nSZJEVVWrwygSRjr8/38CcRjFMaqqWlVV//+f"
+            + "JCeJqqpWVVUCcRj5//8kSZJEVVWrqiqRQBzGkURVVauqKoE4jCL+/3+SJEeiqqpVFf//nyRJjqiqalVVJYwi/v9/kiRJVFW1qqr+/z9JkiRRVdWq"
+            + "qkogiv//D4dRBIL2qKLKu/8Zkg2K0EjEtDoSYEBQDMEjEAsRxPy6/f/vmMR9+vR1DmDnCDt3sXMYO6cswcrOldm5zY443DTTdkd1B+SOxR34dgzb"
+            + "gdox+6awD1LLbooiPL5FwowdewKOsbsyhq4KyRVqFmILpQvtF+ogo4SLZKeo+tnVtftw2o3ZHdnt7BbG2N2em+SLnc7GrvWxu0N2esmuP5az5Tyz"
+            + "O5qdvrODiUi7OBP0Pbu47NQLQ6Qf56zYcU5goxxkjAuNoa7Q5hjNjnEKLt9dmIAMyhixnnY0vzGYM1KDKLXL0Y5ml5Kd2dxtV13JSOyunpCh0KaQ"
+            + "q9BsjI7lvOVkj3F/DB20e69YtrvDde8/hat3te3sCy/GGWPoZ4yGxjhtDC2O0e4Yx1x+dGG7QQZVADMBm4IZQY1BzOBNsAawllK3jGNRAINstZNp"
+            + "R2aXZWevJ1+OI+5l7O5O6FFoppCp0K6QY6Fa6Fxozm5DtOv1Tea6u6ZdqUZ9yCDl7Jbskl7Jo/3TH2Mn1tftwa4m7NzFzjF23lhCKjun2TmfnQPt"
+            + "zLr6Xn8yM2lXZ5fIbsPYGrZZekXsFMrj7O60469AznK1HFzuvZyJ1P17d093O3cX7vh2YNuxawdQ2lFmB8sOwKCEtWM3KwaportnlWLIIHIngOxu"
+            + "Z8dUUGt3lIVsoQaXrMtHXqS7+/+7GwZx1olFQIJUyy4hKoSuUYlR7I6yo7OD0I66dkC2o90OIhfi3F3JDOlxd5fuOHcw7vjtgO3o2sHRjmYHyI4g"
+            + "FEGodQ98gVQTM4Mg7k0UCO7Yk4rCLisqycEHcdtWECrlMf5AVlflB0H2OGmFB4F4+O7Hr4heQDAbMfBo7FpEnUIPKy9oxAa56lYQUcVobvEG0q4g"
+            + "yH3PFRG5N1EguGNPVTqxQa61EURZvcEfiN6iIK5l1KnouPKCxq47rZJCB3GKjSDq+mO+QJoaBLnrNojM4J8Isy2cseE/D7NGnHfi74rZFudnnDBn"
+            + "HW60/Wr70MatdzpfvY76uPX11uFH29c8LSvmDKjdhDnp2vkXUT6PbIY/1pnfUDP8MZ35BjTDH88Lo1ChvAXkzRpvtHiL4U0Hzw2BdDAFSgFpMAVO"
+            + "gWkgNQS8JAzRCk0AAAhyAQCfgzkQAipmAk0=";
 
         /// <summary>(0.7.13) Issues #164/#165: a direct address that let nothing of the host through is left out of the next joins.</summary>
         static bool RunDeadDirect0713()

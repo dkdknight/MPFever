@@ -3422,6 +3422,8 @@ namespace MPFever
             game.FromGame += clientFromGame = (g, m) =>
             {
                 if (m.Kind == "hello") { g.InGame = true; if (menuMode) { menuPhase = "ingame"; menuText = T("En partie.", "In game."); MenuStatus(); } }
+                // (0.7.13, #161/#166: this game's memory once loaded, see GameLink.LogMemoryNow; aside, the game's messages go on)
+                if (m.Kind == "hello") ThreadPool.QueueUserWorkItem(_ => g.LogMemoryNow("game ready"));
                 lock (waiting)
                 {
                     var to = current;
@@ -4309,6 +4311,8 @@ namespace MPFever
                     // (a player who reconnected during the resynchronisation answers under its new name: Philippe#2 for Philippe#1)
                     lock (resyncWaiting) resyncWaiting.RemoveWhere(w => w == m.From || BaseName(w) == BaseName(m.From));
                     if (from != null && server != null) ServerGreet(from);
+                    // (0.7.13, #161/#166: the host's game's memory once loaded, see GameLink.LogMemoryNow; aside, the game's messages go on)
+                    if (from == null && hostGame != null) { var hg = hostGame; ThreadPool.QueueUserWorkItem(_ => hg.LogMemoryNow("game ready")); }
                     break;
 
                 case "modcheck":
@@ -4932,6 +4936,11 @@ namespace MPFever
             try
             {
                 Log.W(F("=== Resynchronisation n°{0} sur la partie de l'hôte (écart : {1}) ===", "=== Resynchronisation #{0} on the host's game (difference: {1}) ===", id, reason));
+                // (0.7.13, #161/#166: the differences of a 274 MB savegame took 9 s to work out after the save: the base decompressed,
+                // then the new savegame, then both compared) The base is decompressed from now on, while the games stop and the host
+                // saves, when a player may get the differences; SendDeltas takes it only if it is still the base it compares with.
+                // MPFEVER_DELTAEARLY=0: as before
+                var baseEarly = EarlyDeltaBase(out string earlySha, out string earlyPath);
                 // (the players the host waits for leave: their world is replaced, they join again and get the host's game)
                 relay?.FinalizeAway(T("resynchronisation", "resynchronisation"));
                 // 1. every game stops at the same time
@@ -4967,6 +4976,8 @@ namespace MPFever
                 // others up)
                 lastLoadOrder = Now;
                 hostGame.ToGame(Msg.Make("resync_load", hostName, "{[\"id\"]=" + id + ",[\"name\"]=" + LuaLit.Quote(ResyncSaveName) + "}"));
+                // (0.7.13, #161/#166: the game's memory as it starts reloading, see GameLink.LogMemoryNow)
+                hostGame.LogMemoryNow("resync load");
                 var all = relay?.PeerNames() ?? new string[0];
                 // (0.7.0: not to a player still looking at the game's mods and DLCs: it gets the game when it joins, see joinready)
                 lock (reviewing) all = all.Where(n => !reviewing.Contains(n)).ToArray();
@@ -4988,7 +4999,7 @@ namespace MPFever
                 // (the whole game to the others at once; the differences worked out meanwhile)
                 var viaDelta = DeltaPeers(all);
                 SendSave(id, bytes, sha, all.Where(n => !viaDelta.Contains(n)));
-                SendDeltas(id, bytes, sha, viaDelta);
+                SendDeltas(id, bytes, sha, viaDelta, Taken(ref baseEarly), earlySha, earlyPath);
                 KeepDeltaBase(bytes, sha);
                 bool back = WaitUntil(() => { if (resyncAbort) return true; lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600);
                 if (resyncAbort) { lock (resyncWaiting) if (resyncWaiting.Count > 0) Log.Warn(T("Resynchronisation interrompue (arrêt ou redémarrage du serveur) : on n'attend plus ", "Resynchronisation cut short (the server stops or restarts): no longer waiting for ") + string.Join(", ", resyncWaiting)); }
@@ -5074,9 +5085,31 @@ namespace MPFever
             return served;
         }
 
+        /// <summary>(0.7.13, DELTAEARLY, see ResyncLocked) The base of the differences decompressed in the background from the
+        /// start of a resynchronisation, with its fingerprint and file then; null when off, without a base, or when no player can
+        /// get the differences now (DeltaPeers, the players looking at the game's mods left out as for the sending).</summary>
+        System.Threading.Tasks.Task<byte[]> EarlyDeltaBase(out string sha, out string path)
+        {
+            sha = deltaBaseSha; path = deltaBasePath;
+            try
+            {
+                if (!DeltaEarlyOn() || sha == null || path == null) return null;
+                var names = relay?.PeerNames() ?? new string[0];
+                lock (reviewing) names = names.Where(n => !reviewing.Contains(n)).ToArray();
+                if (DeltaPeers(names).Count == 0) return null;
+                string file = path;
+                return System.Threading.Tasks.Task.Run(() => Zstd.DecompressFile(file));
+            }
+            catch (Exception e) { Log.W("differences' base: " + e.Message); return null; }
+        }
+
+        /// <summary>(0.7.13) The value of v, v emptied (nothing of the caller's keeps a big array alive while it is collected).</summary>
+        static T Taken<T>(ref T v) where T : class { var x = v; v = null; return x; }
+
         /// <summary>(the host) The differences to these players (see DeltaPeers); the whole game when they cannot be worked out
-        /// or are not worth it.</summary>
-        void SendDeltas(int id, byte[] bytes, string sha, HashSet<string> names)
+        /// or are not worth it. (0.7.13) baseEarly: the base being decompressed since the resynchronisation began (see
+        /// EarlyDeltaBase), from the base earlySha at earlyPath.</summary>
+        void SendDeltas(int id, byte[] bytes, string sha, HashSet<string> names, System.Threading.Tasks.Task<byte[]> baseEarly = null, string earlySha = null, string earlyPath = null)
         {
             if (names.Count == 0) return;
             string mode = Environment.GetEnvironmentVariable("MPFEVER_DELTA") ?? "";
@@ -5085,16 +5118,43 @@ namespace MPFever
             // and a sender reading it later named the new one: the player refused the differences and got the whole game)
             string baseSha = deltaBaseSha ?? "";
             byte[] delta = null;
+            // (0.7.13, RESYNCGC: out of the try, to be given back before the sending, see below)
+            byte[] baseRaw = null, newRaw = null;
             try
             {
                 var t0 = DateTime.UtcNow;
-                var baseRaw = Zstd.DecompressFile(deltaBasePath);
-                var newRaw = Zstd.Decompress(bytes);
+                if (DeltaEarlyOn())
+                {
+                    // (0.7.13, DELTAEARLY) the base decompressed since the resynchronisation began when it is still the one compared
+                    // with (else decompressed now), the new savegame decompressed at the same time
+                    string basePath = deltaBasePath;
+                    bool early = baseEarly != null && earlySha == baseSha && earlyPath == basePath;
+                    try
+                    {
+                        System.Threading.Tasks.Parallel.Invoke(
+                            () => baseRaw = early ? baseEarly.GetAwaiter().GetResult() : Zstd.DecompressFile(basePath),
+                            () => newRaw = Zstd.Decompress(bytes));
+                    }
+                    catch (AggregateException ae) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ae.Flatten().InnerExceptions[0]).Throw(); }
+                    if (early) Log.Dim("differences: the base was decompressed during the save");
+                }
+                else
+                {
+                    baseRaw = Zstd.DecompressFile(deltaBasePath);
+                    newRaw = Zstd.Decompress(bytes);
+                }
+                var t1 = DateTime.UtcNow;
                 delta = SaveDelta.Make(baseRaw, newRaw);
+                var t2 = DateTime.UtcNow;
                 Log.W(F("Différences avec la partie précédente : {0:0.0} Mo au lieu de {1:0.0} Mo ({2:0} s de calcul)", "Differences from the previous game: {0:0.0} MB instead of {1:0.0} MB ({2:0} s to work out)",
-                    delta.Length / 1048576.0, bytes.Length / 1048576.0, (DateTime.UtcNow - t0).TotalSeconds));
+                    delta.Length / 1048576.0, bytes.Length / 1048576.0, (t2 - t0).TotalSeconds)
+                    + F(" (décompression {0:0.0} s, comparaison {1:0.0} s)", " (decompressing {0:0.0} s, comparing {1:0.0} s)", (t1 - t0).TotalSeconds, (t2 - t1).TotalSeconds));
             }
             catch (Exception e) { Log.W("differences: " + e.Message); delta = null; }
+            // (0.7.13, #161/#166: the base and the new savegame decompressed, 948 MB each, stayed in the launcher's memory, never
+            // collected, while the host's game loaded) given back now, before the sending. MPFEVER_RESYNCGC=0: not collected, as before
+            baseRaw = newRaw = null; baseEarly = null;
+            FreeResyncMemory("differences made");
             if (delta == null || (mode != "1" && delta.Length > bytes.Length * 0.7))
             {
                 SendSave(id, bytes, sha, names);
@@ -5199,6 +5259,62 @@ namespace MPFever
         static string Sha256(byte[] data) { using (var h = SHA256.Create()) return BitConverter.ToString(h.ComputeHash(data)).Replace("-", ""); }
         static string Sha256File(string path) { using (var h = SHA256.Create()) using (var f = File.OpenRead(path)) return BitConverter.ToString(h.ComputeHash(f)).Replace("-", ""); }
 
+        // (0.7.13, #161/#166) MPFEVER_RESYNCGC=0, MPFEVER_DELTAPREREAD=0, MPFEVER_DELTAEARLY=0: as before (see FreeResyncMemory,
+        // OnDeltaFile, EarlyDeltaBase)
+        internal static bool ResyncGcOn() => Environment.GetEnvironmentVariable("MPFEVER_RESYNCGC") != "0";
+        internal static bool DeltaPreReadOn() => Environment.GetEnvironmentVariable("MPFEVER_DELTAPREREAD") != "0";
+        internal static bool DeltaEarlyOn() => Environment.GetEnvironmentVariable("MPFEVER_DELTAEARLY") != "0";
+
+#pragma warning disable CS0649   // (filled by GlobalMemoryStatusEx)
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct MemStatusEx
+        {
+            public uint Length, MemoryLoad;
+            public ulong TotalPhys, AvailPhys, TotalPageFile, AvailPageFile, TotalVirtual, AvailVirtual, AvailExtendedVirtual;
+        }
+#pragma warning restore CS0649
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool GlobalMemoryStatusEx(ref MemStatusEx m);
+
+        static long LauncherPrivateMb() { using (var p = Process.GetCurrentProcess()) return p.PrivateMemorySize64 >> 20; }
+
+        /// <summary>(0.7.13, #161/#166) The launcher's own memory and the PC's free memory, for the log: "launcher 3120 MB private,
+        /// RAM free 4210 of 16310 MB".</summary>
+        internal static string MemNow() => MemText(LauncherPrivateMb());
+
+        static string MemText(long privateMb)
+        {
+            string ram = "RAM free ?";
+            try
+            {
+                var m = new MemStatusEx { Length = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MemStatusEx)) };
+                if (GlobalMemoryStatusEx(ref m)) ram = "RAM free " + (m.AvailPhys >> 20) + " of " + (m.TotalPhys >> 20) + " MB";
+            }
+            catch { }
+            return "launcher " + privateMb + " MB private, " + ram;
+        }
+
+        /// <summary>(0.7.13, #161/#166: a resynchronisation lasts until the slowest PC's game has loaded the savegame, 248 s on a
+        /// PC of 16 GB whose game ran half in the page file, and the launcher kept 2.5 to 2.9 GB of arrays it no longer used
+        /// during that load: the savegame received, the base and the new savegame decompressed, the differences; nothing ever
+        /// collected them) The big arrays of a resynchronisation, once used, are given back to Windows at once (the caller drops
+        /// them first; never inside a lock), and the log says the memory before and after ("memory (where): ... -> ..."), with
+        /// MPFEVER_RESYNCGC=0 too (nothing collected then, as before). The MB given back, -1 when nothing was collected.</summary>
+        internal static long FreeResyncMemory(string where)
+        {
+            try
+            {
+                long before = LauncherPrivateMb();
+                string b = MemText(before);
+                bool on = ResyncGcOn();
+                // (no compaction of the large objects: the pause stays short)
+                if (on) { GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); }
+                long after = LauncherPrivateMb();
+                Log.Dim("memory (" + where + "): " + b + " -> " + MemText(after));
+                return on ? before - after : -1;
+            }
+            catch { return -1; }
+        }
+
         // (the host) the sends of a game up to this id are over (see SendSave)
         volatile int saveCancel;
         /// <summary>(0.7.6, STOPRESYNC) The dedicated server stops or restarts: a resynchronisation under way waits for nobody
@@ -5293,7 +5409,12 @@ namespace MPFever
                 var all = new byte[got.Sum(x => (long)x.Length)];
                 long at = 0;
                 foreach (var x in got) { Buffer.BlockCopy(x, 0, all, (int)at, x.Length); at += x.Length; }
+                // (0.7.13, DELTAPREREAD: a base read for differences that never came is let go, and never read while this is written)
+                DropPreRead();
                 LoadReceivedSave(game, m, id, all, sha);
+                // (0.7.13, #161/#166, RESYNCGC: the game received and its parts given back while the game loads it)
+                all = null; got = null;
+                FreeResyncMemory("game received");
             }
             catch (Exception e) { Log.Warn(F("[{0}] partie de l'hôte : {1}", "[{0}] host game: {1}", game.Name, e.Message)); }
         }
@@ -5328,7 +5449,19 @@ namespace MPFever
             byte[][] got;
             lock (deltaParts)
             {
-                if (!deltaParts.TryGetValue(id, out got) || got.Length != n) deltaParts[id] = got = new byte[n][];
+                if (!deltaParts.TryGetValue(id, out got) || got.Length != n)
+                {
+                    deltaParts[id] = got = new byte[n][];
+                    // (0.7.13, #161/#166: a player's base, its last game from the host, was read and decompressed only once the
+                    // differences' last part had come: 6 to 15 s more before its game could start loading) It is read while the
+                    // differences arrive, when they are from the base this PC has (checked again when they are applied).
+                    // MPFEVER_DELTAPREREAD=0: as before
+                    if (DeltaPreReadOn() && bsha != null && bsha == lastSaveSha && lastSavePath != null && File.Exists(lastSavePath))
+                    {
+                        string file = lastSavePath;
+                        deltaPre = new DeltaPreRead { Id = id, SavePath = file, Read = System.Threading.Tasks.Task.Run(() => Zstd.ReadSaveRaw(file)) };
+                    }
+                }
                 got[i] = m.Data;
                 if (got.Any(x => x == null)) return;
                 deltaParts.Remove(id);
@@ -5343,20 +5476,60 @@ namespace MPFever
                     var delta = new byte[got.Sum(x => (long)x.Length)];
                     long at = 0;
                     foreach (var x in got) { Buffer.BlockCopy(x, 0, delta, (int)at, x.Length); at += x.Length; }
-                    var baseRaw = Zstd.DecompressFile(lastSavePath);
+                    // (0.7.13, DELTAPREREAD: the base read while the differences came; MPFEVER_DELTAPREREAD=0: read now, as before)
+                    var baseRaw = DeltaPreReadOn() ? PreReadBase(id) : Zstd.DecompressFile(lastSavePath);
                     var newRaw = SaveDelta.Apply(baseRaw, delta);
                     Log.W(F("[{0}] différences de la partie de l'hôte appliquées ({1:0.0} Mo reçus, {2:0} s)", "[{0}] differences of the host's game applied ({1:0.0} MB received, {2:0} s)",
                         game.Name, delta.Length / 1048576.0, (DateTime.UtcNow - t0).TotalSeconds));
                     LoadReceivedSave(game, m, id, null, sha, newRaw);
+                    // (0.7.13, #161/#166, RESYNCGC: the base, the differences and the new savegame, 2 to 3 GB, given back while the game
+                    // loads it)
+                    newRaw = null; baseRaw = null; delta = null; got = null;
+                    FreeResyncMemory("differences applied");
                 }
                 catch (Exception e)
                 {
                     Log.Warn(F("[{0}] différences inutilisables ({1}) : la partie entière est demandée à l'hôte.", "[{0}] differences not usable ({1}): asking the host for the whole game.", game.Name, e.Message));
                     try { client?.Send(Msg.Make("resync_need", me, "{[\"id\"]=" + id + "}")); } catch { }
+                    // (0.7.13, DELTAPREREAD: a base read for them is not kept)
+                    DropPreRead();
                 }
             }) { IsBackground = true, Name = "Apply differences" }.Start();
         }
         readonly Dictionary<int, byte[][]> deltaParts = new Dictionary<int, byte[][]>();
+
+        /// <summary>(0.7.13, DELTAPREREAD) The base being read for the differences Id, from SavePath (see OnDeltaFile).</summary>
+        sealed class DeltaPreRead { public int Id; public string SavePath; public System.Threading.Tasks.Task<byte[]> Read; }
+        DeltaPreRead deltaPre;   // (under lock (deltaParts))
+
+        /// <summary>(0.7.13, DELTAPREREAD) The base of the differences id: the one read while they arrived when it is still this
+        /// PC's last game from the host, else read now (Zstd.ReadSaveRaw: the same bytes as DecompressFile).</summary>
+        byte[] PreReadBase(int id)
+        {
+            string path = lastSavePath;
+            DeltaPreRead pre;
+            lock (deltaParts) { pre = deltaPre; deltaPre = null; }
+            if (pre != null)
+            {
+                try
+                {
+                    var b = pre.Read.GetAwaiter().GetResult();
+                    if (pre.Id == id && pre.SavePath == path) { Log.Dim("differences: the base was read while they arrived"); return b; }
+                }
+                // (it could not be read then: read again now, as before)
+                catch (Exception e) { Log.Dim("differences: the base read beforehand: " + e.Message); }
+            }
+            return Zstd.ReadSaveRaw(path);
+        }
+
+        /// <summary>(0.7.13, DELTAPREREAD) A base read beforehand let go, once its reading is over (the file is written again right
+        /// after: never while it is being read). Nothing to do with MPFEVER_DELTAPREREAD=0.</summary>
+        void DropPreRead()
+        {
+            DeltaPreRead pre;
+            lock (deltaParts) { pre = deltaPre; deltaPre = null; }
+            if (pre != null) try { pre.Read.Wait(); } catch { }
+        }
 
         /// <summary>(a player) The host says this player has its game already (the lobby's savegame, found on this PC): it is
         /// loaded as if received; if it is not there any more, the host is asked to send it.</summary>
@@ -5374,7 +5547,12 @@ namespace MPFever
                     if (Sha256(bytes) == sha)
                     {
                         Log.Ok(F("[{0}] partie de l'hôte prise sur ce PC ({1}) : rien à télécharger.", "[{0}] host game taken from this PC ({1}): nothing to download.", game.Name, Path.GetFileName(hostSaveLocal)));
+                        // (0.7.13, DELTAPREREAD: as in OnResyncFile)
+                        DropPreRead();
                         LoadReceivedSave(game, m, id, bytes, sha);
+                        // (0.7.13, #161/#166, RESYNCGC: the copy read, given back while the game loads it)
+                        bytes = null;
+                        FreeResyncMemory("own copy loaded");
                         return;
                     }
                 }
@@ -5443,6 +5621,8 @@ namespace MPFever
                 }
                 lastLoadOrder = Now;
                 game.ToGame(Msg.Make("resync_load", m.From, "{[\"id\"]=" + LuaLit.Quote(seq) + ",[\"name\"]=" + LuaLit.Quote(name) + "}"));
+                // (0.7.13, #161/#166: the game's memory as it starts reloading, see GameLink.LogMemoryNow)
+                game.LogMemoryNow("resync load");
             }
             catch (Exception e) { Log.Warn(F("[{0}] partie de l'hôte : {1}", "[{0}] host game: {1}", game.Name, e.Message)); }
         }

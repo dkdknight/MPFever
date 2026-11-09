@@ -859,12 +859,22 @@ namespace MPFever
         {
             if ((DateTime.UtcNow - memAt).TotalMinutes < 5) return;
             memAt = DateTime.UtcNow;
+            LogMemoryNow(null);
+        }
+
+        /// <summary>(0.7.13, #161/#166: a resynchronisation lasted until the slowest PC's game had loaded, 248 s, and a reload in a
+        /// running game took 1.6 to 2.7 times as long as the first load, while the reports said the game's memory every 5 minutes
+        /// only, and nothing of the PC's) The game's memory now (the line of every 5 minutes), with why: at each order to reload and
+        /// at each game ready, followed by the launcher's own memory and the PC's free memory (MainForm.MemNow).</summary>
+        internal void LogMemoryNow(string why)
+        {
             try
             {
                 if (proc == null || proc.HasExited) return;
                 proc.Refresh();
                 Log.W(L.F("[{0}] mémoire du jeu : {1} Mo privés, {2} Mo en mémoire vive (pointe {3} Mo)", "[{0}] game memory: {1} MB private, {2} MB in RAM (peak {3} MB)",
-                    Name, proc.PrivateMemorySize64 >> 20, proc.WorkingSet64 >> 20, proc.PeakWorkingSet64 >> 20));
+                    Name, proc.PrivateMemorySize64 >> 20, proc.WorkingSet64 >> 20, proc.PeakWorkingSet64 >> 20)
+                    + (why != null ? " (" + why + "; " + MainForm.MemNow() + ")" : ""));
             }
             catch { }
         }

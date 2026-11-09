@@ -19,6 +19,61 @@ namespace MPFever
             return Decompress(File.ReadAllBytes(path));
         }
 
+        /// <summary>(0.7.13, #161/#166: a player's base of the savegame's differences, 948 MB that MPFever wrote itself without
+        /// compression, was read whole, then copied whole by the decoder: 1.9 GB for a moment, on a PC already short of memory
+        /// while its game loads) A file exactly as WriteRawFrame writes it (one frame of raw blocks, nothing after it) is read
+        /// straight into one array of its content: half the memory, one copy less. Any other file (the game's own compressed
+        /// savegames, a frame with a checksum, more frames after it, a damaged one) is decompressed as before (DecompressFile),
+        /// which gives the same bytes, or the same error.</summary>
+        public static byte[] ReadSaveRaw(string path)
+        {
+            byte[] content;
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.SequentialScan))
+                content = ReadRawFrame(f);
+            return content ?? DecompressFile(path);
+        }
+
+        /// <summary>(0.7.13, see ReadSaveRaw) The content of a stream holding exactly one frame as WriteRawFrame writes it: its
+        /// header (4-byte content size, 2 MB window, no checksum, no dictionary), raw blocks of at most 128 KiB, the content size
+        /// matched, nothing after the frame. Null for anything else (nothing is allocated before the header and the stream's length
+        /// say it can be one).</summary>
+        internal static byte[] ReadRawFrame(Stream f)
+        {
+            long len = f.Length;
+            var h = new byte[10];
+            if (len < 13 || !ReadFull(f, h, 0, 10)) return null;
+            if (h[0] != 0x28 || h[1] != 0xB5 || h[2] != 0x2F || h[3] != 0xFD || h[4] != 0x80 || h[5] != 0x58) return null;
+            long size = (uint)(h[6] | h[7] << 8 | h[8] << 16 | h[9] << 24);
+            // (raw blocks: the content itself, plus 3 bytes of header per block)
+            if (size > MaxArray || len < 10 + size + 3) return null;
+            var dst = new byte[size];
+            var bh = new byte[3];
+            int pos = 0;
+            while (true)
+            {
+                if (!ReadFull(f, bh, 0, 3)) return null;
+                int v = bh[0] | bh[1] << 8 | bh[2] << 16;
+                int type = (v >> 1) & 3, n = v >> 3;
+                if (type != 0 || n > BlockSizeMax || n > size - pos) return null;
+                if (n > 0 && !ReadFull(f, dst, pos, n)) return null;
+                pos += n;
+                if ((v & 1) != 0) break;
+            }
+            if (pos != size || f.Position != len) return null;
+            return dst;
+        }
+
+        static bool ReadFull(Stream f, byte[] buf, int off, int count)
+        {
+            while (count > 0)
+            {
+                int n = f.Read(buf, off, count);
+                if (n <= 0) return false;
+                off += n; count -= n;
+            }
+            return true;
+        }
+
         /// <summary>(0.7.0) The first bytes of a zstd file's content (at most maxOut, fewer when the content is shorter), decoded from
         /// the start of the file only: what a savegame says before its world (its mods list, see SaveInfo.Mods) without decompressing
         /// hundreds of MB. Throws when the file is not zstd data.</summary>
