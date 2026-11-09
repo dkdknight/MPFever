@@ -131,17 +131,19 @@ end
 -- when the purchase was applied (mostly the line manager's clones, sent one per vehicle with no money check; else the stamp
 -- lead or a depot toll). The engine's rule, vehicle_util_engine::BuyVehicle 0x26a8480 with its check 0xcd5f30, the tools' "Not
 -- enough money": no vehicle when the price is above the buyer's balance, unless the money is unlimited (balance nil).
--- m = { price, balance, toll }: "money" when that is why, else nil. Read only: the engine stays the judge)
+-- m = { price, balance, toll }, or a purchase's result, its fee in tollFee (its toll is the owner guard's { from, to, fee }):
+-- "money" when that is why, else nil. Read only: the engine stays the judge)
 function C.buyWhy(m)
 	if type(m) ~= "table" or type(m.price) ~= "number" or type(m.balance) ~= "number" or m.price <= 0 then return nil end
-	if m.price > m.balance - (tonumber(m.toll) or 0) then return "money" end
+	if m.price > m.balance - (tonumber(m.tollFee) or tonumber(m.toll) or 0) then return "money" end
 	return nil
 end
 -- (the note added to a refused purchase's line in mod.log: "" without the figures, a game of 0.7.12's save)
 function C.buyNote(m)
 	if type(m) ~= "table" or type(m.price) ~= "number" then return "" end
 	if m.balance == nil then return " (unlimited money)" end
-	local toll = (tonumber(m.toll) or 0) > 0 and (" + depot toll " .. tostring(m.toll)) or ""
+	local tf = tonumber(m.tollFee) or tonumber(m.toll) or 0
+	local toll = tf > 0 and (" + depot toll " .. tostring(tf)) or ""
 	if C.buyWhy(m) then return " (not enough money: price " .. tostring(m.price) .. toll .. ", company money " .. tostring(m.balance) .. ")" end
 	return " (price " .. tostring(m.price) .. toll .. ", company money " .. tostring(m.balance) .. ": not the money)"
 end

@@ -17,6 +17,10 @@ Now (mod/mpfever_1/content):
   - U.buyRefusedText / U.buyRefusedShow (mpfever_ui.script.lua): the buyer's notice, two short items (the notice cuts at 70
     characters), shown from pollResults for this player's own purchases (and the autotests' ones, H.buypoor);
   - H.buypoor: the in-game scenario.
+A depot toll's fee goes on the result as tollFee: result.toll stays the owner guard's { from, to, fee }, which the pause's end
+sends to the simulation (SIM.noteDepotToll keeps only a table; the fee in its place lost every toll paid in a pause, #122 back).
+The general notice ("refused by the game") only for the engine's refusals (no err, or "created entity not found"); a purchase
+MPFever itself refused (another company's depot, missing entities...) says nothing, as in 0.7.12.
 MPFEVER_BUYMONEY=0: nothing read, nothing said, as in 0.7.12. Needs lupa. Run: python tests/test_buymoney0713.py
 """
 import json
@@ -66,6 +70,11 @@ check(src[src.index("\t\tst.watches = keepW\n"):].startswith("\t\tst.watches = k
 buy = cut(src, "\tlocal buyMoney = nil\n", "\n\tend\n")
 cb = cut(src, "\t\toks, errs = pcall(sendCommand, cmd, function(data, ok, resultEntities)\n", "\n\t\tend)\n")
 paused = cut(src, '\t\t\t\t\tlog("paused action " .. tostring(r.uid) .. " " .. tostring(r.fn) .. " at t="', 'C.buyNote(r) or ""))\n')
+pausedDone = cut(src, '\t\t\t\t\tlog("paused action " .. tostring(r.uid) .. " " .. tostring(r.fn) .. " at t="',
+                 '\t\t\t\t\tif r.toll then toSim("depot_toll", r.toll) end\n')
+m = re.search(r"^SIM\.noteDepotToll = function\(reg, t\)\n.*?^end\n", src, re.S | re.M)
+noteToll = m.group(0) if m else ""
+check(m is not None, "SIM.noteDepotToll found")
 report = cut(src, "function G.reportResult(r)\n", "\nend\n")
 m = re.search(r"^U\.buyRefusedText = function\(r\)\n.*?^end\nU\.buyRefusedShow = function\(r\)\n.*?^end\n", ui, re.S | re.M)
 uitext = m.group(0) if m else ""
@@ -185,6 +194,15 @@ function steps(st, n) for i = 1, n do runWatch(st, 1000 + i * 200) end end
     L.execute('LOGS = {}; ST = { watches = { newWatch("AMD:16", "makeVehicleBuyCmd", { price = 400000 }) } }; steps(ST, 10)')
     check(run("return LOGS[#LOGS]").endswith("nothing created (unlimited money)") and run("return ST.results[1].why") is None,
           "unlimited money: said, never the money")
+    # (a purchase at another company's depot for a toll: its result keeps the owner guard's table, the fee goes as tollFee)
+    L.execute('LOGS = {}; local w = newWatch("AMD:17", "makeVehicleBuyCmd", { price = 500000, balance = 520000, toll = 30000 }); '
+              'w.toll = { from = 1, to = 2, fee = 30000 }; ST = { watches = { w } }; steps(ST, 10)')
+    r = run("return ST.results[1]")
+    check(r["why"] == "money" and run("return type(ST.results[1].toll)") == "table" and run("return ST.results[1].toll.fee") == 30000
+          and r["tollFee"] == 30000, "a toll at the watch's end: why = money, the toll still the guard's table, its fee as tollFee",
+          (r["why"], run("return type(ST.results[1].toll)"), r["tollFee"]))
+    check(run("return LOGS[#LOGS]") == "action AMD:17 result after 10 step(s): nothing created (not enough money: price 500000 + depot toll 30000, company money 520000)",
+          "  its line says the toll", run("return LOGS[#LOGS]"))
 
     # -------------------------------------------------------------- the price and the money, read when the purchase goes
     L.execute('''
@@ -251,6 +269,46 @@ end
     check(r["success"] is True and r["why"] is None and r["created"]["e"] == 50077 and r["price"] == 905258, "AMD:479 made in a pause: no reason")
     r = run("return runCb({ uid = 'u', fn = 'makeVehicleBuyCmd', success = false }, nil, false)")
     check(r["why"] is None and r["price"] is None, "nothing read (0.7.12, MPFEVER_BUYMONEY=0): nothing added")
+    # (a purchase in a pause at another company's depot for a toll: the guard's toll table must reach the simulation)
+    L.execute('''
+TOSIM = {}
+SIM = {}
+function runDone(r, fn)
+	local a, now = { fn = fn }, 25459200
+	local G, toSim = { featOn = nil, rebind = function() end }, function(k, p) TOSIM[#TOSIM + 1] = { k = k, p = p } end
+''' + pausedDone + '''
+	return TOSIM
+end
+''' + noteToll + '''
+function NOTE_TOLL(reg, t)
+	local prev = C.eco
+	C.eco = function() return nil end
+	local k = SIM.noteDepotToll(reg, t)
+	C.eco = prev
+	return k
+end
+''')
+    GUARD = "{ uid = 'Sascha#1:80', fn = 'makeVehicleBuyCmd', success = false, toll = { from = 1, to = 2, fee = 30000 } }"
+    run(f"R_CB = runCb({GUARD}, {{ price = 905258, balance = 8662426, toll = 30000 }}, true); return nil")
+    check(run("return R_CB.success") is True, "a purchase at a toll depot made in a pause")
+    check(run("return type(R_CB.toll)") == "table" and run("return R_CB.toll.fee") == 30000 and run("return R_CB.toll.from") == 1
+          and run("return R_CB.toll.to") == 2 and run("return R_CB.tollFee") == 30000,
+          "  the callback leaves result.toll the guard's { from, to, fee }, the fee as tollFee",
+          (run("return type(R_CB.toll)"), run("return R_CB.tollFee")))
+    run("TOSIM = {}; LOGS = {}; runDone(R_CB, 'makeVehicleBuyCmd'); DT = nil; for _, x in ipairs(TOSIM) do if x.k == 'depot_toll' then DT = x end end; return nil")
+    check(run("return DT ~= nil and type(DT.p)") == "table",
+          "  the pause's end sends the simulation a table for 'depot_toll'", run("return DT and type(DT.p)"))
+    check(run("REG = {}; return NOTE_TOLL(REG, DT and DT.p)") is True and run("return REG.tollIncome and REG.tollIncome['2']") == 30000
+          and run("return REG.tollExpense and REG.tollExpense['1']") == 30000, "  and SIM.noteDepotToll keeps it (the companies window's tolls, #122)")
+    run(f"R_CB = runCb({GUARD}, {{ price = 500000, balance = 520000, toll = 30000 }}, false); return nil")
+    check(run("return R_CB.why") == "money" and run("return type(R_CB.toll)") == "table" and run("return R_CB.tollFee") == 30000,
+          "a purchase at a toll depot refused in a pause: why = money, the guard's table kept")
+    run("TOSIM = {}; LOGS = {}; runDone(R_CB, 'makeVehicleBuyCmd'); return nil")
+    check(run("return LOGS[#LOGS]") == "paused action Sascha#1:80 makeVehicleBuyCmd at t=25459200 -> REFUSED (not enough money: price 500000 + depot toll 30000, company money 520000)",
+          "  its line says the toll (the fee from tollFee)", run("return LOGS[#LOGS]"))
+    run(f"R_CB = runCb({GUARD}, nil, true); return nil")
+    check(run("return type(R_CB.toll)") == "table" and run("return R_CB.tollFee") is None,
+          "  nothing read (MPFEVER_BUYMONEY=0): the guard's table untouched")
 
     # -------------------------------------------------------------- the paused line
     L.execute('''
@@ -307,8 +365,19 @@ U = { onChatNews = function(items) NEWS[#NEWS + 1] = items end }
     check(items[1]["kind"] == "msg" and items[1]["name"] == "MPFever", "  chat notice items from MPFever")
     items = run("return U.buyRefusedText({ fn = 'makeVehicleBuyCmd', success = false, why = 'money', price = 500000, balance = 520000, toll = 30000 })")
     check(items[2]["text"] == "Price $530,000, your company has $520,000.", "  with a depot toll: the price and the toll", items[2]["text"])
+    items = run("return U.buyRefusedText({ fn = 'makeVehicleBuyCmd', success = false, why = 'money', price = 500000, balance = 520000, "
+                "tollFee = 30000, toll = { from = 1, to = 2, fee = 30000 } })")
+    check(items is not None and items[2]["text"] == "Price $530,000, your company has $520,000.",
+          "  a result's toll: the fee from tollFee (its toll is the guard's table)", items and items[2]["text"])
     items = run("return U.buyRefusedText({ fn = 'makeVehicleBuyCmd', success = false, err = 'created entity not found' })")
     check(items is not None and len(items) == 1 and items[1]["text"] == "Purchase refused by the game: no vehicle made.", "no reason known: one general item")
+    items = run("return U.buyRefusedText({ fn = 'makeVehicleBuyCmd', success = false })")
+    check(items is not None and len(items) == 1 and items[1]["text"] == "Purchase refused by the game: no vehicle made.",
+          "  the engine's answer in a pause (no err): the general item")
+    for err in ("it belongs to company 2 (Weed Co.)", "DESYNC missing entities: 55", "references: 55", "DESYNC unresolved: V1@2",
+                "send: boom", "game option: no vehicles", "not available to this company yet (x.y)", "full: rebuild failed"):
+        check(run("return U.buyRefusedText({ fn = 'makeVehicleBuyCmd', success = false, err = %s })" % json.dumps(err)) is None,
+              f"  refused by MPFever, not the game ({err}): no notice blaming the game")
     run("C.LANGCODE = 'fr'; return nil")
     items = run(f"return U.buyRefusedText({rich})")
     check(items[1]["text"] == "Achat refusé : pas assez d'argent." and items[2]["text"] == "Prix $367,290, votre entreprise a $275,888.",
@@ -399,6 +468,16 @@ POLL = pollResults
         L.execute("POLL()")
         check(run("return #NEWS") == 2 and run("return #CBS") == 3, "MPFEVER_BUYMONEY=0: the callback as before, no notice")
         L.execute("ENV.MPFEVER_BUYMONEY = nil")
+        pend(11)
+        add("{ tok = 'tokA', id = 11, fn = 'makeVehicleBuyCmd', success = false, err = 'it belongs to company 2 (Weed Co.)' }")
+        L.execute("POLL()")
+        check(run("return #NEWS") == 2 and run("return #CBS") == 4,
+              "a purchase MPFever refused (another company's private depot): the callback, no 'refused by the game' notice")
+        pend(12)
+        add("{ tok = 'tokA', id = 12, fn = 'makeVehicleBuyCmd', success = false }")
+        L.execute("POLL()")
+        check(run("return #NEWS") == 3 and run("return #NEWS[3]") == 1 and run("return #CBS") == 5,
+              "  one the engine refused in a pause (no reason known): the general item")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

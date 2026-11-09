@@ -1114,7 +1114,9 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		oks, errs = pcall(sendCommand, cmd, function(data, ok, resultEntities)
 			result.success = ok
 			if buyMoney then
-				result.price, result.balance, result.toll = buyMoney.price, buyMoney.balance, buyMoney.toll
+				-- (the fee as tollFee: result.toll stays the owner guard's { from, to, fee }, which the pause's end gives to the
+				-- simulation, see SIM.noteDepotToll; the fee in its place, a number, and a toll paid in a pause was never noted)
+				result.price, result.balance, result.tollFee = buyMoney.price, buyMoney.balance, buyMoney.toll
 				if not ok and C.buyWhy(buyMoney) then result.why = "money" end
 			end
 			if isBuild then
@@ -1754,7 +1756,8 @@ local function simApplyDue(state)
 					-- (0.7.13, #148: whether the buyer's money was why, see C.buyWhy; a watch of 0.7.12's save has no figures.
 					-- MPFEVER_BUYMONEY=0: as before)
 					if os.getenv("MPFEVER_BUYMONEY") ~= "0" and w.money then
-						r.price, r.balance, r.toll = w.money.price, w.money.balance, w.money.toll
+						-- (the fee as tollFee, r.toll left as the owner guard's table, see the callback in executeActionOnce)
+						r.price, r.balance, r.tollFee = w.money.price, w.money.balance, w.money.toll
 						if C.buyWhy(w.money) then r.why = "money" end
 					end
 				end

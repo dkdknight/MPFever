@@ -5783,15 +5783,19 @@ end
 -- (0.7.13, #148: a purchase the engine refused, most often because the buying company had less money than the price when it
 -- was applied, was said nowhere: the store's purchase showed nothing, the line manager's clone the game's own words seconds later,
 -- and the players took it for an MPFever fault. The buyer is now told, on the chat's notice: two short items, the notice cuts a
--- line at 70 characters. r: the result of one of this player's purchases (why = "money", price, balance, toll: see C.buyWhy in
+-- line at 70 characters. r: the result of one of this player's purchases (why = "money", price, balance, tollFee: see C.buyWhy in
 -- the bridge). nil when there is nothing to say. MPFEVER_BUYMONEY=0: nothing said, as in 0.7.12)
 U.buyRefusedText = function(r)
 	if os.getenv("MPFEVER_BUYMONEY") == "0" or type(r) ~= "table" or r.fn ~= "makeVehicleBuyCmd" or r.success == true then return nil end
 	if r.why == "money" and type(r.price) == "number" and type(r.balance) == "number" then
 		return { { kind = "msg", name = "MPFever", text = T("Achat refusé : pas assez d'argent.", "Purchase refused: not enough money.") },
 			{ kind = "msg", name = "MPFever", text = C.Tf("Prix %s, votre entreprise a %s.", "Price %s, your company has %s.",
-				money(r.price + (tonumber(r.toll) or 0)), money(r.balance)) } }
+				money(r.price + (tonumber(r.tollFee) or tonumber(r.toll) or 0)), money(r.balance)) } }
 	end
+	-- (the general item only for the engine's refusal: its answer in a pause (no err) or nothing made in the steps after it
+	-- ("created entity not found"). A purchase MPFever itself refused (another company's depot, entities missing here, a game
+	-- option...) was not the game's: nothing said of it, as in 0.7.12; its reason is in mod.log)
+	if r.err ~= nil and r.err ~= "created entity not found" then return nil end
 	return { { kind = "msg", name = "MPFever", text = T("Achat refusé par le jeu : aucun véhicule créé.", "Purchase refused by the game: no vehicle made.") } }
 end
 U.buyRefusedShow = function(r)
