@@ -5780,12 +5780,35 @@ local function installSession(react, builtin)
 	log("session: MPFever's card added to the pause menu (page found by " .. tostring(how) .. ")")
 end
 
+-- (0.7.13, #148: a purchase the engine refused, most often because the buying company had less money than the price when it
+-- was applied, was said nowhere: the store's purchase showed nothing, the line manager's clone the game's own words seconds later,
+-- and the players took it for an MPFever fault. The buyer is now told, on the chat's notice: two short items, the notice cuts a
+-- line at 70 characters. r: the result of one of this player's purchases (why = "money", price, balance, toll: see C.buyWhy in
+-- the bridge). nil when there is nothing to say. MPFEVER_BUYMONEY=0: nothing said, as in 0.7.12)
+U.buyRefusedText = function(r)
+	if os.getenv("MPFEVER_BUYMONEY") == "0" or type(r) ~= "table" or r.fn ~= "makeVehicleBuyCmd" or r.success == true then return nil end
+	if r.why == "money" and type(r.price) == "number" and type(r.balance) == "number" then
+		return { { kind = "msg", name = "MPFever", text = T("Achat refusé : pas assez d'argent.", "Purchase refused: not enough money.") },
+			{ kind = "msg", name = "MPFever", text = C.Tf("Prix %s, votre entreprise a %s.", "Price %s, your company has %s.",
+				money(r.price + (tonumber(r.toll) or 0)), money(r.balance)) } }
+	end
+	return { { kind = "msg", name = "MPFever", text = T("Achat refusé par le jeu : aucun véhicule créé.", "Purchase refused by the game: no vehicle made.") } }
+end
+U.buyRefusedShow = function(r)
+	local items = U.buyRefusedText(r)
+	if not items then return end
+	if U.onChatNews then pcall(U.onChatNews, items) end
+	log("purchase refused shown: " .. tostring(r.why or "no vehicle") .. " price " .. tostring(r.price) .. " company " .. tostring(r.balance))
+end
+
 -- results of our own actions, written by the game-script bridge after the simulation applied them
 local function pollResults()
 	if not C.ACTIVE then return end
 	local f = C.IO.open(C.DIR .. C.BS .. "results.log", "rb")
 	if not f then return end
 	local size = f:seek("end")
+	-- (0.7.13: where results.log ended when this interface first read it; the autotests' purchases before it are not new, see below)
+	if U.resStart == nil then U.resStart = size end
 	if size > U.resOff then
 		f:seek("set", U.resOff)
 		local chunk = f:read(size - U.resOff) or ""
@@ -5795,6 +5818,7 @@ local function pollResults()
 			if not i then break end
 			last = i
 			local line = chunk:sub(pos, i - 1)
+			local lineAt = U.resOff + pos - 1
 			pos = i + 1
 			local payload = line:match("^result" .. C.TAB .. "[^" .. C.TAB .. "]*" .. C.TAB .. "(.*)$")
 			local r = payload and C.deser(payload)
@@ -5810,6 +5834,13 @@ local function pollResults()
 				local okc, errc = pcall(p.cb, data, r.success == true, entities)
 				U.cbAuto = prevCb
 				log("result #" .. tostring(r.id) .. " " .. tostring(p.name) .. " success=" .. tostring(r.success) .. " after " .. string.format("%.2f", os.clock() - p.t0) .. "s" .. (okc and "" or (" (callback error: " .. tostring(errc):sub(1, 160) .. ")")))
+				-- (0.7.13, #148: a refused purchase, its buyer told, see U.buyRefusedText; only here, so a results.log read again
+				-- from its start after a reload tells nothing twice)
+				if r.fn == "makeVehicleBuyCmd" and r.success ~= true then pcall(U.buyRefusedShow, r) end
+			elseif r and r.fn == "makeVehicleBuyCmd" and r.success ~= true and os.getenv("MPFEVER_SCENARIO")
+				and r.tok == "auto-" .. tostring(C.ROLE) and lineAt >= (U.resStart or 0) then
+				-- (the autotests' purchases, sent through ui.log without a callback here: the same notice, see H.buypoor)
+				pcall(U.buyRefusedShow, r)
 			end
 		end
 		if last then U.resOff = U.resOff + last end

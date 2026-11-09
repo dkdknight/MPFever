@@ -799,7 +799,8 @@ local function tryLabel(t)
 	return t.v .. (t.raw and "/raw" or "") .. (t.ie ~= nil and "/ie" or "")
 end
 
--- returns the command (or nil), the label of the combination that worked, the failures
+-- returns the command (or nil), the label of the combination that worked, the failures, and the rebuilt arguments (0.7.13:
+-- the purchase's configuration, for its price, see executeActionOnce)
 local function buildCommand(fn, srcArgs, tries)
 	local errs = {}
 	for _, t in ipairs(tries) do
@@ -811,7 +812,7 @@ local function buildCommand(fn, srcArgs, tries)
 			errs[#errs + 1] = tryLabel(t) .. ": rebuild " .. shortErr(args)
 		else
 			local okc, c = pcall(function() return api.cmd[fn](table.unpack(args, 1, n)) end)
-			if okc and c then return c, tryLabel(t), errs end
+			if okc and c then return c, tryLabel(t), errs, args end
 			errs[#errs + 1] = tryLabel(t) .. ": " .. shortErr(c)
 		end
 	end
@@ -1029,7 +1030,7 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		end
 	end
 	local isBuild = a.fn == "makeWorldBuildProposalCmd"
-	local cmd, label, errs = buildCommand(a.fn, C.ser(a.args or {}), isBuild and BUILD_TRIES or { { v = "full" } })
+	local cmd, label, errs, cargs = buildCommand(a.fn, C.ser(a.args or {}), isBuild and BUILD_TRIES or { { v = "full" } })
 	local rcfgs = C.rebuiltCfgs
 	if not cmd then
 		result.err = table.concat(errs, " | ")
@@ -1064,6 +1065,28 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 			end
 		end
 	end
+	-- (0.7.13, #148: a purchase the buying company could not pay was "nothing created" in mod.log, no reason given, and its buyer
+	-- was told nothing; see C.buyWhy. The price (the parts' prices, as the vehicle store adds them up) and the buyer's money are
+	-- read when the command goes to the engine, which applies it in its next step: a refusal says whether the money was why. Read
+	-- only, the same on every game; nothing sent differs. The depot toll above is only queued yet: C.buyWhy takes it off.
+	-- MPFEVER_BUYMONEY=0: nothing read, as in 0.7.12)
+	local buyMoney = nil
+	if a.fn == "makeVehicleBuyCmd" and os.getenv("MPFEVER_BUYMONEY") ~= "0" and type(a.args) == "table" then
+		pcall(function()
+			local price, cfg = 0, cargs and cargs[3]
+			local okP = pcall(function()
+				local parts = cfg.vehicles
+				for i = 1, #parts do price = price + (tonumber(api.engine.util.vehicle.getPartPrice(parts[i])) or 0) end
+			end)
+			if not okP or price <= 0 then
+				price = 0
+				local parts = type(a.args[3]) == "table" and a.args[3].vehicles or {}
+				for i = 1, #parts do price = price + (tonumber(api.res.modelRep.get(parts[i].part.modelId).metadata.cost.price) or 0) end
+			end
+			local bal = api.engine.util.finance.getPlayersBalance(a.args[1])
+			buyMoney = { price = math.floor(price + 0.5), balance = type(bal) == "number" and math.floor(bal) or nil, toll = result.toll and result.toll.fee or nil }
+		end)
+	end
 	local createdKey = (a.fn == "makeLineCreateCmd" and "L" or ((a.fn == "makeVehicleBuyCmd" or a.fn == "makeVehicleReplaceCmd") and "V" or nil))
 	-- (the key of what the action creates: its uid and its stamp. The uid alone came back after every load, its counter
 	-- starting again from 0, while the bindings stay in the savegame: a line of an earlier session had the same key as a new
@@ -1073,6 +1096,10 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	if useCallback then
 		oks, errs = pcall(sendCommand, cmd, function(data, ok, resultEntities)
 			result.success = ok
+			if buyMoney then
+				result.price, result.balance, result.toll = buyMoney.price, buyMoney.balance, buyMoney.toll
+				if not ok and C.buyWhy(buyMoney) then result.why = "money" end
+			end
 			if isBuild then
 				local why = ""
 				if not ok then pcall(function() why = " " .. C.ser(C.marshal(data.resultProposalData.errorState.messages)) end) end
@@ -1128,7 +1155,7 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 					-- the engine may create it during the next step: watch for it
 					local seen = {}
 					for e, _ in pairs(beforeSet) do seen[#seen + 1] = e end
-					result.watch = { kind = watch, key = ckey, before = seen, steps = 0, fn = a.fn }
+					result.watch = { kind = watch, key = ckey, before = seen, steps = 0, fn = a.fn, money = buyMoney }
 				end
 			end
 			result.data = data
@@ -1676,9 +1703,16 @@ local function simApplyDue(state)
 				else
 					r.success = false
 					r.err = "created entity not found"
+					-- (0.7.13, #148: whether the buyer's money was why, see C.buyWhy; a watch of 0.7.12's save has no figures.
+					-- MPFEVER_BUYMONEY=0: as before)
+					if os.getenv("MPFEVER_BUYMONEY") ~= "0" and w.money then
+						r.price, r.balance, r.toll = w.money.price, w.money.balance, w.money.toll
+						if C.buyWhy(w.money) then r.why = "money" end
+					end
 				end
 				log("action " .. tostring(r.uid) .. " result after " .. w.steps .. " step(s): " .. (created and ("entity " .. created)
-					or (w.fn == "makeVehicleReplaceCmd" and "nothing created yet (the replacement is made at a depot)" or "nothing created")))
+					or (w.fn == "makeVehicleReplaceCmd" and "nothing created yet (the replacement is made at a depot)"
+						or ("nothing created" .. ((w.money and os.getenv("MPFEVER_BUYMONEY") ~= "0") and C.buyNote(w.money) or "")))))
 				st.results = st.results or {}
 				st.results[#st.results + 1] = r
 			else
@@ -5641,7 +5675,8 @@ function G.reportResult(r)
 	-- (0.7.1: the answer to a mod's game script command shipped from this game, see G.installGsMods)
 	pcall(G.gsAnswer, r)
 	if r.success then return end
-	send("act_refused", { uid = r.uid, fn = r.fn, err = r.err })
+	-- (0.7.13, #148: a purchase's reason and figures too, in the launcher's log and the reports; none without them)
+	send("act_refused", { uid = r.uid, fn = r.fn, err = r.err, why = r.why, price = r.price, balance = r.balance })
 	if tostring(r.err or ""):find("^DESYNC") then replayFailed(r, r.err) end
 end
 
@@ -10868,7 +10903,9 @@ local function runPausedActions()
 					end
 					r.at = now
 					r.answered, r.returned = nil, nil
-					log("paused action " .. tostring(r.uid) .. " " .. tostring(r.fn) .. " at t=" .. tostring(now) .. " -> " .. (r.success and "OK" or "REFUSED"))
+					-- (0.7.13, #148: a refused purchase says whether the money was why, see C.buyWhy)
+					log("paused action " .. tostring(r.uid) .. " " .. tostring(r.fn) .. " at t=" .. tostring(now) .. " -> " .. (r.success and "OK" or "REFUSED")
+						.. ((a.fn == "makeVehicleBuyCmd" and not r.success and r.price) and C.buyNote(r) or ""))
 					-- (0.6) the game options' modules hear it in the simulation as the actions it applies (every game applies the paused
 					-- actions in the same turns, at the same game time; nothing while no option is on)
 					if G.featOn then pcall(G.featPausedAct, a, r, featDg) end
@@ -13956,6 +13993,101 @@ H.buymany = function(from, p)
 	if not ok then
 		log("AUTOTEST buymany failed: " .. tostring(err))
 		AUTO.results[#AUTO.results + 1] = "buymany error " .. tostring(err)
+		autoFinish()
+	end
+end
+
+-- (0.7.13, #148) Purchases the company cannot pay (MPFEVER_SCENARIO=buypoor, companies mode, MPFEVER_COMPANIES=separate; last of
+-- a run: it leaves the host poor). The host gives all its money but 2.5 prices of one of its vehicles to another company, then
+-- asks for 4 copies of that vehicle in one frame, as the line manager's clone does. The engine makes 2 and refuses 2, on every
+-- game alike (no resync, no id taken). Each refusal's line in mod.log ends with "(not enough money: price P, company money B)"
+-- and the notice is shown ("purchase refused shown" in ui_mod.log); MPFEVER_BUYMONEY=0: "nothing created", no notice, as in
+-- 0.7.12. The money booked must be 2 prices: the price read (getPartPrice) is the engine's
+H.buypoor = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function note(t) AUTO.results[#AUTO.results + 1] = t; log("AUTOTEST " .. t) end
+	if C.ROLE ~= "host" then note("buypoor: host only"); return autoFinish() end
+	local reg = G.co
+	if not (G.cmode == "separate" and reg and G.myCo) then note("buypoor: needs MPFEVER_COMPANIES=separate"); return autoFinish() end
+	local ok, err = pcall(function()
+		local me = api.engine.util.getPlayer()
+		local other = nil
+		for _, c in ipairs(reg.list) do if c.id ~= G.myCo and c.ent and not other then other = c end end
+		if not other then note("buypoor: no other company"); return autoFinish() end
+		local pick = nil
+		for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
+			local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+			if not pick and tv and type(tv.depot) == "number" and tv.depot >= 0 and api.engine.entityExists(tv.depot) and R.ownerOf(v) == me then
+				-- (its price and its configuration read at once: the component points into the engine's storage, which a purchase
+				-- moves)
+				local price = 0
+				local okP = pcall(function()
+					local parts = tv.transportVehicleConfig.vehicles
+					for i = 1, #parts do price = price + (tonumber(api.engine.util.vehicle.getPartPrice(parts[i])) or 0) end
+				end)
+				pick = { v = v, depot = tv.depot, cfg = C.marshal(tv.transportVehicleConfig), price = okP and math.floor(price + 0.5) or 0 }
+			end
+		end
+		if not pick then note("buypoor: no vehicle of this company with a depot"); return autoFinish() end
+		if pick.price <= 0 then note("buypoor: no price for vehicle " .. pick.v .. " (getPartPrice)"); return autoFinish() end
+		local function balance() local okb, b = pcall(api.engine.util.finance.getPlayersBalance, me) return okb and b or nil end
+		local function mineCount()
+			local n = 0
+			for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do if R.ownerOf(v) == me then n = n + 1 end end
+			return n
+		end
+		local function resultsSize()
+			local f = C.IO.open(C.DIR .. BS .. "results.log", "rb")
+			if not f then return 0 end
+			local n = f:seek("end") or 0
+			f:close()
+			return n
+		end
+		local P, B0 = pick.price, balance()
+		if type(B0) ~= "number" then note("buypoor: unlimited money (no balance)"); return autoFinish() end
+		local gift = math.floor(B0 - 2.5 * P)
+		if gift > 0 then
+			uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "give", [4] = { to = other.id, amount = gift } })
+		end
+		log("AUTOTEST buypoor: vehicle " .. pick.v .. " costs " .. P .. ", money " .. math.floor(B0) .. ", " .. math.max(gift, 0) .. " given to company " .. other.id)
+		G.waits[#G.waits + 1] = { at = G.frames + 300, fn = function()
+			local B1, n0, off = balance(), mineCount(), resultsSize()
+			for _ = 1, 4 do
+				uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = pick.depot, [3] = C.copy(pick.cfg) })
+			end
+			log("AUTOTEST buypoor: 4 copies of vehicle " .. pick.v .. " requested at once, money " .. tostring(B1 and math.floor(B1)))
+			G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
+				local B2, n1 = balance(), mineCount()
+				-- (this game's purchases' results since the request, from results.log)
+				local made, refused, money = 0, 0, 0
+				pcall(function()
+					local f = C.IO.open(C.DIR .. BS .. "results.log", "rb")
+					if not f then return end
+					f:seek("set", off)
+					local s = f:read("*a") or ""
+					f:close()
+					for line in s:gmatch("[^" .. NL .. "]+") do
+						local payload = line:match("^result" .. TAB .. "[^" .. TAB .. "]*" .. TAB .. "(.*)$")
+						local r = payload and C.deser(payload)
+						if type(r) == "table" and r.tok == "auto-" .. C.ROLE and r.fn == "makeVehicleBuyCmd" then
+							if r.success then made = made + 1 else refused = refused + 1 end
+							if r.why == "money" then money = money + 1 end
+						end
+					end
+				end)
+				local booked = (type(B1) == "number" and type(B2) == "number") and string.format("%.2f", (B1 - B2) / P) or "?"
+				note("buypoor: price " .. P .. ", money " .. tostring(B1 and math.floor(B1)) .. " -> " .. tostring(B2 and math.floor(B2))
+					.. " (booked " .. booked .. " prices), vehicles " .. n0 .. " -> " .. n1 .. ", made " .. made .. ", refused " .. refused
+					.. " (not enough money " .. money .. ")")
+				autoFinish()
+			end }
+		end }
+	end)
+	if not ok then
+		note("buypoor error " .. tostring(err))
 		autoFinish()
 	end
 end

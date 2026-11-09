@@ -110,6 +110,26 @@ function C.Tf(fr, en, ...)
 	return s
 end
 
+-- (0.7.13, #148: 27 of 154 purchases of a 0.7.9 session, 29 of #170's in 0.7.12, "result after 10 step(s): nothing created",
+-- taken for an MPFever fault. The engine refused them on every game alike: the buying company had less money than the price
+-- when the purchase was applied (mostly the line manager's clones, sent one per vehicle with no money check; else the stamp
+-- lead or a depot toll). The engine's rule, vehicle_util_engine::BuyVehicle 0x26a8480 with its check 0xcd5f30, the tools' "Not
+-- enough money": no vehicle when the price is above the buyer's balance, unless the money is unlimited (balance nil).
+-- m = { price, balance, toll }: "money" when that is why, else nil. Read only: the engine stays the judge)
+function C.buyWhy(m)
+	if type(m) ~= "table" or type(m.price) ~= "number" or type(m.balance) ~= "number" or m.price <= 0 then return nil end
+	if m.price > m.balance - (tonumber(m.toll) or 0) then return "money" end
+	return nil
+end
+-- (the note added to a refused purchase's line in mod.log: "" without the figures, a game of 0.7.12's save)
+function C.buyNote(m)
+	if type(m) ~= "table" or type(m.price) ~= "number" then return "" end
+	if m.balance == nil then return " (unlimited money)" end
+	local toll = (tonumber(m.toll) or 0) > 0 and (" + depot toll " .. tostring(m.toll)) or ""
+	if C.buyWhy(m) then return " (not enough money: price " .. tostring(m.price) .. toll .. ", company money " .. tostring(m.balance) .. ")" end
+	return " (price " .. tostring(m.price) .. toll .. ", company money " .. tostring(m.balance) .. ": not the money)"
+end
+
 -- name and role chosen in the main menu's MPFever window (written by MPFever.exe before the savegame is loaded)
 if C.ACTIVE then
 	local f = C.IO.open(C.DIR .. BS .. "identity.txt", "rb")
