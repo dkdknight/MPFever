@@ -2,6 +2,43 @@ MPFever - Changelog
 ===================
 
 0.7.15 - (in progress)
+  - CHANGE (#174, hluki's game, 2026-11-09 12:09: the host crashed): Town Transit Planner put its stops on 12 town street pieces
+    at once, each piece replaced by a copy made from the world before any of them was built (with the node configurations the
+    engine had made for it). Four were replayed at the same game time: the third replaced segment 309652 at a junction, and the
+    fourth's configuration of that junction still named 309652; the game stopped right after the third. A script's street build
+    whose node configuration names a segment no longer at its node (taken away by a build sent just before it, or earlier) is
+    now refused on every game before it reaches the engine, which refuses it too (the autotest stalecfg with the check off:
+    nothing built, no crash): the same result, decided alike on every game. Where hluki's game stopped is not known (no crash
+    dump in reports since 0.7.13; see the crash summary below). A native build is only said in mod.log. MPFEVER_STALECFG=0:
+    as before. Test: tests/test_stalecfg0715.py (the two real actions, tests/data/issue174_burst.lua); the autotest scenario
+    stalecfg sends two such pieces of one junction in the same frame.
+  - FIX (Getriebesand, Discord, 2026-11-09: "only the host is able to delete these, even if the structure belongs to me"): with
+    one company per player, a landmark of a company's rank (an amphitheater...) became the host's company's at its first level:
+    the game's landmarks script builds it again at every level its deliveries reach, for getPlayer(), the savegame's company in
+    the simulation. It now keeps its owner (the same on every game). A landmark already handed over stays the host's company's.
+    MPFEVER_LANDMARKOWNER=0: as before. Test: tests/test_landmarkowner0715.py.
+  - CHANGE (« without waiting », toward « no stop at all »): a street stop no longer waits for the engine's answer. Before each
+    form of its replay goes, the engine's verdict on it is read (its proposal data, nothing built): a form it would refuse is
+    not sent, and the next one (without the tool's pricing, with the street cleanup, the engine's conversion of the tool's
+    build) is made at once, at the stop's step on every game. 0.7.14 kept their wait because a refused form's next try came a
+    frame later, after the step (r161); the 3 refusals of 736 street stops in the field logs were collisions, which the
+    proposal data shows. MPFEVER_STOPDRYRUN=0 or MPFEVER_NOWAITSTOPS=0: they wait, as in 0.7.14. Test: tests/test_stopdryrun0715.py
+    (and test_nostopdefault0714.py); in game MPFEVER_STOPDRYFAKE=n makes the first n verdicts "refused".
+  - MODS (Elias's wish list, Discord, 2026-11-09: their scripts read, docs/MODS.md and the lobby's notes): Hohenzollern Bridge's
+    clean-up of a bulldozed bridge (as Sydney Harbour Bridge's) and Better Priority's half-second decisions now go from one
+    game only (mpfever_modauto.lua M.STRICT); a mod's postUpdate is called with the steps only, as its update since 0.7.0
+    (German Trafficlights and German Railroadcrossings split their presets every 15 of its calls, dt 0 ones included).
+    BOStrab Signals, DB Class 430 and Ultimate Light Rail read clean; Deutsche Signale and German Trafficlights to check;
+    German Railroadcrossings and Signal Builder risky (their objects made at each game's own moments). MPFEVER_MODPOSTDT0=1:
+    every postUpdate call, as before. Test: tests/test_modwish0715.py.
+  - REPORTS (#174: hluki's crash came without any trace of where the game stopped): since 0.7.13 a report never carries the
+    game's crash dump (its memory). It now carries a summary of it made on the player's PC, game/crash_summary.txt: the
+    error's code and kind, and where it came in the game's code as module+offset (a program or DLL file name, no folder),
+    with the crashed thread's stack values that point into those modules. No memory content, no other address, no account
+    number; the dump itself still never goes. MPFEVER_CRASHSUMMARY=0: none, as in 0.7.13. Test: tests/test_crashsummary0715.py
+    and the selftest (a minidump written and read back).
+  - TESTS: MPFEVER_AUTOLOADDELAY=n (the autotests' savegame loaded n seconds later on that game, #173: a player who receives the
+    host's savegame first) and MPFEVER_AFFINITY_HOST / MPFEVER_AFFINITY_CLIENT (one game pinned to some CPU cores, #150).
 
 0.7.14 - 2026-11-09: « without waiting » and « without stopping » back and on by default, their field problems fixed first (a
   street stop's retry, a construction taken away at the click, the windows' leads); the programs' file details like the DLL's

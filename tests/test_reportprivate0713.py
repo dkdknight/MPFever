@@ -33,8 +33,9 @@ a = src.index("            void Add(string path, string name)")
 check("if (Private(name))" in src[a:a + 700], "  every file of this PC's report goes through it (sessions, logs, the dump)")
 p = src.index("public static void AddPlayers(")
 check("if (Private(name)) continue;" in src[p:p + 1500], "  and every file of another player's report")
-check('if (dmp != null && !Private(dmp) && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);' in src,
-      "no 15 s wait for a dump that is not sent")
+check('if (dmp != null && (!Private(dmp) || withSummary) && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);' in src
+      and 'bool withSummary = dmp != null && Private(dmp) && Environment.GetEnvironmentVariable("MPFEVER_CRASHSUMMARY") != "0"' in src,
+      "no 15 s wait for a dump that is neither sent nor summed up (0.7.15: its summary waits for it)")
 check('"Left out (too large, unreadable or private):"' in src and "never sent: it holds addresses and account numbers" in src,
       "report.txt says what was left out and why")
 check("ok &= RunReportPrivate0713();" in st and "static bool RunReportPrivate0713()" in st, "the selftest runs it in the launcher's code")

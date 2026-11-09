@@ -143,8 +143,9 @@ j = src.index("-- ==============================================================
 nw = src[i:j]
 rst = src[src.index("local function replayStop(a, plan, variant)"):]
 rst = rst[:rst.index("\nend\n")]
-check('if os.getenv("MPFEVER_NOWAITSTOPS") == "1" then pcall(G.gateSingle) end\n\treplaySend(cmd, function(res, success)' in rst,
-      "(e) a street stop by the script forms is no longer marked single (MPFEVER_NOWAITSTOPS=1: as in 0.7.12)")
+check('local nws = os.getenv("MPFEVER_NOWAITSTOPS")\n\tif nws == "1" or (dryRun and nws ~= "0") then pcall(G.gateSingle) end\n\treplaySend(cmd, function(res, success)' in rst,
+      "(e) (0.7.15, NOWAIT v3) a street stop by the script forms is marked single again once the engine's verdict was asked "
+      "(MPFEVER_STOPDRYRUN=0 or MPFEVER_NOWAITSTOPS=0: it waits, as in 0.7.14; =1: as in 0.7.12)")
 check(rst.count("pcall(G.gateSingle)") == 1, "(e)   its only G.gateSingle is behind that switch")
 check(src.count("pcall(G.gateSingle)") == 8, "(e) the 7 other replays still marked single (streets, tracks, constructions, upgrades, the engine's stops)", src.count("pcall(G.gateSingle)"))
 L2 = lupa.LuaRuntime(unpack_returned_tuples=True)
@@ -153,14 +154,24 @@ L2.execute(nw)
 run = L2.eval("function(code) local f = assert(load(code)) return f() end")
 # the street stop of r161: the replay under way, its command handed, refused, tried again a frame later
 L2.execute("G.gateWanted = true; G.gateCur = { at = 100000, uid = 'Bence#11:16' }")
-L2.execute("if os.getenv('MPFEVER_NOWAITSTOPS') == '1' then pcall(G.gateSingle) end; G.gateCur.handed = 1")
-check(run("return G.gateHolds()") == 100000, "(e) default: the game holds at the stop's step while its answer (and a retry) may come")
+GATE = ("local dryRun = os.getenv('MPFEVER_STOPDRYRUN') ~= '0'; local nws = os.getenv('MPFEVER_NOWAITSTOPS'); "
+        "if nws == '1' or (dryRun and nws ~= '0') then pcall(G.gateSingle) end; G.gateCur.handed = 1")
+L2.execute("ENV.MPFEVER_STOPDRYRUN = '0'")
+L2.execute(GATE)
+check(run("return G.gateHolds()") == 100000, "(e) MPFEVER_STOPDRYRUN=0 (0.7.14): the game holds at the stop's step while its answer (and a retry) may come")
 L2.execute("G.gateLate('a refused stop, tried again')")
 check(run("return G.gateHolds()") == 100000 and not any("after the build's step" in str(s) for s in L2.globals().LOGS.values()),
       "(e)   its retry is held too: nothing comes after the step")
 L2.execute("ENV.MPFEVER_NOWAITSTOPS = '1'; G.gateCur = { at = 100000, uid = 'x' }")
-L2.execute("if os.getenv('MPFEVER_NOWAITSTOPS') == '1' then pcall(G.gateSingle) end; G.gateCur.handed = 1")
+L2.execute(GATE)
 check(run("return G.gateHolds()") is False, "(e) MPFEVER_NOWAITSTOPS=1: not held, as in 0.7.12")
+L2.execute("ENV.MPFEVER_NOWAITSTOPS = nil; ENV.MPFEVER_STOPDRYRUN = nil; G.gateCur = { at = 100000, uid = 'y' }")
+L2.execute(GATE)
+check(run("return G.gateHolds()") is False, "(e) (0.7.15) default: the engine's verdict asked first, not held")
+L2.execute("ENV.MPFEVER_NOWAITSTOPS = '0'; G.gateCur = { at = 100000, uid = 'z' }")
+L2.execute(GATE)
+check(run("return G.gateHolds()") == 100000, "(e) (0.7.15) MPFEVER_NOWAITSTOPS=0: held, as in 0.7.14")
+L2.execute("ENV.MPFEVER_NOWAITSTOPS = nil")
 L2.execute("G.gateCur = { at = 100000, uid = 'street' }; G.gateSingle(); G.gateCur.handed = 1")
 check(run("return G.gateHolds()") is False, "(e) a street by the script forms: once handed, no wait (NOWAIT as before)")
 

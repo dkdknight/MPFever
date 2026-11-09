@@ -821,8 +821,10 @@ namespace MPFever
                 if (Reporter.OtherGamesRunning(proc.Id) > 0) OtherGameSeen = true;
                 Exited?.Invoke();
             };
-            // experiment (MPFEVER_AFFINITY=mask): pin the game to some CPU cores
-            var aff = Environment.GetEnvironmentVariable("MPFEVER_AFFINITY");
+            // experiment (MPFEVER_AFFINITY=mask): pin the game to some CPU cores; (0.7.15, tests of #150) MPFEVER_AFFINITY_HOST /
+            // MPFEVER_AFFINITY_CLIENT: one game only (two games of one PC then run their thread pools at other speeds, as two PCs do)
+            var aff = Environment.GetEnvironmentVariable("MPFEVER_AFFINITY_" + (Role ?? "").ToUpperInvariant());
+            if (string.IsNullOrEmpty(aff)) aff = Environment.GetEnvironmentVariable("MPFEVER_AFFINITY");
             if (!string.IsNullOrEmpty(aff)) try { proc.ProcessorAffinity = (IntPtr)Convert.ToInt64(aff, 16); } catch (Exception e) { Log.W("affinity: " + e.Message); }
             Log.W(L.F("[{0}] jeu lancé (pid {1}), session {2}", "[{0}] game started (pid {1}), session {2}", Name, proc.Id, Dir));
         }

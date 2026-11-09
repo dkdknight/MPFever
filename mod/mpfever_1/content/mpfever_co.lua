@@ -634,6 +634,62 @@ function CO.installCompanyActions(env)
 	return true
 end
 
+-- ------------------------------------------------------------------------------------------------ landmarks keep their owner
+-- (0.7.15, Getriebesand on Discord, 2026-11-09: a landmark of a company's rank, an amphitheater, "only the host is able to delete
+-- these, even if the structure belongs to me") The landmarks script (landmarks.script.tl) builds a landmark again at every level its
+-- deliveries reach, with ce.playerEntity = getPlayer(): the savegame's company in the simulation. From its first level on, a
+-- player's landmark was the host's company's on every game, and only the host could bulldoze it. While that script runs, a
+-- construction it builds in place of another keeps that one's owner (the same on every game). MPFEVER_LANDMARKOWNER=0: as before
+local LANDMARKS = "::/landmarks/landmarks.script"
+
+-- the proposal's one construction to add takes the owner of the one it replaces; true when it was changed. owner(e): the
+-- construction's player entity (default: its PLAYER_OWNED component)
+function CO.keepReplacedOwner(p, owner)
+	owner = owner or function(e)
+		local po = api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED)
+		return po and po.player or nil
+	end
+	local rm, add = p.constructionsToRemove, p.constructionsToAdd
+	if not (rm and add and #rm == 1 and #add == 1) then return false end
+	local who = owner(rm[1])
+	if type(who) ~= "number" or who < 0 then return false end
+	local ce = add[1]
+	if ce.playerEntity == who then return false end
+	ce.playerEntity = who
+	p.constructionsToAdd = { ce }
+	return true
+end
+
+function CO.installLandmarks(env)
+	if type(game) ~= "table" or os.getenv("MPFEVER_LANDMARKOWNER") == "0" then return false end
+	local ls = game[LANDMARKS]
+	if type(ls) ~= "table" or ls.__mpfCo then return ls ~= nil end
+	local ou = ls.update
+	if type(ou) ~= "function" then return false end
+	ls.__mpfCo = true
+	ls.update = function(u, state, dt, ...)
+		if not activeReg(env) then return ou(u, state, dt, ...) end
+		local cmd = api.cmd
+		local orig = cmd.makeWorldBuildProposalCmd
+		local okw = pcall(function()
+			cmd.makeWorldBuildProposalCmd = function(p, ...)
+				local okk, changed = pcall(CO.keepReplacedOwner, p)
+				if okk and changed and env.log then
+					env.n = (env.n or 0) + 1
+					if env.n <= 20 then env.log("companies: a landmark built again at its next level keeps its owner") end
+				end
+				return orig(p, ...)
+			end
+		end)
+		local ok, r = pcall(ou, u, state, dt, ...)
+		if okw then pcall(function() cmd.makeWorldBuildProposalCmd = orig end) end
+		if not ok then error(r, 0) end
+		return r
+	end
+	if env.log then env.log("companies: the landmarks built again at their next level keep their owner") end
+	return true
+end
+
 -- ------------------------------------------------------------------------------------------------ achievements per company
 -- (0.6.8, #95) The game's achievements script keeps one state for the game: what concerns a company (income, the vehicles that
 -- reach a stop, the builds, the ranks, the contracts) was read for getPlayer() only, the savegame's company in the simulation,

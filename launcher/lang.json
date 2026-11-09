@@ -19254,19 +19254,6 @@
       "zh-CN": "它的自动建造现在只从一个游戏发出 (0.7.0)：有待在联机中确认。",
       "zh-TW": "它的自動建造現在只從一個遊戲發出 (0.7.0)：有待在連線中確認。"
     },
-    "Script read: nothing that desynchronises (0.7.0).": {
-      "de": "Skript gelesen: nichts, was desynchronisiert (0.7.0).",
-      "es": "Script leído: nada que desincronice (0.7.0).",
-      "it": "Script letto: niente che desincronizzi (0.7.0).",
-      "nl": "Script gelezen: niets dat desynchroniseert (0.7.0).",
-      "pl": "Skrypt przeczytany: nic, co desynchronizuje (0.7.0).",
-      "pt-BR": "Script lido: nada que dessincronize (0.7.0).",
-      "ru": "Скрипт прочитан: ничего, что вызывает рассинхронизацию (0.7.0).",
-      "ja": "スクリプト確認済み：非同期の原因になるものはありません (0.7.0)。",
-      "ko": "스크립트 확인됨: 동기화를 깨는 것은 없습니다 (0.7.0).",
-      "zh-CN": "脚本已阅读：没有会导致不同步的内容 (0.7.0)。",
-      "zh-TW": "腳本已閱讀：沒有會導致不同步的內容 (0.7.0)。"
-    },
     "What it sends by itself now goes from one game only (0.7.0): to confirm in a session.": {
       "de": "Was es von selbst sendet, geht jetzt nur noch von einem Spiel aus (0.7.0): in einer Partie zu bestätigen.",
       "es": "Lo que envía por sí solo ahora sale de un solo juego (0.7.0): por confirmar en una partida.",
@@ -24271,6 +24258,97 @@
       "ko": "게임이 구매를 거부했습니다: 차량이 만들어지지 않았습니다.",
       "zh-CN": "游戏拒绝了购买：未创建车辆。",
       "zh-TW": "遊戲拒絕了購買：未建立車輛。"
+    },
+    "Script read: nothing that desynchronises.": {
+      "de": "Skript gelesen: nichts, was desynchronisiert.",
+      "es": "Script leído: nada que desincronice.",
+      "it": "Script letto: niente che desincronizzi.",
+      "nl": "Script gelezen: niets dat desynchroniseert.",
+      "pl": "Skrypt przeczytany: nic, co desynchronizuje.",
+      "pt-BR": "Script lido: nada que dessincronize.",
+      "ru": "Скрипт прочитан: ничего, что вызывает рассинхронизацию.",
+      "ja": "スクリプト確認済み：非同期の原因になるものはありません。",
+      "ko": "스크립트 확인됨: 동기화를 깨는 것은 없습니다.",
+      "zh-CN": "脚本已阅读：没有会导致不同步的内容。",
+      "zh-TW": "腳本已閱讀：沒有會導致不同步的內容。"
+    },
+    "The clean-up of a bulldozed bridge now goes from one game only (0.7.15).": {
+      "de": "Das Aufräumen einer abgerissenen Brücke kommt jetzt nur noch von einem Spiel (0.7.15).",
+      "es": "La limpieza de un puente demolido ahora sale de un solo juego (0.7.15).",
+      "it": "La pulizia di un ponte demolito ora parte da un solo gioco (0.7.15).",
+      "nl": "Het opruimen van een gesloopte brug komt nu van één spel (0.7.15).",
+      "pl": "Sprzątanie zburzonego mostu wysyła teraz tylko jedna gra (0.7.15).",
+      "pt-BR": "A limpeza de uma ponte demolida agora sai de um só jogo (0.7.15).",
+      "ru": "Уборка снесённого моста теперь идёт только из одной игры (0.7.15).",
+      "ja": "取り壊した橋の後片付けは1つのゲームからだけ送られるようになりました (0.7.15)。",
+      "ko": "철거한 다리의 정리는 이제 한 게임에서만 보냅니다 (0.7.15).",
+      "zh-CN": "拆除桥梁后的清理现在只由一个游戏发出 (0.7.15)。",
+      "zh-TW": "拆除橋梁後的清理現在只由一個遊戲發出 (0.7.15)。"
+    },
+    "Its automatic decisions now go from one game only (0.7.15): to check in a session.": {
+      "de": "Seine automatischen Entscheidungen kommen jetzt nur noch von einem Spiel (0.7.15): in einer Partie zu prüfen.",
+      "es": "Sus decisiones automáticas ahora salen de un solo juego (0.7.15): a comprobar en una partida.",
+      "it": "Le sue decisioni automatiche ora partono da un solo gioco (0.7.15): da verificare in partita.",
+      "nl": "Zijn automatische beslissingen komen nu van één spel (0.7.15): te controleren in een sessie.",
+      "pl": "Jego automatyczne decyzje wysyła teraz tylko jedna gra (0.7.15): do sprawdzenia w sesji.",
+      "pt-BR": "Suas decisões automáticas agora saem de um só jogo (0.7.15): a verificar numa partida.",
+      "ru": "Его автоматические решения теперь идут только из одной игры (0.7.15): проверить в сессии.",
+      "ja": "自動の判断は1つのゲームからだけ送られるようになりました (0.7.15)：セッションで確認してください。",
+      "ko": "자동 결정은 이제 한 게임에서만 보냅니다 (0.7.15): 세션에서 확인이 필요합니다.",
+      "zh-CN": "它的自动决定现在只由一个游戏发出 (0.7.15)：需在对局中确认。",
+      "zh-TW": "它的自動決定現在只由一個遊戲發出 (0.7.15)：需在對局中確認。"
+    },
+    "Splits its presets at the steps' pace (0.7.15): to check in a session.": {
+      "de": "Teilt seine Vorlagen im Takt der Schritte (0.7.15): in einer Partie zu prüfen.",
+      "es": "Divide sus conjuntos al ritmo de los pasos (0.7.15): a comprobar en una partida.",
+      "it": "Divide i suoi insiemi al ritmo dei passi (0.7.15): da verificare in partita.",
+      "nl": "Splitst zijn sets in het tempo van de stappen (0.7.15): te controleren in een sessie.",
+      "pl": "Dzieli swoje zestawy w rytmie kroków (0.7.15): do sprawdzenia w sesji.",
+      "pt-BR": "Divide seus conjuntos no ritmo dos passos (0.7.15): a verificar numa partida.",
+      "ru": "Разбирает свои наборы в такт шагам (0.7.15): проверить в сессии.",
+      "ja": "プリセットをステップの間隔で分割します (0.7.15)：セッションで確認してください。",
+      "ko": "프리셋을 스텝 속도에 맞춰 나눕니다 (0.7.15): 세션에서 확인이 필요합니다.",
+      "zh-CN": "按步的节奏拆分其预设 (0.7.15)：需在对局中确认。",
+      "zh-TW": "按步的節奏拆分其預設 (0.7.15)：需在對局中確認。"
+    },
+    "Brakes the trains near a player's camera: to check in a session.": {
+      "de": "Bremst die Züge in der Nähe der Kamera eines Spielers: in einer Partie zu prüfen.",
+      "es": "Frena los trenes cerca de la cámara de un jugador: a comprobar en una partida.",
+      "it": "Frena i treni vicino alla telecamera di un giocatore: da verificare in partita.",
+      "nl": "Remt de treinen bij de camera van een speler: te controleren in een sessie.",
+      "pl": "Hamuje pociągi w pobliżu kamery gracza: do sprawdzenia w sesji.",
+      "pt-BR": "Freia os trens perto da câmera de um jogador: a verificar numa partida.",
+      "ru": "Тормозит поезда рядом с камерой игрока: проверить в сессии.",
+      "ja": "プレイヤーのカメラ付近の列車にブレーキをかけます：セッションで確認してください。",
+      "ko": "플레이어 카메라 근처의 열차를 제동합니다: 세션에서 확인이 필요합니다.",
+      "zh-CN": "会让玩家镜头附近的列车减速：需在对局中确认。",
+      "zh-TW": "會讓玩家鏡頭附近的列車減速：需在對局中確認。"
+    },
+    "Risky: makes its objects at moments of each game's own (resyncs likely).": {
+      "de": "Riskant: erstellt seine Objekte zu Zeitpunkten, die jedes Spiel selbst wählt (Resyncs wahrscheinlich).",
+      "es": "Arriesgado: crea sus objetos en momentos propios de cada juego (resincronizaciones probables).",
+      "it": "Rischioso: crea i suoi oggetti in momenti propri di ogni gioco (risincronizzazioni probabili).",
+      "nl": "Riskant: maakt zijn objecten op momenten van elk spel zelf (resyncs waarschijnlijk).",
+      "pl": "Ryzykowny: tworzy swoje obiekty w chwilach właściwych każdej grze (prawdopodobne resynchronizacje).",
+      "pt-BR": "Arriscado: cria seus objetos em momentos próprios de cada jogo (ressincronizações prováveis).",
+      "ru": "Рискованно: создаёт свои объекты в моменты, свои для каждой игры (вероятны ресинхронизации).",
+      "ja": "危険：各ゲームそれぞれのタイミングでオブジェクトを作ります (再同期が起きやすい)。",
+      "ko": "위험: 게임마다 다른 시점에 객체를 만듭니다 (재동기화 가능성 높음).",
+      "zh-CN": "有风险：在各个游戏各自的时刻创建其对象 (很可能需要重新同步)。",
+      "zh-TW": "有風險：在各個遊戲各自的時刻建立其物件 (很可能需要重新同步)。"
+    },
+    "Risky: makes its objects by the PC's clock (resyncs likely).": {
+      "de": "Riskant: erstellt seine Objekte nach der Uhr des PCs (Resyncs wahrscheinlich).",
+      "es": "Arriesgado: crea sus objetos según el reloj del PC (resincronizaciones probables).",
+      "it": "Rischioso: crea i suoi oggetti secondo l'orologio del PC (risincronizzazioni probabili).",
+      "nl": "Riskant: maakt zijn objecten volgens de klok van de pc (resyncs waarschijnlijk).",
+      "pl": "Ryzykowny: tworzy swoje obiekty według zegara komputera (prawdopodobne resynchronizacje).",
+      "pt-BR": "Arriscado: cria seus objetos pelo relógio do PC (ressincronizações prováveis).",
+      "ru": "Рискованно: создаёт свои объекты по часам ПК (вероятны ресинхронизации).",
+      "ja": "危険：PCの時計に従ってオブジェクトを作ります (再同期が起きやすい)。",
+      "ko": "위험: PC 시계에 따라 객체를 만듭니다 (재동기화 가능성 높음).",
+      "zh-CN": "有风险：按电脑时钟创建其对象 (很可能需要重新同步)。",
+      "zh-TW": "有風險：按電腦時鐘建立其物件 (很可能需要重新同步)。"
     }
   }
 }

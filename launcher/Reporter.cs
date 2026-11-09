@@ -309,8 +309,22 @@ namespace MPFever
                     // (0.7.3) a report made right after the crash got the dump while the game was still writing it: 0 bytes in
                     // issue #130. Waited for until its size is not 0 and stays the same for a second (15 s at most).
                     // MPFEVER_DUMPWAIT=0: as before
-                    if (dmp != null && !Private(dmp) && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);
+                    // ((0.7.15, #174) the dump stays here, its summary goes instead: the error and where it came in the game's code,
+                    // see CrashSummary. MPFEVER_CRASHSUMMARY=0: none, as in 0.7.13)
+                    bool withSummary = dmp != null && Private(dmp) && Environment.GetEnvironmentVariable("MPFEVER_CRASHSUMMARY") != "0"
+                        && File.GetLastWriteTime(dmp) > DateTime.Now.AddDays(-2);
+                    if (dmp != null && (!Private(dmp) || withSummary) && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);
                     if (dmp != null && File.GetLastWriteTime(dmp) > DateTime.Now.AddDays(-2)) Add(dmp, "game/" + Path.GetFileName(dmp));
+                    if (withSummary)
+                    {
+                        var text = CrashSummary.Make(dmp);
+                        if (text != null)
+                        {
+                            var tmp = Path.Combine(Path.GetTempPath(), "mpfever-crash-summary-" + stamp + ".txt");
+                            File.WriteAllText(tmp, "dump " + Path.GetFileName(dmp) + ", written " + File.GetLastWriteTime(dmp).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "\r\n" + text);
+                            Add(tmp, "game/crash_summary.txt");
+                        }
+                    }
                 }
                 catch { }
             left.AddRange(privLeft);
@@ -439,7 +453,7 @@ namespace MPFever
 
         static string PrivateNote(string name) =>
             name.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase)
-                ? "the game's crash dump (never sent: it holds addresses and account numbers)"
+                ? "the game's crash dump (never sent: it holds addresses and account numbers; what it says of the crash is in game/crash_summary.txt)"
                 : "the session's chat (never sent: the players' own words)";
 
         /// <summary>(0.7.9) What MPFever's report service answered: the issue it opened (or ""), the file's link (or "").</summary>

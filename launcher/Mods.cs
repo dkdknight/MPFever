@@ -54,6 +54,13 @@ namespace MPFever
             ["gct_tramschleife"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
             ["gct_bogenbahnhof"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
             ["advanced_track_patterns"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux construits par script sont construits sur chaque jeu (0.7.8).", "Its signals built by script are built on every game (0.7.8).") },
+            // (0.7.15) a player's wish list (Elias, Discord, 2026-11-09), scripts read (docs/MODS.md)
+            ["hohenzollern_bridge"] = () => new Verdict { Level = "fixed", Note = T("Le nettoyage d'un pont démoli ne part plus que d'un jeu (0.7.15).", "The clean-up of a bulldozed bridge now goes from one game only (0.7.15).") },
+            ["sushiflux_betterpriority"] = () => new Verdict { Level = "caution", Note = T("Ses décisions automatiques ne partent plus que d'un jeu (0.7.15) : à vérifier en partie.", "Its automatic decisions now go from one game only (0.7.15): to check in a session.") },
+            ["jm_german_trafficlights"] = () => new Verdict { Level = "caution", Note = T("Découpe ses ensembles au rythme des pas (0.7.15) : à vérifier en partie.", "Splits its presets at the steps' pace (0.7.15): to check in a session.") },
+            ["tf3_signale_de_1"] = () => new Verdict { Level = "caution", Note = T("Freine les trains près de la caméra d'un joueur : à vérifier en partie.", "Brakes the trains near a player's camera: to check in a session.") },
+            ["jm_german_railroadcrossings"] = () => new Verdict { Level = "caution", Note = T("Risqué : crée ses objets à des moments propres à chaque jeu (resyncs possibles).", "Risky: makes its objects at moments of each game's own (resyncs likely).") },
+            ["jm_signal_builder"] = () => new Verdict { Level = "caution", Note = T("Risqué : crée ses objets selon l'horloge du PC (resyncs possibles).", "Risky: makes its objects by the PC's clock (resyncs likely).") },
         };
 
         // (0.7.0) the 83 most downloaded script mods of mod.io, read one by one (docs/MODS.md): those that work as they are, and
@@ -67,6 +74,8 @@ namespace MPFever
             "local_underground_cargo_stop", "industry_tram_access_1", "deadeye_tpf3_bus_bay", "bus_loops_1", "miib_city_bus_lines",
             "mz_gleisset3", "cmf_bb27000_base_pack_1", "tpf3_grab_bb60000_1", "tpf3_Grab_SignalFR_Mod_1", "zhenya_easy_terminal_assignment",
             "jansc_fehlerstellen", "train_horns_1", "square_better_minimap", "build_anyway_1", "zhenya_doubleclick_to_edit",
+            // (0.7.15, Elias's wish list)
+            "bostrab_signals", "db_class_430_neu", "mrnickert_ultimate_metro",
         };
         static readonly string[] FixedHostNames = { "visual_auto_namer", "gameburrow_destinationdisplays" };
         static readonly string[] Fixed0613 =
@@ -79,7 +88,7 @@ namespace MPFever
 
         static Verdict Checked(string id)
         {
-            if (CheckedOk.Contains(id)) return new Verdict { Level = "ok", Note = T("Script lu : rien qui désynchronise (0.7.0).", "Script read: nothing that desynchronises (0.7.0).") };
+            if (CheckedOk.Contains(id)) return new Verdict { Level = "ok", Note = T("Script lu : rien qui désynchronise.", "Script read: nothing that desynchronises.") };
             if (FixedHostNames.Contains(id)) return new Verdict { Level = "fixed", Note = T("Les noms donnés par le jeu de l'hôte s'appliquent partout (0.4.0).", "The names given by the host's game apply everywhere (0.4.0).") };
             if (Fixed0613.Contains(id)) return new Verdict { Level = "fixed", Note = T("Ce qu'il envoie tout seul ne part plus que d'un jeu (0.7.0) : à confirmer en partie.", "What it sends by itself now goes from one game only (0.7.0): to confirm in a session.") };
             if (ToCheck.Contains(id)) return new Verdict { Level = "caution", Note = T("Script lu : un point reste à vérifier en partie (voir MODS.md).", "Script read: one point is still to check in a session (see MODS.md).") };

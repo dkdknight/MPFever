@@ -23,9 +23,9 @@ check(i > 0, "a wait for a file being written")
 body = SRC[i:i + 700]
 check("if (len > 0 && len == last) return;" in body, "done when not empty and the same size twice, a second apart")
 check("DateTime.UtcNow.AddSeconds(seconds)" in body, "never longer than asked")
-a = SRC.find('if (dmp != null && !Private(dmp) && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);')
+a = SRC.find('if (dmp != null && (!Private(dmp) || withSummary) && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);')
 b = SRC.find('Add(dmp, "game/" + Path.GetFileName(dmp));')
-check(a > 0 and b > a, "the dump is waited for before it is added to the report (15 s at most), when it is sent at all (MPFEVER_REPORTDUMP=1)")
+check(a > 0 and b > a, "the dump is waited for before it is added to the report or summed up (15 s at most), when it is sent (MPFEVER_REPORTDUMP=1) or its summary made (0.7.15)")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

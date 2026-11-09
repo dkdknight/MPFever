@@ -409,14 +409,28 @@ local handlers = {
 				S.requested = true
 				S.readyStarted = false
 				if again then log("back on the main menu: the test savegame loaded again") end
-				local ok, err = pcall(loadSave)
-				if not ok then log("load failed: " .. tostring(err)) end
+				-- (0.7.15, tests of #173: MPFEVER_AUTOLOADDELAY=n, this game loads the savegame n seconds later, as a player who
+				-- receives the host's savegame first; the first load only)
+				local delay = tonumber(os.getenv("MPFEVER_AUTOLOADDELAY") or "")
+				if delay and delay > 0 and not again and not S.delayed then
+					S.delayed = true
+					S.loadAt = os.clock() + delay
+					log("the test savegame loaded in " .. delay .. " s (MPFEVER_AUTOLOADDELAY)")
+				else
+					local ok, err = pcall(loadSave)
+					if not ok then log("load failed: " .. tostring(err)) end
+				end
 			end
 		end
 	end,
 	update = function()
 		S.frames = S.frames + 1
 		if S.frames % 30 ~= 0 then return end
+		if S.loadAt and os.clock() >= S.loadAt then
+			S.loadAt = nil
+			local ok, err = pcall(loadSave)
+			if not ok then log("load failed: " .. tostring(err)) end
+		end
 		if S.pending then
 			local ok, err = pcall(loadPending)
 			if not ok then log("load failed: " .. tostring(err)) S.pending = nil end

@@ -31,6 +31,10 @@ M.STRICT = {
 	{ pat = "/mbs_lignes/", name = "Modern Bus Shelter" },
 	{ pat = "/ksl_lights.script", name = "Road Lighting" },
 	{ pat = "/shb_cleanup/", name = "Sydney Harbour Bridge" },
+	-- (0.7.15, Elias's wish list: the same clean-up as Sydney Harbour Bridge's, the pieces of a bulldozed bridge; and Better
+	-- Priority's line priorities and train holds every half second, decided from this game's clock)
+	{ pat = "/hzb_cleanup/", name = "Hohenzollern Bridge" },
+	{ pat = "/sushiflux_bp/", name = "Better Priority" },
 	{ pat = "/organic_towns/", name = "Organic Towns" },
 	{ pat = "/pyt/pyt_toll", name = "PYT - Pay Your Tolls" },
 	{ pat = "/pyt_mw/", name = "PYT - Mega Warehouse" },

@@ -963,6 +963,69 @@ function C.readdedConfigs(list, removed, edgeMap, gone)
 	return out, left
 end
 
+-- (0.7.15, issue #174: hluki's game, 2026-11-09 12:09, the host crashed) Town Transit Planner sent 12 street pieces at once
+-- (stops put on town streets, each piece replaced by a copy with its stops), every one with the node configurations the engine
+-- had made for it (replaceSegment) from the world before any of them was built. Four were replayed at the same game time; the
+-- third replaced segment 309652 at node 249149, and the fourth's configuration of that node still named 309652: the engine
+-- stopped on it when it applied the fourth. Alone, the game refuses such a build ("Unknown exception", which the mod handles).
+-- m: a build's marshalled proposal (the action's first argument); gone: { [id] = true }, the segments and nodes the builds
+-- already sent at this game time take away; touches(seg, node): the segment is there and ends at that node (default: the
+-- engine's BASE_EDGE). Returns nil, or { node, seg, why } for the first node configuration (lists in their order) naming a
+-- segment that is no longer at its node, a node taken away, or a piece to remove already taken away. A script's proposal
+-- (streetProposal) only; the segments the build itself removes or adds are not looked at
+function C.staleNodeConfig(m, gone, touches)
+	local st = type(m) == "table" and m.streetProposal
+	if type(st) ~= "table" then return nil end
+	touches = touches or function(seg, node)
+		local be = api.engine.getComponent(seg, api.type.ComponentType.BASE_EDGE)
+		return be ~= nil and (be.node0 == node or be.node1 == node)
+	end
+	local function list(t)
+		local ks, out = {}, {}
+		if type(t) ~= "table" then return out end
+		for k in pairs(t) do if type(k) == "number" then ks[#ks + 1] = k end end
+		table.sort(ks)
+		for i, k in ipairs(ks) do out[i] = t[k] end
+		return out
+	end
+	local earlier = "taken away by an earlier build at this time"
+	local removing = {}
+	for _, s in ipairs(list(st.edgesToRemove)) do
+		if type(s) == "number" then
+			if gone and gone[s] then return { seg = s, why = "the piece it replaces was " .. earlier } end
+			removing[s] = true
+		end
+	end
+	for _, c in ipairs(list(st.nodeConfigsToAdd)) do
+		local node = type(c) == "table" and c.entity or nil
+		if type(node) == "number" and node >= 0 then
+			if gone and gone[node] then return { node = node, why = "its node was " .. earlier } end
+			local comp = type(c.comp) == "table" and c.comp or {}
+			for _, l in ipairs(list(comp.laneConnections)) do
+				for _, f in ipairs({ "segment0", "segment1" }) do
+					local s = type(l) == "table" and l[f] or nil
+					if type(s) == "number" and s >= 0 and not removing[s] then
+						if gone and gone[s] then return { node = node, seg = s, why = earlier } end
+						local ok, there = pcall(touches, s, node)
+						if ok and not there then return { node = node, seg = s, why = "no longer at that node here" } end
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- (0.7.15, #174) the segments and nodes a build takes away ({ [id] = true } added to gone): a script's proposal's or a native one's
+function C.noteGone(m, gone)
+	local function each(t) if type(t) == "table" then for _, v in pairs(t) do if type(v) == "number" and v >= 0 then gone[v] = true end end end end
+	local sp = type(m) == "table" and m.streetProposal
+	if type(sp) == "table" then each(sp.edgesToRemove); each(sp.nodesToRemove) end
+	local np = type(m) == "table" and m.proposal
+	if type(np) == "table" then each(np.removedSegments); each(np.removedNodes) end
+	return gone
+end
+
 -- (0.6.9) what a script's copy of a segment keeps of it, as the stop tool and the replays of its stops keep it (replayStop): its
 -- decorations (a town street's trees: the copy had none on the builder's game, both rows on the replaying games: "edges" apart,
 -- then the towns, test fe3 of 2026-11-02) and a track's distance. rev: the copy runs the other way round (a decoration's side

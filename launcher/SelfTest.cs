@@ -78,6 +78,7 @@ namespace MPFever
             ok &= RunPersonDigest0713();
             ok &= RunReportPrivate0713();
             ok &= RunVersionInfo0714();
+            ok &= RunCrashSummary0715();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -141,6 +142,42 @@ namespace MPFever
                 Environment.SetEnvironmentVariable("MPFEVER_REPORTDUMP", oldD);
                 Environment.SetEnvironmentVariable("MPFEVER_REPORTCHAT", oldC);
             }
+            return ok;
+        }
+
+        /// <summary>(0.7.15, #174) The crash summary a report carries in place of the dump (CrashSummary): made from a small
+        /// minidump written here (one module, an access violation, the crashed thread's stack): the error, where it came as
+        /// module+offset, the stack's values that point into the module from the crash up; no path, no value outside a module.</summary>
+        static bool RunCrashSummary0715()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.15 crash summary: " + what); ok &= c; }
+            const ulong B = 0x140000000UL;
+            var d = new byte[1600];
+            void W32(int o, uint v) => BitConverter.GetBytes(v).CopyTo(d, o);
+            void W64(int o, ulong v) => BitConverter.GetBytes(v).CopyTo(d, o);
+            W32(0, 0x504D444D); W32(4, 0xA793); W32(8, 3); W32(12, 32);
+            W32(32, 4); W32(36, 112); W32(40, 68);          // module list
+            W32(44, 6); W32(48, 168); W32(52, 400);         // exception
+            W32(56, 3); W32(60, 52); W32(64, 1300);         // thread list
+            W32(68, 1); W64(72, B); W32(80, 0x5000000); W32(92, 180);
+            var name = System.Text.Encoding.Unicode.GetBytes(@"C:\Users\Someone\Games\TransportFever3.exe");
+            W32(180, (uint)name.Length); name.CopyTo(d, 184);
+            W32(400, 7); W32(408, 0xC0000005); W64(424, B + 0x1234); W32(432, 2); W64(440, 0); W64(448, 0x10);
+            W32(560, 0x4D0); W32(564, 700);
+            W64(700 + 0x98, 0x1000000UL + 16); W64(700 + 0xF8, B + 0x1234);
+            W32(1300, 1); W32(1304, 7); W64(1328, 0x1000000UL); W32(1336, 64); W32(1340, 1400);
+            ulong[] stack = { B + 0x9999, 0, B + 0x2000, 0x12345, B + 0x3000, B, 0, B + 0x4abc };
+            for (int k = 0; k < stack.Length; k++) W64(1400 + 8 * k, stack[k]);
+            var s = CrashSummary.Make(d) ?? "";
+            C(s.Contains("error 0xc0000005 (access violation), reading near address 0 (0x10)"), "the error, its kind (" + s.Split('\n').Skip(1).FirstOrDefault()?.Trim() + ")");
+            C(s.Contains("at TransportFever3.exe+0x1234"), "  where it came, as module+offset");
+            int i2 = s.IndexOf("+0x2000", StringComparison.Ordinal), i3 = s.IndexOf("+0x3000", StringComparison.Ordinal), i4 = s.IndexOf("+0x4abc", StringComparison.Ordinal);
+            C(i2 > 0 && i2 < i3 && i3 < i4, "  the stack's values in the module, from the crash up");
+            C(!s.Contains("9999") && !s.Contains("12345") && !s.Contains("Someone") && !s.Contains(@"C:\") && !s.Contains("+0x0\r"),
+                "  nothing below the crash, outside a module, no path, no module start");
+            C(CrashSummary.Make(new byte[100]) == null && CrashSummary.Make(Path.Combine(Path.GetTempPath(), "mpfever-none-" + Guid.NewGuid().ToString("N") + ".dmp")) == null,
+                "not a minidump, or no file: none");
             return ok;
         }
 

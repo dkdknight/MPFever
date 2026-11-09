@@ -961,6 +961,35 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " SKIPPED, " .. result.err)
 		return result
 	end
+	-- (0.7.15, issue #174) a script's street build whose node configurations name a segment that is no longer at its node (taken
+	-- away by an earlier build at this game time, or before): refused on every game, as the game alone refuses it; the engine
+	-- stopped on it (see C.staleNodeConfig). A native build is only looked at (said in mod.log). MPFEVER_STALECFG=0: as before
+	local stepGone = nil
+	if a.fn == "makeWorldBuildProposalCmd" and type(a.args) == "table" and type(a.args[1]) == "table" and os.getenv("MPFEVER_STALECFG") ~= "0" then
+		-- (kept for the builds sent in this update of the simulation, or this frame of the interface, at this game time: the commands
+		-- sent before were applied since, and the world says what they took away. Not for the whole game time: in a pause it stays
+		-- the same while each paused build is applied before the next, and the engine gives a freed id to a new segment)
+		local okT, tNow = pcall(gameTime)
+		local key = (useCallback and ("u" .. tostring(C.uiFrame or 0)) or ("s" .. tostring(SIM.ctTick or 0))) .. "@" .. tostring(okT and tNow or "")
+		if not (C.stepGone and C.stepGone.at == key) then C.stepGone = { at = key, ids = {} } end
+		stepGone = C.stepGone.ids
+		local okS, stale = pcall(C.staleNodeConfig, a.args[1], stepGone)
+		if okS and stale then
+			result.err = "its node configuration" .. (stale.node and (" of node " .. tostring(stale.node)) or "") .. " names "
+				.. (stale.seg and ("segment " .. tostring(stale.seg)) or "a node") .. ", " .. stale.why
+			log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " refused on every game: " .. result.err)
+			return result
+		elseif not okS then
+			log("action " .. tostring(a.uid) .. ": node configurations not checked (" .. tostring(stale):sub(1, 120) .. ")")
+		end
+		if type(a.args[1].proposal) == "table" and next(stepGone) ~= nil then
+			pcall(function()
+				local probe = { streetProposal = { nodeConfigsToAdd = a.args[1].proposal.nodeConfigsToAdd, edgesToRemove = a.args[1].proposal.removedSegments } }
+				local s2 = C.staleNodeConfig(probe, stepGone, function() return true end)
+				if s2 then log("action " .. tostring(a.uid) .. ": a native build that names " .. tostring(s2.seg or s2.node) .. ", " .. s2.why .. " (applied as before)") end
+			end)
+		end
+	end
 	-- companies mode: what belongs to another company is not touched by this one, the same on every game (ported from TPF3-MP's
 	-- companies.mayTouch and mayBuyAtDepot): its vehicles, lines, depots and stations (selling, sending to a line or a depot,
 	-- editing, renaming, recolouring, buying a vehicle in its depot). What belongs to no company (the towns' streets, the
@@ -1221,6 +1250,8 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		if done then done(result) end
 		return result
 	end
+	-- (0.7.15, #174) what this build takes away, for the builds after it at this game time (see C.staleNodeConfig)
+	if stepGone and isBuild then pcall(C.noteGone, a.args[1], stepGone) end
 	if useCallback and done then
 		-- the verdict comes in the callback (logged and reported there)
 		result.returned = true
@@ -2170,6 +2201,23 @@ function DET.wrapModEvents()
 			end
 			log("mod script update called with the steps only: " .. k)
 		end
+		-- (0.7.15, Elias's wish list: German Trafficlights and German Railroadcrossings split their presets every 15 calls of
+		-- postUpdate, which the engine also calls with dt 0 between steps) A mod's postUpdate too is called with the steps only.
+		-- MPFEVER_MODPOSTDT0=1: every call, as before
+		if type(k) == "string" and type(v) == "table" and type(v.postUpdate) == "function" and not v.__mpfPdt
+			and k:sub(1, 3) ~= "::/" and not k:find("mpfever", 1, true) and os.getenv("MPFEVER_MODDT0") ~= "1"
+			and os.getenv("MPFEVER_MODPOSTDT0") ~= "1" then
+			v.__mpfPdt = true
+			local origP = v.postUpdate
+			v.postUpdate = function(u, st, dt, ...)
+				if dt == 0 and (C.ROLE == "host" or C.ROLE == "client") then
+					SIM.modPostDt0 = (SIM.modPostDt0 or 0) + 1
+					return
+				end
+				return origP(u, st, dt, ...)
+			end
+			log("mod script postUpdate called with the steps only: " .. k)
+		end
 	end
 end
 
@@ -2644,6 +2692,11 @@ local function update(userParams, state, dt)
 		if SIM.coRegistry and SIM.coRegistry.mode == "separate" and os.getenv("MPFEVER_NOCOACTIONS") ~= "1" then
 			SIM.coActEnv = SIM.coActEnv or { log = log, registry = function() return SIM.coRegistry end }
 			CO.installCompanyActions(SIM.coActEnv)
+		end
+		-- (0.7.15, Getriebesand: a landmark's next level made it the host's company's, see CO.installLandmarks; at every step too)
+		if SIM.coRegistry and SIM.coRegistry.mode == "separate" and CO.installLandmarks then
+			SIM.lmEnv = SIM.lmEnv or { log = log, registry = function() return SIM.coRegistry end }
+			CO.installLandmarks(SIM.lmEnv)
 		end
 		-- (0.6.8, #95: the achievements per company, see mpfever_co.lua's CO.installAchievements; at every step as the companies
 		-- script. MPFEVER_ACHIEVEMENTS=0: never)
@@ -5424,6 +5477,22 @@ G.toolCosts = function(a, plan)
 		and sw ~= "0" and sw ~= "builder"
 end
 
+-- (0.7.15, NOWAIT v3) whether the engine would refuse a proposal, from its proposal data (made, nothing built): its error state's
+-- critical flag, and its messages (a short text). MPFEVER_STOPDRYFAKE=n (tests): the first n verdicts say "refused"
+G.stopDryVerdict = function(sp, ctx)
+	local fake = tonumber(os.getenv("MPFEVER_STOPDRYFAKE") or "")
+	if fake and (G.dryFaked or 0) < fake then
+		G.dryFaked = (G.dryFaked or 0) + 1
+		return true, "MPFEVER_STOPDRYFAKE"
+	end
+	local pd = api.engine.util.proposal.makeProposalData(sp, ctx)
+	local crit = false
+	pcall(function() crit = pd.errorState.critical == true end)
+	local msgs = ""
+	if crit then pcall(function() msgs = C.ser(C.marshal(pd.errorState.messages)):sub(1, 120) end) end
+	return crit, msgs
+end
+
 local function replayStop(a, plan, variant)
 	variant = variant or 1
 	local c = api.engine.getComponent(plan.E, api.type.ComponentType.BASE_EDGE)
@@ -5639,6 +5708,37 @@ local function replayStop(a, plan, variant)
 		if variant < 2 then return replayStop(a, plan, variant + 1) end
 		return
 	end
+	-- (0.7.15, NOWAIT v3) The engine's verdict on this form, asked before it is sent (its proposal data, nothing built): a form it
+	-- would refuse is not sent, the next one is made at once, as its refusal would have led to (without the tool's pricing, with
+	-- the street cleanup, then the engine's conversion of the tool's build). Every form is chosen at the stop's step, the same
+	-- on every game: a street stop no longer waits for the engine's answer to be tried again (the 3 refusals of 736 stops in the
+	-- field logs were "Collision"/"Construction Not Possible", which the proposal data shows). An answer that still says no
+	-- goes the way it went (the next try then comes late, logged). MPFEVER_STOPDRYRUN=0: every form sent, the stops wait, as in 0.7.14
+	local dryRun = os.getenv("MPFEVER_STOPDRYRUN") ~= "0" and not plan.probeOnly
+	if dryRun then
+		local okV, crit, msgs = pcall(G.stopDryVerdict, sp, sContext(not plan.after and a or nil, plan.cleanup))
+		if okV and crit then
+			if free then
+				plan.plainCosts = true
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine would refuse it (" .. tostring(msgs) .. "), priced like the tool's build: without the tool's pricing")
+				return replayStop(a, plan, variant)
+			end
+			if not plan.cleanup then
+				plan.cleanup = true
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine would refuse it (" .. tostring(msgs) .. "): with the street cleanup")
+				return replayStop(a, plan, variant)
+			end
+			if type(a.ts) == "table" and not plan.nativeTried and type(plan.E) == "number" and os.getenv("MPFEVER_STOPNATIVERETRY") ~= "0" then
+				plan.nativeTried = true
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine would refuse its script forms (" .. tostring(msgs) .. "): by the engine's conversion of the tool's build")
+				local okN, errN = pcall(G.replayNativeStop, a, plan)
+				if okN then return end
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine's conversion failed: " .. shortErr(errN) .. " (the last form sent)")
+			end
+		elseif not okV then
+			log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine's verdict not read (" .. shortErr(crit) .. "): sent")
+		end
+	end
 	local function stopCount()
 		local n = 0
 		pcall(function() for _ in pairs(api.engine.system.streetSystem.getEdgeObject2EdgeMap()) do n = n + 1 end end)
@@ -5653,7 +5753,10 @@ local function replayStop(a, plan, variant)
 	-- its 4th try; without waiting it would have come steps late, then a reload. The other replays (streets and tracks by the
 	-- script forms: 1 recovery in about 2000; the engine's conversions of stops and signals: 1085 built, none tried again) keep
 	-- going without waiting. MPFEVER_NOWAITSTOPS=1: a street stop without waiting too, as in 0.7.12
-	if os.getenv("MPFEVER_NOWAITSTOPS") == "1" then pcall(G.gateSingle) end
+	-- (0.7.15, NOWAIT v3: with the engine's verdict asked first, above, a street stop goes without waiting again; MPFEVER_NOWAITSTOPS=0:
+	-- it waits, as in 0.7.14)
+	local nws = os.getenv("MPFEVER_NOWAITSTOPS")
+	if nws == "1" or (dryRun and nws ~= "0") then pcall(G.gateSingle) end
 	replaySend(cmd, function(res, success)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
@@ -14249,6 +14352,72 @@ H.cfgjunction = function(from, p)
 	G.waits[#G.waits + 1] = { at = G.frames + 120, fn = later }
 end
 
+-- (0.7.15, issue #174) Two pieces of one street junction replaced at once, both from the world before either (MPFEVER_SCENARIO=
+-- stalecfg, host), as Town Transit Planner puts its stops on town streets: each made by the game's replaceSegment, with its node
+-- configurations, in a SimpleProposal, both sent in the same frame. The second's configuration of the junction names the piece the
+-- first replaces: refused on every game (mod.log "refused on every game: its node configuration"), no game stops.
+-- MPFEVER_STALECFG=0 on every game: the engine is given it, as in #174
+H.stalecfg = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local CT = api.type.ComponentType
+	local segmap = api.engine.system.streetSystem.getNode2SegmentMap()
+	local function plainStreet(s)
+		local be = api.engine.getComponent(s, CT.BASE_EDGE)
+		local st = api.engine.getComponent(s, CT.BASE_EDGE_STREET)
+		return be and st and be.type == 0 and #be.objects == 0
+	end
+	local function piece(s)
+		local v = api.engine.util.proposal.replaceSegment(s).proposal
+		local sp = api.type.SimpleProposal.new()
+		sp.streetProposal.edgesToRemove = { s }
+		sp.streetProposal.edgesToAdd = { v.addedSegments[1] }
+		local add, rm = {}, {}
+		for i = 1, #v.nodeConfigsToAdd do add[#add + 1] = v.nodeConfigsToAdd[i] end
+		for i = 1, #v.nodeConfigsToRemove do rm[#rm + 1] = v.nodeConfigsToRemove[i] end
+		if #add > 0 then sp.streetProposal.nodeConfigsToAdd = add end
+		if #rm > 0 then sp.streetProposal.nodeConfigsToRemove = rm end
+		return sp, #add
+	end
+	local nodes = {}
+	for nd, segs in pairs(segmap) do
+		pcall(function()
+			if #segs >= 3 and api.engine.getComponent(nd, CT.BASE_NODE_CONFIG) then
+				local n = 0
+				for _, s in ipairs(segs) do if plainStreet(s) then n = n + 1 end end
+				if n >= 2 then nodes[#nodes + 1] = nd end
+			end
+		end)
+	end
+	table.sort(nodes)
+	local sent = nil
+	for _, nd in ipairs(nodes) do
+		local ok, why = pcall(function()
+			local segs = {}
+			for _, s in ipairs(segmap[nd]) do if plainStreet(s) then segs[#segs + 1] = s end end
+			table.sort(segs)
+			local a, na = piece(segs[1])
+			local b, nb = piece(segs[2])
+			if na == 0 or nb == 0 then error("no node configuration") end
+			local mb = C.marshal(b)
+			local s = C.staleNodeConfig(mb, { [segs[1]] = true }, function() return true end)
+			if not (s and s.seg == segs[1]) then error("the second's configurations do not name the first piece") end
+			local ctx = api.type.Context.new()
+			ctx.player = api.engine.util.getPlayer()
+			uiRequest("makeWorldBuildProposalCmd", { n = 4, C.marshal(a), C.marshal(ctx), false, false })
+			uiRequest("makeWorldBuildProposalCmd", { n = 4, mb, C.marshal(ctx), false, false })
+			return "pieces " .. segs[1] .. " and " .. segs[2] .. " of junction " .. nd .. " replaced at once (the second's configuration of node "
+				.. tostring(s.node) .. " names " .. segs[1] .. ")"
+		end)
+		if ok then sent = why break end
+	end
+	AUTO.results[#AUTO.results + 1] = sent or ("no street junction with two plain pieces whose proposals name each other (" .. #nodes .. " junctions)")
+	log("AUTOTEST stalecfg: " .. AUTO.results[#AUTO.results] .. " at t=" .. tostring(gameTime()) .. ", STALECFG=" .. tostring(os.getenv("MPFEVER_STALECFG")))
+	G.waits[#G.waits + 1] = { at = G.frames + 600, fn = autoFinish }
+end
+
 -- A train station edited again and again, as the module tool does (MPFEVER_SCENARIO=stationedit, host; issue #82: the frame
 -- rate fell with every module added to a train station): the station with the most modules replaced by itself
 -- MPFEVER_STATIONEDIT_N times (6), 10 s apart. Each round tells the interface's frame rate, the simulation state's size and what
@@ -20741,6 +20910,8 @@ end
 local function guiUpdate(userParams, state, guiState)
 	if not C.ACTIVE then return end
 	G.frames = G.frames + 1
+	-- ((0.7.15, #174) this frame, for the builds an interface sends in one frame, see executeActionOnce)
+	C.uiFrame = G.frames
 	G.stateObj = state
 	if G.frames % 15 == 0 then pcall(G.previewTick); pcall(G.pingTick) end
 	if G.frames % 30 == 7 then pcall(G.nameTick) end
