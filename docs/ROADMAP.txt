@@ -61,6 +61,7 @@ it is stable enough.
   [x] The builder sees its build at once (0.6.12), vehicles and lines without waiting (0.7.4)
   [x] No-stop v2 ON by default (0.7.14): no wait only for the replays that have no retry path (street stops keep theirs),
       a construction taken away not shipped at the click, the vehicle and line windows no longer lead
+  [x] Street stops without waiting too (0.7.15): each form given to the game's verdict first, the right one sent at its step
   [ ] The field's reports with it on: sessions of 3 players or more without a resynchronisation
   [ ] Big station edits without their last freeze
   [ ] The last recurring desyncs: vehicles in bus terminals, GCT stations (#133), a new line (#134)

@@ -1,7 +1,8 @@
 MPFever - Changelog
 ===================
 
-0.7.15 - (in progress)
+0.7.15 - 2026-11-09: street stops without waiting too, landmarks keep their owner, a crash summary in the reports, a script's
+  stale street build refused alike everywhere (#174), the mods of a player's wish list
   - CHANGE (#174, hluki's game, 2026-11-09 12:09: the host crashed): Town Transit Planner put its stops on 12 town street pieces
     at once, each piece replaced by a copy made from the world before any of them was built (with the node configurations the
     engine had made for it). Four were replayed at the same game time: the third replaced segment 309652 at a junction, and the
@@ -22,7 +23,9 @@ MPFever - Changelog
     not sent, and the next one (without the tool's pricing, with the street cleanup, the engine's conversion of the tool's
     build) is made at once, at the stop's step on every game. 0.7.14 kept their wait because a refused form's next try came a
     frame later, after the step (r161); the 3 refusals of 736 street stops in the field logs were collisions, which the
-    proposal data shows. MPFEVER_STOPDRYRUN=0 or MPFEVER_NOWAITSTOPS=0: they wait, as in 0.7.14. Test: tests/test_stopdryrun0715.py
+    proposal data shows. Autotests (9 street stops by two players, Test Gameplay): each game stood 9.1/9.1 s against
+    15.5/14.5 s with the 0.7.14 wait, a stop's replay held the others 186/158 ms against 533/547 ms (medians), in sync, none
+    late. MPFEVER_STOPDRYRUN=0 or MPFEVER_NOWAITSTOPS=0: they wait, as in 0.7.14. Test: tests/test_stopdryrun0715.py
     (and test_nostopdefault0714.py); in game MPFEVER_STOPDRYFAKE=n makes the first n verdicts "refused".
   - MODS (Elias's wish list, Discord, 2026-11-09: their scripts read, docs/MODS.md and the lobby's notes): Hohenzollern Bridge's
     clean-up of a bulldozed bridge (as Sydney Harbour Bridge's) and Better Priority's half-second decisions now go from one
@@ -39,6 +42,9 @@ MPFever - Changelog
     and the selftest (a minidump written and read back).
   - TESTS: MPFEVER_AUTOLOADDELAY=n (the autotests' savegame loaded n seconds later on that game, #173: a player who receives the
     host's savegame first) and MPFEVER_AFFINITY_HOST / MPFEVER_AFFINITY_CLIENT (one game pinned to some CPU cores, #150).
+    Their first runs: the host's game waiting 2 min 39 s for the client's load, no action (#173's start): identical at every
+    check, the wait alone is not #173's cause; Test Drift Big 600 s at x4 with the client on 2 cores, with and without the
+    persons and vehicles in one piece: in sync both times (the drift of #150 not reproduced on one PC: they stay off).
 
 0.7.14 - 2026-11-09: « without waiting » and « without stopping » back and on by default, their field problems fixed first (a
   street stop's retry, a construction taken away at the click, the windows' leads); the programs' file details like the DLL's
