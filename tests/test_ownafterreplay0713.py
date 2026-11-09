@@ -11,7 +11,12 @@ the engine's hands (its command not answered, the frames after the answer, the s
 the replay is applied. MPFEVER_OWNAFTERREPLAY=0: as before. The real functions run through lupa:
   - releaseOne, runNativeRelease, G.sameStepWait, G.ownWaitsReplay, replaySend and G.eoCheckHold, case by case and frame by
     frame: the commands reach the engine in the order dry run, build, own build (with the switch at 0: dry run, own build,
-    build, the order of #166); BUILDLEAD and paused builds unchanged;
+    build, the order of #166); BUILDLEAD unchanged; a paused build waits by its own branch as before, and now for the stops
+    placed again after a street too (G.stopsAfterBusy: that branch released it between the street and its stops);
+  - replayTwoStep (a station replayed in two steps: the street part alone, then the construction 3 frames after its answer),
+    frame by frame: the frames after the street part's answer ended in the very frame the construction's command is sent, and
+    the own build, released earlier in that frame, went between the two parts; now street part, construction, own build, held
+    or paused (with the switch at 0: as before);
   - SIM.townClose's reason, with the number of proposals added up here (MPFEVER_TOWNWHYN=0: as before);
   - the autotest H.samestep: deferredSend's hook (a build held for the chosen step, once), the rank and the step on each game.
 Needs lupa. Run: python tests/test_ownafterreplay0713.py
@@ -54,12 +59,17 @@ TC = grab(r"^SIM\.townClose = function\(st, rc\)\n.*?^end\n", "SIM.townClose")
 DS = grab(r"^local function deferredSend\(cmd, cb, proposal, still\)\n.*?^end\n", "deferredSend")
 SS = grab(r"^H\.samestep = function\(from, p\)\n.*?^end\n", "H.samestep")
 SSA = grab(r"^H\.samestep_at = function\(from, p\)\n.*?^end\n", "H.samestep_at")
+TWO = grab(r"^function replayTwoStep\(a\)\n.*?^end\n", "replayTwoStep")
 
 print("the code")
 line = [l for l in RUN.split("\n") if l.startswith("\t\telseif ((now >= r.at and (gameSpeed() == 0")]
 check(len(line) == 1 and line[0].endswith("and not G.sameStepWait(r.at, G.me) and not G.ownWaitsReplay(r) then"),
       "the release of a held build (not paused, not BUILDLEAD) checks G.ownWaitsReplay last")
-check("\t\t\tlocal busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)\n" in RUN, "the paused branch keeps its own rule")
+check("\t\t\tlocal busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or (G.stopsAfterBusy ~= nil and os.getenv(\"MPFEVER_OWNAFTERREPLAY\") ~= \"0\")\n" in RUN,
+      "the paused branch keeps its own rule, the stops placed again after a street added (not with MPFEVER_OWNAFTERREPLAY=0)")
+check('\t\t\tif os.getenv("MPFEVER_OWNAFTERREPLAY") ~= "0" then G.replayQuiet = math.max(G.replayQuiet or 0, G.frames + 4) end\n'
+      '\t\t\tG.waits[#G.waits + 1] = { at = G.frames + 3, fn = buildConstruction }\n' in TWO,
+      "replayTwoStep: the frames after the street part's answer last past the construction's command (not with MPFEVER_OWNAFTERREPLAY=0)")
 check('os.getenv("MPFEVER_OWNAFTERREPLAY") == "0"' in OWN, "MPFEVER_OWNAFTERREPLAY=0: as before")
 check('os.getenv("MPFEVER_TOWNWHYN") == "0"' in TC, "MPFEVER_TOWNWHYN=0: the reason as before")
 
@@ -79,12 +89,14 @@ function nativeCtl(s) CMDS[#CMDS + 1] = s end
 function toSim(k, p) end
 function buildEffects() end
 function withActor(who, f, ...) return f(...) end
--- the engine: a command is answered ANSWER_DELAY frames after it was sent (a dry run is refused, as G.eoDryRun's is)
+-- the engine: a command is answered ANSWER_DELAY frames after it was sent (a dry run is refused, as G.eoDryRun's is; so is
+-- a street part with its construction in the two-step case, see race2)
 ANSWER_DELAY = 2
+REFUSED = { dry = true, together = true }
 O = { event = function() return "nop" end,
 	sendCommand = function(cmd, cb)
 		if cmd ~= "nop" then CMDS[#CMDS + 1] = cmd end
-		if cb then ANSWERS[#ANSWERS + 1] = { at = G.frames + ANSWER_DELAY, cb = cb, ok = cmd ~= "dry" } end
+		if cb then ANSWERS[#ANSWERS + 1] = { at = G.frames + ANSWER_DELAY, cb = cb, ok = not REFUSED[cmd] } end
 	end }
 function answer()
 	local keep, due = {}, {}
@@ -156,6 +168,16 @@ check(run("return #G.natRelease == 1 and #CMDS == 0") is True, "(8) a paused bui
 run("G.replayOut = 0; runNativeRelease()")
 check(run('return #G.natRelease == 0 and CMDS[1] == "releaseid 14" and logged("waits: a replay") == 0') is True, "    then released in its turn, as before")
 fresh()
+run('G.natRelease = { { id = 18, at = NOW, paused = true } }; G.pt.of["yoyo#18"] = 6; G.stopsAfterBusy = G.frames; runNativeRelease(); runNativeRelease()')
+check(run("return #G.natRelease == 1 and #CMDS == 0") is True,
+      "(8b) a paused build in its turn while the stops of a street replayed before it are placed again (G.stopsAfterBusy): held")
+run("G.stopsAfterBusy = nil; runNativeRelease()")
+check(run('return #G.natRelease == 0 and CMDS[1] == "releaseid 18" and logged("native build 18: turn 6") == 1') is True,
+      "    the stops placed: released in its turn")
+fresh()
+run('ENV.MPFEVER_OWNAFTERREPLAY = "0"; G.natRelease = { { id = 18, at = NOW, paused = true } }; G.pt.of["yoyo#18"] = 6; G.stopsAfterBusy = G.frames; runNativeRelease()')
+check(run('return #G.natRelease == 0 and CMDS[1] == "releaseid 18"') is True, "    MPFEVER_OWNAFTERREPLAY=0: released at once, as before")
+fresh()
 run("G.natRelease = { { id = 15, at = NOW } }; G.replayOut = 0; G.replayQuiet = 0; runNativeRelease()")
 check(run('return #G.natRelease == 0 and CMDS[1] == "releaseid 15" and logged("waits") == 0') is True, "    no replay in hand: released at once, as before")
 check(run("return G.ownWaitsReplay({ id = 16, at = NOW })") is False, "    G.ownWaitsReplay: no replay, no wait")
@@ -202,6 +224,78 @@ fresh()
 run("ANSWER_DELAY = 1")
 got = run("local r = race(); ANSWER_DELAY = 2; return r")
 check(got == "dry,build,releaseid 11", "    an engine answering on the next frame: the same order", got)
+
+print("frame by frame, a construction replayed in two steps")
+L.execute(r'''
+local function cp(t) if type(t) ~= "table" then return t end local r = {} for k, v in pairs(t) do r[k] = cp(v) end return r end
+function twoStepStubs()
+	STREET_FORMS = { { v = "minimal", ctx = "terrainNoCleanup" } }
+	-- (the engine's commands named by what they were made of: the street part with the construction, alone, the construction)
+	C = { copy = cp, ser = function() return "" end, marshal = function() return {} end,
+		rebuildArgs = function(fn, args, opts) return { opts.noStreet and "construction" or (#(args[1].toAdd or {}) > 0 and "together" or "street") }, 1 end }
+	R = { translateIn = function() return {} end, allEdges = function() return {} end }
+	api = { cmd = { make = function(tag) return tag end } }
+	function editsConstruction() return false end
+	function isConstructionSegment() return false end
+	function shortErr(e) return tostring(e) end
+	function replayFailed(a, why) FAILED = why end
+	function logRefusal() end
+	FAILED = nil
+	G.gateGroup = function() end
+	G.ownTracksRemoved = function() return false end
+	G.bind = {}
+end
+function race2(paused)
+	-- yoyo's build 11 held for this step (paused: its turn after YkeWoudstra's); YkeWoudstra's (ranked first), a station,
+	-- announced for it too; its replay comes at the second frame (runNativeReplays, after runNativeRelease in the same frame) and
+	-- is made in two steps: the street part with the construction (refused), the street part alone, the construction
+	twoStepStubs()
+	G.natRelease = { { id = 11, at = NOW, paused = paused } }
+	MAYGO = not paused
+	G.ptMayGo = function() return MAYGO end
+	if paused then G.pt.of["yoyo#11"] = 5 else G.natWait = { { origin = "YkeWoudstra#11", at = NOW, id = 98 } } end
+	local a = { uid = "YkeWoudstra#11:62", fn = "make", args = { { toAdd = { { fileName = "station.con" } }, toRemove = {},
+		proposal = { addedSegments = {}, addedNodes = {}, removedSegments = {} } } } }
+	for f = 1, 40 do
+		G.frames = G.frames + 1
+		answer()
+		runNativeRelease()
+		if f == 2 then
+			-- (its announcement dropped as it is sent, see nativeArrived; a paused replay's turn done, see runNativeReplays)
+			G.natWait = {}
+			MAYGO = true
+			replayTwoStep(a)
+		end
+		-- (G.waits last, as guiUpdate runs them)
+		local current = G.waits
+		G.waits = {}
+		for _, w in ipairs(current) do if G.frames >= w.at then w.fn() else G.waits[#G.waits + 1] = w end end
+	end
+	return table.concat(CMDS, ",")
+end
+''')
+L.execute(TWO)
+fresh()
+got = run("return race2(false)")
+check(got == "together,street,construction,releaseid 11", "the own build reaches the engine after the construction, the second part", got)
+check(run('return FAILED == nil and logged("two steps: street part BUILT") == 1 and logged("two steps: construction BUILT") == 1 '
+          'and #G.natRelease == 0 and logged("native build 11 released at t=10880600") == 1') is True,
+      "    both parts built, the own build released at its step")
+fresh()
+run("G.eoHoldOwn = false")
+got = run("return race2(false)")
+check(got == "together,street,construction,releaseid 11", "    MPFEVER_EOCHECKHOLD=0 too", got)
+fresh()
+got = run("return race2(true)")
+check(got == "together,street,construction,releaseid 11", "    a paused build in its turn: the same order", got)
+fresh()
+run('ENV.MPFEVER_OWNAFTERREPLAY = "0"')
+got = run("return race2(false)")
+check(got == "together,releaseid 11,street,construction", "MPFEVER_OWNAFTERREPLAY=0: released while the replay is out, as before", got)
+fresh()
+run('ENV.MPFEVER_OWNAFTERREPLAY = "0"')
+got = run("return race2(true)")
+check(got == "together,street,releaseid 11,construction", "    paused: between the two parts, as before", got)
 
 print("SIM.townClose's reason")
 L.execute("SIM = {}\n" + TK + TC)

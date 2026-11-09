@@ -7187,6 +7187,11 @@ function replayTwoStep(a)
 				return
 			end
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " two steps: street part BUILT with " .. label)
+			-- (0.7.13, #161 #166: the frames after this answer (G.replayQuiet, see replaySend) ended in the very frame the
+			-- construction's command is sent, and a held own build (runNativeRelease) or the next replay (runNativeReplays), both run
+			-- before G.waits in that frame, went between the two parts: other ids here. The window now lasts one frame past it, see
+			-- G.ownWaitsReplay. MPFEVER_OWNAFTERREPLAY=0: as before)
+			if os.getenv("MPFEVER_OWNAFTERREPLAY") ~= "0" then G.replayQuiet = math.max(G.replayQuiet or 0, G.frames + 4) end
 			G.waits[#G.waits + 1] = { at = G.frames + 3, fn = buildConstruction }
 		end)
 	end
@@ -9045,7 +9050,10 @@ local function runNativeRelease()
 		elseif now >= r.at and gameSpeed() == 0 and r.paused then
 			-- (paused: in its turn, after the builds before it are applied here; no turn from the host within 10 s: at once)
 			local seq = G.pt.of[G.ptKey(G.me, r.id)]
-			local busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)
+			-- (0.7.13, #161 #166: nor while the stops of a street replayed before it are placed again, as the replays and the paused
+			-- actions wait for them; it went between the street and its stops here only, see G.ownWaitsReplay. MPFEVER_OWNAFTERREPLAY=0:
+			-- as before)
+			local busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or (G.stopsAfterBusy ~= nil and os.getenv("MPFEVER_OWNAFTERREPLAY") ~= "0")
 			if (seq and G.ptMayGo(seq) and not busy) or (not seq and G.frames - (r.frame0 or 0) > 600) then
 				log("native build " .. r.id .. (seq and (": turn " .. seq) or ": no turn from the host in 10 s, released now (desync risk)"))
 				-- (0.7.13, #168, a measure: its player's earlier actions still waiting for their step, see G.pullBuildLog)
@@ -9823,10 +9831,13 @@ end
 -- resynchronisation), and the player's next build named entities only its game had ("unresolved references"): YkeWoudstra#11:62
 -- on yoyo's game, 2026-11-08 19:59:33Z; Bence#11:160 on YkeWoudstra's.) Now this game's held build is not released while a replay
 -- is in the engine's hands: its command sent and not answered, the few frames after its answer (room for its next command, longer
--- for a count of the stops, see G.eoCheckHold), or the stops placed again after a street (G.stopsAfterBusy). It goes once the
--- replay is applied, at the same step (the game stands there meanwhile, see nativeHoldAt). The builds released at once (BUILDLEAD)
--- and those of a pause (their branch has the same rule) are unchanged. MPFEVER_OWNAFTERREPLAY=0: as before (released, and said
--- once: "OWN BUILD ... released while a replay is in the engine's hands").
+-- for a count of the stops, see G.eoCheckHold, and past the frame a construction replayed in two steps sends its second one, see
+-- replayTwoStep), or the stops placed again after a street (G.stopsAfterBusy). It goes once the replay is applied, at the same
+-- step (the game stands there meanwhile, see nativeHoldAt). The builds released at once (BUILDLEAD) are unchanged. Those of a
+-- pause keep their own branch in runNativeRelease (in their turn); it waited for the command and the frames after its answer, not
+-- for the stops placed again after a street, and now waits for them too. MPFEVER_OWNAFTERREPLAY=0: as before (released, and said
+-- once: "OWN BUILD ... released while a replay is in the engine's hands"; a paused build not held by the stops placed again, the
+-- frames after a two-step street part not lengthened).
 G.ownWaitsReplay = function(r)
 	local busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil
 	if not busy then return false end
