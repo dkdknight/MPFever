@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.7.14 - (in progress)
+
 0.7.13 - 2026-11-09: fewer resyncs and crashes: two players' builds at the same moment, a player's actions around a pause, the
   calendar's sliders, joining again after an older save, joining through Steam behind shared addresses; the experimental settings
   removed, a purchase refused for lack of money says so, and the launcher's join box replaced by Settings, Support and Discord
