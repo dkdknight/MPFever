@@ -5490,7 +5490,39 @@ G.stopDryVerdict = function(sp, ctx)
 	pcall(function() crit = pd.errorState.critical == true end)
 	local msgs = ""
 	if crit then pcall(function() msgs = C.ser(C.marshal(pd.errorState.messages)):sub(1, 120) end) end
-	return crit, msgs
+	return crit, msgs, pd
+end
+
+-- (0.7.16, issues #177-#180) The numbers the towns would take from a stop's script form (its proposal data, nothing built), against
+-- its builder's build (a.ts): nil when they agree within SIM.townClose's margin, else what differs ("al 0.000/0.416"). The terrain
+-- alignment added and removed and the trees and rocks taken away, read as the towns' script and SIM.townStats read them; a stop
+-- moves no terrain with the brush and digs no tunnel. A value not readable here or not shipped is left out.
+G.stopTownDiff = function(a, pd)
+	if type(a) ~= "table" or type(a.ts) ~= "table" or pd == nil then return nil end
+	local got = { al = 0, ar = 0, tr = 0, rk = 0 }
+	for _, f in ipairs({ { "getTerrainAlignmentImpact", "al", "ar" }, { "getAutoRemovalEntityImpact", "tr", "rk" } }) do
+		-- (called through the table as G.stopAlignProbe does: the game's functions are not all Lua functions, a first version that
+		-- asked type(fn) == "function" read nothing in the game)
+		local ok, r = pcall(function() return api.engine.util.town[f[1]](pd) end)
+		if ok and type(r) == "table" then
+			for _, v in pairs(r) do
+				got[f[2]] = got[f[2]] + (tonumber(v[1]) or 0)
+				got[f[3]] = got[f[3]] + (tonumber(v[2]) or 0)
+			end
+		else
+			got[f[2]], got[f[3]] = nil, nil
+		end
+	end
+	local diffs = {}
+	for _, k in ipairs({ "al", "ar", "tr", "rk" }) do
+		local e, g = tonumber(a.ts[k]), got[k]
+		if e and g then
+			local tol = math.max(0.05, 1e-5 * math.max(math.abs(e), math.abs(g)))
+			if math.abs(e - g) > tol then diffs[#diffs + 1] = string.format("%s %.3f/%.3f", k, e, g) end
+		end
+	end
+	if #diffs == 0 then return nil end
+	return table.concat(diffs, ", ")
 end
 
 local function replayStop(a, plan, variant)
@@ -5696,7 +5728,9 @@ local function replayStop(a, plan, variant)
 		local ctx = sContext(not plan.after and a or nil, plan.cleanup)
 		-- (there, a builder's build that left the towns alike is replayed as a script's build, which the towns ignore as they
 		-- ignored the builder's: G.stopNoTown. Issue #85: signals on track bridges, "TOWN STATS DIFFER" and a reload each time)
-		local pi = not (a and ((type(c.type) == "number") and c.type or 0) ~= 0 and G.stopNoTown(a))
+		-- (0.7.16: on a street too when its proposal data showed that the towns would take other numbers from it here, plan.noTown,
+		-- see below)
+		local pi = not (a and (((type(c.type) == "number") and c.type or 0) ~= 0 or plan.noTown) and G.stopNoTown(a))
 		local ign = not plan.after and G.toolIgnoresErrors(a)
 		if free then return api.cmd.makeWorldBuildProposalCmd(sp, ctx, ign, pi, true) end
 		return api.cmd.makeWorldBuildProposalCmd(sp, ctx, ign, pi)
@@ -5716,7 +5750,30 @@ local function replayStop(a, plan, variant)
 	-- goes the way it went (the next try then comes late, logged). MPFEVER_STOPDRYRUN=0: every form sent, the stops wait, as in 0.7.14
 	local dryRun = os.getenv("MPFEVER_STOPDRYRUN") ~= "0" and not plan.probeOnly
 	if dryRun then
-		local okV, crit, msgs = pcall(G.stopDryVerdict, sp, sContext(not plan.after and a or nil, plan.cleanup))
+		local okV, crit, msgs, pd = pcall(G.stopDryVerdict, sp, sContext(not plan.after and a or nil, plan.cleanup))
+		-- (0.7.16, issues #177-#180) A form the engine accepts may still shape the ground here otherwise than the stop tool did on the
+		-- builder's game. On the map of #177-#180 (Mittellandkanal, a map from mod.io) the replay re-laid the town street and aligned
+		-- its terrain here (0.416, 0.084, 0.195 against the builder's 0), 3 stops of 4: "TOWN STATS DIFFER", the host's game reloaded
+		-- after each stop. Every form does it alike: John's six stops replayed on that map gave the same numbers by the engine's
+		-- conversion of the tool's build as by the script form (autotest replayfile, MPFEVER_NATIVESTOP=all with MPFEVER_STOPPI=1);
+		-- only the stop tool's own build aligns nothing. The proposal data shows it before anything is built (G.stopTownDiff):
+		-- when the builder's build left the towns alike (G.stopNoTown: its numbers all 0) and this one would not, the stop is
+		-- replayed as a script's build, which the towns ignore as they ignored the builder's, as the stops on bridges since 0.5.x.
+		-- The ground under the street may then differ by these few cubic metres until the next reload; MPFever's checks do not
+		-- compare the ground. Not for the stops placed again after a street build (plan.after). A builder whose own build moved
+		-- some ground: as before (a difference reloads the games). MPFEVER_STOPNOTOWN=0: as in 0.7.15
+		if okV and not crit and pd ~= nil and not plan.after and not plan.noTown and type(a.ts) == "table"
+			and os.getenv("MPFEVER_STOPNOTOWN") ~= "0" and ((type(c.type) == "number") and c.type or 0) == 0 and G.stopNoTown(a) then
+			local okD, diff = pcall(G.stopTownDiff, a, pd)
+			if okD and diff then
+				plan.noTown = true
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: it would give the towns other numbers here than the builder's build (builder/here "
+					.. tostring(diff) .. "), which left the towns alike: replayed as a script's build (the towns ignore it)")
+				return replayStop(a, plan, variant)
+			elseif not okD then
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: its towns' numbers not read (" .. shortErr(diff) .. ")")
+			end
+		end
 		if okV and crit then
 			if free then
 				plan.plainCosts = true
@@ -10870,6 +10927,21 @@ G.preship = function(r)
 		log("PRESHIP native build " .. tostring(r.id) .. ": takes a construction away: shipped the usual way")
 		return false
 	end
+	-- (0.7.16, issue #181: AndeasWurzel's bulldozer on a part of a group of trees, 2026-11-09 17:47) Trees, plants or rocks (a
+	-- construction without a file, R.isAssetFile): shipped the usual way. The tool's copy took the group away and put the trees kept
+	-- back as one construction without a file, which no script command can make: the other game's 7 forms of it all failed
+	-- ("factory Unknown exception"), the engine asserted 12 times there (GetComponentDataIndex), and its capture, a tree build
+	-- (assetBuild, its arguments by name), compared as nothing with the copy: "built here otherwise than shipped at the click",
+	-- the host's game reloaded. The usual way replays a capture of trees through replayAssets. MPFEVER_PRESHIPASSET=1: shipped at
+	-- the click, as in 0.7.15
+	if os.getenv("MPFEVER_PRESHIPASSET") ~= "1" then
+		for _, ce in ipairs(r.copy.toAdd or {}) do
+			if type(ce) == "table" and type(ce.fileName) == "string" and R.isAssetFile(ce.fileName) then
+				log("PRESHIP native build " .. tostring(r.id) .. ": trees, plants or rocks (a construction without a file): shipped the usual way")
+				return false
+			end
+		end
+	end
 	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }
 	-- (a computer company's build: its company, see mpfever_ai.lua)
 	local aiCo = G.aiNatCo and G.aiNatCo[r.id] or nil
@@ -13736,6 +13808,10 @@ local function runReplayFile(p)
 					log("REPLAYFILE near: " .. table.concat(d, " | "))
 				end)
 			end
+			-- (0.7.16) its builder's town statistics announced as for a peer's act, so that this game compares its replay's with them
+			-- ("TOWN STATS DIFFER" or "as the builder's"; in a pause, where the replay lands at the announcement's game time)
+			a.tsTok = nil
+			if type(a.ts) == "table" and os.getenv("MPFEVER_ALIGNCHECK") ~= "0" then pcall(G.townExpect, a) end
 			local ok, err = pcall(replayNative, a, 1)
 			if not ok then line = line .. ", replay error " .. tostring(err) end
 			G.waits[#G.waits + 1] = { at = G.frames + (os.getenv("MPFEVER_EXP") and 900 or 120), fn = function()

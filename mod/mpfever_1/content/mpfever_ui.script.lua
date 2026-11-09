@@ -5805,6 +5805,28 @@ U.buyRefusedShow = function(r)
 	log("purchase refused shown: " .. tostring(r.why or "no vehicle") .. " price " .. tostring(r.price) .. " company " .. tostring(r.balance))
 end
 
+-- (0.7.16, issue #181: with one company per player, a vehicle of another company recoloured three times in 17 s, each refused on
+-- every game by the owner guard, "it belongs to company 2 (Firma Simon)", and nothing said to the player) The player whose own
+-- command touched another company's vehicle, line, depot or station is told on the chat's notice, with that company's name (the
+-- notice cuts a line at 70 characters: the name cut at 24). r: the result of one of this player's commands. nil when the refusal
+-- is not the owner guard's. MPFEVER_OWNERNOTICE=0: nothing said, as in 0.7.15
+U.ownerRefusedText = function(r)
+	if os.getenv("MPFEVER_OWNERNOTICE") == "0" or type(r) ~= "table" or r.success == true or type(r.err) ~= "string" then return nil end
+	local id, name = r.err:match("^it belongs to company (%S+)%s*%((.*)%)$")
+	if not id then id = r.err:match("^it belongs to company (%S+)$") end
+	if not id then return nil end
+	local who = (type(name) == "string" and name ~= "") and name or ("#" .. id)
+	-- (cut at a character's start: a last character of several bytes is left out whole)
+	if #who > 24 then who = who:sub(1, 21):gsub("[\192-\255][\128-\191]*$", "") .. "..." end
+	return { { kind = "msg", name = "MPFever", text = C.Tf("Refusé : appartient à une autre entreprise (%s).", "Refused: it belongs to another company (%s).", who) } }
+end
+U.ownerRefusedShow = function(r)
+	local items = U.ownerRefusedText(r)
+	if not items then return end
+	if U.onChatNews then pcall(U.onChatNews, items) end
+	log("owner refusal shown: " .. tostring(r.fn) .. " " .. tostring(r.err))
+end
+
 -- results of our own actions, written by the game-script bridge after the simulation applied them
 local function pollResults()
 	if not C.ACTIVE then return end
@@ -5841,6 +5863,8 @@ local function pollResults()
 				-- (0.7.13, #148: a refused purchase, its buyer told, see U.buyRefusedText; only here, so a results.log read again
 				-- from its start after a reload tells nothing twice)
 				if r.fn == "makeVehicleBuyCmd" and r.success ~= true then pcall(U.buyRefusedShow, r) end
+				-- (0.7.16, #181: a command on another company's vehicle, line, depot or station, refused by the owner guard)
+				if r.success ~= true then pcall(U.ownerRefusedShow, r) end
 			elseif r and r.fn == "makeVehicleBuyCmd" and r.success ~= true and os.getenv("MPFEVER_SCENARIO")
 				and r.tok == "auto-" .. tostring(C.ROLE) and lineAt >= (U.resStart or 0) then
 				-- (the autotests' purchases, sent through ui.log without a callback here: the same notice, see H.buypoor)

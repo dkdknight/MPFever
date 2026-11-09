@@ -76,6 +76,7 @@ api = { type = { ComponentType = { BASE_NODE = "N", BASE_EDGE = "E", BASE_EDGE_S
     system = { streetSystem = { getNodeSegments = function(e) local n = W.nodes[e] return n and cp(n.segs) or {} end } } } }
 -- references: shipped as { __ref, k, id }; resolved here by id (the real file resolves them by id and place)
 R = { CO = { canon = 1 },
+  isAssetFile = function(f) f = tostring(f or "") return f == "" or f:find("mpfever_asset", 1, true) ~= nil end,
   translateOut = function(fn, args)
     local function walk(t)
       for k, v in pairs(t) do

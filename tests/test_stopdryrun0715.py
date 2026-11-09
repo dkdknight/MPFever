@@ -64,7 +64,7 @@ print("replayStop")
 rst = src[src.index("local function replayStop(a, plan, variant)"):]
 rst = rst[:rst.index("\nend\n")]
 a = rst.index('local dryRun = os.getenv("MPFEVER_STOPDRYRUN") ~= "0" and not plan.probeOnly')
-b = rst.index("local okV, crit, msgs = pcall(G.stopDryVerdict, sp, sContext(not plan.after and a or nil, plan.cleanup))")
+b = rst.index("local okV, crit, msgs, pd = pcall(G.stopDryVerdict, sp, sContext(not plan.after and a or nil, plan.cleanup))")
 c1 = rst.index("plan.plainCosts = true", b)
 c2 = rst.index("plan.cleanup = true", c1)
 c3 = rst.index("local okN, errN = pcall(G.replayNativeStop, a, plan)", c2)
@@ -74,7 +74,8 @@ f = rst.index("replaySend(cmd, function(res, success)")
 check(rst.index("local okf, cmd = pcall(function()") < a < b < d < e < f,
       "asked once the form's command is made, before the stop counts and the send")
 check(b < c1 < c2 < c3 < d, "a refusal foreseen: without the tool's pricing, then with the street cleanup, then the engine's conversion (the answers' order)")
-blk = rst[b:d]
+# (the refusal branch: 0.7.16 reads the towns' numbers of an accepted form just before it, see test_stopalignnative0716.py)
+blk = rst[rst.index("if okV and crit then", b):d]
 check(blk.count("return replayStop(a, plan, variant)") == 2 and "if okN then return end" in blk,
       "  each next form made at once (no frame waited), the conversion instead of the last form when it goes")
 check("MPFEVER_STOPNATIVERETRY" in blk and "not plan.nativeTried" in blk, "  the conversion only once, MPFEVER_STOPNATIVERETRY=0 as before")

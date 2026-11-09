@@ -1,7 +1,31 @@
 MPFever - Changelog
 ===================
 
-0.7.16 - (in progress)
+0.7.16 - 2026-11-09: bus stops on maps from mod.io no longer reload the game, trees bulldozed in part go the usual way, the owner
+  guard says why
+  - FIX (#177-#180, JohnMenssing's game on the map « Germany - Mittellandkanal » from mod.io, 2026-11-09: "Out of sync nach jeder
+    Aktion"): every bus stop the host put on a town street made the other game differ, and the host's game was reloaded after
+    each. The other game rebuilt the street piece, and the engine aligned the ground under it there only (0.416, 0.084, 0.195 of
+    terrain alignment against the stop tool's 0, 3 stops of 4); the towns' numbers differed at once ("TOWN STATS DIFFER"). Every
+    form of the replay does it alike (the engine's conversion of the tool's build gave the same numbers); only the tool's own
+    build does not. Before a stop's replay goes, the numbers the towns would take from it are now read from the engine's
+    proposal data (nothing built, as for its verdict since 0.7.15): when the builder's build left the towns alike and this one
+    would not, the stop is replayed as a script's build, which the towns ignore as they ignored the builder's (as the stops on
+    bridges since 0.5.x). The ground under that street may then differ by those few cubic metres until the next reload (MPFever's
+    checks do not compare the ground). On a usual map nothing changes (the numbers agree). MPFEVER_STOPNOTOWN=0: as before.
+    Test: tests/test_stopalignnative0716.py; in game, the autotest replayfile (now announcing each act's builder numbers)
+    replays John's six real stops on the same map (Test Mittelland, the map's savegame): with the switch off, 4 "TOWN STATS
+    DIFFER" with John's own numbers; with it, 4 stops ignored by the towns, none differ, both games in sync. Two players' street
+    stops on a usual map (Test Gameplay): unchanged, each game stood 9.1/9.2 s as in 0.7.15.
+  - FIX (#181, AndeasWurzel and Simon, 2026-11-09 17:47): the bulldozer on a part of a group of trees went to the other game at
+    the click (« several players building without stopping », 0.7.14): the trees kept were put back as one construction without
+    a file, which no script can make. The other game's tries all failed, the engine asserted there 12 times, and the host's game
+    was reloaded. Trees, plants and rocks are now shipped the usual way (their capture, replayed as trees). MPFEVER_PRESHIPASSET=1:
+    as before. Test: tests/test_preshipasset0716.py.
+  - CHANGE (#181): with one company per player, a command on another company's vehicle, line, depot or station (a new colour,
+    a sale...) is refused on every game, as before, and the player is now told why on the chat's notice: "Refused: it belongs to
+    another company (name)." (Before, nothing: the host recoloured another player's vehicle three times in 17 s.)
+    MPFEVER_OWNERNOTICE=0: nothing said. Test: tests/test_ownernotice0716.py.
 
 0.7.15 - 2026-11-09: street stops without waiting too, landmarks keep their owner, a crash summary in the reports, a script's
   stale street build refused alike everywhere (#174), the mods of a player's wish list

@@ -184,6 +184,7 @@ check('if #(r.copy.toRemove or {}) > 0 and #(r.copy.toAdd or {}) == 0 and os.get
 L3 = lupa.LuaRuntime(unpack_returned_tuples=True)
 L3.execute("ENV = {}\nos.getenv = function(k) return ENV[k] end\nLOGS = {}\nfunction log(s) LOGS[#LOGS + 1] = s end\nG = {}\n"
            "G.preshipOn = function() return true end\n"
+           "R = { isAssetFile = function(f) f = tostring(f or '') return f == '' or f:find('mpfever_asset', 1, true) ~= nil end }\n"
            + src[src.index("G.preHasContent = function(m)"):src.index("G.preship = function(r)")] + head)
 pre = L3.eval("function(copy) return G.preship({ id = 74, at = 4878600, copy = copy }) end")
 bull = L3.eval("{ toRemove = { 1 }, proposal = { removedNodes = { 1, 2 }, removedSegments = { 1 } } }")

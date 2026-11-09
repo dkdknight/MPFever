@@ -24349,6 +24349,19 @@
       "ko": "위험: PC 시계에 따라 객체를 만듭니다 (재동기화 가능성 높음).",
       "zh-CN": "有风险：按电脑时钟创建其对象 (很可能需要重新同步)。",
       "zh-TW": "有風險：按電腦時鐘建立其物件 (很可能需要重新同步)。"
+    },
+    "Refused: it belongs to another company (%s).": {
+      "de": "Abgelehnt: gehört einer anderen Firma (%s).",
+      "es": "Rechazado: pertenece a otra empresa (%s).",
+      "it": "Rifiutato: appartiene a un'altra azienda (%s).",
+      "nl": "Geweigerd: het is van een ander bedrijf (%s).",
+      "pl": "Odrzucono: należy do innej firmy (%s).",
+      "pt-BR": "Recusado: pertence a outra empresa (%s).",
+      "ru": "Отклонено: принадлежит другой компании (%s).",
+      "ja": "拒否：別の会社のものです (%s)。",
+      "ko": "거부됨: 다른 회사 소유입니다 (%s).",
+      "zh-CN": "已拒绝：属于另一家公司 (%s)。",
+      "zh-TW": "已拒絕：屬於另一家公司 (%s)。"
     }
   }
 }
