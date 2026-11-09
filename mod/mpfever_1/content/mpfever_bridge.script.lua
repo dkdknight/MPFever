@@ -1454,6 +1454,37 @@ local function doneKey(a)
 	return nil
 end
 
+-- (0.7.13, #168: lukas' game, 2026-11-08 22:26: Philipp coloured 8 vehicles, stamped for a step after the pause point lukas had just
+-- asked for, then sold them in the pause; the paused sale was applied at once in its turn and the colours after the pause, on the
+-- ids lukas' paused builds had taken meanwhile: the game stopped) An action of p's player still waiting in the queue that this
+-- player made before p: by its load first (ep, older first; none: older), then by its number. Not a checkpoint, a company join, a
+-- build, nor a rank taken (the queue's own path, PG.take, has no paused form). See G.pullHold
+SIM.pullable = function(a, p)
+	if type(a) ~= "table" or type(p) ~= "table" or a.origin == nil or a.origin ~= p.origin or a.kind == "hash" or a.fn == "mpfCoJoin" or a.native then return false end
+	if a.fn == "makeScriptingSendEventCmd" and type(a.args) == "table" and a.args[3] == "applyLevel" then return false end
+	local ea, ep = tonumber(a.ep) or 0, tonumber(p.ep) or 0
+	if ea ~= ep then return ea < ep end
+	return (tonumber(a.oseq) or 0) < (tonumber(p.oseq) or 0)
+end
+-- (the interface asks for them, for its paused action p: in the queue's order, after every queue event it sent before; each stays
+-- in the queue until the interface applies it, see SIM.unqueue)
+SIM.ptPull = function(st, p)
+	local got = {}
+	for _, x in ipairs(st.q or {}) do if SIM.pullable(x, p) then got[#got + 1] = C.copy(x) end end
+	table.sort(got, before)
+	st.pulled = { tok = p.tok, uid = p.uid, list = got }
+	if #got > 0 then log("ORDER: " .. #got .. " action(s) of " .. tostring(p.origin) .. " still in the queue go before its paused action " .. tostring(p.uid)) end
+end
+-- (one of them handed to the engine by the interface, in the same command list: out of the queue, and known as applied)
+SIM.unqueue = function(st, p, now)
+	if type(p) ~= "table" or p.dk == nil then return end
+	local keep = {}
+	for _, x in ipairs(st.q or {}) do if doneKey(x) ~= p.dk then keep[#keep + 1] = x end end
+	st.q = keep
+	st.doneUid = st.doneUid or {}
+	st.doneUid[p.dk] = now
+end
+
 -- (0.6.11, #122) a depot toll an action paid (its result's toll, see the owner guard of executeActionOnce), kept in the registry
 -- the caller saves: what this company paid to the depot's (the window's "Paid to ..."), and both companies' toll totals (the
 -- window's "Tolls: earned, paid", the track tolls' only before)
@@ -3608,6 +3639,13 @@ local function handleEvent(userParams, state, src, id, name, param)
 		elseif name == "pause_at" then
 			st.pauseAt = param.at
 			st.pausedAt = nil
+		-- (0.7.13, #168: a paused action's player's earlier actions still in the queue, see SIM.ptPull and G.pullHold)
+		elseif name == "pt_pull" then
+			SIM.ptPull(st, param)
+		elseif name == "unqueue" then
+			SIM.unqueue(st, param, gameTime())
+		elseif name == "pt_pull_done" then
+			if st.pulled and type(param) == "table" and st.pulled.tok == param.tok then st.pulled = nil end
 		elseif name == "resume" then
 			st.pauseAt = nil
 			st.pausedAt = nil
@@ -3906,6 +3944,10 @@ local G = {
 	leadStats = { atOnce = 0, held = 0, shipped = 0 },   -- (BUILDLEAD: builds released at once / held the usual way / shipped from the first)
 	waits = {}, pendingPaused = {}, holdAt = nil, bind = {}, rev = {},
 	ahead = 3, stampFloor = 0,    -- steps ahead of this game's stamps; no stamp below what others were allowed
+	-- (0.7.13, #168) this game's load (an action's "ep": a player's actions are in the order it made them by load, then by number,
+	-- which starts again at 1 after a load), the queue events this interface sent that its copy of the simulation's state does not
+	-- show yet, and the actions it took out of the queue for a paused action (see G.pullHold)
+	epoch = os.time(), qLedger = {}, pulledDk = {}, pullAdd = {},
 }
 
 -- Companies: the company whose action this game is replaying (G.actor, a player entity). The GUI's getPlayer() answers it while it is
@@ -4046,11 +4088,14 @@ local function queueLocal(a)
 		if G.actTurns and a.fn ~= "mpfCoJoin" and a.kind ~= "hash" then G.ptIssue(a.origin, G.actTurnId(a)) end
 		G.pendingPaused[#G.pendingPaused + 1] = a
 	elseif os.getenv("MPFEVER_QHOLD") ~= "0" and type(a.at) == "number" then
+		-- (0.7.13, #168: noted until this interface's copy of the simulation's state shows it, see G.pullNote)
+		pcall(G.pullNote, a)
 		local h = { at = a.at, frame = G.frames, uid = a.uid }
 		G.qHold = G.qHold or {}
 		G.qHold[#G.qHold + 1] = h
 		O.sendCommand(O.event("mpfever", "mpfever", "queue", a), function() h.done = true end)
 	else
+		pcall(G.pullNote, a)
 		toSim("queue", a)
 	end
 end
@@ -8983,6 +9028,8 @@ local function runNativeRelease()
 			local busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)
 			if (seq and G.ptMayGo(seq) and not busy) or (not seq and G.frames - (r.frame0 or 0) > 600) then
 				log("native build " .. r.id .. (seq and (": turn " .. seq) or ": no turn from the host in 10 s, released now (desync risk)"))
+				-- (0.7.13, #168, a measure: its player's earlier actions still waiting for their step, see G.pullBuildLog)
+				pcall(G.pullBuildLog, r, G.me, r.id, seq)
 				-- (replayed here instead: its turn is taken by the replays' queue when it applies it, see G.restale)
 				if not G.restale(r, now) then
 					releaseOne(r, now)
@@ -9820,6 +9867,8 @@ local function runNativeReplays()
 			if G.standLogOn then log("GATE " .. tostring(a.uid) .. ": " .. tostring(nw) .. " (on " .. tostring(G.gateOn()) .. ", native " .. tostring(a.native) .. ", paused " .. tostring(a.paused) .. ", seq " .. tostring(seq) .. ", fn " .. tostring(a.fn) .. ")") end
 			if a.at > now then log("NATIVE REPLAY " .. tostring(a.uid) .. ": sent as the simulation comes to t=" .. a.at .. " (this interface at " .. now .. ") [frame " .. G.frames .. "]") end
 			if seq then G.ptDone(seq); log("NATIVE REPLAY " .. tostring(a.uid) .. ": paused build, turn " .. seq) end
+			-- (0.7.13, #168, a measure: its player's earlier actions still waiting for their step, see G.pullBuildLog)
+			if seq then pcall(G.pullBuildLog, a, a.origin, a.uid, seq) end
 			if a.at < now then
 				log("LATE native build " .. tostring(a.uid) .. " for t=" .. a.at .. " applied at " .. now .. " (" .. ((now - a.at) / STEP) .. " step(s) late)")
 				G.aheadLocked = true
@@ -9944,6 +9993,8 @@ H.resync_save = function(from, p)
 	local function busy()
 		if os.getenv("MPFEVER_SAVEQUIET") == "0" then return false end
 		if (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.terrainBusy then return true end
+		-- (0.7.13, #168: nor while a paused action's player's earlier actions are applied before it, see G.pullHold)
+		if G.pull then return true end
 		local now = gameTime()
 		for _, a in ipairs(G.nativeQueue or {}) do if a.at <= now then return true end end
 		return false
@@ -10209,7 +10260,7 @@ G.coEvent = function(name, param)
 	G.oseq = G.oseq + 1
 	local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
 	local a = { fn = "makeScriptingSendEventCmd", args = { "mpfever", "mpfever", name, param or {} }, origin = G.me, oseq = G.oseq, co = G.myCo,
-		uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil }
+		uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil, ep = G.epoch }
 	send("act", a)
 	queueLocal(a)
 	log("companies: event " .. name .. " sent")
@@ -10229,7 +10280,7 @@ local function stampHeld()
 			G.oseq = G.oseq + 1
 			local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
 			local a = { tok = p.tok, id = p.id, fn = p.fn, args = p.args, origin = G.me, oseq = G.oseq, co = tonumber(p.co) or G.myCo,
-				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil }
+				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil, ep = G.epoch }
 			if not paused and G.lineLeadStamp then G.lineLeadStamp(a, now) end
 			-- (the edit of a construction from a window: replayed here too, as the others' builds are, see G.uiEdit)
 			local edit = G.uiEdit(a)
@@ -10291,7 +10342,7 @@ local function stampHeld()
 			G.modSeq = (G.modSeq or 0) + 1
 			local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
 			local a = { tok = "mod", id = G.modSeq, fn = p.fn, args = p.args, origin = G.me, oseq = G.oseq, co = G.myCo,
-				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil, mod = p.mod }
+				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil, mod = p.mod, ep = G.epoch }
 			send("act", a)
 			queueLocal(a)
 			if G.modSeq <= 20 or G.modSeq % 100 == 0 then
@@ -10842,6 +10893,121 @@ local function shipNativeBuilds(st)
 	end
 end
 
+-- (0.7.13, #168: lukas' game, 2026-11-08 22:26) A player's action is stamped 10 steps ahead at x2 (22 while another game leads with
+-- a tool), a pause comes 8 steps ahead (4 + 2 x speed): every action made in the last steps before a pause is for a step after the
+-- pause point, and waits in the simulation's queue while the game stands. Philipp coloured 8 vehicles so, then sold them in the
+-- pause: the paused sale was applied at once in its turn, before the colours; lukas' paused builds took the vehicles' ids, and after
+-- the pause the colours went on track segments ("HasComponent(cmd.entity, Color)", the game stopped). The same on every game, no
+-- desync: an order turned round. A paused action now first applies its player's earlier actions still waiting in the queue, in the
+-- queue's order, in its own turn and at its time, on every game: a player's messages reach every game in the order it made them,
+-- so every queue holds the same ones before its paused action and its turn. The simulation picks them (SIM.ptPull, after every
+-- queue event this interface sent before), the interface applies them by the paused path, each out of the queue in the same command
+-- list (SIM.unqueue). Nothing is asked when this game knows of no such action (G.pullNeeded: its copy of the simulation's queue and
+-- the queue events not shown there yet, G.qLedger): every other paused action goes in the same frame as before.
+-- MPFEVER_PTPULL=0: the paused action at once, its player's earlier actions at their step, as before (logged)
+G.ptPullOn = os.getenv("MPFEVER_PTPULL") ~= "0"
+-- a queue event sent to the simulation (queueLocal), noted until this interface's copy of its state shows it queued or applied
+G.pullNote = function(a)
+	local dk = doneKey(a)
+	if dk and a.kind ~= "hash" and a.origin then
+		G.qLedger[dk] = { uid = a.uid, origin = a.origin, ep = a.ep, oseq = a.oseq, kind = a.kind, fn = a.fn, native = a.native,
+			args = (a.fn == "makeScriptingSendEventCmd" and type(a.args) == "table") and { [3] = a.args[3] } or nil }
+	end
+end
+-- (every frame, with the copy of the simulation's state: by its word only, no time taken for granted)
+G.pullPrune = function(st)
+	if next(G.qLedger) == nil and next(G.pulledDk) == nil then return end
+	local inQ, done = {}, (type(st) == "table" and st.doneUid) or {}
+	for _, x in ipairs((type(st) == "table" and st.q) or {}) do local k = doneKey(x); if k then inQ[k] = true end end
+	for k, _ in pairs(G.qLedger) do if inQ[k] or done[k] then G.qLedger[k] = nil end end
+	for k, _ in pairs(G.pulledDk) do if done[k] and not inQ[k] then G.pulledDk[k] = nil end end
+end
+-- does p's player have an earlier action in this simulation's queue? (each one is in the copy of its queue, or still noted)
+G.pullNeeded = function(p)
+	for _, e in pairs(G.qLedger) do if SIM.pullable(e, p) then return true end end
+	for _, x in ipairs(G.simQ or {}) do
+		local k = doneKey(x)
+		if not (k and G.pulledDk[k]) and SIM.pullable(x, p) then return true end
+	end
+	return false
+end
+-- true: the paused action a waits (its player's earlier actions first). Called when its turn has come (or it needs none): the
+-- simulation is asked for them once (G.pull, one paused action at a time), they go first by the paused path in their order, then a
+-- goes as before. A simulation that never answers: a goes after 600 frames without them (desync risk)
+G.pullHold = function(a, now)
+	if a.pullOf or a.pullDone or not a.paused or a.native or a.kind == "hash" or a.fn == "mpfCoJoin" or a.origin == nil then return false end
+	if not G.ptPullOn then
+		if not a.orderLogged and G.pullNeeded(a) then
+			a.orderLogged = true
+			log("ORDER: paused action " .. tostring(a.uid) .. " goes before earlier action(s) of " .. tostring(a.origin) .. " still waiting for their step (MPFEVER_PTPULL=0)")
+		end
+		return false
+	end
+	local P = G.pull
+	if P == nil then
+		-- (MPFEVER_PTPULLFAST=0, diagnostic: the simulation is asked every time)
+		if os.getenv("MPFEVER_PTPULLFAST") ~= "0" and not G.pullNeeded(a) then a.pullDone = true; return false end
+		G.pullN = (G.pullN or 0) + 1
+		P = { uid = a.uid, tok = tostring(G.me) .. "/" .. tostring(G.epoch) .. "/" .. G.pullN, frame = G.frames, state = "asked", left = 0 }
+		G.pull = P
+		-- (the game stands at a's time from now on until a is applied, see runPausedActions: the session may be resumed meanwhile)
+		if G.holdAt == nil or G.holdAt > a.at then G.holdAt = a.at; toSim("pause_at", { at = a.at }) end
+		toSim("pt_pull", { origin = a.origin, uid = a.uid, ep = a.ep, oseq = a.oseq, tok = P.tok })
+		return true
+	end
+	if P.uid ~= a.uid then return true end
+	if P.state == "asked" then
+		local s = G.simPulled
+		if type(s) == "table" and s.tok == P.tok then
+			local list = type(s.list) == "table" and s.list or {}
+			toSim("pt_pull_done", { tok = P.tok })
+			if #list == 0 then G.pull = nil; a.pullDone = true; return false end
+			local names = {}
+			for i, x in ipairs(list) do
+				local c = C.copy(x)
+				c.pullDk, c.origAt, c.at, c.paused, c.pullOf = doneKey(x), x.at, a.at, true, a.uid
+				-- (before a, in their order, see before)
+				c.oseq = (tonumber(a.oseq) or 0) - 1 + i / (#list + 1)
+				G.pullAdd[#G.pullAdd + 1] = c
+				names[#names + 1] = tostring(x.uid) .. " " .. tostring(x.fn) .. " for t=" .. tostring(x.at)
+			end
+			P.left, P.state = #list, "applying"
+			log("ORDER: paused action " .. tostring(a.uid) .. " of " .. tostring(a.origin) .. ": its " .. #list .. " earlier action(s) still waiting for their step go first, in its turn at t="
+				.. tostring(a.at) .. ": " .. table.concat(names, ", "):sub(1, 400))
+		elseif G.frames - P.frame > 600 then
+			log("ORDER: no answer of the simulation for " .. tostring(a.uid) .. " in 600 frames: applied without its player's earlier actions (desync risk)")
+			toSim("pt_pull_done", { tok = P.tok })
+			G.pull = nil; a.pullDone = true
+			return false
+		end
+		return true
+	end
+	if P.left > 0 or G.pausedCreating then return true end
+	G.pull = nil; a.pullDone = true
+	return false
+end
+-- an action taken out of the queue handed to the engine now (runPausedActions): out of the simulation's queue in the same command
+-- list, with its own stamp again (its creation key stays V/L<uid>@<its stamp>, as without the pull, see executeActionOnce)
+G.pullApplied = function(a)
+	if a.pullDk then
+		toSim("unqueue", { dk = a.pullDk })
+		G.pulledDk[a.pullDk] = true
+		G.qLedger[a.pullDk] = nil
+	end
+	a.at = a.origAt
+	if G.pull and G.pull.uid == a.pullOf then G.pull.left = G.pull.left - 1 end
+end
+-- (a measure only) a paused build applied in its turn while its player has earlier actions waiting for their step: not reordered (a
+-- build keeps its turn), logged once
+G.pullBuildLog = function(b, origin, id, seq)
+	if type(b) ~= "table" or b.orderLogged or origin == nil or b.fn == "mpfCoJoin" then return end
+	if G.pullNeeded({ origin = origin, ep = math.huge, oseq = math.huge }) then
+		b.orderLogged = true
+		log("ORDER: paused build " .. tostring(id) .. " of " .. tostring(origin) .. " turn " .. tostring(seq) .. " while " .. tostring(origin)
+			.. " has earlier action(s) waiting for their step (not reordered)")
+	end
+end
+
 local function runPausedActions()
 	local natAt = nativeHoldAt()
 	if #G.pendingPaused == 0 and natAt == nil then
@@ -10855,7 +11021,9 @@ local function runPausedActions()
 	local minAt = natAt
 	for _, a in ipairs(G.pendingPaused) do
 		-- (an action waiting for its turn holds the game at its time too, as a paused build does: the session may be resumed meanwhile)
-		if (a.at > now or (a.at == now and G.actTurn(a) ~= nil)) and (minAt == nil or a.at < minAt) then minAt = a.at end
+		-- (0.7.13, #168: and a paused action whose player's earlier actions are applied before it, and those actions, see G.pullHold)
+		local pulling = a.pullOf ~= nil or (G.pull ~= nil and G.pull.uid == a.uid)
+		if (a.at > now or (pulling and a.at <= now) or (a.at == now and G.actTurn(a) ~= nil)) and (minAt == nil or a.at < minAt) then minAt = a.at end
 	end
 	if minAt and G.holdAt ~= minAt then
 		G.holdAt = minAt
@@ -10893,6 +11061,9 @@ local function runPausedActions()
 			if G.frames - fr < 600 then answering = true else G.pausedOut[uid] = nil end
 		end
 	end
+	-- (0.7.13, #168) while a paused action's player's earlier actions are applied before it (G.pull, see G.pullHold), the actions
+	-- after it, or after a checkpoint due meanwhile, wait; that action and those it applies first go on
+	local pullWait = false
 	for _, a in ipairs(G.pendingPaused) do
 		if a.kind == "hash" and joining and a.at <= now and not creating then
 			creating = true
@@ -10902,13 +11073,37 @@ local function runPausedActions()
 			creating = true
 			if G.ansHashWaitLogged ~= a.n then G.ansHashWaitLogged = a.n; log("checkpoint " .. tostring(a.n) .. " waits for the engine's answer to the paused actions before it") end
 		end
+		-- (0.7.13, #168) nor while a paused action's player's earlier actions are applied before it: it would read half of them
+		if a.kind == "hash" and G.pull and a.at <= now and not creating and not pullWait then
+			pullWait = true
+			if G.pullHashLogged ~= a.n then G.pullHashLogged = a.n; log("checkpoint " .. tostring(a.n) .. " waits for the actions applied before a paused action, in their player's order") end
+		end
 		-- (in its turn among the paused builds and actions, see G.actTurn; not while a build before it is still being handed to the
 		-- engine here, a stop's replay is several commands)
-		local turn = G.actTurn(a)
-		local busy = turn and ((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil)
-		if a.at <= now and not creating and turn ~= false and (turn == nil or (not busy and G.ptMayGo(turn))) then
+		-- (0.7.13: an action applied before a paused action of its player goes in that action's turn, which has come, see G.pullHold)
+		local turn = nil
+		if a.pullOf == nil then turn = G.actTurn(a) end
+		local busy = (turn or a.pullOf) and ((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil)
+		local go = a.at <= now and not creating and turn ~= false and (turn == nil or (not busy and G.ptMayGo(turn))) and not (a.pullOf and busy)
+			and not (pullWait and a.pullOf == nil and not (G.pull ~= nil and G.pull.uid == a.uid))
+		-- (0.7.13, #168: its player's earlier actions still in the queue first, see G.pullHold; an error there: as before)
+		if go then
+			local okH, hold = pcall(G.pullHold, a, now)
+			if not okH then
+				if not G.pullErrLogged then G.pullErrLogged = true; log("ORDER: " .. tostring(hold) .. " (applied without its player's earlier actions)") end
+				if G.pull and G.pull.uid == a.uid then G.pull = nil end
+				a.pullDone = true
+			elseif hold then
+				go, pullWait = false, true
+			end
+		end
+		if go then
 			if turn then G.ptDone(turn) end
 			if a.at < now then log("paused action " .. tostring(a.uid) .. " for t=" .. tostring(a.at) .. " applied at " .. now .. " (desync risk)") end
+			if a.pullOf then
+				local okP, errP = pcall(G.pullApplied, a)
+				if not okP then log("ORDER: " .. tostring(errP)) end
+			end
 			if a.kind == "hash" then
 				local okA, auth = pcall(authValues, G.co)
 				-- (the turns of the pause applied here: a host's value taken at another turn is no correction, see H.auth)
@@ -10992,6 +11187,11 @@ local function runPausedActions()
 		else
 			keep[#keep + 1] = a
 		end
+	end
+	-- (0.7.13: the actions a paused action applies first, from the next frame on, see G.pullHold)
+	if G.pullAdd and #G.pullAdd > 0 then
+		for _, x in ipairs(G.pullAdd) do keep[#keep + 1] = x end
+		G.pullAdd = {}
 	end
 	G.pendingPaused = keep
 end
@@ -11119,6 +11319,8 @@ local function autoStep(name, makeProposal, after)
 end
 
 local function autoFinish()
+	-- (0.7.13, test: a scenario that goes on after a scenario it ran, see H.pauseorder; nil in every other one)
+	if AUTO.chain then local f = AUTO.chain; AUTO.chain = nil; return f() end
 	AUTO.running = false
 	G.autoPoints = G.autoPoints or {}
 	for _, q in ipairs(AUTO.points) do G.autoPoints[#G.autoPoints + 1] = q end
@@ -14260,6 +14462,124 @@ H.buyline = function(from, p)
 		AUTO.results[#AUTO.results + 1] = "buyline error " .. tostring(err)
 		autoFinish()
 	end
+end
+
+-- A player's actions stamped for after the pause point, then that player's paused action (0.7.13, issue #168; MPFEVER_SCENARIO=
+-- pauseorder, each game in its turn, the session running, best at x2): three copies of a vehicle with a depot are bought; once this
+-- game knows them, the three are coloured and a pause is asked in the same frame (the colours are stamped 10 steps ahead at x2, the
+-- pause comes 8 steps ahead: they wait in the queue while the game stands). In the pause two of the three are sold and a road is
+-- built (it may take their ids); the third shows when its colour came. With PTPULL the colours go first, in the sale's turn ("colour
+-- in the pause: applied"); MPFEVER_PTPULL=0: the sale first, the colours after the pause ("NOT applied"). The session goes on at
+-- its speed at the end
+H.pauseorder = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST pauseorder: " .. t); AUTO.results[#AUTO.results + 1] = "pauseorder: " .. t end
+	local function guard(fn)
+		return function(...)
+			local okg, errg = pcall(fn, ...)
+			if not okg then AUTO.chain = nil; say("error " .. tostring(errg)); autoFinish() end
+		end
+	end
+	local function waitFor(cond, frames, fn)
+		local n = 0
+		local poll
+		poll = guard(function()
+			n = n + 1
+			local okc, r = pcall(cond)
+			if (okc and r) or n > frames then return fn((okc and r) and true or false) end
+			G.waits[#G.waits + 1] = { at = G.frames + 1, fn = poll }
+		end)
+		G.waits[#G.waits + 1] = { at = G.frames + 1, fn = poll }
+	end
+	local RED = { x = 0.95, y = 0.05, z = 0.6 }
+	local function red(v)
+		local okc, c = pcall(function()
+			local cc = api.engine.getComponent(v, api.type.ComponentType.COLOR)
+			return cc and cc.color and { x = cc.color.x, y = cc.color.y, z = cc.color.z } or nil
+		end)
+		return okc and c ~= nil and math.abs(c.x - RED.x) < 0.01 and math.abs(c.y - RED.y) < 0.01 and math.abs(c.z - RED.z) < 0.01
+	end
+	local function what(e)
+		local okw, w = pcall(function()
+			if not api.engine.entityExists(e) then return "gone" end
+			if api.engine.getComponent(e, api.type.ComponentType.TRANSPORT_VEHICLE) then return "a vehicle" .. (red(e) and " with the colour" or "") end
+			if api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE) then return "a segment" end
+			if api.engine.getComponent(e, api.type.ComponentType.BASE_NODE) then return "a node" end
+			return "another entity"
+		end)
+		return okw and w or "?"
+	end
+	guard(function()
+		if G.session.pauseAt ~= nil then say("the session is paused already: inconclusive (run it with the session running)"); return autoFinish() end
+		local speed = math.max(1, math.min(4, tonumber(G.session.speed) or 1))
+		local me = api.engine.util.getPlayer()
+		local pick = nil
+		for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
+			local tv = api.engine.getComponent(v, api.type.ComponentType.TRANSPORT_VEHICLE)
+			if not pick and tv and type(tv.depot) == "number" and tv.depot >= 0 and api.engine.entityExists(tv.depot)
+				and (G.cmode ~= "separate" or R.ownerOf(v) == me) then
+				pick = { v = v, depot = tv.depot, cfg = C.marshal(tv.transportVehicleConfig) }
+			end
+		end
+		if not pick then say("no vehicle with a depot"); return autoFinish() end
+		local known = {}
+		for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do known[v] = true end
+		for _ = 1, 3 do uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = pick.depot, [3] = C.copy(pick.cfg) }) end
+		log("AUTOTEST pauseorder: 3 copies of vehicle " .. pick.v .. " requested (x" .. speed .. ")")
+		local mine = {}
+		waitFor(function()
+			for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
+				if not known[v] and G.rev[v] then known[v] = true; mine[#mine + 1] = v end
+			end
+			return #mine >= 3
+		end, 900, function(got)
+			if not got then say("only " .. #mine .. " of the 3 vehicles bought"); return autoFinish() end
+			table.sort(mine)
+			-- (the three colours and the pause in one frame)
+			for i = 1, 3 do uiRequest("makeEntitySetColorCmd", { n = 2, [1] = mine[i], [2] = C.marshal(api.type.Vec3f.new(RED.x, RED.y, RED.z)) }) end
+			C.appendFile(C.DIR .. BS .. "ui.log", C.line("speed_req", { speed = 0 }))
+			local S = stampFor(gameTime())
+			log("AUTOTEST pauseorder: vehicles " .. mine[1] .. ", " .. mine[2] .. ", " .. mine[3] .. " coloured, pause asked")
+			waitFor(function() return G.session.pauseAt ~= nil end, 600, function(got2)
+				if not got2 then say("no pause came in 10 s"); return autoFinish() end
+				local T = G.session.pauseAt
+				say("colours stamped for t=" .. tostring(S) .. ", pause point t=" .. tostring(T) .. (S > T and " (in flight: S>T)" or " (NOT in flight: S<=T, inconclusive)"))
+				waitFor(function() return gameSpeed() == 0 and gameTime() >= T end, 1800, function(got3)
+					if not got3 then say("the game did not stop at the pause point"); return autoFinish() end
+					uiRequest("makeVehicleSellCmd", { n = 1, [1] = { mine[1], mine[2] } })
+					log("AUTOTEST pauseorder: vehicles " .. mine[1] .. " and " .. mine[2] .. " sold in the pause, " .. mine[3] .. " kept")
+					waitFor(function() return not api.engine.entityExists(mine[1]) end, 900, function(got4)
+						if not got4 then say("the sale was not applied in 15 s") end
+						say("kept vehicle's colour in the pause: " .. (red(mine[3]) and "applied" or "NOT applied"))
+						-- (a road in the pause, see runNewRoad: it may take the sold vehicles' ids; then the session goes on)
+						local saved = AUTO.results
+						AUTO.chain = guard(function()
+							local road = AUTO.results
+							AUTO.results = saved
+							for _, l in ipairs(road) do AUTO.results[#AUTO.results + 1] = l end
+							AUTO.running = true
+							C.appendFile(C.DIR .. BS .. "ui.log", C.line("speed_req", { speed = speed }))
+							G.waits[#G.waits + 1] = { at = G.frames + 600, fn = guard(function()
+								say("kept vehicle's colour after the pause: " .. (red(mine[3]) and "applied" or "NOT applied")
+									.. "; the sold vehicles' ids: " .. mine[1] .. " " .. what(mine[1]) .. ", " .. mine[2] .. " " .. what(mine[2]))
+								autoFinish()
+							end) }
+						end)
+						local okR, errR = pcall(runNewRoad, p)
+						if not okR then
+							say("road error " .. tostring(errR))
+							local f = AUTO.chain
+							AUTO.chain = nil
+							if f then f() end
+						end
+					end)
+				end)
+			end)
+		end)
+	end)()
 end
 
 -- Double slip scenario (issue #26): the node window's build, which holds nothing but a node configuration, sent through the
@@ -20317,6 +20637,9 @@ local function guiUpdate(userParams, state, guiState)
 	if not (okh and type(st) == "table") then st = {} end
 	G.simTerrainSig = st.terrainSig
 	G.simBuildIds = st.buildIds
+	-- (0.7.13, #168: the simulation's queue and its answer to a pull, as this interface sees them, see G.pullHold)
+	G.simQ, G.simPulled = st.q, st.pulled
+	pcall(G.pullPrune, st)
 	G.co = st.co
 	REFUND.list = st.rcost
 	local okco, errco = pcall(coGui, st)
