@@ -1,7 +1,8 @@
 MPFever - Changelog
 ===================
 
-0.7.14 - (in progress)
+0.7.14 - 2026-11-09: « without waiting » and « without stopping » back and on by default, their field problems fixed first (a
+  street stop's retry, a construction taken away at the click, the windows' leads); the programs' file details like the DLL's
   - CHANGE (the user's request of 2026-11-09, against antivirus blocks): MPFever.exe and MPFeverServerList.exe carry the same
     details as winhttp.dll (Properties > Details): publisher dkdknight, product MPFever, a description and the copyright; before,
     "MPFever" as publisher and no copyright. Test: tests/test_versioninfo0714.py and the selftest (reads the built files).
