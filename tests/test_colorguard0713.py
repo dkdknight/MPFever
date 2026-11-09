@@ -12,6 +12,7 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 src = open(os.path.join(ROOT, "mod", "mpfever_1", "content", "mpfever_bridge.script.lua"), encoding="utf-8").read().replace("\r\n", "\n")
+com = open(os.path.join(ROOT, "mod", "mpfever_1", "content", "mpfever_common.lua"), encoding="utf-8").read().replace("\r\n", "\n")
 fails = []
 
 
@@ -22,7 +23,10 @@ def check(cond, name, got=""):
 
 
 i = src.index("	local nameGuard = os.getenv(\"MPFEVER_NAMEGUARD\")")
-blk = src[i:src.index("\n\tend\n", src.index("if (a.tok == \"mod\" or nameGuard)", i)) + 6]
+blk = src[i:src.index("\n\tend\n", src.index("elseif (a.tok == \"mod\" or nameGuard)", i)) + 6]
+i = com.index("C.COLOUR_NOT = {")
+nce = com[i:com.index("\n\treturn nil\nend\n", i) + len("\n\treturn nil\nend\n")]
+
 check('os.getenv("MPFEVER_COLORANY") ~= "0"' in blk, "MPFEVER_COLORANY=0: as in 0.7.12")
 try:
     import lupa.lua52 as lupa
@@ -37,7 +41,10 @@ os.getenv = function(k) return ENV[k] end
 log = function(s) end
 ENTS = { [186664] = { BASE_EDGE = {} }, [186700] = { TRANSPORT_VEHICLE = {}, COLOR = {}, NAME = {} }, [400] = { LINE = {}, COLOR = {}, NAME = {} } }
 api = { type = { ComponentType = setmetatable({}, { __index = function(_, k) return k end }) },
-  engine = { getComponent = function(e, ct) return ENTS[e] and ENTS[e][ct] or nil end } }
+  engine = { entityExists = function(e) return ENTS[e] ~= nil end, getComponent = function(e, ct) return ENTS[e] and ENTS[e][ct] or nil end } }
+C = {}
+
+''' + nce + '''
 function guard(a)
 	local result = { success = false }
 ''' + blk + '''

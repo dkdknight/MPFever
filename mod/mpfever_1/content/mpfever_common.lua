@@ -18,6 +18,22 @@ C.CUSTOM_ENTITY_FNS = { makeCustomEntityUpdateTransformationCmd = true, makeCust
 -- L-Signalsystem preview, 138059, was a node of Julian's tracks, and the preview's move stopped the game (GetComponentDataIndex,
 -- OctreeSystemNode). Returns why (a text), or nil when it may be one (or when it cannot be told). A custom entity has none of the
 -- world's components below. strict: one without a bounding volume is not one either (a custom entity has one)
+-- (0.7.13, found by the night's game test 2026-11-09: a vehicle's colour is applied by the engine, but its Color component is not
+-- one the scripts can read, so the colour check of 0.7.12 / 0.7.13 skipped every vehicle's colour) Is entity e surely without a
+-- colour here: missing, or a node, a segment, a construction, a building, a person, an animal, a town, an industry, cargo (what a
+-- colour sent by the id it has on another game hit: #168's track segments, #162's cargo item)? Returns why, or nil (it may have one)
+C.COLOUR_NOT = { "BASE_NODE", "BASE_EDGE", "CONSTRUCTION", "TOWN_BUILDING", "SIM_PERSON", "ANIMAL", "TOWN", "INDUSTRY", "SIM_CARGO" }
+function C.notColourable(e)
+	if type(e) ~= "number" then return nil end
+	local okE, there = pcall(function() return api.engine.entityExists(e) end)
+	if not okE then return nil end
+	if not there then return "not here" end
+	for _, k in ipairs(C.COLOUR_NOT) do
+		local okC, has = pcall(function() return api.engine.getComponent(e, api.type.ComponentType[k]) ~= nil end)
+		if okC and has then return "a " .. k:lower() .. " here" end
+	end
+	return nil
+end
 C.CUSTOM_NOT = { "BASE_NODE", "BASE_EDGE", "CONSTRUCTION", "TOWN_BUILDING", "TRANSPORT_VEHICLE", "SIM_PERSON", "ANIMAL", "STATION", "LINE", "TOWN", "INDUSTRY" }
 function C.notCustomEntity(e, strict)
 	if type(e) ~= "number" then return nil end

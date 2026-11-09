@@ -903,7 +903,17 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 	local nameGuard = os.getenv("MPFEVER_NAMEGUARD") ~= "0" and a.tok ~= "mod" and (a.fn == "makeEntitySetNameCmd"
 		or (a.fn == "makeEntitySetColorCmd" and (os.getenv("MPFEVER_COLORANY") ~= "0"
 			or (type(a.tok) == "string" and a.tok:sub(1, 6) == "gsmod-"))))
-	if (a.tok == "mod" or nameGuard) and type(a.args) == "table" then
+	-- (0.7.13, found by the night's game test: the check below skipped every vehicle's colour, a vehicle's Color component being
+	-- one the scripts cannot read. A colour from a player or a game script is skipped only on what has surely no colour here, see
+	-- C.notColourable. MPFEVER_COLORNEG=0: the Color component asked, as in 0.7.12)
+	if nameGuard and a.fn == "makeEntitySetColorCmd" and type(a.args) == "table" and os.getenv("MPFEVER_COLORNEG") ~= "0" then
+		local why = C.notColourable(a.args[1])
+		if why then
+			result.err = "colour on entity " .. tostring(a.args[1]) .. ": " .. why
+			log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " SKIPPED, " .. result.err)
+			return result
+		end
+	elseif (a.tok == "mod" or nameGuard) and type(a.args) == "table" then
 		local need, what = api.type.ComponentType.LINE, "a line"
 		if nameGuard or os.getenv("MPFEVER_MODANYTARGET") ~= "0" then
 			if a.fn == "makeEntitySetNameCmd" then need, what = api.type.ComponentType.NAME, "something with a name"
@@ -14545,7 +14555,9 @@ H.pauseorder = function(from, p)
 		end, 900, function(got)
 			if not got then say("only " .. #mine .. " of the 3 vehicles bought"); return autoFinish() end
 			table.sort(mine)
-			-- (the three colours and the pause in one frame)
+			-- (the three colours and the pause in one frame. The colours are stamped beyond the pause point as in #168, where the other
+			-- game's tool lead had raised this game's stamp floor 22 steps ahead: here the floor is raised the same way, test only)
+			G.stampFloor = math.max(G.stampFloor or 0, gameTime() + 40 * STEP)
 			for i = 1, 3 do uiRequest("makeEntitySetColorCmd", { n = 2, [1] = mine[i], [2] = C.marshal(api.type.Vec3f.new(RED.x, RED.y, RED.z)) }) end
 			C.appendFile(C.DIR .. BS .. "ui.log", C.line("speed_req", { speed = 0 }))
 			local S = stampFor(gameTime())

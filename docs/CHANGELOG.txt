@@ -2,6 +2,13 @@ MPFever - Changelog
 ===================
 
 0.7.13 - (in progress)
+  - FIX (a regression of 0.7.12, found by the night's game test 2026-11-09): a vehicle's colour is applied by the engine, but
+    its Color component is not one the scripts can read, so the colour check of 0.7.12 (a game script's colours, #162) and of
+    the colour fix above (every colour, #168) skipped every vehicle's colour ("SKIPPED, mod command on entity ..., which is not
+    something with a colour here"). A colour from a player or a game script is now skipped only on what has surely no colour
+    on this game: missing, a node, a segment, a construction, a building, a person, an animal, a town, an industry, cargo (the
+    track segments of #168, the cargo item of #162). MPFEVER_COLORNEG=0: the Color component asked, as before. Test:
+    tests/test_colourneg0713.py.
   - FIX (order, #168, the same session of lukas and Philipp): Philipp's colours were made just before lukas' pause and stamped
     for a moment after it (an action made in the last steps before a pause always is: it is stamped 10 steps ahead at x2, 22
     while another player holds a tool, and a pause comes 8 steps ahead), so they waited while the games stood; his sale of the
