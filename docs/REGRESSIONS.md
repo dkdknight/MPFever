@@ -11,6 +11,7 @@ with its cause and the test that now guards it.
 | **Lobby** of a player's own game: the players wait in the lobby with the savegame's mods and DLCs until the host starts. | 0.4 | MainForm lobby, mpfever_menu.lua | test_lobbylayout.py, test_lobbyrules.py |
 | A **personal mod** (taken for personal on the Multiplayer page) is not compared with the host's. | 0.4.6 | Mods, modpersonal | test_modlocal077.py |
 | The **savegame played is never written** by MPFever: session saves have names of their own. | 0.5 | resync_save, HostAutosave | test_gameautosave077.py |
+| A **report never carries the game's crash dump nor the session's chat** (the dump is the game's memory: addresses, Steam numbers no text clean-up reaches), also from another player's report. | 0.7.13 | Reporter.Private | test_reportprivate0713.py, selftest |
 | **Reports** keep taking out the personal data (Windows and PC names, Steam numbers, public IPs, e-mails). | 0.3 | Reporter.Redact | test_reportshare079.py |
 | **Auto Signals and other mods' script signals and stops** are built on every game. | 0.7.8 | C.scriptEdgeObjects | test_scripteo077.py |
 | A **mod is known by its own id** (the top level's "modId" of its mod.json), never by a dependency's it names first (#159). | 0.7.12 | Mods.TopModId, Mods.Scan | test_modidtop0712.py, selftest |

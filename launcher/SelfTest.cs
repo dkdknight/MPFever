@@ -76,6 +76,7 @@ namespace MPFever
             ok &= RunExpOpts0713();
             ok &= RunResyncSpeed0713();
             ok &= RunPersonDigest0713();
+            ok &= RunReportPrivate0713();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -104,6 +105,49 @@ namespace MPFever
         /// kept in mpfever_settings.txt goes neither to the others nor to the mod nor to the game's environment; (a hardening of
         /// the review) settings.txt writes MPFEVER_NOWAIT and MPFEVER_NOSTOP unset, as their « off » did, so that one game's
         /// environment cannot turn them on alone in a launcher session.</summary>
+        /// <summary>(0.7.13, Cowboy Pilot 2026-11-09) A report never carries the game's crash dump (its memory: addresses, Steam
+        /// numbers) nor the session's chat, also from another player's report; MPFEVER_REPORTDUMP=1 / MPFEVER_REPORTCHAT=1: as before.</summary>
+        static bool RunReportPrivate0713()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.13 report: " + what); ok &= c; }
+            string oldD = Environment.GetEnvironmentVariable("MPFEVER_REPORTDUMP"), oldC = Environment.GetEnvironmentVariable("MPFEVER_REPORTCHAT");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTDUMP", null);
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTCHAT", null);
+                C(Reporter.Private("game/3556b1e1-f5e9-4555-a584-84da0ef85a41_0.dmp") && Reporter.Private("players/Bob/game/X.DMP"), "a crash dump is never put in");
+                C(Reporter.Private("session/Host-1/chat.txt") && Reporter.Private("players/Bob/session/Client-2/chat.txt"), "  nor the session's chat");
+                C(!Reporter.Private("session/Host-1/mod.log") && !Reporter.Private("game/stdout.txt") && !Reporter.Private("session/Host-1/chat_log_settings.txt"),
+                    "  every other file as before");
+                var tmp = Path.Combine(Path.GetTempPath(), "mpfever-selftest-private-" + Guid.NewGuid().ToString("N") + ".zip");
+                byte[] other;
+                using (var ms = new MemoryStream())
+                {
+                    using (var z = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+                        foreach (var n in new[] { "game/x.dmp", "session/Client-2/chat.txt", "session/Client-2/mod.log" })
+                            using (var w = new StreamWriter(z.CreateEntry(n).Open())) w.Write("89.88.206.99 hello");
+                    other = ms.ToArray();
+                }
+                using (System.IO.Compression.ZipFile.Open(tmp, System.IO.Compression.ZipArchiveMode.Create)) { }
+                Reporter.AddPlayers(tmp, new Dictionary<string, byte[]> { { "Bob", other } }, new string[0]);
+                List<string> names;
+                using (var z = System.IO.Compression.ZipFile.OpenRead(tmp)) names = z.Entries.Select(e => e.FullName).ToList();
+                try { File.Delete(tmp); } catch { }
+                C(names.Contains("players/Bob/session/Client-2/mod.log") && !names.Any(n => n.EndsWith(".dmp") || n.EndsWith("chat.txt")),
+                    "another player's report (an older MPFever): its dump and chat left out (" + string.Join(",", names) + ")");
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTDUMP", "1");
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTCHAT", "1");
+                C(!Reporter.Private("game/x.dmp") && !Reporter.Private("session/Host-1/chat.txt"), "MPFEVER_REPORTDUMP=1 / MPFEVER_REPORTCHAT=1: put in, as before");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTDUMP", oldD);
+                Environment.SetEnvironmentVariable("MPFEVER_REPORTCHAT", oldC);
+            }
+            return ok;
+        }
+
         static bool RunExpOpts0713()
         {
             bool ok = true;

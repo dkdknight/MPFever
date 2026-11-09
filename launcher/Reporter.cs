@@ -281,8 +281,13 @@ namespace MPFever
             var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
             var zip = FreeName(Path.Combine(ReportsDir, "MPFever-report-" + stamp + ".zip"));
             var files = new List<Entry>();
+            var privLeft = new List<string>();
             void Add(string path, string name)
             {
+                // ((0.7.13) a crash dump and the session's chat are never put in a report: the dump is the game's memory, with
+                // addresses and account numbers that cannot be taken out, the chat is the players' own words. Cowboy Pilot,
+                // 2026-11-09. MPFEVER_REPORTDUMP=1 / MPFEVER_REPORTCHAT=1: put in, as before)
+                if (Private(name)) { var why = PrivateNote(name); if (!privLeft.Contains(why)) privLeft.Add(why); return; }
                 try { if (File.Exists(path)) files.Add(new Entry { Path = path, Name = name.Replace('\\', '/') }); } catch { }
             }
             foreach (var dir in sessionDirs.Where(d => d != null && Directory.Exists(d)).Distinct())
@@ -304,10 +309,11 @@ namespace MPFever
                     // (0.7.3) a report made right after the crash got the dump while the game was still writing it: 0 bytes in
                     // issue #130. Waited for until its size is not 0 and stays the same for a second (15 s at most).
                     // MPFEVER_DUMPWAIT=0: as before
-                    if (dmp != null && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);
+                    if (dmp != null && !Private(dmp) && Environment.GetEnvironmentVariable("MPFEVER_DUMPWAIT") != "0") WaitWritten(dmp, 15);
                     if (dmp != null && File.GetLastWriteTime(dmp) > DateTime.Now.AddDays(-2)) Add(dmp, "game/" + Path.GetFileName(dmp));
                 }
                 catch { }
+            left.AddRange(privLeft);
             using (var z = ZipFile.Open(zip, ZipArchiveMode.Create))
             {
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -341,7 +347,7 @@ namespace MPFever
                     w.WriteLine(Redact.Text(summary));
                     w.WriteLine();
                     w.WriteLine("Personal data removed from the text files: Windows account and PC names in paths, Steam account numbers, public IP addresses, e-mail addresses.");
-                    if (left.Count > 0) { w.WriteLine(); w.WriteLine("Left out (too large or unreadable):"); foreach (var l in left) w.WriteLine("  " + l); }
+                    if (left.Count > 0) { w.WriteLine(); w.WriteLine("Left out (too large, unreadable or private):"); foreach (var l in left) w.WriteLine("  " + l); }
                 }
             }
             return zip;
@@ -396,6 +402,8 @@ namespace MPFever
                             {
                                 var name = e.FullName.Replace('\\', '/');
                                 if (name.EndsWith("/", StringComparison.Ordinal) || name.Contains("..")) continue;
+                                // ((0.7.13) the dump and the chat of a player whose MPFever still sends them: left out here too)
+                                if (Private(name)) continue;
                                 using (var from = e.Open())
                                 using (var to = z.CreateEntry(dir + name, CompressionLevel.Optimal).Open())
                                     from.CopyTo(to);
@@ -416,6 +424,23 @@ namespace MPFever
                 }
             }
         }
+
+        /// <summary>(0.7.13) A file never put in a report: a crash dump (*.dmp, the game's memory: IP addresses, Steam numbers
+        /// that the text clean-up cannot reach) and the session's chat (chat.txt). MPFEVER_REPORTDUMP=1 / MPFEVER_REPORTCHAT=1:
+        /// put in, as before.</summary>
+        public static bool Private(string name)
+        {
+            var n = (name ?? "").Replace('\\', '/');
+            var file = n.Substring(n.LastIndexOf('/') + 1);
+            if (file.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase)) return Environment.GetEnvironmentVariable("MPFEVER_REPORTDUMP") != "1";
+            if (file.Equals("chat.txt", StringComparison.OrdinalIgnoreCase)) return Environment.GetEnvironmentVariable("MPFEVER_REPORTCHAT") != "1";
+            return false;
+        }
+
+        static string PrivateNote(string name) =>
+            name.EndsWith(".dmp", StringComparison.OrdinalIgnoreCase)
+                ? "the game's crash dump (never sent: it holds addresses and account numbers)"
+                : "the session's chat (never sent: the players' own words)";
 
         /// <summary>(0.7.9) What MPFever's report service answered: the issue it opened (or ""), the file's link (or "").</summary>
         public sealed class Uploaded { public string Issue = "", File = ""; }

@@ -48,6 +48,8 @@ Most of them can be turned off in MPFever's ⚙ Settings window. They are kept i
 - « Report a problem »: MPFever puts the logs of the session in a zip in its reports folder. Before writing the zip, it
   takes out of the text logs your Windows account's and PC's names, your Steam account numbers, public IP addresses and
   e-mail addresses. Player names, savegame names and the game's settings stay: the logs are about them.
+  Since 0.7.13, the game's crash dump (a copy of the game's memory, which may hold addresses and account numbers that
+  cannot be taken out) and the session's chat are never put in a report, nor kept from another player's report.
   Since 0.7.9, in a session, the zip also holds the other players' reports (made the same way on their PCs and sent through
   the session's connections), and it is sent to MPFever's report service (mpfever.knight-hd.fr, the server list's PC), which
   keeps it 60 days and opens a public GitHub issue with a link to it, in the project's name. GitHub issues and their links are

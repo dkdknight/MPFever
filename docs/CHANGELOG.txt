@@ -4,6 +4,11 @@ MPFever - Changelog
 0.7.13 - 2026-11-09: fewer resyncs and crashes: two players' builds at the same moment, a player's actions around a pause, the
   calendar's sliders, joining again after an older save, joining through Steam behind shared addresses; the experimental settings
   removed, a purchase refused for lack of money says so, and the launcher's join box replaced by Settings, Support and Discord
+  - PRIVACY (Cowboy Pilot, 2026-11-09): the text files of a report were cleaned (public IP addresses, Windows and PC names,
+    Steam numbers, e-mails), but the game's crash dump went in as it was: a dump is the game's memory, and the one of #172's
+    report held a public address and a Steam number. The crash dump and the session's chat are never put in a report now,
+    nor kept from another player's report (an older MPFever still sends them); report.txt says they were left out.
+    MPFEVER_REPORTDUMP=1 / MPFEVER_REPORTCHAT=1: put in, as before. Test: tests/test_reportprivate0713.py (and the selftest).
   - FIX (#172, CowboyPilot's session of 2026-11-08 15:47, a resynchronisation for « script:gametime »): the calendar's clouds
     slider sets the sky of its player's game only and sends an event that the game's time and weather script answers, on every
     game, with that game's own sky as its target: after MrWhiskey1's two moves of the slider his game alone differed, after
