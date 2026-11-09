@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.7.16 - (in progress)
+
 0.7.15 - 2026-11-09: street stops without waiting too, landmarks keep their owner, a crash summary in the reports, a script's
   stale street build refused alike everywhere (#174), the mods of a player's wish list
   - CHANGE (#174, hluki's game, 2026-11-09 12:09: the host crashed): Town Transit Planner put its stops on 12 town street pieces
