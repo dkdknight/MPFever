@@ -74,13 +74,13 @@ check("MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 in the environment of" in op and "MPF
 # ---------------------------------------------------------------- (b) the hello, the host's warning, the selftest
 for name, text in (("ModCopies.cs", mc), ("MainForm.cs", mf)):
     check("WithOrder2(" not in text and "WarnOrder2(" not in text and "Order2On(" not in text, "(b) %s: no ORDER2 word in the hello, no warning" % name)
-hello = mf[mf.index('                if (m.Kind == "hello") { g.InGame = true;'):][:400]
+hello = mf[mf.index('                if (m.Kind == "hello") { g.InGame = true;'):][:700]   # (0.7.13: the game's memory logged aside, see test_resyncspeed0713.py)
 check("\n                lock (waiting)\n" in hello, "(b) a player's hello goes on to the host as its game wrote it")
 hh = mf[mf.index('                case "hello":\n                    lock (players) players.Add(m.From);'):][:300]
 check("                    WarnModVersion(m.From, m.Payload);\n                    // (0.7.4, MODRETRY" in hh, "(b) the host looks at the mod version only")
 rs = st[st.index("        static bool RunExpOpts0713()"):]
 rs = rs[:rs.index("\n        }\n")]
-check("ok &= RunDeadDirect0713();\n            ok &= RunExpOpts0713();" in st, "(b) the selftest runs its check, after RunDeadDirect0713")
+check(re.search(r"ok &= RunDeadDirect0713\(\);(\s+ok &= Run\w+\(\);)*\s+ok &= RunExpOpts0713\(\);", st) is not None, "(b) the selftest runs its check, after RunDeadDirect0713")
 check('"the experimental settings are gone (0.7.13)"' in rs and "Options.All.Any(o => gone.Contains(o.Key))" in rs
       and "Options.SessionPayload()" in rs and "!Options.NativeEnv().Any()" in rs and "Options.ModFile()" in rs,
       "(b) selftest: not in Options.All, nor in the host's payload, the mod's settings.txt or the game's environment")

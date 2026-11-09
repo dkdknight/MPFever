@@ -602,10 +602,10 @@ def case_model():
     print("-- the design's random model (ptpull168_model.py), ported: two games, random swaps, copy lags and message times")
     t0 = time.time()
     bad, runs, examples = 0, 0, []
-    for seed in range(300):
+    for seed in MODEL_SEEDS[0]:
         for resync in (False, True):
             games, exp, ruids, P, B = scenario(seed, resync, seed % 3 == 0)
-            out = [play(g, *spec, P, B, {}) for g, spec in zip((GA, GB), games)]
+            out = [play(g, *spec, P, B, {}) for g, spec in zip((Game(), Game()), games)]
             runs += 1
             if out[0][0] != out[1][0] or out[0][0] != exp or out[0][1] or out[1][1] or not (out[0][2] and out[1][2]):
                 bad += 1
@@ -613,29 +613,60 @@ def case_model():
                     examples.append((seed, resync, out, exp))
     check(f"pull on: the same order on both games, the player's order, the fast path never wrong ({runs} runs)", bad == 0, examples)
     bad, examples = 0, []
-    for seed in range(150):
+    for seed in MODEL_SEEDS[1]:
         games, exp, ruids, P, B = scenario(1000 + seed, False, seed % 3 == 0)
-        out = [play(g, *spec, P, B, {"MPFEVER_PTPULLFAST": "0"}) for g, spec in zip((GA, GB), games)]
+        out = [play(g, *spec, P, B, {"MPFEVER_PTPULLFAST": "0"}) for g, spec in zip((Game(), Game()), games)]
         if out[0][0] != out[1][0] or out[0][0] != exp:
             bad += 1
             examples.append((seed, out, exp))
-    check("always asked (MPFEVER_PTPULLFAST=0): the same orders (150 runs)", bad == 0, examples[:2])
+    check(f"always asked (MPFEVER_PTPULLFAST=0): the same orders ({len(MODEL_SEEDS[1])} runs)", bad == 0, examples[:2])
     inv = withR = 0
-    for seed in range(150):
+    for seed in MODEL_SEEDS[2]:
         games, exp, ruids, P, B = scenario(2000 + seed, False, False)
-        out = [play(g, *spec, P, B, {"MPFEVER_PTPULL": "0"}) for g, spec in zip((GA, GB), games)]
+        out = [play(g, *spec, P, B, {"MPFEVER_PTPULL": "0"}) for g, spec in zip((Game(), Game()), games)]
         if ruids:
             withR += 1
             if out[0][0][:1] == [P["uid"]] and not set(ruids) & set(out[0][0]):
                 inv += 1
-    check(f"MPFEVER_PTPULL=0: the #168 inversion in every run with actions waiting ({inv} of {withR})", withR > 0 and inv == withR)
+    check(f"MPFEVER_PTPULL=0: the #168 inversion in every run with actions waiting ({inv} of {withR})", (withR > 0 or not MODEL_SEEDS[2]) and inv == withR)
     print(f"    ({time.time() - t0:.1f} s)")
 
 
+MODEL_SEEDS = (range(300), range(150), range(150))
+
+
 def main():
+    global MODEL_SEEDS
+    if "--model" in sys.argv:
+        a, b = int(sys.argv[-2]), int(sys.argv[-1])
+        MODEL_SEEDS = (range(a, min(b, 300)), range(a // 2, min(b // 2, 150)), range(a // 2, min(b // 2, 150)))
+        case_model()
+        print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
+        return 1 if fails else 0
     for case in (case_168, case_off, case_fast, case_lag, case_resync, case_issue_order, case_checkpoints, case_buys, case_noanswer,
-                 case_other_player, case_resumed, case_builds, case_prune, case_source, case_model):
+                 case_other_player, case_resumed, case_builds, case_prune, case_source):
         case()
+    # (the random model runs about 900 games in lupa. With that many in one process, lupa's own memory was seen corrupted now and
+    # then on this PC: "Windows fatal exception 0xc0000374" inside LuaRuntime.execute, or code text damaged before it ran; never a
+    # wrong order. The model therefore runs in 6 processes of 50 seeds each, each run once more when it dies without a result. A
+    # wrong order, or a process that dies twice, is a failure)
+    import subprocess
+    for a in range(0, 300, 50):
+        for attempt in (1, 2):
+            r = subprocess.run([sys.executable, "-I", os.path.abspath(__file__), "--model", str(a), str(a + 50)], capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", timeout=600)
+            out = r.stdout.strip().splitlines()
+            result = out[-1] if out else ""
+            if r.returncode in (0, 1) and result in ("all passed",) or (r.returncode == 1 and result.endswith("failure(s)")):
+                for l in out:
+                    if l.startswith("ok  ") or l.startswith("FAIL") or l.startswith("    ("):
+                        print(l.replace("ok   ", f"ok   [seeds {a}-{a + 49}] ", 1))
+                    if l.startswith("FAIL"):
+                        fails.append(l[5:])
+                break
+            print(f"    (the model's process for seeds {a}-{a + 49} ended without a result, code {r.returncode}: run again)")
+        else:
+            check(f"the random model, seeds {a}-{a + 49}: a result (its process died twice)", False)
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0
 

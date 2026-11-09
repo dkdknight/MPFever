@@ -253,7 +253,7 @@ check(rl.count("resync_load") == 1 and "LuaLit.Quote(ResyncSaveName)" in rl[rl.i
 check("| The **savegame played is never written** by MPFever: session saves have names of their own. |" in reg, "docs/REGRESSIONS.md: the savegame played is never written")
 
 # ---- the selftest
-check("ok &= RunDeadDirect0713();\n            ok &= RunResyncSpeed0713();" in st, "the selftest runs RunResyncSpeed0713")
+check(re.search(r"ok &= RunDeadDirect0713\(\);(\s+ok &= Run\w+\(\);)*\s+ok &= RunResyncSpeed0713\(\);", st) is not None, "the selftest runs RunResyncSpeed0713")
 rt = st[st.index("static bool RunResyncSpeed0713()"):st.index("static long Garbage0713(int count, int mb)")]
 check(all(x in rt for x in ("Zstd.ReadSaveRaw(", "Zstd.DecompressFile(", "Zstd.ReadRawFrame(", "SaveDelta.Apply(Zstd.ReadSaveRaw(", "SaveDelta.Make(",
                             "Zstd.WriteRawFrame(", "Convert.FromBase64String(ZstdFrame0713)", "MainForm.FreeResyncMemory(", '"MPFEVER_RESYNCGC", "0"', "Garbage0713(3, 300);")),

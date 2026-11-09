@@ -2,6 +2,80 @@ MPFever - Changelog
 ===================
 
 0.7.13 - (in progress)
+  - FIX (order, #168, the same session of lukas and Philipp): Philipp's colours were made just before lukas' pause and stamped
+    for a moment after it (an action made in the last steps before a pause always is: it is stamped 10 steps ahead at x2, 22
+    while another player holds a tool, and a pause comes 8 steps ahead), so they waited while the games stood; his sale of the
+    same vehicles in the pause was applied at once, before them, on every game. A paused action now first applies its player's
+    earlier actions still waiting, in their order, in its own turn and at its time, on every game: the colours reach the
+    vehicles before the sale. A paused action whose player has nothing waiting goes as before, in the same frame
+    (MPFEVER_PTPULL=0: as before). Test: tests/test_ptpull0713.py.
+  - FIX (crash, #171, MrWhiskey1 2026-11-08 15:40): MrWhiskey1 was cut from the host for 11 minutes, went back to the main
+    menu and joined again (the host had restarted from the same save); his game stopped right after the load ("entity is not
+    known", UI::CSelector). The native module reads its control file only when a command is added, and a game cut from its
+    host adds one every 15 s: the last "this machine plays company ..." lines of the game before stayed unread and were taken
+    right after the next load, so the interface asked for MrWhiskey1's company of the game before, which the world just
+    loaded does not have. The native module now leaves out the player lines written before a game began to load; the new
+    game says them again within seconds (MPFEVER_CTLSTALE=1: taken, as before). Test: tests/test_ctlstale0713.py (and the
+    autotest "tomenustale").
+  - FIX (purchases, #148/#170, the 0.7.9 and 0.7.12 sessions of 2026-11-08): vehicle purchases that made nothing ("result after 10
+    step(s): nothing created", 27 of 154 in one session, 29 in another) were taken for an MPFever fault. The game itself refused
+    them, on every game alike (no resync, no id taken): the buying company had less money than the price when the purchase was
+    applied, as in single player. Most were the line manager's clones (one purchase per vehicle, no money check); others were
+    store purchases whose money went between the click and their step, or a depot toll on top of the price. Nothing told the
+    buyer. A refused purchase now says why in the log ("not enough money: price P, company money B") and in the report, and its
+    buyer sees "Purchase refused: not enough money." with the price and the company's money on the chat notice
+    (MPFEVER_BUYMONEY=0: as in 0.7.12). Nothing sent to the game changes. Test: tests/test_buymoney0713.py (autotest scenario
+    buypoor).
+  - FIX (resyncs, #161/#166, yoyo, YkeWoudstra and Bence 2026-11-08): stops and signals "built differently" on one game, which
+    looked tied to a game played in another language, had nothing to do with it (the language only changes names). Two
+    players built at the same step: the second in order waited for the first one's build, but was let go as soon as that
+    build's replay began. A signal (or a stop on a bridge) is replayed in two commands, and the second player's own build
+    landed between them: its game took it for the replay, never sent it to the others ("produced nothing"), counted its town
+    statistics into the other player's ("TOWN STATS DIFFER", a resync), and the player's next build named things only its
+    game had ("unresolved references"). A player's own build now waits until the replay in the engine's hands is applied, a
+    fraction of a second, and still lands at its step (MPFEVER_OWNAFTERREPLAY=0: as before). A town statistics difference
+    now also says how many proposals were counted (2 for the builder's 1 means this fault; MPFEVER_TOWNWHYN=0: as before).
+    Test: tests/test_ownafterreplay0713.py; autotest MPFEVER_SCENARIO=samestep (with MPFEVER_TOGETHER=1).
+  - EXPERIMENTAL (#161, yoyo:24): a stop on a street without sidewalks (a Roads Plus one-way tram street), where the stop tool
+    adds platform lanes, was replayed as a wider street that the engine laid on the ground again (terrain aligned on the other
+    game only, a resync). With MPFEVER_NATIVESTOPLANES=1 such a stop is replayed as the tool's own build, as on a bridge; off
+    by default until the game probe (MPFEVER_SCENARIO=bridgestopprobe with MPFEVER_PROBE_NOSIDEWALK=1 and
+    MPFEVER_PROBE_LANES=platforms) shows that this form aligns no ground. Test: tests/test_nativestoplanes0713.py.
+  - DIAGNOSTIC (drift, #150/#166/#170, beule and Erik, Bence, the AMD session 2026-11-08): the games drifted apart with no
+    action, one to six game minutes after a load, the gigantic worlds most: the fares (money) first, then the passengers on
+    board, then the towns' happiness, which the engine computes from the persons. The checks counted the persons only and no
+    report had them: which person went otherwise first could not be told. The checks now also read one person in eight (by
+    its id and the check's number: the same persons on every game, the next eighth at the next check), where it is, its line
+    and stops and where it goes. A difference there is only written in the launcher's log ("(diagnostic) personsDigest"),
+    never a reason to reload (MPFEVER_PERSONDIGEST=0: off). And the dump the launcher asks for after a difference now has
+    every person and town building too, on every game at the same check (MPFEVER_SDUMPPERSONSAFTER=0: not). Test:
+    tests/test_persondigest0713.py (and MPFever.exe --selftest).
+  - EXPERIMENTAL, OFF by default (tests of #150/#166): the persons' moves, boarding and leaving the buildings
+    (MPFEVER_PERSONSERIAL=1) and the land vehicles' moves (MPFEVER_VEHSERIAL=1) computed in one piece on the simulation's
+    thread, as the animals' since 0.5.12: the engine hands them to its thread pool in chunks, whose random draws depend on
+    where each chunk starts, and a walker reads what other chunks change at the same time. Every game of a session needs the
+    same setting; a game's hello says it when it is set, the native log says "persons moved in one piece ... (k of 4 loops)".
+    Kept off until an A/B test with two games on a big world (tools/recplay_drift_big.txt) shows a gain. Test:
+    tests/test_personserial0713.py (the eight places checked against the game's code, build 40425).
+  - FASTER (resynchronisations, #161/#166, yoyo, YkeWoudstra and Bence 2026-11-08): each resynchronisation of their 274 MB
+    savegame took 2 to 5.5 minutes, until the slowest PC's game had loaded it (248 s on a PC of 16 GB whose game ran half in
+    the page file). The launcher kept 2.5 to 2.9 GB of arrays it no longer used during that load, never collected; the host
+    worked the differences out only after its save (9 s: its base decompressed, then the new savegame, then both compared);
+    a player read and decompressed its base only once the last part of the differences had come (6 to 15 s), its 948 MB
+    file read whole, then copied whole again. Now the big arrays are given back as soon as they are used, and the log says
+    the launcher's memory and the PC's free memory, and the game's at each reload and each game ready (MPFEVER_RESYNCGC=0:
+    not collected, as before); a player reads its base while the differences arrive, a file MPFever wrote straight into
+    one array (MPFEVER_DELTAPREREAD=0: as before); the host decompresses its base during the save, and the new savegame at
+    the same time as the base (MPFEVER_DELTAEARLY=0: as before). Test: tests/test_resyncspeed0713.py (and the selftest).
+  - CHANGE (settings): the host's experimental « Other players' builds without waiting » and « Several players building without
+    stopping » and the player's « Same platform order (test) » are gone: off for every player (a value kept in
+    mpfever_settings.txt is ignored; a game's hello no longer carries the platform order, the host no longer warns about it).
+    Without waiting, a stop the engine refused once and built on its second try at its step (yoyo's game, r161, 2026-11-08)
+    would have come several steps late, then a reload; the stand per build was lower, the session's was not (#150: the leads
+    moved it onto the other games). The platform order brought nothing measurable, and players who differ drift apart. The
+    code stays: MPFEVER_NOWAIT=1 / MPFEVER_NOSTOP=1 / MPFEVER_ORDER2=1 in the environment of every game: as before (tests).
+    Test: tests/test_expopts0713.py (and the selftest).
+  - CHANGE (launcher, asked by the user): the window's « Connection » card (your name, host address, port, « Host a game », « Join by IP ») is gone: hosting and joining are done on the game's Multiplayer page (its lobby, the server list, Steam invitations) since 0.3.18, and the card's buttons, still clickable before the game was started, opened a session without the lobby (and a second game). In its place: « ⚙ Settings », « ♥ Support MPFever » (Ko-fi), « Discord » and where to host or join. The port of a lobby: port= in mpfever_settings.txt (28090 without it, as before). Developer mode (--dev) and MPFEVER_CONNCARD=1: the old card. Test: tests/test_launcherlinks0713.py (and the selftest).
   - FIX (crash, #168, lukas' game 2026-11-08 22:28): Philipp coloured 8 vehicles he had just bought (stamped 2 s ahead); lukas
     paused the game before that moment, Philipp sold the 8 vehicles during the pause (a paused action is applied at once, so
     before the colours sent earlier), lukas' paused builds took their ids, and after the pause the colours went on track

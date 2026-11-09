@@ -41,7 +41,8 @@ it is stable enough.
   [x] Towns' pollution, noise and traffic the same on PCs with different processors (0.7.1, 0.7.5)
   [x] Full speed again in multiplayer: two games in step no longer both slow down to half speed (0.7.5)
   [x] Lighter checks: the small hitch every 10 seconds about a third shorter on big worlds (0.7.5)
-  [x] Several players building at once without stopping (host setting, experimental, off by default: 0.7.3 to 0.7.5)
+  [x] Several players building at once without stopping (host setting, experimental, off by default: 0.7.3 to 0.7.5;
+      removed in 0.7.13: a refused stop tried again came late without waiting, and the session's stand was not lower)
   [x] No crash after changing a tunnel during a pause (#131), a dedicated server no longer stuck in a resynchronisation (0.7.6)
   [x] A vehicle bought gets the same number on every game; a track upgrade no longer reloads the games (#133) (0.7.7)
   [x] Two players building at the same place at the same moment: rebuilt alike on every game, the tool never stuck (0.7.8)
@@ -50,15 +51,16 @@ it is stable enough.
   [x] An old copy of MPFever's mod in the game's folder found and moved out (#136); the game's mod version checked (0.7.9)
   [x] « Report a problem » gets every player's report and sends it, no file to drag (0.7.9)
   [x] The join page every time a running game is joined; computer companies no longer freeze the other games (0.7.10)
-  [ ] Vehicles drifting apart in bus terminals on one game: « Same platform order (test) » to try (0.7.10, off by default)
+  [x] Vehicles drifting apart in bus terminals on one game: « Same platform order (test) » tried (0.7.10), no measured
+      gain, removed in 0.7.13 (players who differ drift apart)
   [ ] Replays of big stations without the engine's two proposals (the rest of their freeze)
   [ ] Tests and fixes for 3 to 8 players
   [ ] Feedback from the first testers
 
 0.8 - Building together without stopping
   [x] The builder sees its build at once (0.6.12), vehicles and lines without waiting (0.7.4)
-  [ ] « Several players building without stopping » on by default, after test sessions of 3 players or more without a
-      resynchronisation
+  [ ] No-stop v2: no wait only for the replays that have no retry path (the 0.7.3 setting was removed in 0.7.13), after
+      test sessions of 3 players or more without a resynchronisation
   [ ] Big station edits without their last freeze
   [ ] The last recurring desyncs: vehicles in bus terminals, GCT stations (#133), a new line (#134)
 

@@ -47,7 +47,7 @@ check('if (i >= 6 && i <= 9 && i != 8 && GetEnvironmentVariableA("MPFEVER_ORDER2
 check("WithOrder2(" not in mf and "Order2On(" not in mf and "WithOrder2(" not in mc,
       "a player's game no longer adds the setting to its hello")
 check("WarnOrder2(" not in mf and "WarnOrder2(" not in mc and "order2Warned" not in mc, "  and the host no longer compares it")
-hello = mf[mf.index('                if (m.Kind == "hello") { g.InGame = true;'):][:400]
+hello = mf[mf.index('                if (m.Kind == "hello") { g.InGame = true;'):][:700]   # (0.7.13: the game's memory logged aside, see test_resyncspeed0713.py)
 check("\n                lock (waiting)\n" in hello and "order2" not in hello, "  the hello goes on to the host as the game wrote it")
 check("if (on != o.DefaultOn) c.Add(" in op, "the problem reports still say the settings not at their default (Settings changed)")
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
