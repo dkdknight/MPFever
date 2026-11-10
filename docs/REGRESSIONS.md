@@ -41,6 +41,13 @@ with its cause and the test that now guards it.
 | A **replay's cost difference is booked during a pause** (one update after it), never only after it: the games' money stays alike for the purchases of that pause (#191). | 0.7.17 | REFUND.book | test_refundpause0717.py |
 | **Trees, plants and rocks** are never replayed from the tool's copy, neither at the click (#181) nor by RESTALE (#191). | 0.7.17 | G.restaleBody | test_restaleasset0717.py |
 | A **street edit touching a construction** (station, depot) with no construction of its own is never shipped at the click. | 0.7.17 | G.preship, G.preTouchesCon | test_preshipstation0717.py |
+| A **street type change** whose removal the engine makes larger than the tool's removes the tool's segments only; a **merged upgrade** whose tool junctions cannot be made is matched by nodes, then made with the engine's junctions, before one segment after the other (#191). | 0.7.17 | replayNativeStreet (rmOnly), G.replayMergedUpgrade, G.mergeSegMap | test_streettype0717.py, autotest z6 |
+| A **script's build whose context cleans the street graph up** is never shipped at the click (its copy is the proposal before the engine's clean-up). | 0.7.17 | G.preship | test_preshipstation0717.py, autotests z1 / b1 |
+| A **company's value** is money - loans + its assets as its own game counts them (getCompaniesValue().totalAssets, sent once a month), the vehicles' resale value when none came (computer companies, old months); rows "id:b,d,vv[,a]" stay readable both ways. | 0.7.17 | mpfever_feat_stats.lua, M.fromStats | test_stockassets0717.py, autotest y3 |
+| The **mod is installed on a Steam account that never started the game** (its folder made); installed nowhere is said with what to do. | 0.7.17 | GameInstall.InstallMod, LocalToMake | test_mklocal0717.py, selftest |
+| A **report over the report service's limit** is cut (its largest logs keep their end) before it is sent; report.txt and players.txt never. | 0.7.17 | Reporter.Shrink | test_reporttrim0717.py, selftest |
+| A player's report says **« checked by the host »**, never « Sync: — ». | 0.7.17 | ReportSyncText | test_synccheck0717.py |
+| The autotest **featstats keeps its options** against the session's (G.featTestOpts), as journaltest and permstest. | 0.7.17 | H.featstats | autotest y3 |
 
 ## Regressions found
 

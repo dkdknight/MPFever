@@ -11,7 +11,7 @@ for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Mic
 if not defined MSBUILD (echo MSBuild not found & exit /b 1)
 rem the release's version: the archives' names, and the product version of winhttp.dll and the .exe files (Properties >
 rem Details, checked by code signing: the same for every signed file of a release)
-set "VERSION=0.7.17"
+set "VERSION=0.7.18"
 
 echo === 1/4 native module
 call native\build.bat || exit /b 1
