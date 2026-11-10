@@ -5270,6 +5270,59 @@ end
 -- which gives the builder's result exactly for one segment) put together into one new proposal, with the tool's junctions,
 -- built at once (the town buildings around are taken away and put back once for the whole street, as by the tool). Returns
 -- whether the command was made (else the caller replays it another way).
+-- (0.7.17, #191) the tool's junctions (st: its proposal) with their new segments numbered as in this merged upgrade (added: the
+-- engine's new segments, in the plan's order, numbered -1, -2...): each of the tool's new segments matched to one of these by
+-- its two nodes. nil when one cannot be matched (or two share their nodes), or when nothing changes.
+G.mergeSegMap = function(st, added)
+	local function key(a0, a1) if a0 > a1 then a0, a1 = a1, a0 end return a0 .. ":" .. a1 end
+	local mine, seen = {}, {}
+	for k = 1, #added do
+		local sg = added[k]
+		local n0, n1 = sg.comp.node0, sg.comp.node1
+		local kk = key(n0, n1)
+		if seen[kk] then return nil end
+		seen[kk] = true
+		mine[kk] = -k
+	end
+	local map, changed, tseen = {}, false, {}
+	for _, ts in ipairs(st.addedSegments or {}) do
+		local c = type(ts) == "table" and ts.comp or nil
+		local e = type(ts) == "table" and ts.entity or nil
+		if type(e) ~= "number" or type(c) ~= "table" or type(c.node0) ~= "number" or type(c.node1) ~= "number" then return nil end
+		local kk = key(c.node0, c.node1)
+		if tseen[kk] or mine[kk] == nil then return nil end
+		tseen[kk] = true
+		map[e] = mine[kk]
+		if mine[kk] ~= e then changed = true end
+	end
+	if not changed then return nil end
+	local out = {}
+	for i, cfg in ipairs(st.nodeConfigsToAdd or {}) do
+		local comp = type(cfg) == "table" and type(cfg.comp) == "table" and cfg.comp or {}
+		local lcs = {}
+		for j, l in ipairs(comp.laneConnections or {}) do
+			local x = {}
+			for kx, v in pairs(l) do x[kx] = v end
+			for _, f in ipairs({ "segment0", "segment1" }) do
+				local sv = x[f]
+				if type(sv) == "number" and sv < 0 then
+					if map[sv] == nil then return nil end
+					x[f] = map[sv]
+				end
+			end
+			lcs[j] = x
+		end
+		local cc = {}
+		for kx, v in pairs(comp) do cc[kx] = v end
+		cc.laneConnections = lcs
+		local o = {}
+		for kx, v in pairs(cfg) do o[kx] = v end
+		o.comp = cc
+		out[i] = o
+	end
+	return out
+end
+
 G.replayMergedUpgrade = function(a, plan, probe)
 	local added, removed = {}, {}
 	for _, step in ipairs(plan) do
@@ -5291,34 +5344,57 @@ G.replayMergedUpgrade = function(a, plan, probe)
 		end)
 		if not okc then log("NATIVE REPLAY " .. tostring(a.uid) .. " merged upgrade: segment " .. tostring(step.edge) .. " (" .. shortErr(errc) .. ")") return false end
 	end
-	local P = api.type.Proposal.new()
-	local okm, errm = pcall(function()
-		local sp = P.proposal
-		sp.addedSegments = added
-		sp.removedSegments = removed
-		-- (the tool's junctions: their lane connections name the new segments -1, -2... in the tool's order, the same as here
-		-- when the tool lists its new segments in the order of its removed ones; MPFEVER_MERGENC=0: the engine's own)
-		local st = probe[1] and probe[1].proposal
-		if st and os.getenv("MPFEVER_MERGENC") ~= "0" and #(st.nodeConfigsToAdd or {}) > 0 then
-			sp.nodeConfigsToAdd = C.nodeConfigs(st.nodeConfigsToAdd)
-			local ncr = {}
-			for _, n in ipairs(st.nodeConfigsToRemove or {}) do if type(n) == "number" and n >= 0 then ncr[#ncr + 1] = n end end
-			ncr = C.cfgGuard(st.nodeConfigsToAdd, ncr)
-			if #ncr > 0 then sp.nodeConfigsToRemove = ncr end
+	-- (0.7.17, #191: liber's street of 5 then 2 segments changed to another type, 22:05 and 22:10) the tool's junctions name its new
+	-- segments -1, -2... in its own order; numbered here in the order of the plan, a lane connection named a segment with fewer
+	-- lanes: the engine asserted (GetLaneOffset, 4 >= 4), the command was not made, and the street went one segment after the
+	-- other, its ground levelled otherwise (the towns' numbers differed, a resync each time). The tool's new segments are now
+	-- matched to these by their two nodes (G.mergeSegMap), and when the command still cannot be made, it is made once more
+	-- without the tool's junctions (the engine's own), before the way of before. MPFEVER_MERGERETRY=0: as before
+	local st = probe[1] and probe[1].proposal
+	local retry = os.getenv("MPFEVER_MERGERETRY") ~= "0"
+	local tries = { "tool" }
+	local remapped = nil
+	if retry and st and #(st.nodeConfigsToAdd or {}) > 0 then
+		local okr, r = pcall(G.mergeSegMap, st, added)
+		if okr and r then remapped = r; tries = { "matched", "tool", "engine" } else tries = { "tool", "engine" } end
+	end
+	local cmd, label = nil, nil
+	for _, how in ipairs(tries) do
+		local P = api.type.Proposal.new()
+		local okm, errm = pcall(function()
+			local sp = P.proposal
+			sp.addedSegments = added
+			sp.removedSegments = removed
+			-- (the tool's junctions: their lane connections name the new segments -1, -2... in the tool's order, the same as here
+			-- when the tool lists its new segments in the order of its removed ones; MPFEVER_MERGENC=0: the engine's own)
+			if how ~= "engine" and st and os.getenv("MPFEVER_MERGENC") ~= "0" and #(st.nodeConfigsToAdd or {}) > 0 then
+				local list = (how == "matched") and remapped or st.nodeConfigsToAdd
+				sp.nodeConfigsToAdd = C.nodeConfigs(list)
+				local ncr = {}
+				for _, n in ipairs(st.nodeConfigsToRemove or {}) do if type(n) == "number" and n >= 0 then ncr[#ncr + 1] = n end end
+				ncr = C.cfgGuard(list, ncr)
+				if #ncr > 0 then sp.nodeConfigsToRemove = ncr end
+			end
+			P.proposal = sp
+		end)
+		if not okm then
+			log("NATIVE REPLAY " .. tostring(a.uid) .. " merged upgrade not made (" .. how .. " junctions: " .. shortErr(errm) .. ")")
+		else
+			if os.getenv("MPFEVER_MERGEDUMP") == "1" then pcall(function() C.appendFile(C.DIR .. BS .. "merge_dump.txt", "==== merged" .. NL .. C.dump(P):sub(1, 60000) .. NL) end) end
+			local ctx = api.type.Context.new()
+			ctx.checkTerrainAlignment = true
+			ctx.cleanupStreetGraph = true
+			ctx.gatherBuildings = true
+			ctx.gatherFields = true
+			ctx.player = api.engine.util.getPlayer()
+			G.refundInto(ctx)
+			local okk, c = pcall(function() return api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true) end)
+			if okk and c then cmd, label = c, how break end
+			log("NATIVE REPLAY " .. tostring(a.uid) .. " merged upgrade: command " .. shortErr(c) .. (#tries > 1 and (" (" .. how .. " junctions)") or ""))
 		end
-		P.proposal = sp
-	end)
-	if not okm then log("NATIVE REPLAY " .. tostring(a.uid) .. " merged upgrade not made (" .. shortErr(errm) .. ")") return false end
-	if os.getenv("MPFEVER_MERGEDUMP") == "1" then pcall(function() C.appendFile(C.DIR .. BS .. "merge_dump.txt", "==== merged" .. NL .. C.dump(P):sub(1, 60000) .. NL) end) end
-	local ctx = api.type.Context.new()
-	ctx.checkTerrainAlignment = true
-	ctx.cleanupStreetGraph = true
-	ctx.gatherBuildings = true
-	ctx.gatherFields = true
-	ctx.player = api.engine.util.getPlayer()
-	G.refundInto(ctx)
-	local okk, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true) end)
-	if not okk or not cmd then log("NATIVE REPLAY " .. tostring(a.uid) .. " merged upgrade: command " .. shortErr(cmd)) return false end
+	end
+	if not cmd then return false end
+	if label ~= "tool" then log("NATIVE REPLAY " .. tostring(a.uid) .. " merged upgrade: made with the " .. label .. " junctions") end
 	log("NATIVE REPLAY " .. tostring(a.uid) .. ": an upgrade of " .. #plan .. " segments at once, merged")
 	toSim("replaying", { tok = a.tsTok })
 	-- (0.8: one command, a refused one reloads, see G.gateSingle)
@@ -6702,7 +6778,22 @@ local function replayNativeStreet(a)
 	pcall(function() nSeg = #rm.proposal.removedSegments end)
 	pcall(function() nNodes = #rm.proposal.removedNodes end)
 	local capNodes = #(m.proposal.removedNodes or {})
-	if nSeg ~= #rmIds or nNodes < 0 then
+	-- (0.7.17, #191: liber's street changed to another type, 11 segments and the junction node they met at, 22:05 to 22:12,
+	-- four resyncs) the engine's removal of the tool's 11 segments took 13: the replay gave up every time. When the engine's
+	-- removal holds every segment of the tool's and more, the tool's own ones only are removed (rmOnly, see
+	-- C.rebuildNativeWithConstruction), as on the builder's game; refused, the way of before. MPFEVER_RMDIFFOK=0: as before
+	local rmOnly = nil
+	if nSeg > #rmIds and #rmIds > 0 and nNodes >= 0 and os.getenv("MPFEVER_RMDIFFOK") ~= "0" then
+		local has, want, all = {}, {}, true
+		pcall(function() for i = 1, #rm.proposal.removedSegments do has[rm.proposal.removedSegments[i].entity] = true end end)
+		for _, e in ipairs(rmIds) do want[e] = true; if not has[e] then all = false end end
+		if all then
+			rmOnly = want
+			log("NATIVE REPLAY " .. tostring(a.uid) .. " native street: the engine's removal (" .. nSeg .. " segments) takes more than the tool's ("
+				.. #rmIds .. "): the tool's only")
+		end
+	end
+	if (nSeg ~= #rmIds and not rmOnly) or nNodes < 0 then
 		log("NATIVE REPLAY " .. tostring(a.uid) .. " native street: the engine's removal (" .. nSeg .. " segments) differs from the tool's (" .. #rmIds .. ")")
 		gaveUp("removal differs")
 		return
@@ -6731,7 +6822,8 @@ local function replayNativeStreet(a)
 	local eoUsed = a.eoNative
 	for _, variant in ipairs({ {}, { noConfigs = true }, { noConfigs = true, noMaps = true } }) do
 		C.errors = {}
-		variant.toolNodes = toolNodes
+		variant.toolNodes = toolNodes or (rmOnly ~= nil)
+		variant.rmOnly = rmOnly
 		variant.townAuto = a.townAuto
 		-- (the engine's own edge objects of the dry run, matched by rank, and the tool's map of the objects it re-created,
 		-- MPFEVER_EOMAPS=0: without that map)
@@ -10898,6 +10990,38 @@ G.preHasObjects = function(m)
 	if type(st) ~= "table" then return false end
 	return #(st.edgeObjectsToAdd or {}) > 0 or #(st.edgeObjectsToRemove or {}) > 0
 end
+-- (0.7.17, #186) the construction (its entity) one of the segments a copy takes away, or one of their nodes, belongs to; nil when
+-- none. con(kind, id): the street connector's answer (the engine's by default)
+G.preTouchesCon = function(copy, con)
+	con = con or function(kind, id)
+		local scs = api.engine.system.streetConnectorSystem
+		if kind == "edge" then return scs.getConstructionEntityForEdge(id) end
+		return scs.getConstructionEntityForNode(id)
+	end
+	local st = type(copy) == "table" and copy.proposal or nil
+	if type(st) ~= "table" then return nil end
+	local function check(kind, id)
+		if type(id) ~= "number" or id < 0 then return nil end
+		local ok, c = pcall(con, kind, id)
+		if ok and type(c) == "number" and c >= 0 then return c end
+		return nil
+	end
+	for _, sg in ipairs(st.removedSegments or {}) do
+		if type(sg) == "table" then
+			local c = check("edge", sg.entity)
+			if c then return c end
+			local cp = type(sg.comp) == "table" and sg.comp or {}
+			c = check("node", cp.node0) or check("node", cp.node1)
+			if c then return c end
+		end
+	end
+	for _, sg in ipairs(st.addedSegments or {}) do
+		local cp = type(sg) == "table" and type(sg.comp) == "table" and sg.comp or {}
+		local c = check("node", cp.node0) or check("node", cp.node1)
+		if c then return c end
+	end
+	return nil
+end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
 	if not G.preHasContent(r.copy) then log("PRESHIP native build " .. tostring(r.id) .. ": its copy has nothing in it: shipped the usual way") return false end
@@ -10940,6 +11064,17 @@ G.preship = function(r)
 				log("PRESHIP native build " .. tostring(r.id) .. ": trees, plants or rocks (a construction without a file): shipped the usual way")
 				return false
 			end
+		end
+	end
+	-- (0.7.17, #186: Erik's street next to his modular bus terminal, 20:33:52) A street edit with no construction in its copy that
+	-- touches a construction's segment or node: shipped the usual way. The tool's copy changed one segment; applied, the engine
+	-- rebuilt the terminal too (4 nodes, 5 segments, the construction again), so its capture was "built otherwise than shipped at
+	-- the click" and the games were reloaded. MPFEVER_PRESHIPSTATIONEDIT=1: shipped at the click, as in 0.7.16
+	if os.getenv("MPFEVER_PRESHIPSTATIONEDIT") ~= "1" and #(r.copy.toAdd or {}) == 0 and #(r.copy.toRemove or {}) == 0 then
+		local okT, con = pcall(G.preTouchesCon, r.copy)
+		if okT and con then
+			log("PRESHIP native build " .. tostring(r.id) .. ": a street edit at construction " .. tostring(con) .. ": shipped the usual way")
+			return false
 		end
 	end
 	local args = { n = 4, [1] = C.copy(r.copy), [2] = { __player = true }, [3] = false, [4] = true }

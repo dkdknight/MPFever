@@ -310,6 +310,21 @@ describe = function(kind, e, kept)
 		end
 		return { k = "station", id = e }
 	end
+	-- (0.7.17, #194) an edge object (a stop, a signal) a game script's build takes away: its segment and its rank on it
+	if kind == "eo" then
+		local edge = nil
+		pcall(function() edge = api.engine.system.streetSystem.getEdgeForEdgeObject(e) end)
+		local ed = describeEdge(edge)
+		if not ed then return { k = "eo", id = e } end
+		local i, side = nil, nil
+		pcall(function()
+			local be = comp(edge, "BASE_EDGE")
+			for j = 1, #be.objects do
+				if be.objects[j][1] == e then i, side = j, be.objects[j][2] end
+			end
+		end)
+		return { k = "eo", id = e, edge = ed, i = i, side = side }
+	end
 	if kind == "sg" then
 		local sg = comp(e, "STATION_GROUP")
 		local first = nil
@@ -655,6 +670,20 @@ resolve = function(r, bind)
 		end
 		return comp(r.id, "STATION") and r.id or nil
 	end
+	if k == "eo" then
+		if r.edge then
+			local be = comp(resolveEdge(r.edge), "BASE_EDGE")
+			local e = nil
+			if be then
+				pcall(function()
+					local o = r.i and be.objects[r.i]
+					if o and (r.side == nil or o[2] == r.side) then e = o[1] end
+				end)
+			end
+			return e
+		end
+		return nil
+	end
 	if k == "sg" then
 		if r.st then
 			local st = resolve(r.st, bind)
@@ -823,6 +852,53 @@ function R.translateOut(fn, margs, rev)
 							local r = ref("edge", e)
 							if type(r) == "table" then r.opt = true end
 							eid.entity = r
+						end
+					end
+				end
+			end
+		end
+	end
+	-- (0.7.17, #194: AMD's game, 21:25) a game script's build (Undo!, Town Transit Planner...: a streetProposal of the script
+	-- interface) went with this game's ids: "edgesToRemove {89792}", a segment of another place on a game whose ids had parted
+	-- (#150), and the other games refused it, a resync. Its existing segments, nodes, edge objects and constructions now go as
+	-- references, as a tool's build. MPFEVER_GSMODIDS=0: as before
+	if fn == "makeWorldBuildProposalCmd" and type(margs[1]) == "table" and type(margs[1].streetProposal) == "table"
+		and os.getenv("MPFEVER_GSMODIDS") ~= "0" then
+		local sp = margs[1].streetProposal
+		local function ids(list, kind)
+			if type(list) ~= "table" then return end
+			for i, x in ipairs(list) do
+				if type(x) == "number" and x >= 0 then list[i] = ref(kind, x) end
+			end
+		end
+		ids(sp.edgesToRemove, "edge")
+		ids(sp.nodesToRemove, "node")
+		ids(sp.edgeObjectsToRemove, "eo")
+		ids(sp.nodeConfigsToRemove, "node")
+		ids(margs[1].constructionsToRemove, "con")
+		for _, sg in ipairs(type(sp.edgesToAdd) == "table" and sp.edgesToAdd or {}) do
+			if type(sg) == "table" then
+				if type(sg.comp) == "table" then
+					if type(sg.comp.node0) == "number" and sg.comp.node0 >= 0 then sg.comp.node0 = ref("node", sg.comp.node0) end
+					if type(sg.comp.node1) == "number" and sg.comp.node1 >= 0 then sg.comp.node1 = ref("node", sg.comp.node1) end
+				end
+				if type(sg.playerOwned) == "table" and type(sg.playerOwned.player) == "number" and R.coIdOf and R.coIdOf(sg.playerOwned.player) then
+					sg.playerOwned.player = ref("player", sg.playerOwned.player)
+				end
+			end
+		end
+		for _, eo in ipairs(type(sp.edgeObjectsToAdd) == "table" and sp.edgeObjectsToAdd or {}) do
+			if type(eo) == "table" and type(eo.edgeEntity) == "number" and eo.edgeEntity >= 0 then eo.edgeEntity = ref("edge", eo.edgeEntity) end
+		end
+		for _, m in ipairs(type(sp.nodeConfigsToAdd) == "table" and sp.nodeConfigsToAdd or {}) do
+			if type(m) == "table" then
+				if type(m.entity) == "number" and m.entity >= 0 then m.entity = ref("node", m.entity) end
+				local mc = m.comp
+				if type(mc) == "table" then
+					for _, l in ipairs(mc.laneConnections or {}) do
+						if type(l) == "table" then
+							if type(l.segment0) == "number" and l.segment0 >= 0 then l.segment0 = ref("edge", l.segment0) end
+							if type(l.segment1) == "number" and l.segment1 >= 0 then l.segment1 = ref("edge", l.segment1) end
 						end
 					end
 				end

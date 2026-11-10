@@ -24362,6 +24362,58 @@
       "ko": "거부됨: 다른 회사 소유입니다 (%s).",
       "zh-CN": "已拒绝：属于另一家公司 (%s)。",
       "zh-TW": "已拒絕：屬於另一家公司 (%s)。"
+    },
+    "The game's folder made for this Steam account: ": {
+      "de": "Spielordner für dieses Steam-Konto angelegt: ",
+      "es": "Carpeta del juego creada para esta cuenta de Steam: ",
+      "it": "Cartella del gioco creata per questo account Steam: ",
+      "nl": "Spelmap aangemaakt voor dit Steam-account: ",
+      "pl": "Utworzono folder gry dla tego konta Steam: ",
+      "pt-BR": "Pasta do jogo criada para esta conta Steam: ",
+      "ru": "Папка игры создана для этой учётной записи Steam: ",
+      "ja": "このSteamアカウント用のゲームフォルダーを作成しました: ",
+      "ko": "이 Steam 계정용 게임 폴더를 만들었습니다: ",
+      "zh-CN": "已为此 Steam 账户创建游戏文件夹：",
+      "zh-TW": "已為此 Steam 帳戶建立遊戲資料夾："
+    },
+    "The mod could not be installed anywhere: start Transport Fever 3 once from Steam (up to its main menu), close it, then start MPFever again.": {
+      "de": "Die Mod konnte nirgends installiert werden: Starte Transport Fever 3 einmal über Steam (bis zum Hauptmenü), schließe es und starte MPFever dann erneut.",
+      "es": "No se pudo instalar el mod en ningún sitio: inicia Transport Fever 3 una vez desde Steam (hasta su menú principal), ciérralo y vuelve a iniciar MPFever.",
+      "it": "Impossibile installare la mod: avvia Transport Fever 3 una volta da Steam (fino al menu principale), chiudilo, poi riavvia MPFever.",
+      "nl": "De mod kon nergens worden geïnstalleerd: start Transport Fever 3 één keer via Steam (tot het hoofdmenu), sluit het en start MPFever opnieuw.",
+      "pl": "Nie udało się nigdzie zainstalować moda: uruchom raz Transport Fever 3 ze Steam (do menu głównego), zamknij go, a potem ponownie uruchom MPFever.",
+      "pt-BR": "Não foi possível instalar o mod: inicie o Transport Fever 3 uma vez pela Steam (até o menu principal), feche-o e inicie o MPFever de novo.",
+      "ru": "Мод не удалось установить: запустите Transport Fever 3 один раз из Steam (до главного меню), закройте его, затем снова запустите MPFever.",
+      "ja": "Modをインストールできませんでした: SteamからTransport Fever 3を一度起動し（メインメニューまで）、終了してからMPFeverを再起動してください。",
+      "ko": "모드를 설치할 수 없습니다: Steam에서 Transport Fever 3을 한 번 실행하고(메인 메뉴까지) 닫은 다음 MPFever를 다시 실행하세요.",
+      "zh-CN": "无法安装模组：请先从 Steam 启动一次 Transport Fever 3（进入主菜单），关闭后再启动 MPFever。",
+      "zh-TW": "無法安裝模組：請先從 Steam 啟動一次 Transport Fever 3（進入主選單），關閉後再啟動 MPFever。"
+    },
+    "Sync check #{0}: not compared (games at different game times: {1})": {
+      "de": "Sync-Prüfung Nr. {0}: nicht verglichen (Spiele zu verschiedenen Spielzeiten: {1})",
+      "es": "Comprobación de sincronía n.º {0}: no comparada (juegos en momentos distintos: {1})",
+      "it": "Controllo sincronia n. {0}: non confrontato (partite a tempi di gioco diversi: {1})",
+      "nl": "Synccontrole nr. {0}: niet vergeleken (spellen op verschillende speltijden: {1})",
+      "pl": "Kontrola synchronizacji nr {0}: nieporównana (gry w różnym czasie gry: {1})",
+      "pt-BR": "Verificação de sincronia nº {0}: não comparada (jogos em tempos de jogo diferentes: {1})",
+      "ru": "Проверка синхронизации № {0}: не сравнивалась (игры в разное игровое время: {1})",
+      "ja": "同期チェック #{0}: 比較せず（ゲーム時間が異なる: {1}）",
+      "ko": "동기화 검사 #{0}: 비교 안 함 (게임 시간이 다름: {1})",
+      "zh-CN": "同步检查 #{0}：未比较（各游戏时间不同：{1}）",
+      "zh-TW": "同步檢查 #{0}：未比較（各遊戲時間不同：{1}）"
+    },
+    "Report too large for the service: {0}": {
+      "de": "Bericht zu groß für den Dienst: {0}",
+      "es": "Informe demasiado grande para el servicio: {0}",
+      "it": "Rapporto troppo grande per il servizio: {0}",
+      "nl": "Rapport te groot voor de dienst: {0}",
+      "pl": "Raport za duży dla usługi: {0}",
+      "pt-BR": "Relatório grande demais para o serviço: {0}",
+      "ru": "Отчёт слишком велик для сервиса: {0}",
+      "ja": "レポートがサービスの上限を超えています: {0}",
+      "ko": "보고서가 서비스 한도보다 큽니다: {0}",
+      "zh-CN": "报告超出服务上限：{0}",
+      "zh-TW": "報告超出服務上限：{0}"
     }
   }
 }

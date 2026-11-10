@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -56,6 +56,15 @@ namespace MPFever
         internal static bool ReportShareOn() => !SettingOff("reportshare", "MPFEVER_REPORTSHARE");
         static bool ReportUploadOn() => !SettingOff("reportupload", "MPFEVER_REPORTUPLOAD") && ServerListUrl() != "";
 
+        /// <summary>(0.7.17, #184 #189) The sync state of a report: a player's launcher compares nothing (the host's does), and its
+        /// "—" read as "never checked". MPFEVER_REPORTSYNC=0: "—" as before.</summary>
+        internal static string ReportSyncText(string sync, bool client)
+        {
+            if (client && (string.IsNullOrEmpty(sync) || sync == "—") && Environment.GetEnvironmentVariable("MPFEVER_REPORTSYNC") != "0")
+                return "checked by the host (see the host's report)";
+            return sync;
+        }
+
         /// <summary>The session as report.txt and the issue describe it.</summary>
         string ReportSummary(bool crashed, string forWhom = null)
         {
@@ -64,7 +73,7 @@ namespace MPFever
             // (after the game closed: the session it left then, see LeaveOnGameExit)
             sb.AppendLine(leftSession ?? SessionLines(false));
             sb.AppendLine("Settings changed: " + Options.Changed() + (GameInstall.DiagOn() ? "; DIAGNOSTIC BUILD (free-id log, state dumps)" : ""));
-            sb.AppendLine("Sync: " + syncText + "; desyncs " + desyncs + ", resynchronisations " + resyncId + ", actions relayed " + actsRelayed + ", refused " + actRefused);
+            sb.AppendLine("Sync: " + ReportSyncText(syncText, server == null && hostGame == null && clients.Count > 0) + "; desyncs " + desyncs + ", resynchronisations " + resyncId + ", actions relayed " + actsRelayed + ", refused " + actRefused);
             sb.AppendLine("Processor: " + Reporter.Processor() + "; " + Reporter.WindowsVersion());
             // (0.6.9: the game's DLCs here, and what differs from the host's or a player's)
             sb.AppendLine("DLCs: " + Mods.InstalledDlcs() + (PlayerDlcWarn() != "" ? " | " + PlayerDlcWarn() : "") + (HostDlcWarn() != "" ? " | " + HostDlcWarn() : ""));
@@ -102,6 +111,14 @@ namespace MPFever
                 var notes = new List<string>();
                 var others = GatherOthers(notes);
                 if (others.Count > 0 || notes.Count > 0) Reporter.AddPlayers(zip, others, notes);
+                // (0.7.17, #195) over what the report service takes: its largest logs cut to their end until it fits
+                if (ReportUploadOn())
+                    try
+                    {
+                        var cuts = Reporter.Shrink(zip, Reporter.ServiceLimit);
+                        if (cuts.Count > 0) Log.W(F("Rapport trop gros pour le service : {0}", "Report too large for the service: {0}", string.Join("; ", cuts)));
+                    }
+                    catch (Exception e) { Log.W("report trim: " + e.Message); }
                 long size = new FileInfo(zip).Length;
                 Log.Ok(F("Rapport de problème : {0} ({1:0.0} Mo)", "Problem report: {0} ({1:0.0} MB)", zip, size / 1048576.0));
                 var title = (crashed ? "Crash" : "Problem") + " (MPFever " + Version + ", " + (ReportCompanyMode() == "separate" ? "separate companies" : "shared company") + ")";

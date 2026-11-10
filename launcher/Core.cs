@@ -2495,7 +2495,18 @@ namespace MPFever
             if (src == null || steam == null) { if (w == 0) Log.Err(L.T("Mod ou Steam introuvable, installation du mod ignorée", "Mod or Steam not found, mod installation skipped")); return w; }
             int n = w;
             var userdata = Path.Combine(steam, "userdata");
-            if (!Directory.Exists(userdata)) return 0;
+            // (0.7.17, #192 #196) a Steam account that never started Transport Fever 3 has no folder of the game yet: the mod went
+            // nowhere, without a word, and the game stopped at once ("Mod was not cached in filesystem: mpfever_1::/mpfever_auto.lua").
+            // The folder of the account signed in to Steam (or of the only account of this PC) is made. MPFEVER_MKLOCAL=0: as before
+            bool mk = Environment.GetEnvironmentVariable("MPFEVER_MKLOCAL") != "0";
+            if (mk)
+                try
+                {
+                    var made = LocalToMake(userdata, ActiveSteamUser());
+                    if (made != null) { Directory.CreateDirectory(made); Log.W(L.T("Dossier du jeu créé pour ce compte Steam : ", "The game's folder made for this Steam account: ") + made); }
+                }
+                catch (Exception e) { Log.W("local: " + e.Message); }
+            if (!Directory.Exists(userdata)) { if (mk && w == 0) Log.Err(NoInstallText()); return w; }
             foreach (var u in Directory.GetDirectories(userdata))
             {
                 var local = Path.Combine(u, AppId, "local");
@@ -2506,9 +2517,44 @@ namespace MPFever
                 n++;
                 Log.Ok(L.T("Mod installé dans ", "Mod installed in ") + dst);
             }
+            if (n == 0 && mk) Log.Err(NoInstallText());
             // (0.6.9: the game's DLCs on this PC, which every player of a session needs alike, see Mods.InstalledDlcs)
             try { Log.W(L.T("DLC du jeu sur ce PC : ", "The game's DLCs on this PC: ") + Mods.InstalledDlcs()); } catch { }
             return n;
+        }
+
+        static string NoInstallText() => L.T("Le mod n'a pu être installé nulle part : lancez une fois Transport Fever 3 depuis Steam (jusqu'au menu principal), fermez-le, puis relancez MPFever.",
+            "The mod could not be installed anywhere: start Transport Fever 3 once from Steam (up to its main menu), close it, then start MPFever again.");
+
+        /// <summary>(0.7.17, #192) The Steam account signed in now (its number, the name of its folder in userdata), null if none.</summary>
+        public static string ActiveSteamUser()
+        {
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam\ActiveProcess"))
+                {
+                    var v = k?.GetValue("ActiveUser");
+                    if (v is int i && i != 0) return ((uint)i).ToString();
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>(0.7.17, #192) The game's "local" folder to make so that the mod can be put in: the signed-in account's (active,
+        /// its folder in userdata), or the only account's of this PC; null when there is one already, or no account to choose.</summary>
+        public static string LocalToMake(string userdata, string active)
+        {
+            if (string.IsNullOrEmpty(userdata) || !Directory.Exists(userdata)) return null;
+            var accounts = Directory.GetDirectories(userdata).Where(d => { var nm = Path.GetFileName(d); return nm.Length > 0 && nm.All(char.IsDigit) && nm != "0"; }).ToList();
+            if (accounts.Any(d => Directory.Exists(Path.Combine(d, AppId, "local")))
+                && (active == null || Directory.Exists(Path.Combine(userdata, active, AppId, "local")))) return null;
+            string acc = null;
+            if (active != null && Directory.Exists(Path.Combine(userdata, active))) acc = Path.Combine(userdata, active);
+            else if (accounts.Count == 1) acc = accounts[0];
+            if (acc == null) return null;
+            var local = Path.Combine(acc, AppId, "local");
+            return Directory.Exists(local) ? null : local;
         }
 
         /// <summary>(0.7.7) The game's autosave interval in minutes (its options, settings.lua: autosaveIntervalMinutes) from the

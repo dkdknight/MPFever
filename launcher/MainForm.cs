@@ -4596,7 +4596,20 @@ namespace MPFever
                                 Thread.Sleep(1500);
                                 HashSet<string> who; lock (failedBy) who = failedBy.TryGetValue(fuid, out var w) ? new HashSet<string>(w, StringComparer.OrdinalIgnoreCase) : new HashSet<string>();
                                 string[] all; lock (players) all = players.ToArray();
-                                if (RefusedEverywhere(fuid, who, all.Select(BaseName)))
+                                bool everywhere = RefusedEverywhere(fuid, who, all.Select(BaseName));
+                                // (0.7.17, #193: BaumEdePiep's vehicle sold twice, 20:43) the three games refused the second sale alike,
+                                // but their reports came 19.0, 21.0 and 21.7 s: after 1.5 s only one had come, and every game was
+                                // reloaded for nothing. The reports are now waited for up to 5 s in all (looked at every 0.25 s); a
+                                // build refused on one game only still reloads, 3.5 s later at most. MPFEVER_FAILWAIT=0: 1.5 s, as before
+                                if (!everywhere && Environment.GetEnvironmentVariable("MPFEVER_FAILWAIT") != "0")
+                                    for (int fw = 0; fw < FailWaitTicks && !everywhere; fw++)
+                                    {
+                                        Thread.Sleep(250);
+                                        lock (failedBy) who = failedBy.TryGetValue(fuid, out var w2) ? new HashSet<string>(w2, StringComparer.OrdinalIgnoreCase) : new HashSet<string>();
+                                        lock (players) all = players.ToArray();
+                                        everywhere = RefusedEverywhere(fuid, who, all.Select(BaseName));
+                                    }
+                                if (everywhere)
                                 {
                                     Log.Ok(F("{0} : refusée sur tous les jeux, celui de son constructeur aussi : les parties sont restées identiques, pas de resynchronisation",
                                         "{0}: refused on every game, its builder's too: the games stayed alike, no resynchronisation", fuid));
@@ -4785,8 +4798,21 @@ namespace MPFever
             }
         }
 
+        /// <summary>(0.7.17, #193) the 0.25 s looks after the first 1.5 s for the other games' reports of a refused build (5 s in all)</summary>
+        internal const int FailWaitTicks = 14;
+        int timeSkips;   // (0.7.17, #188) sync checks in a row not compared for their games' different times
+
         // a difference line is "name: values"; names may contain ':' themselves (script:mission)
         static string DiffKey(string d) { int i = d.IndexOf(": ", StringComparison.Ordinal); return i < 0 ? d : d.Substring(0, i); }
+
+        /// <summary>(0.7.17, #188) whether the games of a check gave different game times (a game without a time is not counted)</summary>
+        internal static bool DifferentTimes(Dictionary<string, Dictionary<object, object>> got)
+        {
+            var times = new HashSet<string>();
+            foreach (var v in got.Values)
+                if (v != null && v.TryGetValue("time", out var tv) && tv != null) times.Add(LuaLit.Show(tv));
+            return times.Count > 1;
+        }
 
         void OnSyncHash(Msg m)
         {
@@ -4829,6 +4855,18 @@ namespace MPFever
             {
                 Log.Dim(F("Synchronisation n°{0} : pas comparée (jeux à des tours différents de la pause : {1})", "Sync check #{0}: not compared (games at different turns of the pause: {1})",
                     n, string.Join(", ", turns.OrderBy(x => x.Key).Select(x => x.Key + "=" + x.Value))));
+                return;
+            }
+            // (0.7.17, #188: olihf and Tezla, 19:17:28) a check whose games stood at different game times (27534600 and 27535800,
+            // 6 steps apart: a build applied by one and not yet by the other) compared two moments: "OUT OF SYNC" (money, towns,
+            // stocks, vehicles... and time) though nothing had parted. Games at different times are not compared; the next check
+            // is; after 3 such checks in a row (a game that keeps another time), compared again. MPFEVER_TIMECHECK=0: compared, as before
+            bool timesDiffer = Environment.GetEnvironmentVariable("MPFEVER_TIMECHECK") != "0" && DifferentTimes(got);
+            timeSkips = timesDiffer ? timeSkips + 1 : 0;
+            if (timesDiffer && timeSkips <= 3)
+            {
+                Log.Dim(F("Synchronisation n°{0} : pas comparée (jeux à des temps différents : {1})", "Sync check #{0}: not compared (games at different game times: {1})",
+                    n, string.Join(", ", got.OrderBy(x => x.Key).Select(x => x.Key + "=" + (x.Value != null && x.Value.TryGetValue("time", out var xt) ? LuaLit.Show(xt) : "?")))));
                 return;
             }
             lastSyncAt = Now;

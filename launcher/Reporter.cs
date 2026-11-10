@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -267,6 +267,113 @@ namespace MPFever
             }
             catch { }
             return null;
+        }
+
+        /// <summary>(0.7.17, #195) What MPFever's report service takes (serverlist\Reports.cs MaxReport, 32 MB), with a margin.</summary>
+        internal const long ServiceLimit = 31L * 1024 * 1024;
+
+        /// <summary>(0.7.17, #195: CowboyPilot's report of three players, 32 MB, refused by the service: he was asked for a link and
+        /// none came) A report over the service's limit: the largest text logs (the players' reports inside it too) cut to their
+        /// last half, one after the other, until it fits (16 cuts at most). Returns the cuts made ("name: kept KB"), empty when
+        /// nothing was cut. MPFEVER_REPORTTRIM=0: as before.</summary>
+        public static List<string> Shrink(string zip, long max)
+        {
+            var cuts = new List<string>();
+            if (Environment.GetEnvironmentVariable("MPFEVER_REPORTTRIM") == "0") return cuts;
+            for (int round = 0; round < 16; round++)
+            {
+                long size;
+                try { size = new FileInfo(zip).Length; } catch { return cuts; }
+                if (size <= max) return cuts;
+                var bytes = File.ReadAllBytes(zip);
+                var cut = CutLargest(ref bytes);
+                if (cut == null) return cuts;
+                File.WriteAllBytes(zip, bytes);
+                cuts.Add(cut);
+            }
+            return cuts;
+        }
+
+        internal static bool TrimmableText(string name) =>
+            Regex.IsMatch(name, @"\.(log|txt)$", RegexOptions.IgnoreCase) && !name.EndsWith("report.txt", StringComparison.OrdinalIgnoreCase)
+            && !name.EndsWith("players.txt", StringComparison.OrdinalIgnoreCase);
+
+        static byte[] ReadEntry(ZipArchiveEntry e)
+        {
+            using (var es = e.Open()) using (var b = new MemoryStream()) { es.CopyTo(b); return b.ToArray(); }
+        }
+
+        /// <summary>The largest text entry (by its packed size) of the zip, or of a player's report.zip in it, cut to its last half;
+        /// the zip's bytes changed in place. The entry's name and how much was kept, or null when no text entry is left to cut.</summary>
+        static string CutLargest(ref byte[] zipBytes)
+        {
+            string best = null, bestInner = null;
+            long bestLen = 0;
+            using (var ms = new MemoryStream(zipBytes))
+            using (var z = new ZipArchive(ms, ZipArchiveMode.Read))
+                foreach (var e in z.Entries)
+                {
+                    if (TrimmableText(e.FullName) && e.CompressedLength > bestLen) { best = e.FullName; bestInner = null; bestLen = e.CompressedLength; }
+                    if (e.FullName.EndsWith("report.zip", StringComparison.OrdinalIgnoreCase))
+                        try
+                        {
+                            using (var im = new MemoryStream(ReadEntry(e)))
+                            using (var inner = new ZipArchive(im, ZipArchiveMode.Read))
+                                foreach (var ie in inner.Entries)
+                                    if (TrimmableText(ie.FullName) && ie.CompressedLength > bestLen) { best = e.FullName; bestInner = ie.FullName; bestLen = ie.CompressedLength; }
+                        }
+                        catch { }
+                }
+            if (best == null || bestLen < 64 * 1024) return null;
+            string note;
+            using (var ms = new MemoryStream())
+            {
+                ms.Write(zipBytes, 0, zipBytes.Length);
+                using (var z = new ZipArchive(ms, ZipArchiveMode.Update, true))
+                {
+                    var e = z.GetEntry(best);
+                    var data = ReadEntry(e);
+                    if (bestInner == null)
+                    {
+                        data = HalfTail(data);
+                        note = best + ": its last " + (data.Length >> 10) + " KB kept";
+                    }
+                    else
+                    {
+                        using (var im = new MemoryStream())
+                        {
+                            im.Write(data, 0, data.Length);
+                            int keptLen;
+                            using (var iz = new ZipArchive(im, ZipArchiveMode.Update, true))
+                            {
+                                var ie = iz.GetEntry(bestInner);
+                                var kept = HalfTail(ReadEntry(ie));
+                                keptLen = kept.Length;
+                                ie.Delete();
+                                using (var to = iz.CreateEntry(bestInner, CompressionLevel.Optimal).Open()) to.Write(kept, 0, kept.Length);
+                            }
+                            data = im.ToArray();
+                            note = best + " > " + bestInner + ": its last " + (keptLen >> 10) + " KB kept";
+                        }
+                    }
+                    e.Delete();
+                    using (var to = z.CreateEntry(best, CompressionLevel.Optimal).Open()) to.Write(data, 0, data.Length);
+                }
+                zipBytes = ms.ToArray();
+            }
+            return note;
+        }
+
+        /// <summary>The last half of a text, from the start of a line, after a line saying it was cut.</summary>
+        internal static byte[] HalfTail(byte[] data)
+        {
+            int from = Math.Max(1, data.Length / 2);
+            while (from < data.Length && data[from - 1] != (byte)'\n') from++;
+            var head = Encoding.ASCII.GetBytes("[MPFever: the start of this log was cut, the report was over the report service's limit]\r\n");
+            var r = new byte[head.Length + data.Length - from];
+            Buffer.BlockCopy(head, 0, r, 0, head.Length);
+            Buffer.BlockCopy(data, from, r, head.Length, data.Length - from);
+            return r;
         }
 
         sealed class Entry { public string Path, Name; }

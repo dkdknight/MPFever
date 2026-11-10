@@ -1126,7 +1126,19 @@ function C.buildSig(m)
 		if type(e) == "number" and e >= 0 then
 			pcall(function() p = api.engine.getComponent(e, api.type.ComponentType.BASE_NODE).position end)
 		end
-		parts[#parts + 1] = p and string.format("%.0f,%.0f", p.x or 0, p.y or 0) or tostring(e)
+		-- (0.7.17, #186 #193) a reference without position (the capture describes a node the build took away by its id only,
+		-- { k = "node", id = n }) wrote a memory address ("table: 0000029E..."), never the copy's "2219,489": a false
+		-- "built otherwise than shipped at the click" and a resynchronisation. The position seen for that id before (the copy,
+		-- read at the click) or the id. MPFEVER_SIGREF=0: as before
+		local sigref = os.getenv("MPFEVER_SIGREF") ~= "0"
+		local nid = (type(e) == "number" and e >= 0) and e or (type(e) == "table" and type(e.id) == "number" and e.id or nil)
+		local s = p and string.format("%.0f,%.0f", p.x or 0, p.y or 0) or nil
+		if sigref then
+			C.sigNodePos = C.sigNodePos or {}
+			if s and nid then C.sigNodePos[nid] = s
+			elseif not s and nid then s = C.sigNodePos[nid] or ("#" .. nid) end
+		end
+		parts[#parts + 1] = s or ((sigref and type(e) == "table") and "?" or tostring(e))
 		parts[#parts + 1] = tostring(type(c) == "table" and type(c.comp) == "table" and c.comp.doubleSlipSwitch)
 	end
 	-- the file and place of each construction added: in a pause every build has the same game time, and two players' stations
@@ -1809,7 +1821,19 @@ function C.rebuildNativeWithConstruction(m, conv, rm, opts)
 	if stage < 3 then P.proposal = sp return P end
 	if rm and stage >= 3 then
 		local rsp = rm.proposal
-		local ok1, e1 = pcall(function() sp.removedSegments = rsp.removedSegments end)
+		local ok1, e1 = pcall(function()
+			-- (0.7.17, #191) the tool's segments only, when the engine's removal took more (opts.rmOnly: id -> true)
+			if opts.rmOnly then
+				local keep = {}
+				for i = 1, #rsp.removedSegments do
+					local sg = rsp.removedSegments[i]
+					if opts.rmOnly[sg.entity] then keep[#keep + 1] = sg end
+				end
+				sp.removedSegments = keep
+			else
+				sp.removedSegments = rsp.removedSegments
+			end
+		end)
 		if not ok1 then C.errors[#C.errors + 1] = "removedSegments: " .. tostring(e1):sub(1, 100) end
 		local ok2, e2 = pcall(function()
 			if opts.toolNodes then

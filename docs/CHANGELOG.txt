@@ -2,6 +2,41 @@ MPFever - Changelog
 ===================
 
 0.7.17 - (in progress)
+  - FIX (#186 beule:27, #193 BaumEdePiep:114): a build shipped at the click and built alike was taken for one "built otherwise
+    than shipped at the click" (a resync): the signature wrote a memory address ("table: 0000029E...") for a node configuration
+    whose node the build took away (its reference had no position), the copy its place. Now the place seen for that id at the
+    click, or "#id". MPFEVER_SIGREF=0: as before. tests/test_sigref0717.py
+  - FIX (#188, olihf and Tezla 19:17:28): "OUT OF SYNC" for two games whose checks were taken 6 steps apart (time 27534600 /
+    27535800). A check of games at different game times is not compared (3 in a row at most). MPFEVER_TIMECHECK=0: as before.
+  - FIX (#193, a vehicle sold twice, 20:43): the three games refused the second sale alike, but their reports came 2.7 s apart
+    and the launcher waited 1.5 s: every game reloaded for nothing. The reports are now waited for up to 5 s.
+    MPFEVER_FAILWAIT=0: 1.5 s as before. tests/test_synccheck0717.py (both), selftest RunSync0717
+  - FIX (#192, #196): the game stopped at once ("Mod was not cached in filesystem: mpfever_1::/mpfever_auto.lua") on a Steam
+    account that had never started Transport Fever 3: its folder did not exist, the mod went nowhere without a word. The
+    signed-in account's folder (or the only account's) is made, and an error says what to do when the mod went nowhere.
+    MPFEVER_MKLOCAL=0: as before. tests/test_mklocal0717.py, selftest RunInstall0717
+  - FIX (#184, #189): a player's report said "Sync: —"; it now says the host checks. MPFEVER_REPORTSYNC=0: as before.
+  - FIX (#191, liber's streets changed to another type, 22:05-22:12, four resyncs): (A) "the engine's removal (13 segments)
+    differs from the tool's (11)": the replay gave up; now the tool's segments and nodes only are removed when the engine's
+    removal holds them all (MPFEVER_RMDIFFOK=0: as before). (B) "merged upgrade: command Unknown exception" (GetLaneOffset
+    4 >= 4: the tool's junctions named its new segments in another order), then one segment after the other with the ground
+    levelled otherwise: the tool's new segments are now matched to the merged ones by their nodes, then the tool's junctions,
+    then the engine's own, before the way of before (MPFEVER_MERGERETRY=0: as before). tests/test_streettype0717.py
+  - FIX (#194, the mod Undo! on AMD's game, 21:25): a game script's build (Undo!, Town Transit Planner...) went with the sending
+    game's ids ("edgesToRemove {89792}"); on games whose ids had parted (#150) every form was refused, a resync. Its existing
+    segments, nodes, stops and signals, junctions and constructions now go as references, as a tool's build (a new reference
+    "eo": an edge object by its segment and rank). MPFEVER_GSMODIDS=0: as before. tests/test_gsmodids0717.py
+  - FIX (#186 Erik#1:13, 20:33:52): a street edit next to a modular station shipped at the click; the engine rebuilt the station
+    too, so the capture differed from the copy (a resync). A street edit with no construction of its own that touches a
+    construction's segment or node now goes the usual way. MPFEVER_PRESHIPSTATIONEDIT=1: at the click, as before.
+    tests/test_preshipstation0717.py
+  - CHANGE (#190, Creeper and Akamari): a company's value (ranking, stock market) counts its infrastructure: each game sends its
+    own company's assets as the game counts them (getCompaniesValue().totalAssets, the finance window's), once a game month
+    (f_stats_assets); the host's figures carry them ("id:b,d,vv,a"); the value is money - loans + assets (the vehicles' resale
+    value without them: computer companies, old months). MPFEVER_STOCKASSETS=0: as before. tests/test_stockassets0717.py
+  - CHANGE (#195, CowboyPilot's 32 MB report refused by the report service): a report over 31 MB has its largest logs (a
+    player's report inside too) cut to their end until it fits. MPFEVER_REPORTTRIM=0: as before. tests/test_reporttrim0717.py,
+    selftest RunTrim0717
 
 0.7.16 - 2026-11-09: bus stops on maps from mod.io no longer reload the game, trees bulldozed in part go the usual way, the owner
   guard says why

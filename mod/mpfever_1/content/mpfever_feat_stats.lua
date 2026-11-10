@@ -177,7 +177,7 @@ M.OPTIONS = {
 	{ id = "stats", title = TX.stats, desc = TX.statsDesc, modes = "both" },
 	{ id = "yearly", title = TX.yearly, desc = TX.yearlyDesc, modes = "separate" },
 }
-M.EVENTS = { f_stats_sample = true, f_stats_cancel = true }
+M.EVENTS = { f_stats_sample = true, f_stats_cancel = true, f_stats_assets = true }
 M.TAB = { id = "stats", title = TX.tab }
 
 -- ---------------------------------------------------------------- reading the options (the same on every game: st.opts)
@@ -318,7 +318,7 @@ M.num = num
 function M.rowsText(rows)
 	local t = {}
 	for _, r in ipairs(rows) do
-		t[#t + 1] = num(r.id) .. ":" .. num(r.b) .. "," .. num(r.d) .. "," .. num(r.vv)
+		t[#t + 1] = num(r.id) .. ":" .. num(r.b) .. "," .. num(r.d) .. "," .. num(r.vv) .. (r.a and ("," .. num(r.a)) or "")
 	end
 	return table.concat(t, ";")
 end
@@ -329,20 +329,25 @@ function M.parseRows(s)
 	local rows, seen = {}, {}
 	if s == "" then return rows end
 	for part in (s .. ";"):gmatch("([^;]*);") do
-		local id, b, d, vv = part:match("^(%d+):(%-?%d+),(%-?%d+),(%-?%d+)$")
-		id, b, d, vv = tonumber(id), tonumber(b), tonumber(d), tonumber(vv)
-		if not (id and b and d and vv) or seen[id] or #rows >= 64 or math.abs(b) > 1e15 or math.abs(d) > 1e15 or math.abs(vv) > 1e15 then
+		-- (0.7.17, #190: ",a" after them, the company's assets as its own game counts them, see M.assetsRead)
+		local id, b, d, vv, a = part:match("^(%d+):(%-?%d+),(%-?%d+),(%-?%d+),?(%-?%d*)$")
+		id, b, d, vv, a = tonumber(id), tonumber(b), tonumber(d), tonumber(vv), tonumber(a)
+		if not (id and b and d and vv) or seen[id] or #rows >= 64 or math.abs(b) > 1e15 or math.abs(d) > 1e15 or math.abs(vv) > 1e15
+			or (a and math.abs(a) > 1e15) then
 			return nil
 		end
 		seen[id] = true
-		rows[#rows + 1] = { id = id, b = b, d = math.max(0, d), vv = math.max(0, vv) }
+		rows[#rows + 1] = { id = id, b = b, d = math.max(0, d), vv = math.max(0, vv), a = a and math.max(0, a) or nil }
 	end
 	table.sort(rows, function(x, y) return x.id < y.id end)
 	return rows
 end
 
 -- the scores of one row
-function M.value(r) return r.b - r.d + r.vv end
+-- (0.7.17, #190: Creeper and Akamari, a company in debt for its railway had a value below zero: its tracks, stations and roads
+-- counted for nothing. The assets its own game counts (vehicles, infrastructure: the game's finance window's company value is
+-- assets + balance - debt) when the month has them, else the vehicles' resale value as before)
+function M.value(r) return r.b - r.d + (r.a or r.vv) end
 function M.money(r) return r.b - r.d end
 
 -- "mi|year|month|rows" and "year|mi|rows"
@@ -519,6 +524,18 @@ function M.event(st, name, param, env)
 	s.m = s.m or {}
 	s.y = s.y or {}
 	local function refuse(why) log(env, name .. " of '" .. tostring(param.mpfFrom) .. "' refused: " .. why) end
+	-- (0.7.17, #190) a game's own company's assets, as its game counts them: one company per player, the sender's company (stamped
+	-- with the event); one company for everybody, the host's word only. Kept until the next one, put in the host's next figures
+	if name == "f_stats_assets" then
+		local a = tonumber(param.a)
+		if not a or a ~= a or math.abs(a) > 1e14 then return refuse("assets " .. tostring(param.a)) end
+		local co
+		if env.mode == "separate" then co = tonumber(param.mpfCo) elseif fromHost(param, env) then co = 1 end
+		if not co or co ~= math.floor(co) or co < 1 then return refuse("no company of its own") end
+		s.assets = type(s.assets) == "table" and s.assets or {}
+		s.assets[tostring(co)] = math.floor(math.max(0, a))
+		return
+	end
 	if not fromHost(param, env) then return refuse("not the host") end
 	if name == "f_stats_sample" then
 		local mi = tonumber(param.mi)
@@ -660,7 +677,9 @@ function M.measure(cos, env, now, force, st)
 		end)
 		if tonumber(b) then
 			vv = vv or M.vehicleValues()
-			rows[#rows + 1] = { id = c.id, b = clamp(tonumber(b)), d = clamp(d), vv = clamp(vv[c.ent] or 0) }
+			local sa = type(st) == "table" and type(st.feat) == "table" and type(st.feat[M.ID]) == "table" and st.feat[M.ID].assets or nil
+			local a = (type(sa) == "table" and os.getenv("MPFEVER_STOCKASSETS") ~= "0") and tonumber(sa[tostring(c.id)]) or nil
+			rows[#rows + 1] = { id = c.id, b = clamp(tonumber(b)), d = clamp(d), vv = clamp(vv[c.ent] or 0), a = a and clamp(a) or nil }
 			M.g.logged = M.g.logged or {}
 			if not M.g.logged[c.ent] then
 				M.g.logged[c.ent] = true
@@ -879,8 +898,38 @@ function M.gui(st, env)
 	local s = type(st.feat) == "table" and st.feat[M.ID] or nil
 	local T = guiT(env)
 	M.notices(st, s, env, T)
+	pcall(M.assetsSend, st, s, env)
 	if env.isHost then M.hostSample(st, s, env, realTime(env)) end
 	if type(env.write) == "function" then env.write(M.FILE, M.fileLines(st, s, env)) end
+end
+
+-- (0.7.17, #190) this game's own company's assets as the game counts them (the finance window's: vehicles, tracks, stations,
+-- roads), nil when it cannot be read. The game gives it for the local player only: each game sends its own (M.assetsSend)
+function M.assetsRead()
+	local ok, v = pcall(function() return api.engine.util.headquarters.getCompaniesValue() end)
+	if not ok or v == nil then return nil end
+	local okA, a = pcall(function() return v.totalAssets end)
+	return okA and tonumber(a) or nil
+end
+
+-- once a game month (s.due), and again when it changed by more than 1 %: f_stats_assets with this game's company's assets. One
+-- company for everybody: the host's game only. MPFEVER_STOCKASSETS=0: never (the vehicles' resale value, as before)
+function M.assetsSend(st, s, env)
+	if os.getenv("MPFEVER_STOCKASSETS") == "0" or type(s) ~= "table" or not s.due or type(env.send) ~= "function" then return end
+	if env.mode ~= "separate" and not env.isHost then return end
+	local G = M.g
+	if G.assetsFor == s.due then return end
+	local now = realTime(env)
+	if now - (G.assetsTry or -100) < 20 then return end
+	G.assetsTry = now
+	local a = M.assetsRead()
+	if not a then return end
+	G.assetsFor = s.due
+	a = math.floor(math.max(0, a))
+	if G.assetsSent and math.abs(a - G.assetsSent) <= 0.01 * math.max(1, math.abs(G.assetsSent)) then return end
+	G.assetsSent = a
+	env.send("f_stats_assets", { a = a })
+	log(env, "this company's assets sent for month " .. tostring(s.due) .. ": " .. num(a))
 end
 
 -- a request of the MPFever window on this game: "cancel" (the host cancels the running goal, A5)

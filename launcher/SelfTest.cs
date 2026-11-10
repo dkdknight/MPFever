@@ -79,8 +79,104 @@ namespace MPFever
             ok &= RunReportPrivate0713();
             ok &= RunVersionInfo0714();
             ok &= RunCrashSummary0715();
+            ok &= RunSync0717();
+            ok &= RunInstall0717();
+            ok &= RunTrim0717();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.17, #195) A report over the service's limit: its largest logs (a player's report inside too) cut to
+        /// their end until it fits.</summary>
+        static bool RunTrim0717()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.17 trim: " + what); ok &= c; }
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-trim-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(dir);
+                var rnd = new Random(7);
+                string Noise(int lines) { var sb = new StringBuilder(); for (int i = 0; i < lines; i++) sb.Append(i).Append(' ').Append(rnd.Next()).Append(' ').Append(rnd.Next()).Append("\r\n"); return sb.ToString(); }
+                var zip = Path.Combine(dir, "r.zip");
+                byte[] innerZip;
+                using (var im = new MemoryStream())
+                {
+                    using (var iz = new System.IO.Compression.ZipArchive(im, System.IO.Compression.ZipArchiveMode.Create, true))
+                    using (var w = new StreamWriter(iz.CreateEntry("session/x/mod.log").Open())) w.Write(Noise(60000));
+                    innerZip = im.ToArray();
+                }
+                using (var z = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+                {
+                    using (var w = new StreamWriter(z.CreateEntry("session/h/mod.log").Open())) w.Write(Noise(40000));
+                    using (var w = new StreamWriter(z.CreateEntry("report.txt").Open())) w.Write("MPFever 0.7.17\r\n");
+                    using (var s2 = z.CreateEntry("players/Bob/report.zip").Open()) s2.Write(innerZip, 0, innerZip.Length);
+                }
+                long before = new FileInfo(zip).Length;
+                var cuts = Reporter.Shrink(zip, before / 3);
+                long after = new FileInfo(zip).Length;
+                C(after <= before / 3 && cuts.Count > 0, "cut until it fits (" + (before >> 10) + " KB -> " + (after >> 10) + " KB, " + cuts.Count + " cut(s))");
+                C(cuts.Any(c => c.Contains("players/Bob/report.zip > session/x/mod.log")), "  a player's report inside cut too");
+                using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                {
+                    string rep; using (var r = new StreamReader(z.GetEntry("report.txt").Open())) rep = r.ReadToEnd();
+                    string log; using (var r = new StreamReader(z.GetEntry("session/h/mod.log").Open())) log = r.ReadToEnd();
+                    C(rep == "MPFever 0.7.17\r\n", "  report.txt never cut");
+                    C(log.StartsWith("[MPFever: the start of this log was cut") && log.Contains("\r\n39999 ") && !log.Contains("\r\n100 "),"  a log keeps its end, said at its start");
+                }
+                var small = Path.Combine(dir, "s.zip");
+                File.Copy(zip, small);
+                C(Reporter.Shrink(small, 1L << 40).Count == 0, "a report that fits: nothing cut");
+                C(Reporter.HalfTail(Encoding.ASCII.GetBytes("a\nb\nc\nd\n")).Length > 0 && Encoding.ASCII.GetString(Reporter.HalfTail(Encoding.ASCII.GetBytes("aa\nbb\ncc\ndd\n"))).EndsWith("cc\ndd\n"), "the half kept from a line's start");
+            }
+            catch (Exception e) { C(false, e.Message); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+            return ok;
+        }
+
+        /// <summary>(0.7.17, #192 #196) A Steam account that never started the game: its "local" folder is made for the mod.</summary>
+        static bool RunInstall0717()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.17 install: " + what); ok &= c; }
+            var root = Path.Combine(Path.GetTempPath(), "mpfever-selftest-ud-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var ud = Path.Combine(root, "userdata");
+                Directory.CreateDirectory(Path.Combine(ud, "111", "7"));
+                var want = Path.Combine(ud, "111", GameInstall.AppId, "local");
+                C(GameInstall.LocalToMake(ud, null) == want, "the only account, never started the game: its folder made");
+                C(GameInstall.LocalToMake(ud, "111") == want, "  the signed-in account: the same");
+                Directory.CreateDirectory(Path.Combine(ud, "222"));
+                C(GameInstall.LocalToMake(ud, null) == null, "two accounts, none signed in: none chosen");
+                C(GameInstall.LocalToMake(ud, "222") == Path.Combine(ud, "222", GameInstall.AppId, "local"), "  the signed-in one's");
+                Directory.CreateDirectory(want);
+                C(GameInstall.LocalToMake(ud, "111") == null, "the folder there already: nothing made");
+                C(GameInstall.LocalToMake(ud, null) == null, "  one account with it, none signed in: nothing made");
+                C(GameInstall.LocalToMake(Path.Combine(root, "none"), "111") == null, "no userdata: nothing");
+            }
+            catch (Exception e) { C(false, e.Message); }
+            finally { try { Directory.Delete(root, true); } catch { } }
+            return ok;
+        }
+
+        /// <summary>(0.7.17) #188: a sync check whose games gave different game times is not compared (DifferentTimes); #193: a
+        /// refused build's reports are waited for up to 5 s (FailWaitTicks).</summary>
+        static bool RunSync0717()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.17 sync: " + what); ok &= c; }
+            Dictionary<object, object> H(double t) => new Dictionary<object, object> { { "time", t }, { "money", "1:5" } };
+            var same = new Dictionary<string, Dictionary<object, object>> { { "olihf", H(27534600) }, { "Tezla#1", H(27534600) } };
+            var diff = new Dictionary<string, Dictionary<object, object>> { { "olihf", H(27534600) }, { "Tezla#1", H(27535800) } };
+            var none = new Dictionary<string, Dictionary<object, object>> { { "olihf", H(27534600) }, { "Tezla#1", null } };
+            C(!MainForm.DifferentTimes(same), "games at the same time: compared");
+            C(MainForm.DifferentTimes(diff), "games 6 steps apart (#188, 19:17:28): not compared");
+            C(!MainForm.DifferentTimes(none), "a game without a time: compared as before");
+            C(MainForm.ReportSyncText("—", true).StartsWith("checked by the host") && MainForm.ReportSyncText("—", false) == "—"
+                && MainForm.ReportSyncText("IN SYNC ✔", true) == "IN SYNC ✔", "a player's report: « checked by the host » for « — » (#184)");
+            C(1.5 + MainForm.FailWaitTicks * 0.25 >= 5.0 - 1e-9, "a refused build's reports waited for 5 s in all (#193: 2.65 s apart)");
+            return ok;
         }
 
         /// <summary>(0.7.13) The launcher's left card: the old « Connection » card only in developer mode or with MPFEVER_CONNCARD=1;

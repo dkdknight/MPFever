@@ -557,9 +557,11 @@ M.fromStats = function(st, month)
 	local m, rows = last:match("^(%-?%d+)|%-?%d+|%d+|(.*)$")
 	if not m or tonumber(m) ~= month then return nil end
 	local out, any = {}, false
-	for id, b, d, vv in rows:gmatch("(%d+):(%-?%d+),(%-?%d+),(%-?%d+)") do
+	-- (0.7.17, #190: ",a", the company's assets as its own game counts them, when the month has them: the statistics' value)
+	for id, b, d, vv, a in (rows .. ";"):gmatch("(%d+):(%-?%d+),(%-?%d+),(%-?%d+),?(%-?%d*);") do
 		b, d, vv = tonumber(b), math.max(0, tonumber(d)), math.max(0, tonumber(vv))
-		out[tonumber(id)] = { v = math.floor(b - d + vv), c = math.floor(b) }
+		a = tonumber(a)
+		out[tonumber(id)] = { v = math.floor(b - d + (a and math.max(0, a) or vv)), c = math.floor(b) }
 		any = true
 	end
 	return any and out or nil
