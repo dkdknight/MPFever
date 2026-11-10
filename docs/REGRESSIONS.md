@@ -38,12 +38,15 @@ with its cause and the test that now guards it.
 | A **build's signature** (shipped at the click / its capture) never holds a memory address: a reference without position gives the place seen for that id, or "#id" (#186, #193). | 0.7.17 | C.buildSig | test_sigref0717.py |
 | A **sync check of games at different game times** is not compared (3 in a row at most); a build **refused on every game** waits up to 5 s for every game's report before a reload. | 0.7.17 | MainForm.OnSyncHash, replay_failed | test_synccheck0717.py, selftest |
 | A **game script's build** (Undo!, Town Transit Planner...) names the existing street by references, never by the sending game's ids. | 0.7.17 | R.translateOut | test_gsmodids0717.py |
+| A **replay's cost difference is booked during a pause** (one update after it), never only after it: the games' money stays alike for the purchases of that pause (#191). | 0.7.17 | REFUND.book | test_refundpause0717.py |
+| **Trees, plants and rocks** are never replayed from the tool's copy, neither at the click (#181) nor by RESTALE (#191). | 0.7.17 | G.restaleBody | test_restaleasset0717.py |
 | A **street edit touching a construction** (station, depot) with no construction of its own is never shipped at the click. | 0.7.17 | G.preship, G.preTouchesCon | test_preshipstation0717.py |
 
 ## Regressions found
 
 | Found | Broken in | What broke | Cause | Fixed in | Test |
 |---|---|---|---|---|---|
+| 2026-11-10 (#194, #150) | 0.7.16 (MPFEVER_STOPNOTOWN) | A stop whose replay took trees away on the replaying games only was hidden from the towns: no resync, the games drifted apart silently (ids, then people). | The 0.7.16 fix of #177-#180 hid every difference of the towns' numbers, entities (trees, rocks) as well as ground. | 0.7.17 (MPFEVER_STOPNOTOWNTREES) | test_stopnotowntrees0717.py |
 | 2026-11-09 (#186, #193) | 0.7.14 (« without stopping » on by default) | A build shipped at the click and built alike reloaded the games ("built otherwise than shipped at the click"). | The signature wrote `tostring(table)` (a memory address) for a node reference without position; latent since PRESHIP (0.7.3), seen once it was on by default. | 0.7.17 | test_sigref0717.py |
 | 2026-11-09 (#186 Erik#1:13) | 0.7.14 (« without stopping » on by default) | A street edit next to a modular station reloaded the games. | Its copy changed one segment, the engine rebuilt the station too when applying it: the capture differed. | 0.7.17 | test_preshipstation0717.py |
 | 2026-11-09 (#181) | 0.7.14 (« without stopping » on by default) | The bulldozer on a part of a group of trees: the other game's replay failed (12 engine assertions there), the host's game reloaded. | The tool's copy shipped at the click put the trees kept back as a construction without a file, which no script can make; the 0.7.14 removal rule only covered a construction taken away with none put back. A new kind of build at the click must be one a script can make. | 0.7.16 | test_preshipasset0716.py |

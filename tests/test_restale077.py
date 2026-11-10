@@ -97,7 +97,7 @@ api = { type = { ComponentType = { BASE_NODE = "N", BASE_EDGE = "E", BASE_EDGE_S
     end,
     entityExists = function(e) return W.nodes[e] ~= nil or W.edges[e] ~= nil or W.cons[e] ~= nil end,
     system = { streetSystem = { getNodeSegments = function(e) local n = W.nodes[e] return n and cp(n.segs) or {} end } } } }
-R = { CO = { canon = 1 },
+R = { CO = { canon = 1 }, isAssetFile = function(f) return f == "" end,
   translateOut = function(fn, args)
     local function walk(t)
       for k, v in pairs(t) do

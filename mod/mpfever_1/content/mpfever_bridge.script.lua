@@ -428,7 +428,8 @@ function REFUND.unbooked(key)
 	local sum = 0
 	for _, rc in ipairs(REFUND.list) do
 		if (rc.n or 0) > 0 and type(rc.cost) == "number" and (key == "balance" or key == "b" .. tostring(rc.co)) then
-			sum = sum + math.floor((rc.got or 0) - rc.cost + 0.5)
+			-- ((0.7.17) what was booked during the pause already is counted by REFUND.pending, then by the balance)
+			sum = sum + math.floor((rc.got or 0) - rc.cost + 0.5) - (rc.booked or 0)
 		end
 	end
 	return sum
@@ -447,12 +448,26 @@ function REFUND.book(st, now)
 	if not st.rcost or #st.rcost == 0 then return false end
 	if REFUND.freeBuilds() then st.rcost = nil; return true end
 	local keep = {}
+	-- (0.7.17, #191: liber's street replayed in a pause, 19:21:48, cost 143 180 for him and 14 365 less here; the difference was
+	-- booked only at the first step after the pause, 19:36:02. Meanwhile the two games' money differed by 157 545, and the host's
+	-- vehicle bought in that pause (pc:153, 19:36:00) passed on the host and was refused on liber's game for lack of money: the next
+	-- action named a vehicle liber did not have, a resync. A replay's difference is now booked while its game time stands, one
+	-- update of the simulation after its last proposal, and again for what a later proposal of it adds (rc.booked: what is
+	-- booked). MPFEVER_REFUNDPAUSE=0: at the first step after it, as before)
+	local pauseBook = os.getenv("MPFEVER_REFUNDPAUSE") ~= "0"
 	for _, rc in ipairs(st.rcost) do
+		local due = nil
+		if pauseBook and rc.at >= now and (rc.n or 0) > 0 and type(rc.cost) == "number" and (SIM.ctTick or 0) - (rc.tick or SIM.ctTick or 0) >= 1 then
+			due = math.floor((rc.got or 0) - rc.cost + 0.5) - (rc.booked or 0)
+			if due == 0 then due = nil end
+		end
 		-- (0.7.3: a copy shipped at the click waits for its builder's cost, 50 steps at most, see replay_cost_set)
-		if rc.at >= now or (rc.late and rc.cost == nil and now - rc.at <= 50 * STEP) then
+		if (rc.at >= now and not due) or (rc.late and rc.cost == nil and now - rc.at <= 50 * STEP) then
 			keep[#keep + 1] = rc
 		elseif (rc.n or 0) > 0 and type(rc.cost) == "number" then
-			local d = math.floor((rc.got or 0) - rc.cost + 0.5)
+			local d = math.floor((rc.got or 0) - rc.cost + 0.5) - (rc.booked or 0)
+			-- (in the pause: booked now, kept for what its other proposals may add)
+			if rc.at >= now then keep[#keep + 1] = rc; rc.booked = (rc.booked or 0) + d end
 			if d ~= 0 then
 				local ent = nil
 				if st.co and st.co.mode == "separate" then ent = rc.co and CO.entityOf(st.co, rc.co) or nil else ent = api.engine.util.getPlayer() end
@@ -3239,7 +3254,7 @@ local function captureNativeBuild(state, param)
 		-- (what it costs here, for the refund of a shipped native build: see REFUND.book)
 		local rc = st.rcost and st.rcost[#st.rcost]
 		local cl = REFUND.costOf(param)
-		if rc and rc.at == now and cl then rc.got = (rc.got or 0) + cl; rc.n = (rc.n or 0) + 1 end
+		if rc and rc.at == now and cl then rc.got = (rc.got or 0) + cl; rc.n = (rc.n or 0) + 1; rc.tick = SIM.ctTick or 0 end
 		-- (and its town statistics, against the builder's: see SIM.townStats; only for the replay announced, SIM.townTag)
 		if tstats then pcall(SIM.townAdd, st, now, tstats, st.replay.tok) end
 		-- (BUILDLEAD: a build this game released at once may land at this step too: taken for the replay, it would never be
@@ -5589,16 +5604,20 @@ G.stopTownDiff = function(a, pd)
 			got[f[2]], got[f[3]] = nil, nil
 		end
 	end
-	local diffs = {}
+	local diffs, ents = {}, false
 	for _, k in ipairs({ "al", "ar", "tr", "rk" }) do
 		local e, g = tonumber(a.ts[k]), got[k]
 		if e and g then
 			local tol = math.max(0.05, 1e-5 * math.max(math.abs(e), math.abs(g)))
-			if math.abs(e - g) > tol then diffs[#diffs + 1] = string.format("%s %.3f/%.3f", k, e, g) end
+			if math.abs(e - g) > tol then
+				diffs[#diffs + 1] = string.format("%s %.3f/%.3f", k, e, g)
+				-- ((0.7.17) trees or rocks taken away on one game only: entities, not ground, see the caller)
+				if k == "tr" or k == "rk" then ents = true end
+			end
 		end
 	end
 	if #diffs == 0 then return nil end
-	return table.concat(diffs, ", ")
+	return table.concat(diffs, ", "), ents
 end
 
 local function replayStop(a, plan, variant)
@@ -5840,8 +5859,15 @@ local function replayStop(a, plan, variant)
 		-- some ground: as before (a difference reloads the games). MPFEVER_STOPNOTOWN=0: as in 0.7.15
 		if okV and not crit and pd ~= nil and not plan.after and not plan.noTown and type(a.ts) == "table"
 			and os.getenv("MPFEVER_STOPNOTOWN") ~= "0" and ((type(c.type) == "number") and c.type or 0) == 0 and G.stopNoTown(a) then
-			local okD, diff = pcall(G.stopTownDiff, a, pd)
-			if okD and diff then
+			local okD, diff, ents = pcall(G.stopTownDiff, a, pd)
+			-- (0.7.17, #194: keviK's stop, 21:15:05, "tr 0.000/0.895": the replay took trees away on AMD's and Sascha's games, not on
+			-- keviK's. Hidden from the towns, the games went on with other entities: the ids and the people drifted apart (#150)
+			-- and nothing said so. Trees or rocks taken away on one game only are no longer hidden: the replay goes as before 0.7.16
+			-- (the towns' numbers differ, a resync). MPFEVER_STOPNOTOWNTREES=0: hidden as in 0.7.16)
+			if okD and diff and ents and os.getenv("MPFEVER_STOPNOTOWNTREES") ~= "0" then
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: it would take trees or rocks away here and not on the builder's game (builder/here "
+					.. tostring(diff) .. "): replayed as before, not hidden from the towns")
+			elseif okD and diff then
 				plan.noTown = true
 				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: it would give the towns other numbers here than the builder's build (builder/here "
 					.. tostring(diff) .. "), which left the towns alike: replayed as a script's build (the towns ignore it)")
@@ -9111,6 +9137,18 @@ G.restaleBody = function(r, at)
 		return true
 	end
 	if type(r.copy) ~= "table" then return false end
+	-- (0.7.17, #191: liber's bulldozer on a part of a group of trees, 20:47, liber#13:46) Trees, plants or rocks (a construction
+	-- without a file, R.isAssetFile): applied and captured the usual way, never replayed from the tool's copy. As at the click
+	-- (#181, 0.7.16), no script command can make that copy: every form failed on both games (13 engine assertions on the host).
+	-- MPFEVER_RESTALEASSET=1: replayed from the copy, as before
+	if os.getenv("MPFEVER_RESTALEASSET") ~= "1" then
+		for _, ce in ipairs(r.copy.toAdd or {}) do
+			if type(ce) == "table" and type(ce.fileName) == "string" and R.isAssetFile(ce.fileName) then
+				log("RESTALE native build " .. tostring(r.id) .. ": trees, plants or rocks (a construction without a file): applied and captured the usual way")
+				return false
+			end
+		end
+	end
 	local why
 	if v2 then why = G.restaleNeed(r, at) else why = G.restaleWhy(r, at) end
 	if not why then return false end

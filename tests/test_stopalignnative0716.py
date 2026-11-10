@@ -66,22 +66,22 @@ run = L.eval("function(code) return assert(load(code))() end")
 print("the dry run's numbers against the builder's")
 zero = "{ al = 0, ar = 0, tr = 0, rk = 0, ba = 0, br = 0, tv = 0 }"
 run("ALIGN = { [7] = { 0, 0.416 } }; REMOVAL = {}")
-check(run(f"return G.stopTownDiff({{ ts = {zero} }}, {{}})") == "ar 0.000/0.416",
+check(run(f"return (G.stopTownDiff({{ ts = {zero} }}, {{}}))") == "ar 0.000/0.416",
       "#177-#180's first stop: the builder aligned nothing, the script form here 0.416 removed: \"ar 0.000/0.416\"")
 run("ALIGN = { [3] = { 0.03, 0.02 }, [9] = { 0.017, 0.027 } }")
-check(run("return G.stopTownDiff({ ts = { al = 0.047, ar = 0.047 } }, {})") is None,
+check(run("return (G.stopTownDiff({ ts = { al = 0.047, ar = 0.047 } }, {}))") is None,
       "summed over the towns, the same as the builder's within the margin (al 0.047 both, the stop that matched): nil")
 run("ALIGN = { [1] = { 0.04, 0 } }")
-check(run(f"return G.stopTownDiff({{ ts = {zero} }}, {{}})") is None, "0.04 against 0: within SIM.townClose's 0.05, nil")
+check(run(f"return (G.stopTownDiff({{ ts = {zero} }}, {{}}))") is None, "0.04 against 0: within SIM.townClose's 0.05, nil")
 run("ALIGN = { [1] = { 100000, 0 } }")
-check(run("return G.stopTownDiff({ ts = { al = 100000.5, ar = 0 } }, {})") is None, "a big volume: 1e-5 of it as margin")
+check(run("return (G.stopTownDiff({ ts = { al = 100000.5, ar = 0 } }, {}))") is None, "a big volume: 1e-5 of it as margin")
 run("ALIGN = {}; REMOVAL = { [2] = { 3, 0 } }")
-check(run(f"return G.stopTownDiff({{ ts = {zero} }}, {{}})") == "tr 0.000/3.000", "trees taken away here only: \"tr 0.000/3.000\"")
+check(run(f"return (G.stopTownDiff({{ ts = {zero} }}, {{}}))") == "tr 0.000/3.000", "trees taken away here only: \"tr 0.000/3.000\"")
 run("ALIGN = 'error'; REMOVAL = {}")
-check(run(f"return G.stopTownDiff({{ ts = {zero} }}, {{}})") is None, "the alignment not readable here: left out (nil)")
+check(run(f"return (G.stopTownDiff({{ ts = {zero} }}, {{}}))") is None, "the alignment not readable here: left out (nil)")
 run("ALIGN = { [1] = { 0, 1 } }")
-check(run("return G.stopTownDiff({ ts = { al = 0 } }, {})") is None, "a number the builder did not ship (ar): left out")
-check(run("return G.stopTownDiff({}, {})") is None and run("return G.stopTownDiff({ ts = {} }, nil)") is None,
+check(run("return (G.stopTownDiff({ ts = { al = 0 } }, {}))") is None, "a number the builder did not ship (ar): left out")
+check(run("return (G.stopTownDiff({}, {}))") is None and run("return (G.stopTownDiff({ ts = {} }, nil))") is None,
       "no builder numbers or no proposal data: nil")
 run("PD = { errorState = { critical = false } }")
 check(run("local c, m, pd = G.stopDryVerdict({}, {}) return pd == PD") is True, "G.stopDryVerdict hands its proposal data back")
@@ -90,7 +90,7 @@ print("replayStop")
 rst = src[src.index("local function replayStop(a, plan, variant)"):]
 rst = rst[:rst.index("\nend\n")]
 b = rst.index("local okV, crit, msgs, pd = pcall(G.stopDryVerdict, sp, sContext(not plan.after and a or nil, plan.cleanup))")
-k = rst.index("local okD, diff = pcall(G.stopTownDiff, a, pd)")
+k = rst.index("local okD, diff, ents = pcall(G.stopTownDiff, a, pd)")  # (0.7.17: ents, STOPNOTOWNTREES)
 r = rst.index("if okV and crit then", k)
 d = rst.index("local before = stopCount()")
 f = rst.index("replaySend(cmd, function(res, success)")

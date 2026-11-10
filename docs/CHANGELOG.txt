@@ -30,6 +30,18 @@ MPFever - Changelog
     too, so the capture differed from the copy (a resync). A street edit with no construction of its own that touches a
     construction's segment or node now goes the usual way. MPFEVER_PRESHIPSTATIONEDIT=1: at the click, as before.
     tests/test_preshipstation0717.py
+  - FIX (#191, liber's street replayed in a pause, 19:21:48 - 19:36:02): the replay's cost difference was booked only after
+    the pause; meanwhile the games' money differed by 157 545 and a vehicle bought in that pause passed on the host and was
+    refused on liber's game (a resync). The difference is now booked during the pause, one update after the replay, and what a
+    later proposal of it adds, once. MPFEVER_REFUNDPAUSE=0: as before. tests/test_refundpause0717.py
+  - FIX (#191, liber's bulldozer on part of a group of trees, 20:47): the build went the RESTALE way (replayed from the tool's
+    copy), which no script can make (13 engine assertions, a resync): trees, plants and rocks are now applied and captured the
+    usual way there too (as at the click since 0.7.16, #181). MPFEVER_RESTALEASSET=1: as before. tests/test_restaleasset0717.py
+  - FIX (#194 / #150, keviK's stop 21:15:05): 0.7.16 hid from the towns a stop replay that would take trees away on the
+    replaying games only ("tr 0.000/0.895"): the games then went on with other entities, keviK's ids and people drifted apart
+    without a word. Trees or rocks taken away on one game only are no longer hidden (the replay goes as before 0.7.16: the
+    towns' numbers differ, a resync); ground alone is hidden as in 0.7.16. MPFEVER_STOPNOTOWNTREES=0: as in 0.7.16.
+    tests/test_stopnotowntrees0717.py
   - CHANGE (#190, Creeper and Akamari): a company's value (ranking, stock market) counts its infrastructure: each game sends its
     own company's assets as the game counts them (getCompaniesValue().totalAssets, the finance window's), once a game month
     (f_stats_assets); the host's figures carry them ("id:b,d,vv,a"); the value is money - loans + assets (the vehicles' resale
