@@ -58,6 +58,9 @@ check('os.getenv("MPFEVER_PRESHIPSTATIONEDIT") ~= "1" and #(r.copy.toAdd or {}) 
       "G.preship: a copy without constructions of its own; MPFEVER_PRESHIPSTATIONEDIT=1: as before")
 check(p.index("G.preTouchesCon, r.copy") < p.index("local args = { n = 4, [1] = C.copy(r.copy)") and "shipped the usual way" in p,
       "  looked at before it is shipped, the usual way then")
+c = p.index('os.getenv("MPFEVER_PRESHIPCLEANUP") ~= "1"')
+check("if r.fn and bits and bits >= 32 and math.floor(bits / 4) % 2 == 1" in p and c < p.index("local args = { n = 4, [1] = C.copy(r.copy)"),
+      "a script's build whose context cleans the street graph up: the usual way (MPFEVER_PRESHIPCLEANUP=1: at the click)")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

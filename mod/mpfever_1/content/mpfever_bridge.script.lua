@@ -11104,6 +11104,15 @@ G.preship = function(r)
 			end
 		end
 	end
+	-- (0.7.17, the autotests x1/x6/b1 of 2026-11-10: a street upgrade made by a script, "built here otherwise than shipped at the
+	-- click (1/1/3/3... / 0/0/1/1...)", the same in 0.7.16) A scripted build (fn: its command was made by a script, not by a tool)
+	-- whose context cleans the street graph up: its copy is the proposal given to the engine, before its clean-up merged the
+	-- segments around; the builder built the cleaned-up result. Shipped the usual way. MPFEVER_PRESHIPCLEANUP=1: at the click
+	local bits = tonumber(r.ctxBits or (G.natCtx and G.natCtx[r.id]))
+	if r.fn and bits and bits >= 32 and math.floor(bits / 4) % 2 == 1 and os.getenv("MPFEVER_PRESHIPCLEANUP") ~= "1" then
+		log("PRESHIP native build " .. tostring(r.id) .. ": a script's build whose street graph the engine cleans up: shipped the usual way")
+		return false
+	end
 	-- (0.7.17, #186: Erik's street next to his modular bus terminal, 20:33:52) A street edit with no construction in its copy that
 	-- touches a construction's segment or node: shipped the usual way. The tool's copy changed one segment; applied, the engine
 	-- rebuilt the terminal too (4 nodes, 5 segments, the construction again), so its capture was "built otherwise than shipped at
@@ -15551,6 +15560,9 @@ H.featstats = function(from, p)
 	if not K.FEAT then AUTO.results[1] = "featstats: the game options are off here (MPFEVER_FEAT=0)"; return autoFinish() end
 	if C.ROLE == "host" then
 		G.featOpts = os.getenv("MPFEVER_STATSOPTS") or "goal=1;goal.target=10;goal.years=5;stats=1;yearly=1"
+		-- ((0.7.17) kept against the launcher's session message, which set the session's options (all off) 6 s later and the
+		-- figures were ignored: "the options of stats are off". As H.journaltest and H.permstest)
+		G.featTestOpts = G.featOpts
 		G.featOptsAt = nil
 		log("AUTOTEST featstats: the host asks for the options " .. G.featOpts)
 	end

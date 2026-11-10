@@ -42,6 +42,10 @@ MPFever - Changelog
     without a word. Trees or rocks taken away on one game only are no longer hidden (the replay goes as before 0.7.16: the
     towns' numbers differ, a resync); ground alone is hidden as in 0.7.16. MPFEVER_STOPNOTOWNTREES=0: as in 0.7.16.
     tests/test_stopnotowntrees0717.py
+  - FIX (the autotests of 2026-11-10, the same in 0.7.16): a street upgrade made by a script and shipped at the click was built
+    otherwise by its builder ("1/1/3/3 / 0/0/1/1": the engine's clean-up of the street graph merged the segments around), a
+    resync. A script's build whose context cleans the street graph up goes the usual way. MPFEVER_PRESHIPCLEANUP=1: as before.
+    The autotest featstats keeps its options against the session's (they were set back to "all off" 6 s later).
   - CHANGE (#190, Creeper and Akamari): a company's value (ranking, stock market) counts its infrastructure: each game sends its
     own company's assets as the game counts them (getCompaniesValue().totalAssets, the finance window's), once a game month
     (f_stats_assets); the host's figures carry them ("id:b,d,vv,a"); the value is money - loans + assets (the vehicles' resale
