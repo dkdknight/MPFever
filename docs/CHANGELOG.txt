@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.8.1 - (in progress)
+0.8.1 - 2026-11-10: the 0.7.17 regression fixed (simulation updates aborted after every replayed build), old local mod copies moved out from the lobby
   - FIX (REGRESSION of 0.7.17, #200/#201/#208, #203, #206/#207): "simulation apply failed: ... attempt to index global 'SIM'"
     hundreds of times per session. The 0.7.17 REFUNDPAUSE booking (REFUND.book) is written above "local SIM" in the bridge, so
     there SIM was the global, nil. At each replay's own step the error aborted the whole simulation update of that step on that
