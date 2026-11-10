@@ -785,6 +785,10 @@ namespace MPFever
 
         public void Launch(string gameDir)
         {
+            // (0.7.18, tests of the GOG and Epic copies: MPFEVER_GAMEDIR_<NAME>, this game's own copy of Transport Fever 3, e.g.
+            // MPFEVER_GAMEDIR_CLIENT=H:\GOG\...; unset: the launcher's copy, as always)
+            var ownDir = Environment.GetEnvironmentVariable("MPFEVER_GAMEDIR_" + new string((Name ?? "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant());
+            if (!string.IsNullOrEmpty(ownDir) && File.Exists(Path.Combine(ownDir, "TransportFever3.exe"))) gameDir = ownDir;
             var exe = Path.Combine(gameDir, "TransportFever3.exe");
             var psi = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = gameDir };
             psi.EnvironmentVariables["MPFEVER_DIR"] = Dir;
@@ -800,6 +804,10 @@ namespace MPFever
             WriteSettings();
             // application script: starts the host's savegame after a resynchronisation (and loads the autotest save)
             psi.Arguments = "--script mpfever_1::/mpfever_auto.lua";
+            // (0.7.18) the Epic copy (its EOS SDK next to the game): started directly, the game asks the Epic launcher to start it
+            // again, without MPFever's arguments and settings. With the portal's own arguments (no account, no token) it stays ours
+            var epic = GameInstall.EpicLaunchArgs(gameDir);
+            if (epic != null) psi.Arguments += " " + epic;
             if (AutoSave != null) psi.EnvironmentVariables["MPFEVER_SAVE"] = AutoSave;
             GameInstall.DiagEnv(psi.EnvironmentVariables);
             // (0.7.10) this player's settings the native module reads at the game's start (none since 0.7.13, see Options.NativeEnv)
@@ -2440,6 +2448,45 @@ namespace MPFever
         }
 
         /// <summary>Allows direct launches (and several instances) without Steam restarting the game.</summary>
+        /// <summary>(0.7.18) The arguments that keep an Epic copy of the game from asking the Epic launcher to start it again
+        /// ("-EpicPortal -epicapp=AppName"; AppName from the Epic launcher's manifest of that folder, MPFEVER_EPICAPP otherwise);
+        /// null for any other copy (no EOSSDK-Win64-Shipping.dll next to the game). MPFEVER_EPICARGS=0: none.</summary>
+        public static string EpicLaunchArgs(string gameDir)
+        {
+            try
+            {
+                if (Environment.GetEnvironmentVariable("MPFEVER_EPICARGS") == "0") return null;
+                if (string.IsNullOrEmpty(gameDir) || !File.Exists(Path.Combine(gameDir, "EOSSDK-Win64-Shipping.dll"))) return null;
+                var app = EpicAppName(gameDir) ?? Environment.GetEnvironmentVariable("MPFEVER_EPICAPP");
+                if (string.IsNullOrEmpty(app) || !System.Text.RegularExpressions.Regex.IsMatch(app, "^[A-Za-z0-9]+$")) return null;
+                return "-EpicPortal -epicapp=" + app;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>(0.7.18) The Epic launcher's AppName of the game installed in that folder (its manifests in ProgramData), or null.</summary>
+        public static string EpicAppName(string gameDir)
+        {
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Epic", "EpicGamesLauncher", "Data", "Manifests");
+                if (!Directory.Exists(dir)) return null;
+                string norm(string p) => Path.GetFullPath(p).TrimEnd('\\', '/').ToLowerInvariant();
+                var want = norm(gameDir);
+                foreach (var f in Directory.GetFiles(dir, "*.item"))
+                {
+                    var t = File.ReadAllText(f);
+                    var loc = System.Text.RegularExpressions.Regex.Match(t, "\"InstallLocation\"\\s*:\\s*\"([^\"]*)\"");
+                    var exe = System.Text.RegularExpressions.Regex.Match(t, "\"LaunchExecutable\"\\s*:\\s*\"([^\"]*)\"");
+                    var app = System.Text.RegularExpressions.Regex.Match(t, "\"AppName\"\\s*:\\s*\"([^\"]*)\"");
+                    if (!loc.Success || !app.Success || !exe.Success || exe.Groups[1].Value == "") continue;
+                    if (norm(loc.Groups[1].Value.Replace("\\\\", "\\")) == want) return app.Groups[1].Value;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         public static void EnsureSteamAppId(string gameDir)
         {
             var f = Path.Combine(gameDir, "steam_appid.txt");

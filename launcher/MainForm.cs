@@ -2946,7 +2946,9 @@ namespace MPFever
                 bool ready = WaitUntil(() =>
                 {
                     int n; lock (players) n = players.Count;
-                    lock (clocks) return n >= 2 && clocks.Count >= 2 && clocks.Values.Select(c => c.T).Distinct().Count() == 1;
+                    // (0.7.18: three games with MPFEVER_CLIENT2=1)
+                    int want = Environment.GetEnvironmentVariable("MPFEVER_CLIENT2") == "1" ? 3 : 2;
+                    lock (clocks) return n >= want && clocks.Count >= want && clocks.Values.Select(c => c.T).Distinct().Count() == 1;
                 }, 600);
                 if (!ready) { AutoLine("FAILED: the two games did not get ready with the same save"); return; }
                 AutoLine("both games ready");
@@ -3821,6 +3823,15 @@ namespace MPFever
                 }
                 try { StartClient("Client", "127.0.0.1", (int)portBox.Value, true); }
                 catch (Exception ex) { Log.Warn(T("Client local : ", "Local client: ") + ex.Message); }
+                // (0.7.18, tests of three games, e.g. Steam + Epic + GOG: MPFEVER_CLIENT2=1, a third game "Client2", 15 s later;
+                // its copy of the game by MPFEVER_GAMEDIR_CLIENT2)
+                if (Environment.GetEnvironmentVariable("MPFEVER_CLIENT2") == "1")
+                    new Thread(() =>
+                    {
+                        Thread.Sleep(15000);
+                        try { StartClient("Client2", "127.0.0.1", (int)portBox.Value, true); }
+                        catch (Exception ex) { Log.Warn(T("Client local : ", "Local client: ") + ex.Message); }
+                    }) { IsBackground = true, Name = "Local client 2" }.Start();
             };
             t.Start();
             Log.W(T("Chargez LA MÊME sauvegarde dans les deux jeux, puis cliquez sur « Démarrer la partie ».", "Load THE SAME savegame in both games, then click « Start the game »."));

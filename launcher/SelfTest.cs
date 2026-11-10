@@ -82,8 +82,34 @@ namespace MPFever
             ok &= RunSync0717();
             ok &= RunInstall0717();
             ok &= RunTrim0717();
+            ok &= RunPlatforms0718();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.7.18) An Epic copy of the game is started with the portal's arguments (it stays MPFever's process); any other
+        /// copy as before.</summary>
+        static bool RunPlatforms0718()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.7.18 platforms: " + what); ok &= c; }
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-epic-" + Guid.NewGuid().ToString("N"));
+            var old = Environment.GetEnvironmentVariable("MPFEVER_EPICAPP");
+            try
+            {
+                Directory.CreateDirectory(dir);
+                Environment.SetEnvironmentVariable("MPFEVER_EPICAPP", "abc123");
+                C(GameInstall.EpicLaunchArgs(dir) == null, "a copy without the EOS SDK (Steam, GOG): no argument");
+                File.WriteAllText(Path.Combine(dir, "EOSSDK-Win64-Shipping.dll"), "");
+                C(GameInstall.EpicLaunchArgs(dir) == "-EpicPortal -epicapp=abc123", "an Epic copy: -EpicPortal -epicapp=AppName");
+                Environment.SetEnvironmentVariable("MPFEVER_EPICAPP", "bad name;x");
+                C(GameInstall.EpicLaunchArgs(dir) == null, "  an AppName that is not one: none");
+                C(GameInstall.EpicLaunchArgs(@"C:
+owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
+            }
+            catch (Exception e) { C(false, e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_EPICAPP", old); try { Directory.Delete(dir, true); } catch { } }
+            return ok;
         }
 
         /// <summary>(0.7.17, #195) A report over the service's limit: its largest logs (a player's report inside too) cut to

@@ -48,6 +48,7 @@ with its cause and the test that now guards it.
 | A **report over the report service's limit** is cut (its largest logs keep their end) before it is sent; report.txt and players.txt never. | 0.7.17 | Reporter.Shrink | test_reporttrim0717.py, selftest |
 | A player's report says **« checked by the host »**, never « Sync: — ». | 0.7.17 | ReportSyncText | test_synccheck0717.py |
 | The autotest **featstats keeps its options** against the session's (G.featTestOpts), as journaltest and permstest. | 0.7.17 | H.featstats | autotest y3 |
+| A **Steam or GOG copy is started exactly as before** (no argument added); only a folder with the EOS SDK (Epic) gets "-EpicPortal -epicapp=..."; MPFEVER_GAMEDIR_* and MPFEVER_CLIENT2 change nothing when unset. | 0.7.18 | GameLink.Launch, GameInstall.EpicLaunchArgs | test_platforms0718.py, selftest |
 
 ## Regressions found
 

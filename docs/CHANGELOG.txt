@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.7.18 - (in progress)
+  - TESTS (GOG and Epic copies, 2026-11-10): MPFEVER_GAMEDIR_<NAME> starts that game from its own copy of the game, MPFEVER_CLIENT2=1
+    adds a third game to the autotest; an Epic copy (EOS SDK next to the game) is started with "-EpicPortal -epicapp=<AppName>"
+    (AppName from the Epic launcher's manifest), else it asks the Epic launcher to start it again without MPFever's arguments
+    (MPFEVER_EPICARGS=0: none). Steam + GOG, Steam + Epic, GOG + Epic and Steam + Epic + GOG (10 min at x4 with builds) stayed in
+    sync. Found: GOG and Epic do not list or load a savegame made by the Steam copy (Steam loads theirs), and list a savegame only
+    under its own name. tests/test_platforms0718.py, selftest RunPlatforms0718
 
 0.7.17 - 2026-11-10: fewer needless reloads (street type changes, builds next to stations, a vehicle sold twice, builds in a
   pause, mods that build by script), companies valued with their infrastructure, the mod installed on a new Steam account
