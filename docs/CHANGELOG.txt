@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.8.1 - (in progress)
+
 0.8.0 - 2026-11-10: Steam, GOG and the Epic Games Store play together
   - NEW (GOG and Epic copies, keys from Urban Games): players of the three stores play in one game. Tested on one PC: Steam host
     with a GOG player, Steam host with an Epic player (both joining and receiving the host's savegame), GOG host with an Epic
