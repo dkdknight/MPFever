@@ -70,7 +70,7 @@ it is stable enough.
   [ ] Sessions of several hours between different PCs without a recurring resynchronisation or crash, one company for
       everybody and one per player
   [ ] Computer companies complete and reliable (passenger trains, signals, electric trains, warehouses)
-  [ ] GOG and Epic copies (#135)
+  [x] GOG and Epic copies (0.8.0): Steam, GOG and Epic players in one game, tested together (keys from Urban Games)
   [ ] A signed MPFever (no more "unknown publisher" warning)
   [ ] The dedicated server tested in long real games; the list of checked mods up to date
 
