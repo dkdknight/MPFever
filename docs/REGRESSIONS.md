@@ -73,6 +73,7 @@ with its cause and the test that now guards it.
 - `python tests/run_all.py` (build.bat runs it): every test passes.
 - Every autotest of the release says **"lua: clean"** (not only "in sync"), and `python tests/check_game_logs.py <session folders>`
   finds nothing. A Lua error is a failure even when the games stay in sync (the 0.7.17 regression).
+- `test_globals081.py` passes: no unknown global in the mod (a new game global goes into its list, with where it comes from).
 - A test that runs a piece of a Lua file never defines a global the real file declares as a `local` (SIM, T, C...): it would
   hide a use of that local above its declaration (the 0.7.17 test did). test_localorder081.py guards the source itself.
 - A fix whose code path was not really run in game (no autotest went through it): tell the user before the release, who

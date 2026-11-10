@@ -2,6 +2,11 @@ MPFever - Changelog
 ===================
 
 0.8.2 - (in progress)
+  - TESTS (more reliable tests, the user's request after the 0.7.17 regression): tests/test_globals081.py, a luacheck-like check
+    of every Lua file of the mod (tests/luascan.py follows the scopes, nothing downloaded): a name read as a global must be a
+    standard Lua one or one of the game's, listed with where it comes from (api, game, app, ug_require, _, _react...), and no
+    function may make a global (a forgotten "local"). It finds the 0.7.17 bug (SIM) and the toll notice's (T) in the old files,
+    a typo in a local's name and a forgotten local; the mod's 29 files pass. test_localorder081.py now uses the same reader.
 
 0.8.1 - 2026-11-10: the 0.7.17 regression fixed (simulation updates aborted after every replayed build), old local mod copies moved out from the lobby
   - FIX (REGRESSION of 0.7.17, #200/#201/#208, #203, #206/#207): "simulation apply failed: ... attempt to index global 'SIM'"
