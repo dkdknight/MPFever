@@ -1,7 +1,8 @@
 MPFever - Changelog
 ===================
 
-0.7.17 - (in progress)
+0.7.17 - 2026-11-10: fewer needless reloads (street type changes, builds next to stations, a vehicle sold twice, builds in a
+  pause, mods that build by script), companies valued with their infrastructure, the mod installed on a new Steam account
   - FIX (#186 beule:27, #193 BaumEdePiep:114): a build shipped at the click and built alike was taken for one "built otherwise
     than shipped at the click" (a resync): the signature wrote a memory address ("table: 0000029E...") for a node configuration
     whose node the build took away (its reference had no position), the copy its place. Now the place seen for that id at the
