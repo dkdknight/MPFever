@@ -84,6 +84,7 @@ namespace MPFever
             ok &= RunTrim0717();
             ok &= RunPlatforms0718();
             ok &= RunOldCopy081();
+            ok &= RunLuaGate081();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -116,6 +117,28 @@ namespace MPFever
                 C(!Directory.Exists(mod) && File.Exists(Path.Combine(to, "content", "a.lua")), "moved whole");
                 C(to.StartsWith(Path.Combine(dir, "local", "mpfever-old-mods") + "\\", StringComparison.OrdinalIgnoreCase), "  next to the mods folder, out of the game's reach");
                 C(File.ReadAllText(Path.Combine(Path.GetDirectoryName(to), "where-it-was.txt")).Contains(mod), "  where-it-was.txt");
+            }
+            catch (Exception e) { C(false, "exception " + e.Message); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+            return ok;
+        }
+
+        /// <summary>(0.8.1, LUAERRGATE) The Lua errors of a game's logs are found, the others not.</summary>
+        static bool RunLuaGate081()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.8.1 Lua error gate: " + what); ok &= c; }
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-luagate-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "mod.log"), "18:43:06 simulation apply failed: [string \"x\"]:460: attempt to index global 'SIM' (a nil value)\n18:43:07 engine: post build t=1\n");
+                File.WriteAllText(Path.Combine(dir, "ui.log"), "deferred action failed: Invalid entity\nSTOPALIGNPROBE no proposal data (bad argument #2)\n");
+                var l = MainForm.LuaErrorLines(dir, 3, out int n);
+                C(n == 1 && l.Count == 1 && l[0].StartsWith("mod.log: "), "the 0.7.17 error found, the engine's own messages not (" + n + ")");
+                File.Delete(Path.Combine(dir, "mod.log"));
+                MainForm.LuaErrorLines(dir, 3, out n);
+                C(n == 0, "clean logs: none");
             }
             catch (Exception e) { C(false, "exception " + e.Message); }
             finally { try { Directory.Delete(dir, true); } catch { } }

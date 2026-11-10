@@ -509,9 +509,10 @@ U.paidNotice = function(eco)
 			U.paidTold = U.paidTold or {}
 			U.paidTold[to] = true
 			local what = {}
-			if t.s > 0 then what[#what + 1] = T("ses gares", "its stations") end
-			if t.t > 0 then what[#what + 1] = T("ses voies", "its tracks") end
-			if t.d > 0 then what[#what + 1] = T("ses dépôts", "its depots") end
+			-- (0.8.1: C.T, "local T" is declared further down: T here was the global, nil, and this notice never showed)
+			if t.s > 0 then what[#what + 1] = C.T("ses gares", "its stations") end
+			if t.t > 0 then what[#what + 1] = C.T("ses voies", "its tracks") end
+			if t.d > 0 then what[#what + 1] = C.T("ses dépôts", "its depots") end
 			told[#told + 1] = C.Tf("Votre entreprise paie %s pour utiliser %s (le détail : fenêtre MPFever, Entreprise, Gains et frais).",
 				"Your company pays %s to use %s (the details: MPFever window, Company, Earnings and fees).", U.aiCoName(to), table.concat(what, ", "))
 		end

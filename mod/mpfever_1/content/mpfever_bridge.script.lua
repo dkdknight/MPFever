@@ -455,9 +455,13 @@ function REFUND.book(st, now)
 	-- update of the simulation after its last proposal, and again for what a later proposal of it adds (rc.booked: what is
 	-- booked). MPFEVER_REFUNDPAUSE=0: at the first step after it, as before)
 	local pauseBook = os.getenv("MPFEVER_REFUNDPAUSE") ~= "0"
+	-- (0.8.1, REGRESSION of 0.7.17: this function is written above "local SIM", so SIM here was the global, nil: "attempt to
+	-- index global 'SIM'" at each replay's own step aborted the whole simApplyDue of that step on that game, #200/#201/#208.
+	-- The simulation's tick comes through REFUND.sim, set once SIM exists)
+	local tick = (REFUND.sim and REFUND.sim.ctTick) or 0
 	for _, rc in ipairs(st.rcost) do
 		local due = nil
-		if pauseBook and rc.at >= now and (rc.n or 0) > 0 and type(rc.cost) == "number" and (SIM.ctTick or 0) - (rc.tick or SIM.ctTick or 0) >= 1 then
+		if pauseBook and rc.at >= now and (rc.n or 0) > 0 and type(rc.cost) == "number" and tick - (rc.tick or tick) >= 1 then
 			due = math.floor((rc.got or 0) - rc.cost + 0.5) - (rc.booked or 0)
 			if due == 0 then due = nil end
 		end
@@ -770,6 +774,8 @@ local function before(x, y)
 end
 
 local SIM = { subscribed = false }
+-- (0.8.1) the functions written above SIM read it through this reference (see REFUND.book)
+REFUND.sim = SIM
 
 -- ================================================================== action execution
 

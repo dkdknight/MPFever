@@ -57,6 +57,7 @@ with its cause and the test that now guards it.
 
 | Found | Broken in | What broke | Cause | Fixed in | Test |
 |---|---|---|---|---|---|
+| 2026-11-10 (#200, #201, #208, #203, #206) | 0.7.17 (REFUNDPAUSE, mine) | Hundreds of "simulation apply failed: attempt to index global 'SIM'" per session: the simulation update of each replay's step aborted on the replaying games (queued actions a step late there, cost differences not booked, "money" drifts). | REFUND.book is written above `local SIM`: there `SIM` is the global, nil. Its test defined a global SIM itself and passed; the autotests logged the error (190 times in one) but were judged on "in sync" only. | 0.8.1 | test_refundpause0717.py (no global SIM), test_localorder081.py (the whole class), test_luagate081.py (Lua errors fail an autotest) |
 | 2026-11-10 (#194, #150) | 0.7.16 (MPFEVER_STOPNOTOWN) | A stop whose replay took trees away on the replaying games only was hidden from the towns: no resync, the games drifted apart silently (ids, then people). | The 0.7.16 fix of #177-#180 hid every difference of the towns' numbers, entities (trees, rocks) as well as ground. | 0.7.17 (MPFEVER_STOPNOTOWNTREES) | test_stopnotowntrees0717.py |
 | 2026-11-09 (#186, #193) | 0.7.14 (« without stopping » on by default) | A build shipped at the click and built alike reloaded the games ("built otherwise than shipped at the click"). | The signature wrote `tostring(table)` (a memory address) for a node reference without position; latent since PRESHIP (0.7.3), seen once it was on by default. | 0.7.17 | test_sigref0717.py |
 | 2026-11-09 (#186 Erik#1:13) | 0.7.14 (« without stopping » on by default) | A street edit next to a modular station reloaded the games. | Its copy changed one segment, the engine rebuilt the station too when applying it: the capture differed. | 0.7.17 | test_preshipstation0717.py |
@@ -70,6 +71,12 @@ with its cause and the test that now guards it.
 ## Before every release
 
 - `python tests/run_all.py` (build.bat runs it): every test passes.
+- Every autotest of the release says **"lua: clean"** (not only "in sync"), and `python tests/check_game_logs.py <session folders>`
+  finds nothing. A Lua error is a failure even when the games stay in sync (the 0.7.17 regression).
+- A test that runs a piece of a Lua file never defines a global the real file declares as a `local` (SIM, T, C...): it would
+  hide a use of that local above its declaration (the 0.7.17 test did). test_localorder081.py guards the source itself.
+- A fix whose code path was not really run in game (no autotest went through it): tell the user before the release, who
+  decides whether it ships on or off by default.
 - Check the table above against the changes of the release: does any of them touch one of these behaviours? Then test it in
   game (an autotest, or the real tools).
 - A behaviour changed on purpose: say so in the CHANGELOG and update this file.

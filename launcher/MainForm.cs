@@ -3247,6 +3247,20 @@ namespace MPFever
             finally
             {
                 AutoLine("sessions: " + string.Join(" ; ", games.Select(g => g.Dir)));
+                // (0.8.1, LUAERRGATE) a Lua error in a game's logs fails the test, even when the games stayed in sync: the regression
+                // of 0.7.17 ("attempt to index global 'SIM'", 190 times in one autotest of 2026-11-10) was in the logs of autotests
+                // judged "in sync". MPFEVER_LUAERRGATE=0: not looked at
+                if (Environment.GetEnvironmentVariable("MPFEVER_LUAERRGATE") != "0")
+                {
+                    int total = 0;
+                    foreach (var g in games)
+                    {
+                        var errs = LuaErrorLines(g.Dir, 3, out int n);
+                        total += n;
+                        foreach (var l in errs) AutoLine("LUA ERROR [" + g.Name + "] " + l);
+                    }
+                    AutoLine(total == 0 ? "lua: clean" : "lua: FAILED (" + total + " Lua error line(s) in the games' logs)");
+                }
                 try { File.WriteAllLines(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "autotest_result.txt"), autoReport); } catch { }
                 foreach (var g in games) g.Kill();
                 Thread.Sleep(1000);
@@ -5586,6 +5600,29 @@ namespace MPFever
                 FreeResyncMemory("game received");
             }
             catch (Exception e) { Log.Warn(F("[{0}] partie de l'hôte : {1}", "[{0}] host game: {1}", game.Name, e.Message)); }
+        }
+
+        static readonly System.Text.RegularExpressions.Regex LuaError = new System.Text.RegularExpressions.Regex(
+            @"attempt to (index|call|perform arithmetic|compare|concatenate|get length)|simulation apply failed");
+
+        /// <summary>(0.8.1, LUAERRGATE) The Lua error lines of a game's session logs (*.log): the first `max`, and how many in all.</summary>
+        internal static List<string> LuaErrorLines(string dir, int max, out int count)
+        {
+            var found = new List<string>();
+            count = 0;
+            try
+            {
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return found;
+                foreach (var f in Directory.GetFiles(dir, "*.log"))
+                    foreach (var l in File.ReadLines(f))
+                        if (LuaError.IsMatch(l))
+                        {
+                            count++;
+                            if (found.Count < max) found.Add(Path.GetFileName(f) + ": " + (l.Length > 300 ? l.Substring(0, 300) : l));
+                        }
+            }
+            catch { }
+            return found;
         }
 
         /// <summary>(a player, in the main menu) Another version of a mod than the host's: this game would never match the host's,

@@ -43,7 +43,9 @@ C = { IO = { open = function() return nil end }, DIR = "x", appendFile = functio
 LOGS = {}
 log = function(t) LOGS[#LOGS + 1] = t end
 STEP = 200
-SIM = { ctTick = 0 }
+-- (0.8.1) never a global SIM: in the bridge, REFUND.book is written above "local SIM" and reads the tick through
+-- REFUND.sim (the 0.7.17 test defined a global SIM and hid "attempt to index global 'SIM'")
+SIMT = { ctTick = 0 }
 BOOKED = {}
 CO = { entityOf = function(reg, co) return 100 + co end }
 api = { type = { JournalEntry = setmetatable({ new = function() return { category = {} } end, Construction = { STREET = 3 }, Type = { CONSTRUCTION = 1, OTHER = 2 } }, { __index = function() return nil end }),
@@ -53,6 +55,7 @@ api = { type = { JournalEntry = setmetatable({ new = function() return { categor
   engine = { util = { getPlayer = function() return 1 end } } }
 ''')
 L.execute(src[a:b].replace("local REFUND = ", "REFUND = ", 1) + "\nREFUND.free = false")
+L.execute("REFUND.sim = SIMT SIM = nil")
 
 
 def run(code):
@@ -60,32 +63,37 @@ def run(code):
 
 
 # a pause: game time 584600 stands; the replay's proposal at tick 10
-r = run('''BOOKED = {} SIM.ctTick = 10
+r = run('''BOOKED = {} SIMT.ctTick = 10
 ST = { co = { mode = "separate" }, rcost = { { at = 584600, uid = "liber#13:20", cost = 143180, co = 2, got = 0, n = 0, kind = "STREET" } } }
-local rc = ST.rcost[1] rc.got = 128815 rc.n = 1 rc.tick = SIM.ctTick
+local rc = ST.rcost[1] rc.got = 128815 rc.n = 1 rc.tick = SIMT.ctTick
 REFUND.book(ST, 584600)
 local first = #BOOKED
-SIM.ctTick = 11 REFUND.book(ST, 584600)
+SIMT.ctTick = 11 REFUND.book(ST, 584600)
 return first .. ":" .. #BOOKED .. ":" .. tostring(BOOKED[1])''')
 check(r == "0:1:-14365", "in a pause: booked one update after its proposal, -14 365 (not at once)", r)
 r = run('''REFUND.list = ST.rcost return REFUND.unbooked("b2")''')
 check(r == 0, "unbooked: what is booked is no longer counted", r)
-r = run('''local rc = ST.rcost[1] rc.got = rc.got + 5000 rc.n = 2 rc.tick = SIM.ctTick
-SIM.ctTick = 12 REFUND.book(ST, 584600) return #BOOKED .. ":" .. tostring(BOOKED[2])''')
+r = run('''local rc = ST.rcost[1] rc.got = rc.got + 5000 rc.n = 2 rc.tick = SIMT.ctTick
+SIMT.ctTick = 12 REFUND.book(ST, 584600) return #BOOKED .. ":" .. tostring(BOOKED[2])''')
 check(r == "2:5000", "a later proposal of the same replay: what it adds, once", r)
-r = run('''SIM.ctTick = 13 REFUND.book(ST, 584600) SIM.ctTick = 14 REFUND.book(ST, 584800)
+r = run('''SIMT.ctTick = 13 REFUND.book(ST, 584600) SIMT.ctTick = 14 REFUND.book(ST, 584800)
 return #BOOKED .. ":" .. tostring(ST.rcost)''')
 check(r == "2:nil", "after the pause: nothing booked twice, the record gone", r)
-r = run('''BOOKED = {} SIM.ctTick = 20 ENV.MPFEVER_REFUNDPAUSE = "0"
+r = run('''BOOKED = {} SIMT.ctTick = 20 ENV.MPFEVER_REFUNDPAUSE = "0"
 ST = { co = { mode = "separate" }, rcost = { { at = 900, uid = "x", cost = 1000, co = 2, got = 900, n = 1, tick = 20 } } }
-SIM.ctTick = 25 REFUND.book(ST, 900) local inPause = #BOOKED
+SIMT.ctTick = 25 REFUND.book(ST, 900) local inPause = #BOOKED
 REFUND.book(ST, 1100) ENV = {}
 return inPause .. ":" .. #BOOKED .. ":" .. tostring(BOOKED[1])''')
 check(r == "0:1:-100", "MPFEVER_REFUNDPAUSE=0: at the first step after the pause, as before", r)
-r = run('''BOOKED = {} SIM.ctTick = 30
+r = run('''BOOKED = {} SIMT.ctTick = 30
 ST = { co = { mode = "separate" }, rcost = { { at = 1200, uid = "late", co = 2, got = 900, n = 1, tick = 30, late = true } } }
-SIM.ctTick = 32 REFUND.book(ST, 1200) return #BOOKED .. ":" .. #ST.rcost''')
+SIMT.ctTick = 32 REFUND.book(ST, 1200) return #BOOKED .. ":" .. #ST.rcost''')
 check(r == "0:1", "the builder's cost not known yet: nothing booked, kept", r)
+
+r = run('''return tostring(rawget(_G, "SIM"))''')
+check(r == "nil", "(0.8.1) no global SIM in this test: REFUND.book ran without one", r)
+check(re.search(r"local SIM = \{ subscribed = false \}\n(--[^\n]*\n)*REFUND\.sim = SIM\n", src) is not None,
+      "(0.8.1) the bridge gives REFUND.sim right after declaring SIM")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

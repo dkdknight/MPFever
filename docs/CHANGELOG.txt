@@ -2,6 +2,19 @@ MPFever - Changelog
 ===================
 
 0.8.1 - (in progress)
+  - FIX (REGRESSION of 0.7.17, #200/#201/#208, #203, #206/#207): "simulation apply failed: ... attempt to index global 'SIM'"
+    hundreds of times per session. The 0.7.17 REFUNDPAUSE booking (REFUND.book) is written above "local SIM" in the bridge, so
+    there SIM was the global, nil. At each replay's own step the error aborted the whole simulation update of that step on that
+    game: its queued actions, the replays' town statistics and the ranks came a step later there, and the replays' cost
+    differences were not booked (the constant "money" drifts of separate-companies sessions). The tick is now read through
+    REFUND.sim. Its 0.7.17 test defined a global SIM and passed; it no longer does. Test: tests/test_refundpause0717.py.
+  - FIX: the notice "Your company pays ... to use its stations / tracks / depots" (one company per player) never showed: the
+    interface script used T above its "local T" (the same class of bug, found by the new test below).
+  - TESTS (after that regression): tests/test_localorder081.py reads every Lua file of the mod and fails on a name used above the
+    top-level "local" that declares it (it finds the 0.7.17 bug in the old file). The launcher's autotest now ends with
+    "lua: clean" or "lua: FAILED" from the games' logs, even when the games stayed in sync (the 0.7.17 error was in the logs of
+    autotests judged in sync); tests/check_game_logs.py does the same on any folder (players' reports). MPFEVER_LUAERRGATE=0:
+    not looked at. Tests: tests/test_luagate081.py, selftest RunLuaGate081.
   - FIX (players' reports, and the user joining his dedicated server, 2026-11-10: "other version than the host's" whatever the
     player did, downloading the mod again or copying the host's files): an old copy of the mod in the player's own mods folder
     (local\mods, from 2026-10-22/23 on the user's PC: Industry Evolution, Auto Line Namer, Auto Color Lines) is the one the game

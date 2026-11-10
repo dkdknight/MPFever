@@ -59,7 +59,9 @@ def main():
     mn = re.search(r"^U\.paidNotice = function\(eco\)\n.*?^end\n", ui, re.S | re.M)
     check("U.paidBy and U.paidNotice found", mb is not None and mn is not None)
     if mb and mn:
-        run("U = { myCo = 2, aiCoName = function(id) return 'Company ' .. id end }\nC = { Tf = function(fr, en, ...) return string.format(en, ...) end }\nfunction T(fr, en) return en end")
+        # (0.8.1) no global T: the interface script declares "local T" below U.paidNotice, so a global T here hid that the
+        # notice called a nil T (see tests/test_localorder081.py)
+        run("U = { myCo = 2, aiCoName = function(id) return 'Company ' .. id end }\nC = { Tf = function(fr, en, ...) return string.format(en, ...) end, T = function(fr, en) return en end }")
         L.execute(mb.group(0) + mn.group(0))
         run("ECO = { paid = { { from = 2, to = 1, kind = 's', amount = 500 }, { from = 2, to = 1, kind = 't', amount = 1000 }, { from = 1, to = 2, kind = 's', amount = 9 } } }")
         check("U.paidBy: this company's payments by payee and kind", run("local b = U.paidBy(ECO, 2); return b[1].s .. '/' .. b[1].t .. '/' .. b[1].d .. '/' .. tostring(b[2])") == "500/1000/0/nil")
