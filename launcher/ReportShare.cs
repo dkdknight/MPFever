@@ -69,7 +69,9 @@ namespace MPFever
         string ReportSummary(bool crashed, string forWhom = null)
         {
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("MPFever " + Version + ", game build " + Reporter.GameBuild(gameDir));
+            // (0.8.0: and the store of the copy, Steam, GOG or Epic)
+            var plat = GameInstall.PlatformOf(gameDir);
+            sb.AppendLine("MPFever " + Version + ", game build " + Reporter.GameBuild(gameDir) + (plat != "" ? " (" + plat + ")" : ""));
             // (after the game closed: the session it left then, see LeaveOnGameExit)
             sb.AppendLine(leftSession ?? SessionLines(false));
             sb.AppendLine("Settings changed: " + Options.Changed() + (GameInstall.DiagOn() ? "; DIAGNOSTIC BUILD (free-id log, state dumps)" : ""));

@@ -1,13 +1,21 @@
 MPFever - Changelog
 ===================
 
-0.7.18 - (in progress)
+0.8.0 - 2026-11-10: Steam, GOG and the Epic Games Store play together
+  - NEW (GOG and Epic copies, keys from Urban Games): players of the three stores play in one game. Tested on one PC: Steam host
+    with a GOG player, Steam host with an Epic player (both joining and receiving the host's savegame), GOG host with an Epic
+    player, and Steam + Epic + GOG (builds, then 10 min at x4): in sync. The three copies are the same game (build 40425, the
+    same game data); MPFever's native module finds its places in each by their signatures.
+  - NEW: the Epic copy is found (the Epic launcher's manifests) and started with "-EpicPortal -epicapp=<AppName>": started
+    directly, it asked the Epic launcher to start it again, without MPFever. MPFEVER_EPICARGS=0: none.
+  - NEW: a PC with several copies (Steam, GOG, Epic) asks once which one MPFever uses; ⚙ Settings: "Choose the copy of the game".
+    The copy chosen comes first (before, Steam's was always taken). MPFEVER_ASKCOPY=0 / MPFEVER_CHOSENFIRST=0: as before.
+  - CHANGE: the reports say the store of the copy (Steam, GOG, Epic).
   - TESTS (GOG and Epic copies, 2026-11-10): MPFEVER_GAMEDIR_<NAME> starts that game from its own copy of the game, MPFEVER_CLIENT2=1
     adds a third game to the autotest; an Epic copy (EOS SDK next to the game) is started with "-EpicPortal -epicapp=<AppName>"
     (AppName from the Epic launcher's manifest), else it asks the Epic launcher to start it again without MPFever's arguments
     (MPFEVER_EPICARGS=0: none). Steam + GOG, Steam + Epic, GOG + Epic and Steam + Epic + GOG (10 min at x4 with builds) stayed in
-    sync. Found: GOG and Epic do not list or load a savegame made by the Steam copy (Steam loads theirs), and list a savegame only
-    under its own name. tests/test_platforms0718.py, selftest RunPlatforms0718
+    sync. tests/test_platforms0718.py, selftest RunPlatforms0718
 
 0.7.17 - 2026-11-10: fewer needless reloads (street type changes, builds next to stations, a vehicle sold twice, builds in a
   pause, mods that build by script), companies valued with their infrastructure, the mod installed on a new Steam account

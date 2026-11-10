@@ -2341,6 +2341,10 @@ namespace MPFever
             // 0. tests: the folder given (MPFEVER_GAMEDIR)
             var envDir = Environment.GetEnvironmentVariable("MPFEVER_GAMEDIR");
             if (IsGameDir(envDir)) return envDir;
+            // (0.8.0) the copy the player chose (Steam, GOG or Epic, setting "gamedir"): first. Before, it came after Steam's, and a
+            // PC with Steam and GOG (or Epic) always started Steam's. Only a player who chose one has it. MPFEVER_CHOSENFIRST=0: after
+            // the usual places, as before
+            if (Environment.GetEnvironmentVariable("MPFEVER_CHOSENFIRST") != "0" && Environment.GetEnvironmentVariable("MPFEVER_GOG") != "0" && IsGameDir(ChosenDir)) return ChosenDir;
             // 1. launcher placed inside the game folder (MPFever\...)
             var d = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
             while (d != null)
@@ -2359,7 +2363,71 @@ namespace MPFever
             if (IsGameDir(ChosenDir)) return ChosenDir;
             foreach (var p in GogDirs())
                 if (IsGameDir(p)) return p;
+            // 5. (0.8.0) the Epic Games Store's copy
+            foreach (var p in EpicDirs())
+                if (IsGameDir(p)) return p;
             return null;
+        }
+
+        /// <summary>(0.8.0) Where the Epic Games Store installed the game: its launcher's manifests (ProgramData) whose game is
+        /// TransportFever3.exe (the DLCs' manifests have none).</summary>
+        public static IEnumerable<string> EpicDirs()
+        {
+            var found = new List<string>();
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Epic", "EpicGamesLauncher", "Data", "Manifests");
+                if (Directory.Exists(dir))
+                    foreach (var f in Directory.GetFiles(dir, "*.item"))
+                        try
+                        {
+                            var t = File.ReadAllText(f);
+                            var exe = System.Text.RegularExpressions.Regex.Match(t, "\"LaunchExecutable\"\\s*:\\s*\"([^\"]*)\"");
+                            var loc = System.Text.RegularExpressions.Regex.Match(t, "\"InstallLocation\"\\s*:\\s*\"([^\"]*)\"");
+                            if (!exe.Success || !loc.Success || !exe.Groups[1].Value.EndsWith("TransportFever3.exe", StringComparison.OrdinalIgnoreCase)) continue;
+                            found.Add(loc.Groups[1].Value.Replace("\\\\", "\\"));
+                        }
+                        catch { }
+            }
+            catch { }
+            return found;
+        }
+
+        /// <summary>(0.8.0) The store a copy of the game comes from, by the files next to it: "Epic" (EOS SDK), "GOG" (Galaxy or its
+        /// goggame files), "Steam" (Steamworks, or a Steam library), "" otherwise.</summary>
+        public static string PlatformOf(string gameDir)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(gameDir) || !Directory.Exists(gameDir)) return "";
+                if (File.Exists(Path.Combine(gameDir, "EOSSDK-Win64-Shipping.dll"))) return "Epic";
+                if (File.Exists(Path.Combine(gameDir, "Galaxy64.dll")) || Directory.GetFiles(gameDir, "goggame-*.info").Length > 0) return "GOG";
+                if (File.Exists(Path.Combine(gameDir, "steam_api64.dll")) || !NotSteamCopy(gameDir)) return "Steam";
+            }
+            catch { }
+            return "";
+        }
+
+        /// <summary>(0.8.0) Every copy of the game found on this PC (Steam's libraries, GOG, the Epic Games Store, the one chosen by
+        /// hand), each once.</summary>
+        public static List<string> AllCopies()
+        {
+            var all = new List<string>();
+            void Add(string p)
+            {
+                try
+                {
+                    if (!IsGameDir(p)) return;
+                    var f = Path.GetFullPath(p).TrimEnd('\\', '/');
+                    if (!all.Any(x => string.Equals(x, f, StringComparison.OrdinalIgnoreCase))) all.Add(f);
+                }
+                catch { }
+            }
+            try { foreach (var lib in SteamLibraries()) Add(Path.Combine(lib, "steamapps", "common", "Transport Fever 3")); } catch { }
+            try { foreach (var p in GogDirs()) Add(p); } catch { }
+            try { foreach (var p in EpicDirs()) Add(p); } catch { }
+            Add(ChosenDir);
+            return all;
         }
 
         /// <summary>The game's language as written by the game or Steam (raw value, see L.Normalize), and where it was

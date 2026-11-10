@@ -117,7 +117,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.7.18";
+        public const string Version = "0.8.0";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -1264,10 +1264,21 @@ namespace MPFever
         {
             // (0.6.3) the folder the player chose for a game MPFever does not find itself (GOG, a folder of its own)
             try { if (LoadSettings().TryGetValue("gamedir", out var gd)) GameInstall.ChosenDir = gd; } catch { }
+            // (0.8.0) several copies of the game on this PC (Steam, GOG, Epic) and none chosen yet: the player chooses once (kept in
+            // the settings, changed in ⚙ Settings). MPFEVER_ASKCOPY=0: not asked, the first found as before
+            if (!autotest && !ServerMode && !GameInstall.IsGameDir(GameInstall.ChosenDir) && Environment.GetEnvironmentVariable("MPFEVER_ASKCOPY") != "0"
+                && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MPFEVER_GAMEDIR")))
+                try
+                {
+                    var copies = GameInstall.AllCopies();
+                    if (copies.Count > 1) ChooseCopy(copies, this);
+                }
+                catch (Exception e) { Log.W("copies: " + e.Message); }
             gameDir = GameInstall.FindGameDir();
             if (gameDir == null && !autotest && !ServerMode) gameDir = AskGameDir();
             if (gameDir == null) { gameMissing = true; Log.Err(T("Transport Fever 3 introuvable.", "Transport Fever 3 not found.")); status.Text = T("Jeu introuvable", "Game not found"); return false; }
-            Log.W(T("Jeu : ", "Game: ") + gameDir);
+            var platform = GameInstall.PlatformOf(gameDir);
+            Log.W(T("Jeu : ", "Game: ") + gameDir + (platform != "" ? " (" + platform + ")" : ""));
             return true;
         }
 
@@ -1370,6 +1381,40 @@ namespace MPFever
             if (MessageBox.Show(this, text, "MPFever", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             try { Process.Start(new ProcessStartInfo("windowsdefender://appbrowser") { UseShellExecute = true }); }
             catch (Exception e) { Log.W("Windows Security: " + e.Message); }
+        }
+
+        /// <summary>(0.8.0) The player chooses which copy of the game MPFever uses (Steam, GOG, Epic), kept in the settings (gamedir);
+        /// null when cancelled.</summary>
+        internal static string ChooseCopy(List<string> copies, IWin32Window owner)
+        {
+            using (var f = new Form { Text = "MPFever", FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
+                StartPosition = FormStartPosition.CenterScreen, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(16) })
+            {
+                var panel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
+                panel.Controls.Add(new Label { AutoSize = true, MaximumSize = new Size(520, 0), Padding = new Padding(0, 0, 0, 8),
+                    Text = T("Plusieurs copies de Transport Fever 3 sont installées sur ce PC. Laquelle MPFever doit-il utiliser ? (Modifiable ensuite dans ⚙ Réglages.)",
+                             "Several copies of Transport Fever 3 are installed on this PC. Which one should MPFever use? (You can change it later in ⚙ Settings.)") });
+                var radios = new List<RadioButton>();
+                foreach (var c in copies)
+                {
+                    var plat = GameInstall.PlatformOf(c);
+                    var r = new RadioButton { AutoSize = true, Text = (plat != "" ? plat + " : " : "") + c, Tag = c,
+                        Checked = string.Equals(c, GameInstall.ChosenDir, StringComparison.OrdinalIgnoreCase) || (radios.Count == 0 && !GameInstall.IsGameDir(GameInstall.ChosenDir)) };
+                    radios.Add(r);
+                    panel.Controls.Add(r);
+                }
+                var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, AutoSize = true };
+                panel.Controls.Add(ok);
+                f.AcceptButton = ok;
+                f.Controls.Add(panel);
+                if (f.ShowDialog(owner) != DialogResult.OK) return null;
+                var pick = radios.FirstOrDefault(r => r.Checked)?.Tag as string;
+                if (!GameInstall.IsGameDir(pick)) return null;
+                GameInstall.ChosenDir = pick;
+                SaveSetting("gamedir", pick);
+                Log.W(T("Copie du jeu choisie : ", "Copy of the game chosen: ") + pick);
+                return pick;
+            }
         }
 
         /// <summary>(0.6.3) The game not found (a GOG copy, a folder of its own): the player shows MPFever the game's

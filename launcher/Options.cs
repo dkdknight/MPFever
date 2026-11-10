@@ -253,6 +253,22 @@ namespace MPFever
             foreach (var o in Options.All.Where(x => x.Session && !x.Expert)) list.Controls.Add(Row(o));
             list.Controls.Add(Heading(T("Réglages personnels", "Your settings")));
             foreach (var o in Options.All.Where(x => !x.Session)) list.Controls.Add(Row(o));
+            // (0.8.0) the copy of the game (Steam, GOG, Epic) when this PC has several
+            try
+            {
+                var copies = GameInstall.AllCopies();
+                if (copies.Count > 1)
+                {
+                    var pick = new ModernButton(ButtonKind.Secondary) { Text = T("Choisir la copie du jeu (Steam, GOG, Epic)...", "Choose the copy of the game (Steam, GOG, Epic)..."), Width = w, Height = S(34) };
+                    pick.Click += (s, e) =>
+                    {
+                        if (MainForm.ChooseCopy(GameInstall.AllCopies(), this) != null)
+                            MessageBox.Show(this, T("Pris en compte au prochain démarrage de MPFever.", "Taken into account the next time MPFever starts."), "MPFever");
+                    };
+                    list.Controls.Add(pick);
+                }
+            }
+            catch { }
 
             var showExpert = new CheckBox { Text = T("Afficher les réglages experts", "Show the expert settings"), AutoSize = false, Width = w, Height = S(34), Font = Theme.Semibold(10f), ForeColor = Theme.Warning };
             list.Controls.Add(showExpert);

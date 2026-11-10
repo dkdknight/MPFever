@@ -24414,6 +24414,58 @@
       "ko": "보고서가 서비스 한도보다 큽니다: {0}",
       "zh-CN": "报告超出服务上限：{0}",
       "zh-TW": "報告超出服務上限：{0}"
+    },
+    "Several copies of Transport Fever 3 are installed on this PC. Which one should MPFever use? (You can change it later in ⚙ Settings.)": {
+      "de": "Auf diesem PC sind mehrere Kopien von Transport Fever 3 installiert. Welche soll MPFever verwenden? (Später in ⚙ Einstellungen änderbar.)",
+      "es": "Hay varias copias de Transport Fever 3 instaladas en este PC. ¿Cuál debe usar MPFever? (Se puede cambiar luego en ⚙ Ajustes.)",
+      "it": "Su questo PC sono installate più copie di Transport Fever 3. Quale deve usare MPFever? (Modificabile in seguito in ⚙ Impostazioni.)",
+      "nl": "Er zijn meerdere kopieën van Transport Fever 3 op deze pc geïnstalleerd. Welke moet MPFever gebruiken? (Later te wijzigen in ⚙ Instellingen.)",
+      "pl": "Na tym komputerze zainstalowano kilka kopii Transport Fever 3. Której ma używać MPFever? (Można zmienić później w ⚙ Ustawieniach.)",
+      "pt-BR": "Há várias cópias de Transport Fever 3 instaladas neste PC. Qual o MPFever deve usar? (Pode ser alterado depois em ⚙ Configurações.)",
+      "ru": "На этом ПК установлено несколько копий Transport Fever 3. Какую должен использовать MPFever? (Можно изменить позже в ⚙ Настройках.)",
+      "ja": "このPCには複数のTransport Fever 3がインストールされています。MPFeverはどれを使いますか？（後で⚙設定から変更できます。）",
+      "ko": "이 PC에 Transport Fever 3가 여러 개 설치되어 있습니다. MPFever가 어느 것을 사용할까요? (나중에 ⚙ 설정에서 바꿀 수 있습니다.)",
+      "zh-CN": "此电脑安装了多个 Transport Fever 3。MPFever 应使用哪一个？（之后可在 ⚙ 设置中更改。）",
+      "zh-TW": "此電腦安裝了多個 Transport Fever 3。MPFever 應使用哪一個？（之後可在 ⚙ 設定中變更。）"
+    },
+    "Copy of the game chosen: ": {
+      "de": "Gewählte Spielkopie: ",
+      "es": "Copia del juego elegida: ",
+      "it": "Copia del gioco scelta: ",
+      "nl": "Gekozen kopie van het spel: ",
+      "pl": "Wybrana kopia gry: ",
+      "pt-BR": "Cópia do jogo escolhida: ",
+      "ru": "Выбранная копия игры: ",
+      "ja": "選択したゲームのコピー: ",
+      "ko": "선택한 게임 사본: ",
+      "zh-CN": "已选择的游戏副本：",
+      "zh-TW": "已選擇的遊戲副本："
+    },
+    "Choose the copy of the game (Steam, GOG, Epic)...": {
+      "de": "Spielkopie wählen (Steam, GOG, Epic)...",
+      "es": "Elegir la copia del juego (Steam, GOG, Epic)...",
+      "it": "Scegli la copia del gioco (Steam, GOG, Epic)...",
+      "nl": "Kopie van het spel kiezen (Steam, GOG, Epic)...",
+      "pl": "Wybierz kopię gry (Steam, GOG, Epic)...",
+      "pt-BR": "Escolher a cópia do jogo (Steam, GOG, Epic)...",
+      "ru": "Выбрать копию игры (Steam, GOG, Epic)...",
+      "ja": "ゲームのコピーを選択（Steam、GOG、Epic）...",
+      "ko": "게임 사본 선택 (Steam, GOG, Epic)...",
+      "zh-CN": "选择游戏副本（Steam、GOG、Epic）...",
+      "zh-TW": "選擇遊戲副本（Steam、GOG、Epic）..."
+    },
+    "Taken into account the next time MPFever starts.": {
+      "de": "Wird beim nächsten Start von MPFever übernommen.",
+      "es": "Se aplicará la próxima vez que se inicie MPFever.",
+      "it": "Verrà applicato al prossimo avvio di MPFever.",
+      "nl": "Wordt toegepast bij de volgende start van MPFever.",
+      "pl": "Zostanie uwzględnione przy następnym uruchomieniu MPFever.",
+      "pt-BR": "Será aplicado na próxima vez que o MPFever iniciar.",
+      "ru": "Будет учтено при следующем запуске MPFever.",
+      "ja": "次回MPFever起動時に反映されます。",
+      "ko": "다음에 MPFever를 시작할 때 적용됩니다.",
+      "zh-CN": "将在下次启动 MPFever 时生效。",
+      "zh-TW": "將在下次啟動 MPFever 時生效。"
     }
   }
 }

@@ -134,7 +134,8 @@ KNOWN LIMITATIONS
 - Trees and plants of the brush are copied (since 0.3.3). Ground PAINT (textures) is not copied
   yet: each game keeps its own paint (it does not cause a resynchronisation).
 - Tested with 2 players. More players should work but are untested.
-- Windows only. Made for the current Steam version of Transport Fever 3 (builds 40420, 40423 and 40425).
+- Windows only. Made for Transport Fever 3 on Steam, GOG and the Epic Games Store (builds 40420, 40423 and 40425);
+  players of the three stores play together since 0.8.0.
   After a game update, the mod still runs but synchronisation may be worse until
   MPFever is updated.
 - The host's port is opened on its router by itself (UPnP, else NAT-PMP) while a session

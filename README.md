@@ -38,7 +38,7 @@ Each player plays in their own copy of the game. MPFever replays every player's 
 
 | Requirement | Why |
 |---|---|
-| **Transport Fever 3 on Steam, Windows** | MPFever is tested on the Steam version. A GOG copy works too, experimentally (joining through Steam isn't possible there: join the host's address). |
+| **Transport Fever 3 on Steam, GOG or the Epic Games Store, Windows** | Since 0.8.0 players of the three stores play together in one game (tested Steam + GOG + Epic). A GOG or Epic player joins with the host's address (joining through Steam is for Steam players). |
 | **The same game version on every PC** | Two different game builds don't simulate the world the same way. Supported: **40425** (current), **40423** and **40420**. Make sure Steam has updated the game on every PC. |
 | **The same DLCs on every PC** | The Deluxe edition's upgrade pack and the pre-order pack put their animals, people and vehicles in the world of the PC that owns them only, and the games may drift apart. The lobby warns when the players' DLCs differ and says what to do: the host can switch them off in the savegame's mods, or the players can get them. |
 | **The same MPFever version on every PC** | MPFever updates itself; every player just needs a recent version (0.3.15 or later). |

@@ -49,6 +49,7 @@ with its cause and the test that now guards it.
 | A player's report says **« checked by the host »**, never « Sync: — ». | 0.7.17 | ReportSyncText | test_synccheck0717.py |
 | The autotest **featstats keeps its options** against the session's (G.featTestOpts), as journaltest and permstest. | 0.7.17 | H.featstats | autotest y3 |
 | A **Steam or GOG copy is started exactly as before** (no argument added); only a folder with the EOS SDK (Epic) gets "-EpicPortal -epicapp=..."; MPFEVER_GAMEDIR_* and MPFEVER_CLIENT2 change nothing when unset. | 0.7.18 | GameLink.Launch, GameInstall.EpicLaunchArgs | test_platforms0718.py, selftest |
+| A **player with only Steam's copy** sees nothing new: no question at the start, Steam's copy used as before; the copy chosen by hand (gamedir) comes first only when it is a game folder. | 0.8.0 | FindGameDir, InitFindGame, ChooseCopy | test_platforms0718.py, selftest |
 
 ## Regressions found
 

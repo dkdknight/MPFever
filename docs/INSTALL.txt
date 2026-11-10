@@ -109,10 +109,12 @@ MPFever-Server, its MPFever.exe opens the server's window) and read SERVER.txt i
 
 TROUBLESHOOTING
 ---------------
-- "Transport Fever 3 not found": MPFever looks in the Steam libraries and where GOG
-  installs the game. Elsewhere, it asks for the game's TransportFever3.exe once and
-  keeps that folder. A copy not installed by Steam (GOG) is supported experimentally:
-  join with the host's address (not through Steam).
+- "Transport Fever 3 not found": MPFever looks in the Steam libraries, where GOG installs
+  the game and in the Epic Games Store's installs. Elsewhere, it asks for the game's
+  TransportFever3.exe once and keeps that folder. With several copies on one PC (Steam,
+  GOG, Epic), it asks once which one to use (⚙ Settings: "Choose the copy of the game").
+  GOG and Epic players join with the host's address (joining through Steam is for Steam
+  players); players of the three stores play together (0.8.0).
 - "Bad Image ... winhttp.dll ... error status 0xc0e90002" when the game starts: Windows'
   Smart App Control blocks MPFever's file (MPFever now says so). Turn it off: Windows
   Security > App & browser control > Smart App Control settings > Off (Windows'

@@ -106,6 +106,24 @@ namespace MPFever
                 C(GameInstall.EpicLaunchArgs(dir) == null, "  an AppName that is not one: none");
                 C(GameInstall.EpicLaunchArgs(@"C:
 owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
+                // (0.8.0) the store of a copy, by the files next to it
+                C(GameInstall.PlatformOf(dir) == "Epic", "0.8.0: an EOS SDK: Epic");
+                var gog = Path.Combine(dir, "gog");
+                Directory.CreateDirectory(gog);
+                File.WriteAllText(Path.Combine(gog, "goggame-1721456477.info"), "{}");
+                C(GameInstall.PlatformOf(gog) == "GOG", "  goggame-*.info: GOG");
+                var steam = Path.Combine(dir, "steamapps", "common", "Transport Fever 3");
+                Directory.CreateDirectory(steam);
+                C(GameInstall.PlatformOf(steam) == "Steam", "  a Steam library's folder: Steam");
+                var plain = Path.Combine(dir, "plain");
+                Directory.CreateDirectory(plain);
+                C(GameInstall.PlatformOf(plain) == "", "  none of them: unknown");
+                // the chosen copy first (a PC with Steam and GOG started Steam's before)
+                File.WriteAllText(Path.Combine(gog, "TransportFever3.exe"), "");
+                var oldChosen = GameInstall.ChosenDir;
+                GameInstall.ChosenDir = gog;
+                try { C(GameInstall.FindGameDir() == gog, "  the chosen copy is the one used"); }
+                finally { GameInstall.ChosenDir = oldChosen; }
             }
             catch (Exception e) { C(false, e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_EPICAPP", old); try { Directory.Delete(dir, true); } catch { } }
