@@ -2,6 +2,17 @@ MPFever - Changelog
 ===================
 
 0.8.1 - (in progress)
+  - FIX (players' reports, and the user joining his dedicated server, 2026-11-10: "other version than the host's" whatever the
+    player did, downloading the mod again or copying the host's files): an old copy of the mod in the player's own mods folder
+    (local\mods, from 2026-10-22/23 on the user's PC: Industry Evolution, Auto Line Namer, Auto Color Lines) is the one the game
+    takes, in place of the Mod Hub's, up to date; MPFever said so only in its log. The lobby now says it under the mod and offers
+    « Move the old copy out »: moved whole (a rename, never half moved) to local\mpfever-old-mods\<date>\, where the game never
+    looks, with where-it-was.txt; nothing is deleted. The mod then says "restart the game" until MPFever starts the game again
+    (the game keeps the copy it found when it started). A host's or server's own old copy is said in its log.
+    MPFEVER_MODOLDCOPY=0: as before.
+  - FIX: a file replaced in a mod's folder (the host's files copied over the player's) changed nothing until MPFever was started
+    again: the version was kept by the folder's date, which a replaced file does not change. It is kept by the files' count, sizes
+    and dates now. MPFEVER_MODFPSTAMP=0: as before. Test: tests/test_modoldcopy081.py, selftest RunOldCopy081.
 
 0.8.0 - 2026-11-10: Steam, GOG and the Epic Games Store play together
   - NEW (GOG and Epic copies, keys from Urban Games): players of the three stores play in one game. Tested on one PC: Steam host

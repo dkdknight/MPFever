@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -390,6 +391,7 @@ namespace MPFever
             }
             catch { }
             if (!localFirst) roots.AddRange(local);
+            var allCopies = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             try { foreach (var lib in GameInstall.SteamLibraries()) roots.Add(Path.Combine(lib, "steamapps", "workshop", "content", GameInstall.AppId)); } catch { }
             try { var g = GameInstall.FindGameDir(); if (g != null) { roots.Add(Path.Combine(g, "mods")); roots.Add(Path.Combine(g, "mods", "release")); } } catch { }
             foreach (var root in roots)
@@ -407,6 +409,8 @@ namespace MPFever
                         }
                         catch { }
                         id = id ?? Path.GetFileName(d);
+                        if (!allCopies.TryGetValue(id, out var cl)) allCopies[id] = cl = new List<string>();
+                        cl.Add(d);
                         if (!map.ContainsKey(id)) map[id] = d;
                         else if (localFirst && local.Any(l => map[id].StartsWith(l, StringComparison.OrdinalIgnoreCase)))
                             lock (dupLocal) if (!dupLocal.ContainsKey(id)) dupLocal[id] = map[id];
@@ -414,7 +418,89 @@ namespace MPFever
                 }
                 catch { }
             }
+            lock (copiesGate) { copies = allCopies; localRoots = local; }
             return map;
+        }
+
+        // (0.8.1, MODOLDCOPY) every copy of each mod found (in the scan's order) and this player's own mods folders (local\mods,
+        // staging_area). The user's PC, 2026-11-10: Industry Evolution, Auto Line Namer and Auto Color Lines had old copies in
+        // local\mods (from 2026-10-22/23), which the game takes in place of the Mod Hub's: the lobby said "other version than the
+        // host's" whatever the player did (downloading the mod again updated the Mod Hub's copy, which the game ignores)
+        static readonly object copiesGate = new object();
+        static Dictionary<string, List<string>> copies = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        static List<string> localRoots = new List<string>();
+
+        /// <summary>(0.8.1) Whether a folder is inside one of `roots`.</summary>
+        internal static bool InRoots(string d, IEnumerable<string> roots)
+        {
+            try
+            {
+                var full = Path.GetFullPath(d).TrimEnd('\\', '/');
+                return roots.Any(r => { try { return full.StartsWith(Path.GetFullPath(r).TrimEnd('\\', '/') + "\\", StringComparison.OrdinalIgnoreCase); } catch { return false; } });
+            }
+            catch { return false; }
+        }
+
+        /// <summary>(0.8.1) The folder of the copy of a mod the game takes when it is in this player's own mods (local\mods,
+        /// staging_area), else null.</summary>
+        public static string LocalCopy(string id)
+        {
+            var d = Dir(id);
+            if (d == null) return null;
+            lock (copiesGate) return InRoots(d, localRoots) ? d : null;
+        }
+
+        /// <summary>(0.8.1) The other copies of a mod than the one the game takes (the Mod Hub's, Steam Workshop's, the game's folder).</summary>
+        public static List<string> OtherCopies(string id)
+        {
+            var d = Dir(id);
+            lock (copiesGate)
+                return id != null && copies.TryGetValue(id, out var l) ? l.Where(x => !string.Equals(x, d, StringComparison.OrdinalIgnoreCase)).ToList() : new List<string>();
+        }
+
+        /// <summary>(0.8.1, MODOLDCOPY) A mod in another version than the host's whose copy the game takes is in this player's own
+        /// mods: "hub" when another copy here (the Mod Hub's...) is the host's version, "local" otherwise (moved out, the Mod Hub
+        /// or the host gives the host's version), "" when the copy is not a local one. MPFEVER_MODOLDCOPY=0: "", as before.</summary>
+        public static string OldCopyFix(string id, string hostFp)
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_MODOLDCOPY") == "0" || LocalCopy(id) == null) return "";
+            foreach (var o in OtherCopies(id))
+                if (!string.IsNullOrEmpty(hostFp) && FingerprintOf(o) == hostFp) return "hub";
+            return "local";
+        }
+
+        /// <summary>(0.8.1) The mods whose local copy was moved out by this launcher: the game keeps the copy it found when it
+        /// started, so it must be started again (cleared when the launcher starts a game).</summary>
+        public static readonly HashSet<string> MovedOut = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>(0.8.1, MODOLDCOPY) The copy of a mod the game takes, in this player's own mods, moved out of them, next to
+        /// them (local\mpfever-old-mods\&lt;date&gt;\&lt;folder&gt;, where the game never looks), with where-it-was.txt. A rename on
+        /// the same disk: never half moved (a file the game holds open: nothing moves, the error says so). Returns where it went.</summary>
+        public static string MoveLocalCopy(string id)
+        {
+            var d = LocalCopy(id);
+            if (d == null) throw new InvalidOperationException("not in the local mods");
+            var to = MoveOut(d);
+            lock (dupLocal) dupLocal.Remove(id);
+            lock (dupSaid) dupSaid.Remove(id);
+            lock (MovedOut) MovedOut.Add(id);
+            Rescan();
+            return to;
+        }
+
+        /// <summary>(0.8.1) A mod's folder moved into &lt;its root's parent&gt;\mpfever-old-mods\&lt;date&gt;\&lt;folder&gt;.</summary>
+        internal static string MoveOut(string d)
+        {
+            var full = Path.GetFullPath(d).TrimEnd('\\', '/');
+            var root = Path.GetDirectoryName(full);
+            var baseDir = Path.Combine(Path.GetDirectoryName(root), "mpfever-old-mods", DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
+            var into = baseDir;
+            for (int i = 2; Directory.Exists(Path.Combine(into, Path.GetFileName(full))); i++) into = baseDir + "-" + i.ToString(CultureInfo.InvariantCulture);
+            Directory.CreateDirectory(into);
+            var to = Path.Combine(into, Path.GetFileName(full));
+            Directory.Move(full, to);
+            try { File.AppendAllText(Path.Combine(into, "where-it-was.txt"), full + "\r\n"); } catch { }
+            return to;
         }
 
         // (0.7.7) a mod installed in local\mods (or staging_area) and from the Mod Hub too: id -> the local folder the game runs
@@ -506,14 +592,46 @@ namespace MPFever
 
         static readonly Dictionary<string, Tuple<string, string, string>> infoCache = new Dictionary<string, Tuple<string, string, string>>();
 
+        /// <summary>(0.8.1, MODFPSTAMP) What tells that a mod's folder changed: its files' count, sizes and dates. Before, the
+        /// folder's own date, which a file replaced in it (a player copying the host's files over theirs) does not change: the
+        /// launcher kept the old version until it was started again. MPFEVER_MODFPSTAMP=0: the folder's date, as before.</summary>
+        internal static string Stamp(string d)
+        {
+            try
+            {
+                long t = Directory.GetLastWriteTimeUtc(d).Ticks;
+                if (Environment.GetEnvironmentVariable("MPFEVER_MODFPSTAMP") == "0") return d + "@" + t;
+                long n = 0, size = 0, sum = 0;
+                foreach (var f in new DirectoryInfo(d).EnumerateFiles("*", SearchOption.AllDirectories))
+                {
+                    n++;
+                    size += f.Length;
+                    sum = unchecked(sum * 31 + f.LastWriteTimeUtc.Ticks);
+                }
+                return d + "@" + t + "/" + n + "/" + size + "/" + sum;
+            }
+            catch { return d; }
+        }
+
+        static readonly Dictionary<string, string> fpCache = new Dictionary<string, string>();
+
+        /// <summary>(0.8.1) The fingerprint of any copy of a mod, computed once per folder and stamp.</summary>
+        static string FingerprintOf(string d)
+        {
+            var key = Stamp(d);
+            lock (fpCache) if (fpCache.TryGetValue(key, out var f)) return f;
+            var fp = Fingerprint(d);
+            lock (fpCache) fpCache[key] = fp;
+            return fp;
+        }
+
         /// <summary>The fingerprint, kind and personal verdict ("" = personal, else why not) of an installed mod ("" and "not
         /// installed" when not found here), computed once per folder and date.</summary>
         static Tuple<string, string, string> Info(string id)
         {
             var d = Dir(id);
             if (d == null) return Tuple.Create("", "", "not installed");
-            string key;
-            try { key = d + "@" + Directory.GetLastWriteTimeUtc(d).Ticks; } catch { key = d; }
+            string key = Stamp(d);
             lock (infoCache)
             {
                 if (infoCache.TryGetValue(key, out var t)) return t;
@@ -699,6 +817,8 @@ namespace MPFever
             return string.Join(";;", Parse(list).Select(e =>
             {
                 var i = BuiltIn(e) ? Tuple.Create("", Assets, "built in") : Info(e.Id);
+                // (0.8.1) the host's (or server's) own old copy in local\mods: said in its log, every player would differ
+                if (!BuiltIn(e)) DuplicateLocal(e.Id);
                 string p = BuiltIn(e) || Off.Contains(e.Id) ? "" : Forced.Contains(e.Id) ? "forced" : i.Item3 == "" ? "auto" : "";
                 // (the menu's list: its 4th field is the mod's Mod Hub number)
                 string hub = Regex.Replace(e.Fp ?? "", "[^0-9A-Za-z_-]", "");
@@ -726,13 +846,19 @@ namespace MPFever
                 if (!isHost && !BuiltIn(e))
                 {
                     var mine = Info(e.Id);
-                    if (Dir(e.Id) == null) { here = "notfound"; if (personal == "") { c.Missing.Add(e.Name); c.MissingIds.Add(e.Id); } }
+                    bool moved;
+                    lock (MovedOut) moved = MovedOut.Contains(e.Id);
+                    // (0.8.1) its old copy moved out by this launcher: the game still has the one it found at its start
+                    if (moved && personal == "") { here = "restart"; c.Differs.Add(F("{0} (ancienne copie retirée : redémarrez le jeu)", "{0} (old copy moved out: restart the game)", e.Name)); }
+                    else if (Dir(e.Id) == null) { here = "notfound"; if (personal == "") { c.Missing.Add(e.Name); c.MissingIds.Add(e.Id); } }
                     else if (e.Fp != "" && mine.Item1 != "") { here = mine.Item1 == e.Fp ? "ok" : "differs"; if (here == "differs" && personal == "") c.Differs.Add(DiffersName(e.Name, DuplicateLocal(e.Id))); }
                     if (kind == "") kind = mine.Item2;
                 }
                 var v = Judge(e.Id, kind);
                 if (v.Level == "bad") c.Bad.Add(e.Name);
-                rows.Add(string.Join("|", Clean(e.Id), Clean(e.Name), Clean(e.Source), kind, v.Level, here, Clean(v.Note), personal, e.Hub, e.Size));
+                // (0.8.1, MODOLDCOPY) another version because of a copy in this player's own mods: "hub" or "local" (see OldCopyFix)
+                string fix = here == "differs" && personal == "" ? OldCopyFix(e.Id, e.Fp) : "";
+                rows.Add(string.Join("|", Clean(e.Id), Clean(e.Name), Clean(e.Source), kind, v.Level, here, Clean(v.Note), personal, e.Hub, e.Size, fix));
             }
             c.View = string.Join(";;", rows);
             return c;

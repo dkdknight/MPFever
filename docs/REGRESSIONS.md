@@ -50,6 +50,8 @@ with its cause and the test that now guards it.
 | The autotest **featstats keeps its options** against the session's (G.featTestOpts), as journaltest and permstest. | 0.7.17 | H.featstats | autotest y3 |
 | A **Steam or GOG copy is started exactly as before** (no argument added); only a folder with the EOS SDK (Epic) gets "-EpicPortal -epicapp=..."; MPFEVER_GAMEDIR_* and MPFEVER_CLIENT2 change nothing when unset. | 0.7.18 | GameLink.Launch, GameInstall.EpicLaunchArgs | test_platforms0718.py, selftest |
 | A **player with only Steam's copy** sees nothing new: no question at the start, Steam's copy used as before; the copy chosen by hand (gamedir) comes first only when it is a game folder. | 0.8.0 | FindGameDir, InitFindGame, ChooseCopy | test_platforms0718.py, selftest |
+| A **mod in the same version** as the host's is never shown "other version" nor offered « Move the old copy out » (only a differing mod whose copy is in local\mods / staging_area); the copy is moved by a rename only, out of the mods folder, never deleted; a player who moved nothing never sees "restart the game". | 0.8.1 | Mods.Compare, OldCopyFix, MoveLocalCopy, MoveOut, menu "modoldcopy" | test_modoldcopy081.py, selftest RunOldCopy081 |
+| A mod's version changes as soon as one of its files changes (count, size or date), and **not** otherwise: the same files give the same fingerprint as before (only the cache key changed). | 0.8.1 | Mods.Stamp, Info | test_modoldcopy081.py, selftest |
 
 ## Regressions found
 

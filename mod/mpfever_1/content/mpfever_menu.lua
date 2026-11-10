@@ -206,7 +206,9 @@ local function decodeMods(s)
 		local id = f[1]
 		if id and id ~= "" then
 			out[#out + 1] = { id = id, name = (f[2] or "") ~= "" and f[2] or id, source = f[3] or "", kind = f[4] or "",
-				level = f[5] or "", here = f[6] or "", note = f[7] or "", personal = f[8] or "", hub = f[9] or "", size = f[10] or "" }
+				level = f[5] or "", here = f[6] or "", note = f[7] or "", personal = f[8] or "", hub = f[9] or "", size = f[10] or "",
+				-- (0.8.1) "hub" / "local": the copy the game takes is in this player's local mods folder (see Mods.OldCopyFix)
+				fix = f[11] or "" }
 		end
 	end
 	return out
@@ -1931,8 +1933,9 @@ local function setup()
 					elseif m.personal == "host" then m.state = isHost and "pown" or "phost"
 					elseif not isHost and modInstalled(m.id) == false then m.state = "missing"
 					elseif m.here == "differs" then m.state = "differs"
+					elseif m.here == "restart" then m.state = "restart"
 					else m.state = m.level ~= "" and m.level or "ok" end
-					local g = (m.state == "missing" or m.state == "differs" or m.state == "bad") and 1
+					local g = (m.state == "missing" or m.state == "differs" or m.state == "restart" or m.state == "bad") and 1
 						or (m.state == "caution" and 2) or (m.state == "fixed" and 3) or 4
 					groups[g][#groups[g] + 1] = m
 				end
@@ -1967,6 +1970,7 @@ local function setup()
 				local LABEL = {
 					missing = { T("manquant", "missing"), "error" },
 					differs = { T("autre version que l'hôte", "other version than the host's"), "error" },
+					restart = { T("ancienne copie retirée : redémarrez le jeu", "old copy moved out: restart the game"), "error" },
 					bad = { T("incompatible", "incompatible"), "error" },
 					caution = { T("script non testé", "untested script"), "warning" },
 					fixed = { T("rendu compatible", "made compatible"), "success" },
@@ -1991,7 +1995,10 @@ local function setup()
 								elseif hub.ready(m.source) == "signed_out" then why = T("Connectez-vous au Mod Hub du jeu (bouton Mods du menu principal) pour qu'il s'installe tout seul.", "Sign in to the game's Mod Hub (Mods button of the main menu) to have it installed by itself.")
 								else why = T("Installez-le (mod.io ou Steam Workshop) avant que l'hôte lance la partie.", "Install it (mod.io or Steam Workshop) before the host starts the game.") end
 							elseif m.state == "missing" then why = T("Aucun Mod Hub ne le propose (mod local de l'hôte) : l'hôte peut vous l'envoyer, sinon installez-le vous-même.", "No Mod Hub has it (the host's local mod): the host can send it to you, else install it yourself.")
+							elseif m.state == "differs" and m.fix == "hub" then why = T("Le jeu prend une ancienne copie de votre dossier local/mods au lieu de celle du Mod Hub, qui est la version de l'hôte : retirez l'ancienne copie.", "The game takes an old copy in your local/mods folder instead of the Mod Hub's, which is the host's version: move the old copy out.")
+							elseif m.state == "differs" and m.fix == "local" then why = T("Le jeu prend la copie de votre dossier local/mods, qui n'est pas la version de l'hôte : retirez-la, puis installez celle de l'hôte (Mod Hub, ou envoyée par l'hôte).", "The game takes the copy in your local/mods folder, which is not the host's version: move it out, then install the host's (Mod Hub, or sent by the host).")
 							elseif m.state == "differs" then why = T("Mettez-le à jour pour avoir la même version que l'hôte.", "Update it to have the host's version.")
+							elseif m.state == "restart" then why = T("Fermez le jeu et relancez-le par MPFever : il garde la copie trouvée à son démarrage.", "Close the game and start it again through MPFever: it keeps the copy it found when it started.")
 							elseif m.state == "pmine" then why = T("La partie de l'hôte est chargée sans lui chez vous. S'il agit sur la partie, elle se désynchronisera.", "The host's game loads without it here. If it acts on the game, the game will desynchronise.")
 							elseif m.state == "phost" or m.state == "pown" then why = "" end
 							if why ~= "" then rows[#rows + 1] = text("   " .. why, "font-scale-body", W) end
@@ -2005,6 +2012,11 @@ local function setup()
 									local mm = m
 									rows[#rows + 1] = box(H, { gap(12, 1), button(T("Installer (Mod Hub)", "Install (Mod Hub)"), function() hub.install(mm) end, { font = "font-scale-body" }) })
 								end
+							end
+							if m.state == "differs" and m.fix ~= "" and not isHost then
+								rows[#rows + 1] = box(H, { gap(12, 1), button(T("Retirer l'ancienne copie", "Move the old copy out"),
+									function() request("modoldcopy", id, playerName()) end,
+									{ font = "font-scale-body", tooltip = T("Déplacée dans local/mpfever-old-mods, où le jeu ne la voit plus : rien n'est supprimé.", "Moved to local/mpfever-old-mods, where the game no longer sees it: nothing is deleted.") }) })
 							end
 							if (m.state == "missing" or m.state == "differs") and not isHost then
 								rows[#rows + 1] = box(H, { gap(12, 1), button(T("Jouer sans (le prendre pour personnel)", "Play without it (take it for personal)"),

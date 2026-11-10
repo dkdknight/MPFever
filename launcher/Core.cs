@@ -785,6 +785,8 @@ namespace MPFever
 
         public void Launch(string gameDir)
         {
+            // (0.8.1) a new game finds the mods as they are now: an old copy moved out no longer needs a restart
+            lock (Mods.MovedOut) Mods.MovedOut.Clear();
             // (0.7.18, tests of the GOG and Epic copies: MPFEVER_GAMEDIR_<NAME>, this game's own copy of Transport Fever 3, e.g.
             // MPFEVER_GAMEDIR_CLIENT=H:\GOG\...; unset: the launcher's copy, as always)
             var ownDir = Environment.GetEnvironmentVariable("MPFEVER_GAMEDIR_" + new string((Name ?? "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant());

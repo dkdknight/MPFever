@@ -83,12 +83,45 @@ namespace MPFever
             ok &= RunInstall0717();
             ok &= RunTrim0717();
             ok &= RunPlatforms0718();
+            ok &= RunOldCopy081();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
 
         /// <summary>(0.7.18) An Epic copy of the game is started with the portal's arguments (it stays MPFever's process); any other
         /// copy as before.</summary>
+        /// <summary>(0.8.1) MODOLDCOPY / MODFPSTAMP: a file replaced in a mod changes its stamp; a local copy moved out next to
+        /// its folder, whole, with where-it-was.txt; InRoots.</summary>
+        static bool RunOldCopy081()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.8.1 old mod copies: " + what); ok &= c; }
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-oldcopy-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var mod = Path.Combine(dir, "local", "mods", "some_mod_1");
+                Directory.CreateDirectory(Path.Combine(mod, "content"));
+                var f = Path.Combine(mod, "content", "a.lua");
+                File.WriteAllText(f, "return 1");
+                var when = new DateTime(2026, 10, 22, 3, 57, 0, DateTimeKind.Utc);
+                File.SetLastWriteTimeUtc(f, when);
+                Directory.SetLastWriteTimeUtc(mod, when);
+                var s1 = Mods.Stamp(mod);
+                File.WriteAllText(f, "return 2");
+                File.SetLastWriteTimeUtc(f, when.AddDays(-3));
+                Directory.SetLastWriteTimeUtc(mod, when);
+                C(Mods.Stamp(mod) != s1, "a file replaced (older date, same size, same folder date): another stamp");
+                C(Mods.InRoots(mod, new[] { Path.Combine(dir, "local", "mods") }) && !Mods.InRoots(mod, new[] { Path.Combine(dir, "local", "staging_area") }), "InRoots");
+                var to = Mods.MoveOut(mod);
+                C(!Directory.Exists(mod) && File.Exists(Path.Combine(to, "content", "a.lua")), "moved whole");
+                C(to.StartsWith(Path.Combine(dir, "local", "mpfever-old-mods") + "\\", StringComparison.OrdinalIgnoreCase), "  next to the mods folder, out of the game's reach");
+                C(File.ReadAllText(Path.Combine(Path.GetDirectoryName(to), "where-it-was.txt")).Contains(mod), "  where-it-was.txt");
+            }
+            catch (Exception e) { C(false, "exception " + e.Message); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+            return ok;
+        }
+
         static bool RunPlatforms0718()
         {
             bool ok = true;

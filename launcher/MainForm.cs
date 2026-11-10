@@ -2467,6 +2467,30 @@ namespace MPFever
                 modOffer = "";
                 MenuStatus();
             }
+            else if (cmd == "modoldcopy")
+            {
+                // (0.8.1, MODOLDCOPY) "modoldcopy <id>": this player's copy of the mod in local\mods, which the game takes in place of
+                // the Mod Hub's, moved out of the game's reach (see Mods.MoveLocalCopy); the game must be started again
+                var id = (arg ?? "").Trim();
+                if (id == "" || Environment.GetEnvironmentVariable("MPFEVER_MODOLDCOPY") == "0") return;
+                try
+                {
+                    var to = Mods.MoveLocalCopy(id);
+                    Log.Ok(F("Ancienne copie du mod {0} déplacée dans {1}. Fermez le jeu et relancez-le par MPFever : il garde la copie trouvée à son démarrage.",
+                        "Old copy of the mod {0} moved to {1}. Close the game and start it again through MPFever: it keeps the copy it found when it started.", id, to));
+                }
+                catch (Exception e)
+                {
+                    Log.Err(F("Copie du mod {0} impossible à déplacer ({1}) : fermez le jeu et déplacez-la vous-même hors du dossier mods.",
+                        "Could not move the copy of the mod {0} ({1}): close the game and move it out of the mods folder yourself.", id, e.Message));
+                }
+                if (!lobbyOpen && lobbyMods != "")
+                {
+                    var hm = lobbyMods; lobbyMods = ""; modCheck = null; lastHostDlcs = null; dlcWarn = ""; dlcsDiffer = false; lastHostBuild = null; buildWarn = "";
+                    SetHostMods(hm, clients.FirstOrDefault(), name);
+                }
+                MenuStatus();
+            }
             else if (cmd == "modpersonal" || cmd == "modmine")
             {
                 // personal mods (see Mods): "modpersonal <id> 1|0" takes a mod for personal by hand (or no longer), "modmine
