@@ -39,7 +39,7 @@ Each player plays in their own copy of the game. MPFever replays every player's 
 | Requirement | Why |
 |---|---|
 | **Transport Fever 3 on Steam, GOG or the Epic Games Store, Windows** | Since 0.8.0 players of the three stores play together in one game (tested Steam + GOG + Epic). A GOG or Epic player joins with the host's address (joining through Steam is for Steam players). |
-| **The same game version on every PC** | Two different game builds don't simulate the world the same way. Supported: **40425** (current), **40423** and **40420**. Make sure Steam has updated the game on every PC. |
+| **The same game version on every PC** | Two different game builds don't simulate the world the same way. Supported: **40425** (current), **40423** and **40420**. Make sure each store (Steam, GOG Galaxy, the Epic Games launcher) has updated the game on every PC. |
 | **The same DLCs on every PC** | The Deluxe edition's upgrade pack and the pre-order pack put their animals, people and vehicles in the world of the PC that owns them only, and the games may drift apart. The lobby warns when the players' DLCs differ and says what to do: the host can switch them off in the savegame's mods, or the players can get them. |
 | **The same MPFever version on every PC** | MPFever updates itself; every player just needs a recent version (0.3.15 or later). |
 | **The same mods, in the same version** | MPFever checks it in the lobby, installs the missing ones from the game's Mod Hub and tells you what to fix. Mods that only change your interface may differ. |
@@ -49,10 +49,10 @@ Each player plays in their own copy of the game. MPFever replays every player's 
 1. Download **`MPFever-<version>.zip`** from the [releases](https://github.com/dkdknight/MPFever/releases/latest).
 2. **Extract the whole folder** anywhere, for example on your desktop.
    Always start `MPFever.exe` **from that folder**. Don't move the `.exe` out of it, use a shortcut instead: MPFever needs the files next to it to update itself and to stay in sync.
-3. Start **`MPFever.exe`**. It finds the game (or asks you for its `TransportFever3.exe`), installs the mod and starts Transport Fever 3.
+3. Start **`MPFever.exe`**. It finds the game (or asks you for its `TransportFever3.exe`), installs the mod and starts Transport Fever 3. With several copies on one PC (Steam, GOG, Epic), it asks once which one to use (⚙ Settings → *Choose the copy of the game*).
 4. In the main menu, click the **Multiplayer** card (top left).
    - **The host** clicks **Host** under one of their savegames to open a lobby.
-   - **The others** accept the host's Steam invitation, join the host's address, or pick a dedicated server in the **Public servers** tab.
+   - **The others** accept the host's Steam invitation (Steam players), join the host's address, or pick a dedicated server in the **Public servers** tab. GOG and Epic players join with the host's address or a server.
 5. When everybody is in the lobby, the host clicks **Start the game**. Every game loads the host's world at the same time.
 
 ![Joining a game](docs/images/join-page.webp)
@@ -149,11 +149,11 @@ The mods tested so far are listed in [MODS](docs/MODS.md).
 ## Known limitations
 
 - **One company per player:** a merger into the savegame's company leaves the merged company's loans behind (they are the game's own loans).
-- **Steam and Windows only.** Linux and Steam Deck players report that it runs through Proton (see INSTALL.txt; untested by us).
+- **Windows only** (Steam, GOG and Epic copies). Linux and Steam Deck players report that it runs through Proton (see INSTALL.txt; untested by us).
 - **One company per player: the game's achievements** are counted for the savegame's company only (the game's own scripts see that company alone).
 - **Small drifts of vehicles and passengers** can happen. They are repaired by a reload if they last.
 - **Two players changing the same place within about two seconds**: the build made second is left out on every game when it no longer fits the place, and has to be made again (with one company per player, the chat tells its player).
-- **Every build of another player stops your game a moment**, the time to apply it at the same game time everywhere: about half a second for a road or a module, about a second for a module of a very big station.
+- **Other players' builds no longer stop your game** (since 0.7.14, host settings « without waiting » and « without stopping », on by default). A very big build can still make your game stutter briefly while it is applied.
 
 What's planned: [ROADMAP](docs/ROADMAP.txt). What changed: [CHANGELOG](docs/CHANGELOG.txt).
 
@@ -161,7 +161,7 @@ What's planned: [ROADMAP](docs/ROADMAP.txt). What changed: [CHANGELOG](docs/CHAN
 
 | Problem | What to do |
 |---|---|
-| Resyncs every few minutes, even without building anything | Check that every player has the **same game build**: it's written at the top of each report and in the host's launcher log (« game ready ... build »). Update the game in Steam (*Properties → Installed Files → Verify integrity*). Check the **DLCs** too: the host's player list says « (different DLCs) » when they differ. |
+| Resyncs every few minutes, even without building anything | Check that every player has the **same game build**: it's written at the top of each report and in the host's launcher log (« game ready ... build »). Update the game in its store (Steam: *Properties → Installed Files → Verify integrity*; GOG Galaxy and the Epic launcher have the same check). Check the **DLCs** too: the host's player list says « (different DLCs) » when they differ. |
 | The launcher's log says « MPFever.exe is not in a version folder » or « winhttp.dll missing » | `MPFever.exe` was started outside its folder. Extract the whole zip again and start it from there. |
 | « Savegame not found » when hosting | Update to 0.4.1 or later. |
 | The guest can't connect | Check the port (above), or try the host's IPv6 address shown in the launcher. |
@@ -173,12 +173,11 @@ A question, or stuck? Ask in **#help** on the [Discord](https://discord.gg/DfMxF
 
 Open an [issue](https://github.com/dkdknight/MPFever/issues) with your logs. **Without logs, a desync or a crash can rarely be found.** With them, most bugs are fixed in the next version.
 
-1. **Click « Report a problem »:** in the MPFever window of the game, or in the launcher. MPFever zips every log, shows the zip and opens an issue already filled in. After a crash, it offers it by itself. Your Windows account and PC names, Steam account numbers and public IP address are taken out of the logs.
+1. **Click « Report a problem » right after the problem:** in the MPFever window of the game, or in the launcher. That's all: in a session, MPFever gathers **every player's logs** (the host's too) in one zip, sends it to MPFever's report service and opens the GitHub issue by itself, no GitHub account needed. If the service can't be reached, it shows the zip and opens an issue already filled in: drag the zip into it. After a crash, it offers it by itself. Your Windows account and PC names, Steam account numbers and public IP address are taken out of the logs.
 2. **Say what you did just before, and when** (your clock): built a station, bulldozed a road... Say who was the host.
-3. **Ask every player to send theirs**, the host's above all.
-4. **The savegame helps a lot.** With it, we can replay the problem here. It's usually over 25 MB: share it through Google Drive, Dropbox or WeTransfer. After a resync, add `MPFever resync.sav` too.
+3. **The savegame helps a lot.** With it, we can replay the problem here. It's usually over 25 MB: share it through Google Drive, Dropbox or WeTransfer. After a resync, add `MPFever resync.sav` too.
 
-The savegames are in `Steam\userdata\<number>\3493540\local\save\`.
+The savegames are in `Steam\userdata\<number>\3493540\local\save\` (Steam) or `%APPDATA%\Transport Fever 3\save\` (GOG and Epic).
 
 ---
 
