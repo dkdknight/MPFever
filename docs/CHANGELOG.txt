@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.8.3 - (in progress)
+
 0.8.2 - 2026-11-11: the players' reports tell where a drift begins (drift diagnostic)
   - DIAGNOSTIC (the people drift of #150, the user's request: "the players' logs must tell for sure where the drift comes from,
     without costing their games anything"): reproduced on 2026-11-11 with two PCs and no input (copy "Test Leawood", about one
