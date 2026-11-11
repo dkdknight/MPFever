@@ -156,6 +156,22 @@ local function flatten(v, path, out, d)
 	end
 end
 
+-- (0.8.2) the dump of a drift kept apart, in three slots by turn (sdump_drift_<0..2>.txt, the check's number on its first line),
+-- and the native module's rings asked for
+SDUMP.keptN = SDUMP.keptN or 0
+function SDUMP.keepDrift(n, dump)
+	local slot = SDUMP.keptN % 3
+	SDUMP.keptN = SDUMP.keptN + 1
+	local f = C.IO.open(C.DIR .. BS .. "sdump_drift_" .. tostring(slot) .. ".txt", "wb")
+	if f then
+		f:write("t = " .. tostring(gameTime()) .. " check " .. tostring(n), NL, table.concat(dump, NL), NL)
+		f:close()
+	end
+	local w = C.IO.open(C.DIR .. BS .. "native_drift.txt", "wb")
+	if w then w:write(tostring(n), NL); w:close() end
+	log("drift diagnostic: check " .. tostring(n) .. " kept (sdump_drift_" .. tostring(slot) .. ".txt, the native module's rings asked for)")
+end
+
 local function extendedParts(parts, checkN)
 	local dump = SDUMP.on and (not SDUMP.all or SDUMP.n < 40 or os.getenv("MPFEVER_SDUMP") == "all") and {}
 	-- (0.7.5) the dump's cost, apart (K.dumpCost, in the "hash costs" lines): the dump is a diagnostic, the check holds the
@@ -270,6 +286,10 @@ local function extendedParts(parts, checkN)
 			if pAfter and SDUMP.forcedN == checkN - 1 and os.getenv("MPFEVER_SDUMPPERSONSAFTER") ~= "each" then pAfter = false end
 			SDUMP.forcedN = checkN
 		end
+		-- (0.8.2, the drift diagnostic) the first forced check of a run, the same check on every game: kept apart from the ring
+		-- (sdump_drift_<check>.txt, the last 3) and the native module asked for its rings (native_drift.txt, see InstallDriftDiag),
+		-- so that a report made an hour later still holds the moment the games parted. MPFEVER_DRIFTKEEP=0: not
+		SDUMP.driftN = (pAfter and type(checkN) == "number" and os.getenv("MPFEVER_DRIFTKEEP") ~= "0") and checkN or nil
 		if SDUMP.persons or pAfter then
 			pcall(function()
 				local CT = api.type.ComponentType
@@ -332,6 +352,10 @@ local function extendedParts(parts, checkN)
 			f:write("t = " .. tostring(gameTime()), NL, table.concat(dump, NL), NL)
 			f:close()
 		end)
+		if SDUMP.driftN then
+			pcall(SDUMP.keepDrift, SDUMP.driftN, dump)
+			SDUMP.driftN = nil
+		end
 		K.dumpCost = tDump + os.clock() - tWorld
 	end
 	-- cargo waiting in buildings (industries, warehouses, stations)

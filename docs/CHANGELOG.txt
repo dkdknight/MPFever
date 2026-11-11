@@ -1,7 +1,24 @@
 MPFever - Changelog
 ===================
 
-0.8.2 - (in progress)
+0.8.2 - 2026-11-11: the players' reports tell where a drift begins (drift diagnostic)
+  - DIAGNOSTIC (the people drift of #150, the user's request: "the players' logs must tell for sure where the drift comes from,
+    without costing their games anything"): reproduced on 2026-11-11 with two PCs and no input (copy "Test Leawood", about one
+    drift an hour), the drift begins with one entity made or removed on one game only (the first one found: an aircraft's
+    octree node, step 880451); from there every new person and rebuilt town building takes another entity id, and the people
+    differ minutes later. The entity log that showed it (MPFEVER_ENTLOG) writes 90 MB an hour. Now, on every game by default:
+    - the native module keeps in memory the last 131072 entity operations of the simulation's engine (step, id, the engine
+      system whose update made it, by its class name, the same on Steam, GOG and Epic copies, and the caller) and a digest of
+      each of the last 16384 steps (the free-id queue, the step's additions and removals); nothing is written while the game
+      runs;
+    - at the first forced check after a difference (the same check on every game), the mod keeps its dump apart
+      (sdump_drift_<0..2>.txt: people, town buildings, vehicles, game scripts) and asks the native module for its rings, which it
+      writes from a thread of its own (drift_<check>_steps.txt, drift_<check>_ops.txt, the last 3 checks): « Report a problem »
+      sends them with every player's logs, even an hour later;
+    - tools/drift_diff.py compares two games' files: the first step whose operations differ, the entities of one game only and
+      the system that made them, and the first step whose free-id queue differs.
+    Read only: nothing the simulation decides changes (a game with it and one without stay alike). MPFEVER_DRIFTDIAG=0 (native) /
+    MPFEVER_DRIFTKEEP=0 (the mod's request and dump): off. Test: tests/test_driftdiag082.py.
   - TESTS (more reliable tests, the user's request after the 0.7.17 regression): tests/test_globals081.py, a luacheck-like check
     of every Lua file of the mod (tests/luascan.py follows the scopes, nothing downloaded): a name read as a global must be a
     standard Lua one or one of the game's, listed with where it comes from (api, game, app, ug_require, _, _react...), and no

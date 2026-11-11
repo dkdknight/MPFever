@@ -1076,6 +1076,7 @@ static volatile long g_batchStep = -1;     // (the step the simulation thread sa
 static u32 StepOf(u8* gs);
 static bool BatchLog() { if (g_batchLog < 0) g_batchLog = GetEnvironmentVariableA("MPFEVER_BATCHLOG", 0, 0) > 0 ? 1 : 0; return g_batchLog > 0; }
 
+static void DriftPoll();   // (0.8.2, the drift diagnostic, see InstallDriftDiag)
 extern "C" u64 PreIterDetour(void* a)
 {
     g_iter++;
@@ -1088,6 +1089,7 @@ extern "C" u64 PreIterDetour(void* a)
     if (g_freeqLog) FreeqLine(a ? *(u8**)((u8*)a + 8) : 0);
     if (BatchLog()) { g_batchStep = (long)StepOf(a ? *(u8**)((u8*)a + 8) : 0); Buf l; l.str("bl iter ").dec(g_iter).str(" step ").dec(g_batchStep).str(" batch ").dec(g_batchN).str(" us ").dec(NowUs()); LogLine(l); }
     WatchArm(a ? *(u8**)((u8*)a + 8) : 0);
+    DriftPoll();
     // commands moved aside (exact-iteration builds, or the MPFEVER_DEFER_ITERS test) whose iteration has come, in queue order
     for (unsigned i = g_defHead; i != g_defTail; i++) {
         Deferred& d = g_def[i % 256];
@@ -3014,6 +3016,8 @@ static void EntOff(const char* what, int entity, void* ret)
 
 static volatile long g_addCallerTid = 0;   // (the thread and the caller of AddEntity seen through this detour, see FreshAdd)
 static volatile u32 g_addCaller = 0;
+static bool g_driftOn;
+static void DriftOp(int entity, bool add, void* ret);
 extern "C" int* AddEntityDetour(void* engine, int* out)
 {
     g_addCaller = (u32)((uptr)_ReturnAddress() - g_base);
@@ -3025,6 +3029,7 @@ extern "C" int* AddEntityDetour(void* engine, int* out)
     _InterlockedIncrement(&g_entAdd[e][k]);
     if (e == 0 && k != 1 && g_simTid) EntOff("added", r ? *r : -1, _ReturnAddress());
     if (g_entLog && r) EntSeq('+', *r, _ReturnAddress(), e, k);
+    if (g_driftOn && r && e == 0 && k == 1) DriftOp(*r, true, _ReturnAddress());
     return r;
 }
 
@@ -3035,6 +3040,7 @@ extern "C" void RemoveEntityDetour(void* engine, int entity, u8 flag)
     _InterlockedIncrement(&g_entRem[e][k]);
     if (e == 0 && k != 1 && g_simTid) EntOff("removed", entity, _ReturnAddress());
     if (g_entLog) EntSeq('-', entity, _ReturnAddress(), e, k);
+    if (g_driftOn && e == 0 && k == 1) DriftOp(entity, false, _ReturnAddress());
     g_remEntOrig(engine, entity, flag);
 }
 
@@ -3606,6 +3612,244 @@ static bool Splice(u8*& mem, u32 rva, int steal, SpliceFn fn)
     VirtualProtect(site, steal, old, &old);
     FlushInstructionCache(GetCurrentProcess(), site, steal);
     return true;
+}
+
+// ---------------------------------------------------------------- drift diagnostic (0.8.2, MPFEVER_DRIFTDIAG)
+// The people drift of #150, reproduced on 2026-11-11 (two PCs, "Test Leawood", no input): every new person and rebuilt town
+// building took another entity id on each game, after an entity existed on one game only for a moment; the entity log of test C
+// (MPFEVER_ENTLOG, 90 MB an hour) showed the first such entity (an aircraft's octree node, step 880451), long before the people
+// differed. That log is too heavy for the players' games. Here, by default, at a cost of a few counters:
+//   - every entity the simulation's engine adds or removes on its thread goes into a ring in memory (the last 131072: id, step,
+//     the engine system whose update made it, its caller), nothing written while the game runs;
+//   - every step's digest goes into a second ring (the last 16384 steps): the free-id queue (size, sum, hash) and the step's
+//     additions and removals (counts and an order-free hash of their ids);
+//   - the engine system running is known from its update loop (ecs::Engine::Update, "mov rcx,[rdi] / mov rdx,rsi" before each
+//     system's call), by its class name (RTTI, the same on Steam, GOG and Epic copies);
+//   - when the mod's check finds a lasting difference (its first forced check, on every game at the same check), the mod writes
+//     native_drift.txt and both rings are written to drift_<check>_steps.txt / drift_<check>_ops.txt by a thread of their own
+//     (the last 3 kept), with the report's files. tools/drift_diff.py compares two games' files: the first step that differs,
+//     its operations, and the system that made them.
+// Read only: nothing the simulation decides changes, a game with it and another without stay alike. MPFEVER_DRIFTDIAG=0: off.
+
+static bool g_entDetours = false;                 // (AddEntity/RemoveEntity hooked, shared with MPFEVER_ENTWATCH)
+static volatile u32 g_diagStep = 0;
+static volatile long g_curSys = 0;                // index into g_sysVt / g_sysName (0: no system's update under way)
+struct DiagOp { u32 step; i32 id; u16 sys; u16 add; u32 caller; };
+struct DiagStep { u32 step; u32 qsize; u64 qsum; u32 qhash; u32 adds; u32 rems; u32 setHash; u32 pad; };
+static const long DIAG_OPS = 1 << 17, DIAG_STEPS = 1 << 14;
+static DiagOp* g_dOps = 0;
+static volatile long g_dOpN = 0;
+static DiagStep* g_dSteps = 0;
+static volatile long g_dStepN = 0;
+static u32 g_stepAdds = 0, g_stepRems = 0, g_stepSet = 0;
+static u64 g_sysVt[256];
+static char g_sysName[256][48];
+static volatile long g_sysN = 1;
+static long g_driftLast = 0;
+static long g_driftKept[3] = { 0, 0, 0 };
+static long g_driftPoll = 0;
+
+static inline u32 MixId(i32 id, u32 add) { u32 x = (u32)id * 2654435761u ^ (add ? 0x9e3779b9u : 0x7f4a7c15u); x ^= x >> 15; x *= 2246822519u; x ^= x >> 13; return x; }
+
+// a system's class name from its vtable (MSVC x64 RTTI: the complete object locator before the vtable, its type descriptor's name)
+static void SysClassName(u64 vt, char* out, int cap)
+{
+    out[0] = '?'; out[1] = 0;
+    if (!Readable((void*)(vt - 8), 8)) return;
+    u64 col = *(u64*)(vt - 8);
+    if (!Readable((void*)col, 24) || *(u32*)col != 1) return;
+    u8* td = (u8*)(g_base + *(u32*)(col + 12));
+    if (!Readable(td + 16, 4)) return;
+    const char* n = (const char*)(td + 16);
+    if (n[0] == '.' && n[1] == '?' && n[2] == 'A' && (n[3] == 'V' || n[3] == 'U')) n += 4;
+    int k = 0;
+    for (int i = 0; k < cap - 1 && i < 120 && Readable(n + i, 1) && n[i]; i++) {
+        if (n[i] == '@' && n[i + 1] == '@') break;
+        out[k++] = n[i] == '@' ? '.' : n[i];
+    }
+    out[k] = 0;
+}
+
+static long SysIndex(u64 vt)
+{
+    long n = g_sysN;
+    for (long i = 1; i < n; i++) if (g_sysVt[i] == vt) return i;
+    if (n >= 256) return 0;
+    g_sysVt[n] = vt;
+    SysClassName(vt, g_sysName[n], (int)sizeof(g_sysName[n]));
+    g_sysN = n + 1;
+    return n;
+}
+
+// ecs::Engine::Update's loop, before each system's update call: rdi points to the system's slot in the engine's list
+static void DiagSystem(SavedRegs* r)
+{
+    if ((long)GetCurrentThreadId() != g_simTid) return;
+    u64 slot = r->rdi;
+    if (!Readable((void*)slot, 8)) return;
+    u64 sys = *(u64*)slot;
+    if (!sys || !Readable((void*)sys, 8)) return;
+    g_curSys = SysIndex(*(u64*)sys);
+}
+// (after the loop: the next additions come from elsewhere, commands, notifications)
+static void DiagSystemsDone(SavedRegs*) { if ((long)GetCurrentThreadId() == g_simTid) g_curSys = 0; }
+
+// the simulation's engine on its thread only (the interface's copy follows at its own pace and makes the same entities later)
+static void DriftOp(int entity, bool add, void* ret)
+{
+    if (!g_dOps) return;
+    long i = g_dOpN++ & (DIAG_OPS - 1);
+    DiagOp& o = g_dOps[i];
+    o.step = g_diagStep; o.id = entity; o.sys = (u16)g_curSys; o.add = add ? 1 : 0; o.caller = (u32)((uptr)ret - g_base);
+    if (add) g_stepAdds++; else g_stepRems++;
+    g_stepSet += MixId(entity, add ? 1 : 0);
+}
+
+static bool QueueDigest(u8* eng, u32* size, u64* sum, u32* hash)
+{
+    u8* q = eng + 0xd8;
+    *size = 0; *sum = 0; *hash = 2166136261u;
+    if (!Readable(q, 0x28)) return false;
+    AcquireSRWLockExclusive(&g_fqLock);
+    u64 map = *(u64*)(q + 8), ms = *(u64*)(q + 0x10), off = *(u64*)(q + 0x18), n = *(u64*)(q + 0x20);
+    bool ok = true;
+    if (n && (!map || !ms || (ms & (ms - 1)) || n > ms * 4 || n > (32u << 20) || !Readable((void*)map, ms * 8))) ok = false;
+    for (u64 i = 0; ok && i < n && i < 65536; i++) {
+        u64 j = off + i;
+        i32* blk = *(i32**)(map + ((j >> 2) & (ms - 1)) * 8);
+        if (!blk || ((u64)blk & 3)) { ok = false; break; }
+        i32 v = blk[j & 3];
+        *sum += (u32)v;
+        *hash = (*hash ^ (u32)v) * 16777619u;
+    }
+    ReleaseSRWLockExclusive(&g_fqLock);
+    *size = (u32)n;
+    return ok;
+}
+
+// before every step of the simulation's engine (the steps' wrapper, see InstallStepSnap): the step just made, then the next one
+static void DriftStep(void* engine)
+{
+    if (!g_dSteps) return;
+    u8* gs = (u8*)g_slot;
+    if (!gs || !Readable(gs + 0x18, 0x18) || *(void**)(gs + 0x18) != engine) return;
+    u32 step = StepOf(gs);
+    if (step == 0xFFFFFFFFu) return;
+    long i = g_dStepN++ & (DIAG_STEPS - 1);
+    DiagStep& d = g_dSteps[i];
+    d.step = g_diagStep; d.adds = g_stepAdds; d.rems = g_stepRems; d.setHash = g_stepSet; d.pad = 0;
+    QueueDigest((u8*)engine, &d.qsize, &d.qsum, &d.qhash);
+    g_stepAdds = g_stepRems = g_stepSet = 0;
+    g_diagStep = step;
+}
+
+struct DriftDump { long check; DiagOp* ops; long nOps, opEnd; DiagStep* steps; long nSteps, stepEnd; long sysN; char (*names)[48]; };
+static DWORD WINAPI DriftWriter(void* p)
+{
+    DriftDump* d = (DriftDump*)p;
+    char path[400], nm[64];
+    Buf f; f.str("drift_").dec(d->check).str("_steps.txt");
+    int k = 0; for (; k < f.n && k < 63; k++) nm[k] = f.s[k]; nm[k] = 0;
+    PathOf(path, nm);
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h != INVALID_HANDLE_VALUE) {
+        Buf l; l.str("drift diagnostic of check ").dec(d->check).str(": the last ").dec(d->nSteps).str(" steps of the simulation's engine\r\n")
+            .str("step <s> queue <size> <sum> <hash> adds <n> rems <n> set <order-free hash of the step's additions and removals>\r\n");
+        DWORD w; WriteFile(h, l.s, (DWORD)l.n, &w, 0);
+        for (long i = 0; i < d->nSteps; i++) {
+            const DiagStep& s = d->steps[(d->stepEnd - d->nSteps + i) & (DIAG_STEPS - 1)];
+            Buf b; b.str("step ").dec((i64)s.step).str(" queue ").dec((i64)s.qsize).str(" ").dec((i64)s.qsum).str(" ").dec((i64)s.qhash)
+                .str(" adds ").dec((i64)s.adds).str(" rems ").dec((i64)s.rems).str(" set ").dec((i64)s.setHash).str("\r\n");
+            WriteFile(h, b.s, (DWORD)b.n, &w, 0);
+        }
+        CloseHandle(h);
+    }
+    Buf g; g.str("drift_").dec(d->check).str("_ops.txt");
+    for (k = 0; k < g.n && k < 63; k++) nm[k] = g.s[k]; nm[k] = 0;
+    PathOf(path, nm);
+    h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h != INVALID_HANDLE_VALUE) {
+        Buf l; l.str("drift diagnostic of check ").dec(d->check).str(": the last ").dec(d->nOps).str(" entities the simulation's engine added (+) or removed (-)\r\n")
+            .str("<step> <+|-><entity> <engine system whose update made it, - for none> <caller rva>\r\n");
+        DWORD w; WriteFile(h, l.s, (DWORD)l.n, &w, 0);
+        static char chunk[1 << 16];
+        int cn = 0;
+        for (long i = 0; i < d->nOps; i++) {
+            const DiagOp& o = d->ops[(d->opEnd - d->nOps + i) & (DIAG_OPS - 1)];
+            Buf b; b.dec((i64)o.step).str(o.add ? " +" : " -").dec((i64)o.id).str(" ").str(o.sys && o.sys < d->sysN ? d->names[o.sys] : "-").str(" ").hex(o.caller).str("\r\n");
+            if (cn + b.n > (int)sizeof(chunk)) { WriteFile(h, chunk, (DWORD)cn, &w, 0); cn = 0; }
+            memcpy(chunk + cn, b.s, b.n); cn += b.n;
+        }
+        if (cn) WriteFile(h, chunk, (DWORD)cn, &w, 0);
+        CloseHandle(h);
+    }
+    Buf done; done.str("drift diagnostic: check ").dec(d->check).str(" written (").dec(d->nSteps).str(" steps, ").dec(d->nOps).str(" entity operations)"); LogLine(done);
+    HeapFree(GetProcessHeap(), 0, d->ops); HeapFree(GetProcessHeap(), 0, d->steps); HeapFree(GetProcessHeap(), 0, d->names); HeapFree(GetProcessHeap(), 0, d);
+    return 0;
+}
+
+// the mod's request (native_drift.txt: the check's number), polled on the simulation's thread every 32 iterations; the rings
+// copied there at once, written by a thread of their own
+static void DriftPoll()
+{
+    if (!g_driftOn || (++g_driftPoll & 31)) return;
+    char path[400];
+    PathOf(path, "native_drift.txt");
+    HANDLE f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (f == INVALID_HANDLE_VALUE) return;
+    char b[24]; DWORD got = 0;
+    ReadFile(f, b, sizeof(b) - 1, &got, 0);
+    CloseHandle(f);
+    long v = 0;
+    for (DWORD i = 0; i < got && b[i] >= '0' && b[i] <= '9'; i++) v = v * 10 + (b[i] - '0');
+    if (v <= 0 || v == g_driftLast) return;
+    g_driftLast = v;
+    DriftDump* d = (DriftDump*)HeapAlloc(GetProcessHeap(), 0, sizeof(DriftDump));
+    if (!d) return;
+    d->check = v;
+    d->opEnd = g_dOpN; d->nOps = d->opEnd < DIAG_OPS ? d->opEnd : DIAG_OPS;
+    d->stepEnd = g_dStepN; d->nSteps = d->stepEnd < DIAG_STEPS ? d->stepEnd : DIAG_STEPS;
+    d->sysN = g_sysN;
+    d->ops = (DiagOp*)HeapAlloc(GetProcessHeap(), 0, sizeof(DiagOp) * DIAG_OPS);
+    d->steps = (DiagStep*)HeapAlloc(GetProcessHeap(), 0, sizeof(DiagStep) * DIAG_STEPS);
+    d->names = (char(*)[48])HeapAlloc(GetProcessHeap(), 0, sizeof(g_sysName));
+    if (!d->ops || !d->steps || !d->names) { Buf l; l.str("drift diagnostic: no memory for check ").dec(v); LogLine(l); return; }
+    memcpy(d->ops, g_dOps, sizeof(DiagOp) * DIAG_OPS);
+    memcpy(d->steps, g_dSteps, sizeof(DiagStep) * DIAG_STEPS);
+    memcpy(d->names, g_sysName, sizeof(g_sysName));
+    // (the files of the check before the last three removed: a long session keeps three drifts)
+    long old = g_driftKept[0];
+    g_driftKept[0] = g_driftKept[1]; g_driftKept[1] = g_driftKept[2]; g_driftKept[2] = v;
+    if (old > 0) {
+        for (int w = 0; w < 2; w++) {
+            Buf o; o.str("drift_").dec(old).str(w ? "_ops.txt" : "_steps.txt");
+            char nm[64]; int k = 0; for (; k < o.n && k < 63; k++) nm[k] = o.s[k]; nm[k] = 0;
+            PathOf(path, nm); DeleteFileA(path);
+        }
+    }
+    HANDLE t = CreateThread(0, 0, DriftWriter, d, 0, 0);
+    if (t) CloseHandle(t); else { Buf l; l.str("drift diagnostic: writer not started"); LogLine(l); }
+}
+
+// called before InstallStepSnap: the rings, the entity hooks and the system loop's two splices
+static void InstallDriftDiag()
+{
+    char v[4] = {};
+    if (GetEnvironmentVariableA("MPFEVER_DRIFTDIAG", v, 3) > 0 && v[0] == '0') { Buf b; b.str("drift diagnostic: off (MPFEVER_DRIFTDIAG=0)"); LogLine(b); return; }
+    if (!g_layout || !RVA_ADDENTITY || !RVA_REMOVEENTITY) { Buf b; b.str("drift diagnostic: off (the entity functions not found)"); LogLine(b); return; }
+    u32 loop = FindSigRva("48 8B 0F 48 8B D6 C5 F8 28 DE 4C 8B C0 4C 8B 09 41 FF 51 58 48 83 C7 08 49 3B FE");
+    static const u8 tail[] = { 0x75, 0x8C, 0x48, 0x8B, 0x5C, 0x24, 0x68, 0x48, 0x8B, 0x6C, 0x24, 0x70 };
+    if (!loop || memcmp((void*)(g_base + loop + 27), tail, sizeof(tail)) != 0) { Buf b; b.str("drift diagnostic: off (the engine's system loop not found)"); LogLine(b); return; }
+    g_dOps = (DiagOp*)HeapAlloc(GetProcessHeap(), 8, sizeof(DiagOp) * DIAG_OPS);
+    g_dSteps = (DiagStep*)HeapAlloc(GetProcessHeap(), 8, sizeof(DiagStep) * DIAG_STEPS);
+    u8* mem = AllocNear(0x200);
+    if (!g_dOps || !g_dSteps || !mem) { Buf b; b.str("drift diagnostic: off (no memory)"); LogLine(b); return; }
+    if (!Splice(mem, loop, 6, DiagSystem) || !Splice(mem, loop + 29, 5, DiagSystemsDone)) { Buf b; b.str("drift diagnostic: off (the system loop not spliced)"); LogLine(b); return; }
+    InstallDetour(RVA_ADDENTITY, P_ADDENTITY, sizeof(P_ADDENTITY), (void*)&AddEntityDetour, (void**)&g_addEntOrig);
+    InstallDetour(RVA_REMOVEENTITY, P_REMOVEENTITY, sizeof(P_REMOVEENTITY), (void*)&RemoveEntityDetour, (void**)&g_remEntOrig);
+    g_entDetours = true;
+    g_driftOn = true;
+    Buf b; b.str("drift diagnostic: on (entity operations ring ").dec(DIAG_OPS).str(", steps ring ").dec(DIAG_STEPS).str(", system loop at ").hex(loop).str(")"); LogLine(b);
 }
 
 struct OrderFix { const char* name; const char* sig; int offset; int steal; SpliceFn fn; };
@@ -5202,6 +5446,7 @@ extern "C" u64 StepWithSnap(void* engine, u32 world, u64 dt)
 {
     if (g_stepInBatch++ > 0 && g_snap) { g_snap(engine); _InterlockedIncrement(&g_snapExtra); }
     if (g_freeqExact) FreeqStep(engine);
+    if (g_driftOn) DriftStep(engine);
     return g_engStep(engine, world, dt);
 }
 static void InstallStepSnap()
@@ -5209,7 +5454,7 @@ static void InstallStepSnap()
     // (also with MPFEVER_FREEQLOG, 0.6.8: the free-id queue written before each step that is a multiple of 50, the same steps on
     // every game whatever their batches)
     bool snapTest = GetEnvironmentVariableA("MPFEVER_STEPSNAP", 0, 0) > 0, freeq = GetEnvironmentVariableA("MPFEVER_FREEQLOG", 0, 0) > 0;
-    if (!snapTest && !freeq) return;
+    if (!snapTest && !freeq && !g_driftOn) return;
     // the steps function's prologue: "... mov rcx,[rcx+18h] / call snapshot"; its loop: "mov rcx,[rbp+8] / mov r8,r14 /
     // mov edx,[rcx+208h] / mov rcx,[rcx+18h] / call step"
     u32 a = FindSigRva("48 8B 49 08 48 89 5C 24 60 4C 89 64 24 40 4C 89 6C 24 38 48 8B 49 18 E8");
@@ -5233,6 +5478,7 @@ static void InstallStepSnap()
     Buf l;
     if (snapTest) l.str("step snapshot: TEST the batch's copy of previous values made before every step (MPFEVER_STEPSNAP)");
     if (freeq) l.str(snapTest ? "; " : "").str("free-id queue logged before every step that is a multiple of 50 (MPFEVER_FREEQLOG)");
+    if (g_driftOn) l.str(snapTest || freeq ? "; " : "").str("drift diagnostic: every step's digest kept (MPFEVER_DRIFTDIAG)");
     LogLine(l);
 }
 
@@ -5510,6 +5756,7 @@ static DWORD WINAPI Init(void*)
     }
     InstallSmoothPacing();
     InstallNativeStop();
+    InstallDriftDiag();
     InstallStepSnap();
     HookWordReads();
     // (found by their own signatures, on any build where those match exactly once)
@@ -5531,8 +5778,12 @@ static DWORD WINAPI Init(void*)
     if (g_layout && RVA_MONEYCHECK) InstallDetour(RVA_MONEYCHECK, P_MONEYCHECK, sizeof(P_MONEYCHECK), (void*)&MoneyCheckDetour, (void**)&g_moneyOrig);
     if (g_layout && RVA_LINES) InstallDetour(RVA_LINES, P_LINES, sizeof(P_LINES), (void*)&LinesDetour, (void**)&g_linesOrig);
     if (g_layout && RVA_ADDENTITY && RVA_REMOVEENTITY && GetEnvironmentVariableA("MPFEVER_ENTWATCH", 0, 0) > 0) {
-        InstallDetour(RVA_ADDENTITY, P_ADDENTITY, sizeof(P_ADDENTITY), (void*)&AddEntityDetour, (void**)&g_addEntOrig);
-        InstallDetour(RVA_REMOVEENTITY, P_REMOVEENTITY, sizeof(P_REMOVEENTITY), (void*)&RemoveEntityDetour, (void**)&g_remEntOrig);
+        // ((0.8.2) hooked already by the drift diagnostic, see InstallDriftDiag)
+        if (!g_entDetours) {
+            InstallDetour(RVA_ADDENTITY, P_ADDENTITY, sizeof(P_ADDENTITY), (void*)&AddEntityDetour, (void**)&g_addEntOrig);
+            InstallDetour(RVA_REMOVEENTITY, P_REMOVEENTITY, sizeof(P_REMOVEENTITY), (void*)&RemoveEntityDetour, (void**)&g_remEntOrig);
+            g_entDetours = true;
+        }
         g_entWatch = true;
         if (GetEnvironmentVariableA("MPFEVER_ENTLOG", 0, 0) > 0) {
             char path[400];
