@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.8.4 - (in progress)
+  - CHANGE (#233 #251, the user's choice: warn everybody): a player's game that runs WITHOUT a mod of the host's game taken for
+    personal by hand (by the host or by this player), or WITH one of its own taken by hand, says so to every player in the
+    session's chat, once per session ("MPFever: this game runs WITHOUT ... If they change the game, the games will desync").
+    In #233/#251 Richard's game ran without DB Class 430 (a vehicle mod with a game script) and the games drifted apart. Mods
+    found personal by their files (the interface only) are left out without a word, as before. MPFEVER_MODRISKCHAT=0: as
+    before. Test: tests/test_modriskchat084.py.
   - FIX (CRASH, #253): a game replaying the removal of a stop or signal from a street segment whose objects already differed on
     that game (one more object, or another kind at its rank) took another object and stopped (assertion GetComponentDataIndex,
     13 s after the games parted). Such a replay is no longer built: the games differ already, a resynchronisation follows.

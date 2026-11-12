@@ -344,6 +344,8 @@ namespace MPFever
         static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds", "personsDigest", "stepsDigest" };
         // (0.8.3) the drift rings asked for once per run at the first check whose steps' digests differ (a reload starts a new run)
         bool stepsDumped;
+        // (0.8.4) the risky personal mods of this player's load last told in the chat (see Mods.RiskyPlan), once per session
+        string riskyAnnounced = "";
         string lastDiagDiffs = "";
         // game state that is never a local measure, even when it differs right after a reload (a company a game missed must be seen)
         // ((0.7.5) "edges2": the segments' second half, see the checks' halves in the bridge's simHash)
@@ -2680,7 +2682,7 @@ namespace MPFever
             hostSaveSha = ""; hostSaveState = ""; hostSaveLocal = null;   // (a lobby opened again is looked at again)
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
             resyncing = false; resyncDropping = false; resyncSending = false; resyncWaiting.Clear(); ignoredParts.Clear(); unmeasuredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = ""; stepsDumped = false; lock (partStreak) partStreak.Clear();
-            joinPending = false;
+            joinPending = false; riskyAnnounced = "";
             lock (reviewing) reviewing.Clear();
             reviewSend = null; reviewAccepted = null;
             lock (lobbyColorOf) lobbyColorOf.Clear();
@@ -5826,6 +5828,27 @@ namespace MPFever
                     // refund bookings off (see REFUND.freeBuilds in the bridge)
                     File.WriteAllText(Path.Combine(game.Dir, "session_mods.txt"), lobbyMods ?? "");
                     if (plan != "") Log.W(F("[{0}] mods personnels : {1}", "[{0}] personal mods: {1}", game.Name, plan.Trim().Replace("\n", ", ").Replace("\t", " ")));
+                    // (0.8.4, #233 #251: the user's choice, warn everybody) mods taken for personal by hand that this game runs
+                    // without (or with, alone): told to every player in the session's chat, once per session and per list
+                    var risky = Mods.RiskyPlan(lobbyMods);
+                    string riskKey = string.Join(",", risky);
+                    if (risky.Count > 0 && riskKey != riskyAnnounced)
+                    {
+                        riskyAnnounced = riskKey;
+                        var without = risky.Where(x => x.StartsWith("-")).Select(x => x.Substring(1)).ToList();
+                        var with = risky.Where(x => x.StartsWith("+")).Select(x => x.Substring(1)).ToList();
+                        string a = string.Join(", ", without), b = string.Join(", ", with);
+                        string warn = with.Count == 0
+                            ? F("MPFever : ce jeu tourne SANS {0} (mods pris pour personnels à la main). S'ils changent la partie, les jeux vont se désynchroniser : tout le monde doit avoir les mêmes mods.",
+                                "MPFever: this game runs WITHOUT {0} (mods taken for personal by hand). If they change the game, the games will desync: everybody needs the same mods.", a)
+                            : without.Count == 0
+                            ? F("MPFever : ce jeu tourne AVEC {0} en plus (mods pris pour personnels à la main). S'ils changent la partie, les jeux vont se désynchroniser : tout le monde doit avoir les mêmes mods.",
+                                "MPFever: this game runs WITH {0} too (mods taken for personal by hand). If they change the game, the games will desync: everybody needs the same mods.", b)
+                            : F("MPFever : ce jeu tourne SANS {0} et AVEC {1} en plus (mods pris pour personnels à la main). S'ils changent la partie, les jeux vont se désynchroniser : tout le monde doit avoir les mêmes mods.",
+                                "MPFever: this game runs WITHOUT {0} and WITH {1} too (mods taken for personal by hand). If they change the game, the games will desync: everybody needs the same mods.", a, b);
+                        Log.W("[" + game.Name + "] " + warn);
+                        try { clients.FirstOrDefault()?.Send(Msg.Make("chat", game.Name, "{[\"text\"]=" + LuaLit.Quote(warn) + "}")); } catch { }
+                    }
                 }
                 catch (Exception e) { Log.W("load_mods: " + e.Message); }
                 // the host's numbers start again at 1 when its MPFever restarts, while this MPFever and its game remember

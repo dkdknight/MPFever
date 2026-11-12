@@ -25025,6 +25025,45 @@
       "ko": "화물 창고",
       "zh-CN": "货物仓库",
       "zh-TW": "貨物倉庫"
+    },
+    "MPFever: this game runs WITHOUT {0} (mods taken for personal by hand). If they change the game, the games will desync: everybody needs the same mods.": {
+      "de": "MPFever: Dieses Spiel läuft OHNE {0} (von Hand als persönlich gewählte Mods). Wenn sie das Spiel verändern, laufen die Spiele auseinander: Alle brauchen dieselben Mods.",
+      "es": "MPFever: esta partida funciona SIN {0} (mods marcados como personales a mano). Si cambian la partida, las partidas se desincronizarán: todos necesitan los mismos mods.",
+      "it": "MPFever: questa partita gira SENZA {0} (mod scelte come personali a mano). Se cambiano la partita, le partite si desincronizzeranno: tutti devono avere le stesse mod.",
+      "nl": "MPFever: dit spel draait ZONDER {0} (mods met de hand als persoonlijk gekozen). Als ze het spel veranderen, raken de spellen uit sync: iedereen heeft dezelfde mods nodig.",
+      "pl": "MPFever: ta gra działa BEZ {0} (mody ręcznie oznaczone jako osobiste). Jeśli zmieniają grę, gry się rozsynchronizują: wszyscy potrzebują tych samych modów.",
+      "pt-BR": "MPFever: este jogo roda SEM {0} (mods marcados como pessoais à mão). Se eles mudam o jogo, os jogos vão dessincronizar: todos precisam dos mesmos mods.",
+      "ru": "MPFever: эта игра работает БЕЗ {0} (моды, вручную отмеченные как личные). Если они меняют игру, игры рассинхронизируются: всем нужны одинаковые моды.",
+      "ja": "MPFever: このゲームは {0} なしで動いています（手動で個人用にしたMod）。ゲームに影響する場合、ゲーム同士が非同期になります。全員が同じModを使う必要があります。",
+      "ko": "MPFever: 이 게임은 {0} 없이 실행됩니다(직접 개인용으로 지정한 모드). 게임을 바꾸는 모드라면 게임이 비동기화됩니다. 모두 같은 모드가 필요합니다.",
+      "zh-CN": "MPFever：此游戏在没有 {0} 的情况下运行（手动设为个人的模组）。如果它们会改变游戏，各游戏将不同步：所有人都需要相同的模组。",
+      "zh-TW": "MPFever：此遊戲在沒有 {0} 的情況下執行（手動設為個人的模組）。如果它們會改變遊戲，各遊戲將不同步：所有人都需要相同的模組。"
+    },
+    "MPFever: this game runs WITH {0} too (mods taken for personal by hand). If they change the game, the games will desync: everybody needs the same mods.": {
+      "de": "MPFever: Dieses Spiel läuft zusätzlich MIT {0} (von Hand als persönlich gewählte Mods). Wenn sie das Spiel verändern, laufen die Spiele auseinander: Alle brauchen dieselben Mods.",
+      "es": "MPFever: esta partida funciona además CON {0} (mods marcados como personales a mano). Si cambian la partida, las partidas se desincronizarán: todos necesitan los mismos mods.",
+      "it": "MPFever: questa partita gira anche CON {0} (mod scelte come personali a mano). Se cambiano la partita, le partite si desincronizzeranno: tutti devono avere le stesse mod.",
+      "nl": "MPFever: dit spel draait ook MET {0} (mods met de hand als persoonlijk gekozen). Als ze het spel veranderen, raken de spellen uit sync: iedereen heeft dezelfde mods nodig.",
+      "pl": "MPFever: ta gra działa także Z {0} (mody ręcznie oznaczone jako osobiste). Jeśli zmieniają grę, gry się rozsynchronizują: wszyscy potrzebują tych samych modów.",
+      "pt-BR": "MPFever: este jogo roda também COM {0} (mods marcados como pessoais à mão). Se eles mudam o jogo, os jogos vão dessincronizar: todos precisam dos mesmos mods.",
+      "ru": "MPFever: эта игра работает ещё и С {0} (моды, вручную отмеченные как личные). Если они меняют игру, игры рассинхронизируются: всем нужны одинаковые моды.",
+      "ja": "MPFever: このゲームは {0} も追加して動いています（手動で個人用にしたMod）。ゲームに影響する場合、ゲーム同士が非同期になります。全員が同じModを使う必要があります。",
+      "ko": "MPFever: 이 게임은 {0}도 함께 실행됩니다(직접 개인용으로 지정한 모드). 게임을 바꾸는 모드라면 게임이 비동기화됩니다. 모두 같은 모드가 필요합니다.",
+      "zh-CN": "MPFever：此游戏还额外加载了 {0}（手动设为个人的模组）。如果它们会改变游戏，各游戏将不同步：所有人都需要相同的模组。",
+      "zh-TW": "MPFever：此遊戲還額外載入了 {0}（手動設為個人的模組）。如果它們會改變遊戲，各遊戲將不同步：所有人都需要相同的模組。"
+    },
+    "MPFever: this game runs WITHOUT {0} and WITH {1} too (mods taken for personal by hand). If they change the game, the games will desync: everybody needs the same mods.": {
+      "de": "MPFever: Dieses Spiel läuft OHNE {0} und zusätzlich MIT {1} (von Hand als persönlich gewählte Mods). Wenn sie das Spiel verändern, laufen die Spiele auseinander: Alle brauchen dieselben Mods.",
+      "es": "MPFever: esta partida funciona SIN {0} y además CON {1} (mods marcados como personales a mano). Si cambian la partida, las partidas se desincronizarán: todos necesitan los mismos mods.",
+      "it": "MPFever: questa partita gira SENZA {0} e anche CON {1} (mod scelte come personali a mano). Se cambiano la partita, le partite si desincronizzeranno: tutti devono avere le stesse mod.",
+      "nl": "MPFever: dit spel draait ZONDER {0} en ook MET {1} (mods met de hand als persoonlijk gekozen). Als ze het spel veranderen, raken de spellen uit sync: iedereen heeft dezelfde mods nodig.",
+      "pl": "MPFever: ta gra działa BEZ {0} i także Z {1} (mody ręcznie oznaczone jako osobiste). Jeśli zmieniają grę, gry się rozsynchronizują: wszyscy potrzebują tych samych modów.",
+      "pt-BR": "MPFever: este jogo roda SEM {0} e também COM {1} (mods marcados como pessoais à mão). Se eles mudam o jogo, os jogos vão dessincronizar: todos precisam dos mesmos mods.",
+      "ru": "MPFever: эта игра работает БЕЗ {0} и ещё С {1} (моды, вручную отмеченные как личные). Если они меняют игру, игры рассинхронизируются: всем нужны одинаковые моды.",
+      "ja": "MPFever: このゲームは {0} なしで、{1} を追加して動いています（手動で個人用にしたMod）。ゲームに影響する場合、ゲーム同士が非同期になります。全員が同じModを使う必要があります。",
+      "ko": "MPFever: 이 게임은 {0} 없이, {1}을(를) 함께 실행합니다(직접 개인용으로 지정한 모드). 게임을 바꾸는 모드라면 게임이 비동기화됩니다. 모두 같은 모드가 필요합니다.",
+      "zh-CN": "MPFever：此游戏在没有 {0} 的情况下运行，并额外加载了 {1}（手动设为个人的模组）。如果它们会改变游戏，各游戏将不同步：所有人都需要相同的模组。",
+      "zh-TW": "MPFever：此遊戲在沒有 {0} 的情況下執行，並額外載入了 {1}（手動設為個人的模組）。如果它們會改變遊戲，各遊戲將不同步：所有人都需要相同的模組。"
     }
   }
 }

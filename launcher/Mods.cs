@@ -790,6 +790,31 @@ namespace MPFever
             return string.Join("\n", lines) + (lines.Count > 0 ? "\n" : "");
         }
 
+        /// <summary>(0.8.4, #233 #251) The mods of this player's load plan (LoadPlan) that may change the game: taken for personal
+        /// by hand (by the host: "forced", or by this player), not found personal by their files. "-name": left out of this
+        /// player's game, "+id": added to it. In #233/#251 a player's game ran without "DB Class 430" (a vehicle mod with a game
+        /// script) while the host's had it: the games drifted apart. Empty when nothing of the kind (or MPFEVER_MODRISKCHAT=0).</summary>
+        public static List<string> RiskyPlan(string hostList)
+        {
+            var r = new List<string>();
+            if (Environment.GetEnvironmentVariable("MPFEVER_MODRISKCHAT") == "0") return r;
+            var host = Parse(hostList);
+            var hostIds = new HashSet<string>(host.Select(e => e.Id), StringComparer.OrdinalIgnoreCase);
+            foreach (var e in host)
+            {
+                if (BuiltIn(e)) continue;
+                bool personal = e.P != "" || Forced.Contains(e.Id);
+                if (!personal || IsMine(e.Id)) continue;
+                // (the host's "auto" ones change its interface only: left out without risk)
+                if (e.P == "forced" || (e.P == "" && Forced.Contains(e.Id))) r.Add("-" + e.Name);
+            }
+            Dictionary<string, string> all;
+            lock (Known) { if (dirs == null) { dirs = Scan(); dirsAt = DateTime.UtcNow; } all = new Dictionary<string, string>(dirs); }
+            foreach (var id in all.Keys.OrderBy(x => x, StringComparer.Ordinal))
+                if (!hostIds.Contains(id) && !id.Equals("mpfever_1", StringComparison.OrdinalIgnoreCase) && IsMine(id) && Forced.Contains(id) && Info(id).Item3 != "") r.Add("+" + id);
+            return r;
+        }
+
         public sealed class Entry { public string Id, Name, Source, Fp, Kind, P = "", Hub = "", Size = ""; }
 
         public static List<Entry> Parse(string list)
