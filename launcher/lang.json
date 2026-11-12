@@ -25064,6 +25064,19 @@
       "ko": "MPFever: 이 게임은 {0} 없이, {1}을(를) 함께 실행합니다(직접 개인용으로 지정한 모드). 게임을 바꾸는 모드라면 게임이 비동기화됩니다. 모두 같은 모드가 필요합니다.",
       "zh-CN": "MPFever：此游戏在没有 {0} 的情况下运行，并额外加载了 {1}（手动设为个人的模组）。如果它们会改变游戏，各游戏将不同步：所有人都需要相同的模组。",
       "zh-TW": "MPFever：此遊戲在沒有 {0} 的情況下執行，並額外載入了 {1}（手動設為個人的模組）。如果它們會改變遊戲，各遊戲將不同步：所有人都需要相同的模組。"
+    },
+    "The game could not reach Steam and closed at once. Start Steam and sign in, then start MPFever again. Steam and MPFever must run with the same rights: neither « as administrator », or both.": {
+      "de": "Das Spiel konnte Steam nicht erreichen und wurde sofort geschlossen. Starte Steam und melde dich an, dann starte MPFever erneut. Steam und MPFever müssen mit denselben Rechten laufen: keines von beiden « als Administrator », oder beide.",
+      "es": "El juego no pudo conectar con Steam y se cerró al instante. Abre Steam e inicia sesión, luego vuelve a abrir MPFever. Steam y MPFever deben ejecutarse con los mismos permisos: ninguno « como administrador », o los dos.",
+      "it": "Il gioco non è riuscito a raggiungere Steam e si è chiuso subito. Avvia Steam ed effettua l'accesso, poi riavvia MPFever. Steam e MPFever devono avere gli stessi diritti: nessuno dei due « come amministratore », oppure entrambi.",
+      "nl": "Het spel kon Steam niet bereiken en sloot meteen. Start Steam en meld je aan, start daarna MPFever opnieuw. Steam en MPFever moeten met dezelfde rechten draaien: geen van beide « als administrator », of allebei.",
+      "pl": "Gra nie mogła połączyć się ze Steam i od razu się zamknęła. Uruchom Steam i zaloguj się, potem uruchom ponownie MPFever. Steam i MPFever muszą działać z tymi samymi uprawnieniami: żaden « jako administrator » albo oba.",
+      "pt-BR": "O jogo não conseguiu acessar o Steam e fechou na hora. Abra o Steam e entre na sua conta, depois abra o MPFever de novo. Steam e MPFever precisam rodar com as mesmas permissões: nenhum dos dois « como administrador », ou os dois.",
+      "ru": "Игра не смогла связаться со Steam и сразу закрылась. Запустите Steam и войдите в аккаунт, затем снова запустите MPFever. Steam и MPFever должны работать с одинаковыми правами: ни один не « от имени администратора », или оба.",
+      "ja": "ゲームがSteamに接続できず、すぐに終了しました。Steamを起動してサインインし、MPFeverを再度起動してください。SteamとMPFeverは同じ権限で実行する必要があります：どちらも « 管理者として » 実行しないか、両方とも実行してください。",
+      "ko": "게임이 Steam에 연결하지 못해 바로 종료되었습니다. Steam을 실행하고 로그인한 다음 MPFever를 다시 실행하세요. Steam과 MPFever는 같은 권한으로 실행되어야 합니다: 둘 다 « 관리자 권한으로 » 실행하지 않거나, 둘 다 실행하세요.",
+      "zh-CN": "游戏无法连接 Steam，已立即关闭。请启动 Steam 并登录，然后重新启动 MPFever。Steam 和 MPFever 必须以相同权限运行：都不要 « 以管理员身份 » 运行，或者都以管理员身份运行。",
+      "zh-TW": "遊戲無法連線 Steam，已立即關閉。請啟動 Steam 並登入，然後重新啟動 MPFever。Steam 和 MPFever 必須以相同權限執行：都不要 « 以系統管理員身分 » 執行，或者都以系統管理員身分執行。"
     }
   }
 }

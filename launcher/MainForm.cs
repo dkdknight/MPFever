@@ -1584,6 +1584,10 @@ namespace MPFever
                 string code = g?.ExitCode == null ? "?" : (g.ExitCode.Value < 0 || g.ExitCode.Value > 0xFFFF ? "0x" + g.ExitCode.Value.ToString("X8") : g.ExitCode.Value.ToString());
                 Log.W(F("Transport Fever 3 fermé (code {0}{1}).", "Transport Fever 3 closed (code {0}{1}).", code,
                     g != null && g.OtherGameSeen ? T(", un autre jeu sur ce PC", ", another game on this PC") : ""));
+                // (0.8.4, #254) code 53 within seconds: the game did not reach Steam (SteamAPI_Init); the bare code told the player nothing
+                if (SteamUnreachableExit(g?.ExitCode, DateTime.Now - gameStartedAt) && Environment.GetEnvironmentVariable("MPFEVER_STEAMHINT") != "0")
+                    Log.Warn(T("Le jeu n'a pas pu joindre Steam et s'est fermé tout de suite. Lancez Steam et connectez-vous, puis relancez MPFever. Steam et MPFever doivent tourner avec les mêmes droits : aucun des deux « en tant qu'administrateur », ou les deux.",
+                               "The game could not reach Steam and closed at once. Start Steam and sign in, then start MPFever again. Steam and MPFever must run with the same rights: neither « as administrator », or both."));
                 LeaveOnGameExit(); try { BeginInvoke((Action)InstallPendingUpdateThenClose); } catch { }
             };
             MenuStatus();
@@ -1603,6 +1607,10 @@ namespace MPFever
                 new Thread(() => { Thread.Sleep(1000); OnMenuRequest("join", addr, menuGame.Name); }) { IsBackground = true }.Start();
             }
         }
+
+        /// <summary>(0.8.4, #254) The game closed with code 53 less than 30 s after its start: SteamAPI_Init failed (Steam not running,
+        /// or Steam and the game with different rights). A game closed later with 53 is not explained this way.</summary>
+        internal static bool SteamUnreachableExit(int? code, TimeSpan lived) => code == 53 && lived < TimeSpan.FromSeconds(30);
 
         /// <summary>The native module of this game holds the tools' builds no more (native_ctl.txt "enable 0"): the mod of a session
         /// turned it on, and nobody releases them once the session is over (a savegame loaded afterwards: no build went through).</summary>

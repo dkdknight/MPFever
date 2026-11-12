@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.8.4 - (in progress)
+  - FIX (#254): simon's game closed three times in under half a second with code 53, and the launcher only wrote « closed (code
+    53) ». The game did not reach Steam (Steam not running, or Steam and the game with different rights). A game that closes with
+    code 53 less than 30 s after its start now gets a warning: start Steam and sign in, and give Steam and MPFever the same
+    rights (neither as administrator, or both). MPFEVER_STEAMHINT=0: as before. Test: tests/test_steamhint084.py.
   - FIX (#221): LPEM bulldozed 20 tracks with signals; the tool removed 5 segments and joined the pieces left into a new one.
     Replayed by the engine's own removal, the ground was put back otherwise on ls_pa's game (terrain alignment removed
     141.750 there, 99.417 here): a resynchronisation. A removal of tracks the tool joined again is replayed as the tool's own

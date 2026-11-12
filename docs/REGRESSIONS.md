@@ -72,6 +72,7 @@ with its cause and the test that now guards it.
 | A game that runs **without (or with) a mod taken for personal by hand** tells every player in the chat, once per session; interface-only personal mods stay silent, and the load plan (drops/adds) is unchanged (#233 #251). | 0.8.4 | Mods.RiskyPlan, MainForm (load_mods) | test_modriskchat084.py |
 | A stop or signal whose **model belongs to a mod this game does not run** is not replayed (resynchronisation); the game's own models ("::/...") are never looked up, a mod's model found here is replayed as before (#253). | 0.8.4 | G.missingEdgeModel | test_stopobjcheck084.py |
 | A **removal of tracks the tool joined again**: the engine's own removal by default; MPFEVER_TRACKMERGENATIVE=1 (off until a real bulldozer test) replays the tool's native proposal (#221). | 0.8.4 | G.trackMergeNative | test_trackmerge084.py |
+| The game **closed with code 53 within 30 s** of its start gets a warning (Steam not reached: start Steam, same rights for both); a later exit with 53 or any other code: the exit code alone, as before (#254). | 0.8.4 | SteamUnreachableExit | test_steamhint084.py |
 
 ## Regressions found
 
