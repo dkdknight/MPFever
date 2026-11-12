@@ -1,7 +1,9 @@
 MPFever - Changelog
 ===================
 
-0.8.3 - (in progress)
+0.8.4 - (in progress)
+
+0.8.3 - 2026-11-12: industry bulldoze crash fixed, fewer resyncs, loans between companies
   - FIX (CRASH, #230 #231 #242 #245, three times on 2026-11-11): bulldozing an industry (a farm, a quarry) crashed the other
     players' games (assertion AreAllNodesEmpty, TransportNetworkSystem.cpp:635). The replay removed the industry's entrance street
     and the node at its end with the engine's segment removal, plus the constructions of R.removedConstructions, which kept the
