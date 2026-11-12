@@ -38,8 +38,9 @@ try:
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
     f = re.search(r"^G\.trackMergeNative = function\(probe\)\n.*?^end\n", src, re.S | re.M).group(0)
     L.execute("ENVV = {} os.getenv = function(k) return ENVV[k] end G = {}\n" + f)
-    tm = L.eval("""function(addTypes, nRemoved, env)
+    tm = L.eval("""function(addTypes, nRemoved, env, senv)
       ENVV.MPFEVER_TRACKMERGENATIVE = env == nil and "1" or env
+      ENVV.MPFEVER_STREETMERGENATIVE = senv
       local added, removed = {}, {}
       for i, t in ipairs(addTypes) do added[i] = { type = t } end
       for i = 1, nRemoved do removed[i] = { type = 1 } end
@@ -53,6 +54,13 @@ try:
     check("  a street and a track: as before", tm(T(0, 1), 5, None) is False)
     check("  as many added as removed (no removal): as before", tm(T(1, 1), 2, None) is False)
     check("  off by default (unset: as before) until a test with the real bulldozer", tm(T(1), 5, "") is False)
+    # (0.8.4, #255-#261) streets the tool joined again: Eier's -8 +2, then IsNodeLocked on the next street (MPFEVER_STREETMERGENATIVE=1)
+    check("#261: streets joined again (-8 +2), MPFEVER_STREETMERGENATIVE=1: the native proposal", tm(T(0, 0), 8, "", "1") is True)
+    check("  streets with the track switch only: as before", tm(T(0, 0), 8, "1", None) is False)
+    check("  tracks with the street switch only: as before", tm(T(1), 5, "", "1") is False)
+    check("  a street and a track, both switches: as before", tm(T(0, 1), 5, "1", "1") is False)
+    check("  a pure street removal (-2 +0), street switch: the engine's removal", tm(T(), 2, "", "1") is False)
+    check("  streets: off by default", tm(T(0, 0), 8, "", None) is False)
 except ImportError:
     print("lupa is not installed: the function's cases not run")
 

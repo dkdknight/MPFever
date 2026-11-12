@@ -3782,6 +3782,13 @@ static DWORD WINAPI StepsWriter(void*)
     }
 }
 
+static bool DriftLoadReset()
+{
+    static long v = -1;
+    if (v < 0) { char e[4]; v = (GetEnvironmentVariableA("MPFEVER_DRIFTLOADRESET", e, 3) == 1 && e[0] == '0') ? 0 : 1; }
+    return v == 1;
+}
+
 // before every step of the simulation's engine (the steps' wrapper, see InstallStepSnap): the step just made, then the next one
 static void DriftStep(void* engine)
 {
@@ -3790,6 +3797,25 @@ static void DriftStep(void* engine)
     if (!gs || !Readable(gs + 0x18, 0x18) || *(void**)(gs + 0x18) != engine) return;
     u32 step = StepOf(gs);
     if (step == 0xFFFFFFFFu) return;
+    // (0.8.4) a game loaded since the last step (a resynchronisation: DropAtLoad counts the loads): the rings start again empty. The
+    // games paused at the same time T reload the save of T and go on at the next step numbers, so the steps before the load ran on
+    // into those after it: "stepsDigest" differed right after every resynchronisation (#255-#261: the first 50 steps' window held
+    // the drift before), that false alarm used up the run's one forced dump, and the rings of a later drift began with the steps of
+    // the drift before (drift_diff named a step from before the load). The entities the load itself made go too. MPFEVER_DRIFTLOADRESET=0:
+    // as before (one ring across the loads)
+    static long loadsSeen = -1;
+    long loads = g_ctlLoads;
+    if (loads != loadsSeen) {
+        bool first = loadsSeen < 0;
+        loadsSeen = loads;
+        if (!first && DriftLoadReset()) {
+            g_dStepN = 0; g_dOpN = 0; g_winN = 0;
+            g_stepAdds = g_stepRems = g_stepSet = 0;
+            g_diagStep = step;
+            Buf b; b.str("drift diagnostic: the rings start again after a load (step ").dec((i64)step).str(")"); LogLine(b);
+            return;
+        }
+    }
     long i = g_dStepN++ & (DIAG_STEPS - 1);
     DiagStep& d = g_dSteps[i];
     d.step = g_diagStep; d.adds = g_stepAdds; d.rems = g_stepRems; d.setHash = g_stepSet; d.pad = 0;

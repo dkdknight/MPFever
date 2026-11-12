@@ -2,6 +2,16 @@ MPFever - Changelog
 ===================
 
 0.8.4 - (in progress)
+  - FIX (#255-#261, Kasper + Eier, 8 resynchronisations in 1 h 30): two of Eier's streets were refused by the engine on
+    Kasper's game ("IsNodeLocked"), each right after Eier bulldozed streets the tool joined again (-8 +2 segments): replayed by
+    the engine's own removal, that left one segment more on Kasper's game (edges 5589 / 5588), and the next street there no longer
+    fitted. The #221 replay (the tool's own native proposal) now covers streets too, with its own switch: OFF by default until the
+    test with the real bulldozer (MPFEVER_STREETMERGENATIVE=1; tracks: MPFEVER_TRACKMERGENATIVE=1). Test: tests/test_trackmerge084.py.
+  - FIX (diagnostic, #255-#261): the drift diagnostic's rings ran on across a resynchronisation (the games reload the save of the
+    paused time and go on at the next step numbers): "stepsDigest: the steps differ" right after every resynchronisation, a
+    false alarm that used up the forced dump, and the rings of a later drift began with the drift before (drift_diff named a step
+    from before the load). The rings start again empty after every load. MPFEVER_DRIFTLOADRESET=0: as before. Test:
+    tests/test_driftloadreset084.py.
   - FIX (#254): simon's game closed three times in under half a second with code 53, and the launcher only wrote « closed (code
     53) ». The game did not reach Steam (Steam not running, or Steam and the game with different rights). A game that closes with
     code 53 less than 30 s after its start now gets a warning: start Steam and sign in, and give Steam and MPFever the same

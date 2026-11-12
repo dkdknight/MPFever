@@ -5539,16 +5539,25 @@ end
 -- resynchronisation). The tool's own native proposal is replayed instead, as for a segment with stops cut. Streets: as before.
 -- OFF by default until a test with the real bulldozer: the engine's own removal joins nothing (the autotest trackmerge found no
 -- joined shape at 40 junctions), so no script can make the tool's shape. MPFEVER_TRACKMERGENATIVE=1: on
+-- (0.8.4, #255-#261, Kasper + Eier) The same with streets: Eier bulldozed streets the tool joined again (-8 +2 segments, twice);
+-- the engine's own removal left one segment more on Kasper's game (edges 5589 / 5588), and Eier's next street there was refused
+-- by the engine ("IsNodeLocked": a node his proposal removes still held a segment on Kasper's game), a resynchronisation each time.
+-- Streets only (every new segment a street) with MPFEVER_STREETMERGENATIVE=1, OFF by default for the same test with the real
+-- bulldozer; a street and a track together: as before
 G.trackMergeNative = function(probe)
-	if os.getenv("MPFEVER_TRACKMERGENATIVE") ~= "1" then return false end
+	local tracks, streets = os.getenv("MPFEVER_TRACKMERGENATIVE") == "1", os.getenv("MPFEVER_STREETMERGENATIVE") == "1"
+	if not tracks and not streets then return false end
 	local st = probe and probe[1] and probe[1].proposal
 	if type(st) ~= "table" then return false end
 	local added = st.addedSegments or {}
 	if #added == 0 or #(st.removedSegments or {}) <= #added then return false end
+	local kind
 	for _, ad in ipairs(added) do
-		if type(ad) ~= "table" or ad.type ~= 1 then return false end
+		if type(ad) ~= "table" or (ad.type ~= 0 and ad.type ~= 1) then return false end
+		if kind ~= nil and ad.type ~= kind then return false end
+		kind = ad.type
 	end
-	return true
+	return (kind == 1 and tracks) or (kind == 0 and streets)
 end
 
 -- cons: the player's constructions the tool removed with the segments (a street station bulldozed with its entrance

@@ -73,6 +73,8 @@ with its cause and the test that now guards it.
 | A stop or signal whose **model belongs to a mod this game does not run** is not replayed (resynchronisation); the game's own models ("::/...") are never looked up, a mod's model found here is replayed as before (#253). | 0.8.4 | G.missingEdgeModel | test_stopobjcheck084.py |
 | A **removal of tracks the tool joined again**: the engine's own removal by default; MPFEVER_TRACKMERGENATIVE=1 (off until a real bulldozer test) replays the tool's native proposal (#221). | 0.8.4 | G.trackMergeNative | test_trackmerge084.py |
 | The game **closed with code 53 within 30 s** of its start gets a warning (Steam not reached: start Steam, same rights for both); a later exit with 53 or any other code: the exit code alone, as before (#254). | 0.8.4 | SteamUnreachableExit | test_steamhint084.py |
+| A **removal of streets the tool joined again**: the engine's own removal by default; MPFEVER_STREETMERGENATIVE=1 (off until a real bulldozer test) replays the tool's native proposal; a street and a track together: the engine's removal always (#255-#261). | 0.8.4 | G.trackMergeNative | test_trackmerge084.py |
+| The **drift diagnostic's rings and steps' windows start again empty after every load** (not at the process's first game); nothing is recorded for the step that straddles the load; the simulation is never touched (#255-#261). | 0.8.4 | DriftStep | test_driftloadreset084.py |
 
 ## Regressions found
 
