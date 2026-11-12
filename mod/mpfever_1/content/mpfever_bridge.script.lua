@@ -21475,7 +21475,7 @@ local function guiUpdate(userParams, state, guiState)
 		-- ((0.7.13) and the test switches of the persons and the vehicles in one piece (the native module's InstallPersonSerial),
 		-- when set: the host's log shows every game's with its "game ready" line. Unset: the hello as before)
 		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime(), mv = C.MODVERSION,
-			personserial = os.getenv("MPFEVER_PERSONSERIAL") ~= "0" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") ~= "0" or nil })
+			personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil })
 	end
 	-- the native module holds the tools' builds while this script runs, and hears from it here from its first frame on
 	-- (bridge_alive.txt, a counter rewritten every 2 s). A game loaded with MPFever disabled while a lobby was open has no such

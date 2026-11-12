@@ -3952,10 +3952,9 @@ static const int ORDER_N = (int)(sizeof(ORDER_FIXES) / sizeof(ORDER_FIXES[0]));
 // leaves its loop in chunks (logged). It changes the persons' (the vehicles') random draws: every game of a session needs the
 // same setting. MPFEVER_PERSONSERIAL=1 (the persons' four loops), MPFEVER_VEHSERIAL=1 (the land vehicles' four loops), on
 // every game; unset: in chunks, as before
-// (0.8.3) ON BY DEFAULT. The players' reports of 0.8.2 (the drift diagnostic) found the first difference in the moves, with no
-// entity made otherwise before: the land vehicles (LandVehicleMoveSystem, #233 #239), the persons (#150), the animals (already in
-// one piece). A/B on "Test Drift Big", two games at x4 for 4 minutes (2026-11-12): x3.83 in chunks, x3.81 in one piece, 60 frames
-// a second either way. MPFEVER_PERSONSERIAL=0 / MPFEVER_VEHSERIAL=0 (every game of a session the same): in chunks, as before
+// (0.8.3) KEPT OFF: on by default for a few hours (A/B on "Test Drift Big", x3.83 vs x3.81), but that map is empty (no transport,
+// never played). On played games, two games at x4 for 5 minutes (2026-11-12): "Test Leawood" x1.79 in chunks / x1.35 in one piece
+// (-25%), "Test Lag Rp" x2.55 / x2.36 (-7%). Too costly by default
 struct SerialLoop { const char* name; const char* sig; };
 static const SerialLoop PERSON_LOOPS[] = {
     { "person moves 512", "41 B9 00 02 00 00 44 8B C6 49 8B D7 48 8B C8 E8" },
@@ -4019,24 +4018,21 @@ static void InstallPersonSerial()
 {
     const int np = (int)(sizeof(PERSON_LOOPS) / sizeof(PERSON_LOOPS[0])), nv = (int)(sizeof(VEHICLE_LOOPS) / sizeof(VEHICLE_LOOPS[0]));
     char v[4] = {};
-    // (0.8.3: on by default, see above; MPFEVER_PERSONSERIAL=0 / MPFEVER_VEHSERIAL=0: in chunks, as before)
-    if (!(GetEnvironmentVariableA("MPFEVER_PERSONSERIAL", v, 3) > 0 && v[0] == '0')) {
+    if (GetEnvironmentVariableA("MPFEVER_PERSONSERIAL", v, 3) > 0 && v[0] == '1') {
         Buf miss;
         int k = SerialLoops(PERSON_LOOPS, np, miss);
         miss.s[miss.n] = 0;
         Buf a; a.str("persons moved in one piece on the simulation's thread (").dec(k).str(" of ").dec(np).str(" loops").str(miss.n ? "; in chunks: " : "").str(miss.n ? miss.s : "").str(")");
         LogLine(a);
     }
-    else { Buf a; a.str("persons moved in chunks (MPFEVER_PERSONSERIAL=0)"); LogLine(a); }
     v[0] = 0;
-    if (!(GetEnvironmentVariableA("MPFEVER_VEHSERIAL", v, 3) > 0 && v[0] == '0')) {
+    if (GetEnvironmentVariableA("MPFEVER_VEHSERIAL", v, 3) > 0 && v[0] == '1') {
         Buf miss;
         int k = SerialLoops(VEHICLE_LOOPS, nv, miss);
         miss.s[miss.n] = 0;
         Buf a; a.str("vehicles moved in one piece on the simulation's thread (").dec(k).str(" of ").dec(nv).str(" loops").str(miss.n ? "; in chunks: " : "").str(miss.n ? miss.s : "").str(")");
         LogLine(a);
     }
-    else { Buf a; a.str("vehicles moved in chunks (MPFEVER_VEHSERIAL=0)"); LogLine(a); }
 }
 
 static void InstallOrderFixes()

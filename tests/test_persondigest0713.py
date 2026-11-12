@@ -224,8 +224,7 @@ def main():
     check("\tR.hashCheckN = n\n\tlocal parts = R.contentHash(C.hashStr, C.dump)\n\tR.hashCheckN = nil\n" in sh[:6000],
           "simHash gives the check's number to the checks' parts, and takes it back after")
     check(br.count("R.hashCheckN") == 2, "  set nowhere else")
-    # ((0.8.3) on by default: the hello says so unless =0)
-    check('personserial = os.getenv("MPFEVER_PERSONSERIAL") ~= "0" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") ~= "0" or nil })' in br,
+    check('personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil })' in br,
           "the hello says the test switches of the persons and the vehicles in one piece, only when set")
 
     # the digest in the rotation of the checks (simHash's own code, from the switch MPFEVER_HASHROT to the check's number)

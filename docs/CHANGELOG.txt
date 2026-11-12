@@ -58,14 +58,10 @@ MPFever - Changelog
     window's countdown follows the session's speed. The other options (market, stock, tenders, trade, territory) count in the
     game's months already; their real-time timers are internal (resends, caches). MPFEVER_AUCTIONREAL=1: real time, as before.
     Test: tests/test_auclock083.py.
-  - CHANGE (the drifts of 0.8.2's reports): the persons' and the land vehicles' moves are computed in one piece on the
-    simulation's thread by default (the switches MPFEVER_PERSONSERIAL / MPFEVER_VEHSERIAL of 0.7.13, off until now for want of a
-    local repro), as the animals' since 0.5.12: in chunks on the engine's thread pool, a walker's crossing test and the vehicles'
-    reservations read what other chunks change at the same time. The drift diagnostic of the players' reports found the first
-    difference in the moves with no entity made otherwise before (LandVehicleMoveSystem #233 #239; persons #150). A/B on "Test
-    Drift Big", two games at x4, 4 minutes each: x3.83 in chunks, x3.81 in one piece, 60 frames a second either way; a camera tour
-    of the client for 5 minutes stayed in sync. MPFEVER_PERSONSERIAL=0 / MPFEVER_VEHSERIAL=0 (every game the same): in chunks, as
-    before. Tests: tests/test_personserial0713.py, test_persondigest0713.py.
+  - UNCHANGED (checked): the persons' and the land vehicles' moves stay in chunks by default (MPFEVER_PERSONSERIAL /
+    MPFEVER_VEHSERIAL of 0.7.13 stay test switches). Computed in one piece they cost too much on played games: two games at x4 for
+    5 minutes, "Test Leawood" x1.79 in chunks / x1.35 in one piece (-25%), "Test Lag Rp" x2.55 / x2.36 (-7%). The drift's start
+    is left to the diagnostic below. Tests: tests/test_personserial0713.py, test_persondigest0713.py.
   - DIAGNOSTIC (the drifts of 0.8.2's reports, "older than the rings" in #238 #241): the native module reduces every 10 steps the
     digests of the last 50 simulation steps to one hash (native_steps.txt, written by a thread of its own); each check carries
     the one of its step ("stepsDigest", a diagnostic part: logged, never a reason to reload), and at the first check where it

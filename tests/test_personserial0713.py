@@ -1,5 +1,4 @@
-"""Offline test of the persons and the land vehicles in one piece (0.7.13, issues #150/#166/#170; ON by default since 0.8.3, the 0.8.2
-reports' drifts beginning in the moves, MPFEVER_PERSONSERIAL=0 / MPFEVER_VEHSERIAL=0: in chunks as before;
+"""Offline test of the persons and the land vehicles in one piece (0.7.13, issues #150/#166/#170, test switches OFF by default:
 InstallPersonSerial, SerialLoops and SerialPathAt in native/mpfever_native.cpp).
 
 #150, #166 and #170 drifted with no action, one to six game minutes after a load, the gigantic worlds most, a passenger or a bus
@@ -12,7 +11,7 @@ by default until a test with two games proves it. Cases:
   - the module: the eight signatures, the imm32 at +2 written with 0x7FFFFFFF, only after the call's target was checked (the
     count against the chunk size "cmp r8d, r9d / jle" and the pool's size against 1 "sar rax, 4 / cmp eax, 1 / je", both to the
     same place, inside the game's code); a place not found or another function leaves its loop alone and is named in the log
-    line; each switch read as "0" only (0.8.3: unset = in one piece; a line either way); called right after the animals' block, which is as it
+    line; each switch read as "1" only (unset: nothing changes, no line); called right after the animals' block, which is as it
     was; nothing in the launcher sets them;
   - the game (build 40425, read-only, pefile): each signature found exactly once in .text, its chunk size the one expected
     (persons 0x200, 0x80, 0x40, 0x100; vehicles 0x100, 0x40, 0x40, 0x100), its call to the start of a function (.pdata) whose
@@ -93,13 +92,11 @@ def source_checks():
     check("return ja == jb;" in sp, "  both to the same place (its one-thread path)")
     ip = body_of(src, "static void InstallPersonSerial()")
     check(ip != "", "InstallPersonSerial")
-    # (0.8.3: on by default, the 0.8.2 reports' drifts began in the moves; =0 in chunks as before)
-    check('if (!(GetEnvironmentVariableA("MPFEVER_PERSONSERIAL", v, 3) > 0 && v[0] == \'0\'))' in ip
-          and 'if (!(GetEnvironmentVariableA("MPFEVER_VEHSERIAL", v, 3) > 0 && v[0] == \'0\'))' in ip,
-          "  on unless MPFEVER_PERSONSERIAL=0 / MPFEVER_VEHSERIAL=0 (0.8.3; off: in chunks, as before)")
-    check(ip.count("LogLine(a);") == 4 and ip.index("LogLine(a);") > ip.index("MPFEVER_PERSONSERIAL")
-          and '"persons moved in chunks (MPFEVER_PERSONSERIAL=0)"' in ip and '"vehicles moved in chunks (MPFEVER_VEHSERIAL=0)"' in ip,
-          "  a log line either way")
+    check('GetEnvironmentVariableA("MPFEVER_PERSONSERIAL", v, 3) > 0 && v[0] == \'1\'' in ip
+          and 'GetEnvironmentVariableA("MPFEVER_VEHSERIAL", v, 3) > 0 && v[0] == \'1\'' in ip,
+          "  MPFEVER_PERSONSERIAL=1 and MPFEVER_VEHSERIAL=1 only (unset: as before)")
+    check(ip.count("LogLine(a);") == 2 and ip.index("LogLine(a);") > ip.index("MPFEVER_PERSONSERIAL"),
+          "  a log line only when a switch is on")
     check("\"persons moved in one piece on the simulation's thread (\"" in ip and "\"vehicles moved in one piece on the simulation's thread (\"" in ip
           and '.dec(k).str(" of ").dec(np).str(" loops")' in ip and '"; in chunks: "' in ip, "  'persons/vehicles moved in one piece ... (k of 4 loops)'")
     check(ip.count("miss.s[miss.n] = 0;") == 2, "  (the names' text ended before it is copied)")
