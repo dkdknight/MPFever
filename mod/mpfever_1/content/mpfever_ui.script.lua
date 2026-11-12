@@ -3763,7 +3763,11 @@ U.TABS.auction = function(K, st, ctx)
 		U.auHelp(K, rows, W)
 		return rows
 	end
-	local left = math.max(0, au.left - math.floor(os.clock() - (au.at or os.clock())))
+	-- (0.8.3: the time left is in seconds of the game's time, see the bridge's G.auClock: between two updates of eco.txt it goes
+	-- down at the session's speed, not at all while paused; MPFEVER_AUCTIONREAL=1: real seconds, as before)
+	local auRate = 1
+	if os.getenv("MPFEVER_AUCTIONREAL") ~= "1" then auRate = tonumber(U.shownSpeed and U.shownSpeed()) or 1 end
+	local left = math.max(0, au.left - math.floor((os.clock() - (au.at or os.clock())) * auRate))
 	-- my situation: the best bids this company holds, what is left to bid with
 	local committed, leading = 0, 0
 	for _, lot in ipairs(au.lots) do if U.myCo and lot.bidder == U.myCo then committed = committed + lot.best; leading = leading + 1 end end
@@ -6417,6 +6421,20 @@ do
 	local okR, react = pcall(ug_require, "::/gui/main/react.lua")
 	local okB, builtin = pcall(ug_require, "::/gui/main/builtin.lua")
 	local okE, entry = pcall(ug_require, "::/gui/main/mod_entry_point.tl")
+	-- (0.8.3, #224: Ren's game crashed when another player demolished a road depot while Ren's management window listed it: the
+	-- game's window (ManagerWindowContent's step, gui/line_vehicle_mgmt/manager_window.tl) reads each depot of its list with
+	-- getComponent and no check, and a replay can take an entity away between two of its steps; the engine's "Invalid entity"
+	-- went up through this wrapper and the interface's root failed. In a session, such an error of a step is left for that frame
+	-- (logged), the window catching up later, instead of ending the game. MPFEVER_UIINVALID=0: raised, as before)
+	U.swallowInvalid = function(err)
+		if os.getenv("MPFEVER_UIINVALID") == "0" or not (C.ROLE == "host" or C.ROLE == "client") then return false end
+		if not tostring(err):find("Invalid entity", 1, true) then return false end
+		U.invalidSwallowed = (U.invalidSwallowed or 0) + 1
+		if U.invalidSwallowed <= 5 or U.invalidSwallowed % 500 == 0 then
+			log("a window's step read an entity taken away by another player's build (" .. U.invalidSwallowed .. " so far): left for this frame, not raised: " .. tostring(err):sub(1, 160))
+		end
+		return true
+	end
 	-- (0.7.0) what runs from react.onStep / onStepTimer runs by itself every frame (or every few seconds): a mod's command sent
 	-- from there is automatic (see mpfever_modauto.lua). Wrapped here, at the interface's start, before the windows register
 	if okR and type(react) == "table" and U.modAutoOn and not U.reactWrapped then
@@ -6430,7 +6448,10 @@ do
 							U.autoDepth = U.autoDepth + 1
 							local r = table.pack(pcall(fn, ...))
 							U.autoDepth = U.autoDepth - 1
-							if not r[1] then error(r[2], 0) end
+							if not r[1] then
+								if U.swallowInvalid and U.swallowInvalid(r[2]) then return end
+								error(r[2], 0)
+							end
 							return table.unpack(r, 2, r.n)
 						end, ...)
 					end

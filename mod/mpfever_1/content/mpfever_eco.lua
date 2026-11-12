@@ -47,7 +47,7 @@ function E.minBid(lot)
 end
 E.BANKRUPT_DEFAULT = 12        -- months in debt
 E.BANKRUPT_CHOICES = { 0, 3, 6, 12, 24 }
-E.LOT_SECONDS = tonumber(os.getenv("MPFEVER_LOTSECONDS") or "") or 60   -- a lot stays open that long (real time, on the host)
+E.LOT_SECONDS = tonumber(os.getenv("MPFEVER_LOTSECONDS") or "") or 60   -- a lot stays open that long (seconds of the game's time since 0.8.3, see the bridge's G.auClock)
 E.LAST_BID_SECONDS = math.min(15, E.LOT_SECONDS)                         -- and that long after its last bid
 E.MIN_RAISE = 0.05             -- a bid beats the best one by 5 % at least
 E.TOLL_DEFAULT = 1000

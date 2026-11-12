@@ -19685,7 +19685,7 @@ G.coEco = function(st, reg, c)
 	for _, o in ipairs(reg.mergeOffers or {}) do L[#L + 1] = "merge\t" .. tostring(o.from) .. "\t" .. tostring(o.to) end
 	local au = reg.auction
 	-- (when this game saw the lot open: the time left it shows)
-	local nowT = os.time()
+	local nowT = G.auClock and G.auClock() or os.time()
 	if au and au.v == 2 then
 		-- (0.7.4) every lot at once: one clock, as this game sees it (the host's decides, see below), a bid in its last seconds
 		-- gives everybody that much more; then each lot with its best bid and the next one it takes
@@ -19789,7 +19789,7 @@ G.coEco = function(st, reg, c)
 		end
 		G.coEvent("co_month", { month = reg.month, debt = debt })
 	end
-	-- the auction's clock (the host's real time: the game may be paused, its speed may change)
+	-- the auction's clock (0.8.3: the game's time, see G.auClock; the host's real time before)
 	if au and au.v == 2 then
 		-- (0.7.4) one clock for every lot: the minutes of the host's rule, 30 s more after a bid in the last 30 s
 		local A = G.coAu2
@@ -19970,8 +19970,19 @@ G.coLotDetail = function(reg, au, i, lot)
 	return d
 end
 
--- (0.7.4) how long an auction of every lot at once lasts, in real seconds: its minutes (MPFEVER_AUCTIONSECONDS=s, tests: s seconds;
+-- (0.7.4) how long an auction of every lot at once lasts, in seconds of the clock G.auClock (real seconds before 0.8.3): its minutes (MPFEVER_AUCTIONSECONDS=s, tests: s seconds;
 -- only the host's clock closes it, the other games show the time left)
+-- (0.8.3, a player's suggestion: "the functions added to the game keep going while the simulation is paused") The auction's clock in
+-- seconds of the game's time (the simulation's 1000 a second at x1): it stops while the session is paused and goes 4 times faster
+-- at x4, as the game's own months do. Before, the host's real time (os.time): an auction ended during a pause. Every game shows
+-- the time left by this clock; only the host's closes the auction. MPFEVER_AUCTIONREAL=1: the host's real time, as before
+G.auClock = function()
+	if os.getenv("MPFEVER_AUCTIONREAL") == "1" then return os.time() end
+	local ok, t = pcall(gameTime)
+	if ok and type(t) == "number" then return math.floor(t / 1000) end
+	return os.time()
+end
+
 G.auSeconds = function(au)
 	local s = tonumber(os.getenv("MPFEVER_AUCTIONSECONDS") or "")
 	if s and s > 0 then return s end
@@ -21388,7 +21399,7 @@ local function guiUpdate(userParams, state, guiState)
 		-- ((0.7.13) and the test switches of the persons and the vehicles in one piece (the native module's InstallPersonSerial),
 		-- when set: the host's log shows every game's with its "game ready" line. Unset: the hello as before)
 		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime(), mv = C.MODVERSION,
-			personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil })
+			personserial = os.getenv("MPFEVER_PERSONSERIAL") ~= "0" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") ~= "0" or nil })
 	end
 	-- the native module holds the tools' builds while this script runs, and hears from it here from its first frame on
 	-- (bridge_alive.txt, a counter rewritten every 2 s). A game loaded with MPFever disabled while a lobby was open has no such

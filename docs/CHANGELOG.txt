@@ -10,6 +10,11 @@ MPFever - Changelog
     userdata, as in the game); autotest conbulldoze with MPFEVER_CONBULLDOZE_IND=1 (an industry instead of a station), 2026-11-12
     on "Test Gameplay": a coal mine and its 12 street segments bulldozed by the host, replayed on the other game, in sync; with
     MPFEVER_INDREMOVE=0 the other game crashed on the players' assertion (AreAllNodesEmpty).
+  - FIX (CRASH, #224): the game closed when another player demolished a depot while this player's management window listed
+    it: the game's window (ManagerWindowContent, gui/line_vehicle_mgmt/manager_window.tl) reads each depot of its list with
+    getComponent and no check, and the engine's "Invalid entity" went up through MPFever's react.onStep wrapper. In a session such
+    an error of a window's step is left for that frame (logged in ui_mod.log), the window catching up later. Alone, and every
+    other error: raised as before. MPFEVER_UIINVALID=0: as before. Test: tests/test_uiinvalid083.py.
   - FIX (#237): a due action of another player (Wretched's warehouse edit) waited in the queue while the replay before it was
     still in the engine's hands, but nothing held the game at its time any more: chris's game went one step on, released its own
     build there, the edit came "1 step late after another build" and the host's game was reloaded. A due action still waiting a
@@ -23,6 +28,20 @@ MPFever - Changelog
     ~1~Hainichen ZOB", every 2 s of game time) made 72000 actions in 75 minutes for 147 buses; G.modSkip (0.7.1) ships every new
     value. A value that comes back right after another one 6 times within a minute is no longer shipped for 10 minutes of game
     time (the host decides, every game keeps the same name). MPFEVER_MODPINGPONG=0: as before. Test: tests/test_modpingpong083.py.
+  - CHANGE (a player's suggestion: "the functions added to the game keep going while the simulation is paused"): the auction of a
+    bankrupt company runs on the game's time (G.auClock, seconds of the simulation): it stops while the session is paused and
+    goes 4 times faster at x4, as the game's months; before, the host's real time, and an auction could end during a pause. The
+    window's countdown follows the session's speed. The other options (market, stock, tenders, trade, territory) count in the
+    game's months already; their real-time timers are internal (resends, caches). MPFEVER_AUCTIONREAL=1: real time, as before.
+    Test: tests/test_auclock083.py.
+  - CHANGE (the drifts of 0.8.2's reports): the persons' and the land vehicles' moves are computed in one piece on the
+    simulation's thread by default (the switches MPFEVER_PERSONSERIAL / MPFEVER_VEHSERIAL of 0.7.13, off until now for want of a
+    local repro), as the animals' since 0.5.12: in chunks on the engine's thread pool, a walker's crossing test and the vehicles'
+    reservations read what other chunks change at the same time. The drift diagnostic of the players' reports found the first
+    difference in the moves with no entity made otherwise before (LandVehicleMoveSystem #233 #239; persons #150). A/B on "Test
+    Drift Big", two games at x4, 4 minutes each: x3.83 in chunks, x3.81 in one piece, 60 frames a second either way; a camera tour
+    of the client for 5 minutes stayed in sync. MPFEVER_PERSONSERIAL=0 / MPFEVER_VEHSERIAL=0 (every game the same): in chunks, as
+    before. Tests: tests/test_personserial0713.py, test_persondigest0713.py.
   - DIAGNOSTIC (the drifts of 0.8.2's reports, "older than the rings" in #238 #241): the native module reduces every 10 steps the
     digests of the last 50 simulation steps to one hash (native_steps.txt, written by a thread of its own); each check carries
     the one of its step ("stepsDigest", a diagnostic part: logged, never a reason to reload), and at the first check where it
