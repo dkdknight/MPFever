@@ -28,6 +28,13 @@ MPFever - Changelog
     ~1~Hainichen ZOB", every 2 s of game time) made 72000 actions in 75 minutes for 147 buses; G.modSkip (0.7.1) ships every new
     value. A value that comes back right after another one 6 times within a minute is no longer shipped for 10 minutes of game
     time (the host decides, every game keeps the same name). MPFEVER_MODPINGPONG=0: as before. Test: tests/test_modpingpong083.py.
+  - AI (the user's choice: "finish the freight by truck"): a test of 10 minutes at x4 (Test Gameplay, Normal) opened three bus lines
+    and not one truck: the long-term freight line (0.6, a budgeted investment, one at a time, judged on its trend) waited for the
+    company's growth, held the whole time by its bus lines "still filling". It now waits only for its own budget (the same test:
+    a grain line of 4.6 km and its truck within 3 minutes). MPFEVER_AILTALWAYS=0: only while it may grow, as before. And its
+    verdict: deliveries come in lumps (320 000 one month, nearly nothing the next ones), two good samples in a row seldom came, and
+    the test's line was ended ("its producer does not grow") after earning 192 000 more than it cost; a line that has earned back
+    all it cost is now paid (a line as the others). MPFEVER_AILTPAIDNET=0: as before. Test: tests/test_ailtalways083.py.
   - FIX (a player's report: "the warehouses were not sold again"): a bankrupt company's warehouses were no lots of its auction (only
     its lines, stations and depots), so they stayed with it and went to its heir. Each warehouse it owns is now a lot of its own
     (reserve 50000), sold to the best bid or, unsold, demolished as a depot is; the Auctions page lists them under « Warehouses ».

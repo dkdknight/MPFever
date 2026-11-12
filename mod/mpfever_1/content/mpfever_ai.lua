@@ -1456,6 +1456,10 @@ local function ltJudge(lt, now, P, trend)
 	local s = lt.samples or {}
 	local n = #s
 	if n >= 2 and (s[n].ratio or 0) >= 1 and (s[n - 1].ratio or 0) >= 1 then return "paid", "it pays its trucks" end
+	-- (0.8.3: a truck delivers in lumps, one month brings 320 000 and the next ones nearly nothing, so two good samples in a row
+	-- seldom come; the AI test of 2026-11-12 ended a grain line that had earned 192 000 more than it cost, "its producer does not
+	-- grow". A line that has earned back all it cost (its budget spent at 0 or below) is paid. MPFEVER_AILTPAIDNET=0: as before)
+	if n >= 2 and (lt.spent or 0) <= 0 and os.getenv("MPFEVER_AILTPAIDNET") ~= "0" then return "paid", "it has earned more than it cost" end
 	if (lt.spent or 0) >= (lt.budget or 0) then return "end", "its budget is spent" end
 	if now - (lt.born or now) >= P.horizon then return "end", "its time is up" end
 	if trend and n >= 1 and now - (lt.proofFrom or lt.born or now) >= P.proof then
@@ -5793,7 +5797,12 @@ local function step(E)
 	end
 	-- (0.6) its long-term freight line when it has none under way and can afford one (see ltProject): before the freight of plenty of
 	-- money and the buses' new projects. A path search alone builds nothing: the look goes on
-	if grow and ltProject(E, co, stops, lines, vehicles, money) == true then return end
+	-- (0.8.3, "finish the freight by truck", the user's choice for the AI: a test of 10 minutes at x4 on Test Gameplay, Normal, money
+	-- 1.7 to 2.4 million: three bus lines and not one truck, its growth waiting the whole time for its bus lines "still filling". This
+	-- line is an investment of its own, budgeted (ltBudget, a fifth of its money to spare, at most LT.cap), one at a time, judged on its
+	-- trend over LT.horizonY years, which never holds the growth of the others (mayExpand leaves it out): it no longer waits for that
+	-- growth either, only for its own budget. MPFEVER_AILTALWAYS=0: only while it may grow, as before)
+	if (grow or os.getenv("MPFEVER_AILTALWAYS") ~= "0") and ltProject(E, co, stops, lines, vehicles, money) == true then return end
 	-- freight: a route of trucks while the company has fewer freight lines than half its lines (one at first), then the buses.
 	-- (0.5.14: only with plenty of money besides its reserve and its loans, the level's freeCash: a producer of 1972 makes 50 to
 	-- 270 a year until its cargo is carried, and no freight line of the tests of 2026-10-30 paid its truck, 160 000 a year, while

@@ -66,6 +66,7 @@ with its cause and the test that now guards it.
 | **Loans** between companies: the borrower asks, turns alternate, chiefs only, the lender's money checked, equal monthly parts at co_month on every game; bankrupt borrower: the lender loses the rest. | 0.8.3 | E.loanEvent, E.loanMonth, U.loanCard | test_loans083.py, autotest loantest |
 | The other companies' lines at this company's stations: **on demand** only (a closed section of its sheet), one company per player; nothing read in normal play. | 0.8.3 | U.otherLinesAtMine | test_otherlines083.py |
 | A bankrupt company's **warehouses** are lots of its auction (after its depots), sold or demolished as a depot; another company's warehouse never. | 0.8.3 | E.lotsOf, lotEntities (warehousesOf) | test_lotwarehouse083.py, test_auction074.py |
+| A computer company's **long-term freight line** waits only for its own budget (not the buses' growth); one that earned back all it cost is paid; the other freight still waits for growth and plenty of money. | 0.8.3 | step (ltProject), ltJudge | test_ailtalways083.py, test_ai_longfreight.py |
 
 ## Regressions found
 
