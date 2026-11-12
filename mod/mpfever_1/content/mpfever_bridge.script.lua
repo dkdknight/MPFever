@@ -5533,6 +5533,24 @@ local function removalPlan(margs)
 	return list
 end
 
+-- (0.8.4, issue #221) A removal of tracks the tool joined again (segments removed, and the pieces left re-joined into new ones,
+-- every new one a track): replayed by the engine's own removal, the ground was put back otherwise than on the builder's game (LPEM
+-- bulldozed 20 tracks with signals, -5 +1 segments: terrain alignment removed 141.750 there, 99.417 on ls_pa's game, a
+-- resynchronisation). The tool's own native proposal is replayed instead, as for a segment with stops cut. Streets: as before.
+-- OFF by default until a test with the real bulldozer: the engine's own removal joins nothing (the autotest trackmerge found no
+-- joined shape at 40 junctions), so no script can make the tool's shape. MPFEVER_TRACKMERGENATIVE=1: on
+G.trackMergeNative = function(probe)
+	if os.getenv("MPFEVER_TRACKMERGENATIVE") ~= "1" then return false end
+	local st = probe and probe[1] and probe[1].proposal
+	if type(st) ~= "table" then return false end
+	local added = st.addedSegments or {}
+	if #added == 0 or #(st.removedSegments or {}) <= #added then return false end
+	for _, ad in ipairs(added) do
+		if type(ad) ~= "table" or ad.type ~= 1 then return false end
+	end
+	return true
+end
+
 -- cons: the player's constructions the tool removed with the segments (a street station bulldozed with its entrance
 -- street): the engine's segment removal leaves them, then the station stayed connected to a removed node and the game
 -- crashed (issue #15)
@@ -5671,7 +5689,10 @@ end
 -- that game got the signals twice and a resynchronisation each time, then the crash above. Such a stop goes the old way
 -- (replayStop). MPFEVER_STREETSIGDRY=1: the dry run, as before
 G.streetSignalDry = function(plan, c)
-	if os.getenv("MPFEVER_STREETSIGDRY") == "1" or c.type ~= 0 then return false end
+	-- (a street: the segment's kind in the tool's proposal, plan.segType 0; a track is 1. Not BASE_EDGE.type, which is the
+	-- segment's bridge or tunnel kind: read so in the first 0.8.4 build, every signal on a plain track went the old way and the
+	-- node configurations drifted, the autotest dsignal)
+	if os.getenv("MPFEVER_STREETSIGDRY") == "1" or plan.segType ~= 0 then return false end
 	for _, o in ipairs(plan.objs or {}) do
 		if o.category == 2 then return true end
 	end
@@ -7871,6 +7892,10 @@ local function replayNative(a, formIndex)
 			end
 			-- a street with stops on it taken away with the bulldozer: the engine's own removal proposal removes the stops with it
 			local removal0 = (#(stp.edgeObjectsToAdd or {}) == 0) and removalPlan(probe) or nil
+			if removal0 and G.trackMergeNative(probe) then
+				log("NATIVE REPLAY " .. tostring(a.uid) .. ": a removal of tracks the tool joined again (signals included): native street proposal")
+				return replayNativeStreet(a)
+			end
 			if removal0 then
 				return engineReplay(a, "removal (stops included) of " .. table.concat(removal0, ","), function()
 					return api.engine.util.proposal.makeSegmentsRemoveProposal(removal0)
@@ -7959,6 +7984,10 @@ local function replayNative(a, formIndex)
 			end
 		end
 		local removal = (#missing == 0) and removalPlan(probe) or nil
+		if removal and G.trackMergeNative(probe) then
+			log("NATIVE REPLAY " .. tostring(a.uid) .. ": a removal of tracks the tool joined again: native street proposal")
+			return replayNativeStreet(a)
+		end
 		if removal then
 			return engineReplay(a, "removal of " .. table.concat(removal, ","), function()
 				return api.engine.util.proposal.makeSegmentsRemoveProposal(removal)
@@ -14344,6 +14373,71 @@ H.bulldoze = function(from, p)
 	if not ok then
 		log("BULLDOZE failed: " .. tostring(err))
 		AUTO.results[#AUTO.results + 1] = "bulldoze error " .. tostring(err)
+		autoFinish()
+	end
+end
+
+-- (0.8.4, issue #221) A track removed at a junction of three tracks: the engine joins the two left into one (the tool's shape of
+-- #221, segments removed and a joined one added), built here as a held native build; the other games replay it as the tool's
+-- native proposal (G.trackMergeNative). The sync check says whether every game has the same tracks and ground.
+H.trackmerge = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local ok, err = pcall(function()
+		local cands = {}
+		for n, segs in pairs(api.engine.system.streetSystem.getNode2SegmentMap() or {}) do
+			local k, tracks = 0, 0
+			pcall(function() k = #segs end)
+			if k == 3 then
+				for i = 1, 3 do
+					local okS, street = pcall(api.engine.getComponent, segs[i], api.type.ComponentType.BASE_EDGE_STREET)
+					if okS and street == nil then tracks = tracks + 1 end
+				end
+				if tracks == 3 then cands[#cands + 1] = { n = n, segs = { segs[1], segs[2], segs[3] } } end
+			end
+		end
+		table.sort(cands, function(x, y) return x.n < y.n end)
+		log("AUTOTEST trackmerge: " .. #cands .. " junction(s) of three tracks")
+		local tries = 0
+		local function attempt(k)
+			tries = tries + 1
+			if tries > 12 or #cands == 0 then
+				AUTO.results[#AUTO.results + 1] = "trackmerge: the engine's removal joined nothing at " .. #cands .. " junction(s) (only the bulldozer joins)"
+				return autoFinish()
+			end
+			local c = cands[(k - 1) % #cands + 1]
+			local e = c.segs[(k - 1) % 3 + 1]
+			local okp, P = pcall(function() return api.engine.util.proposal.makeSegmentsRemoveProposal({ e }) end)
+			local nAdd, nRm = 0, 0
+			if okp and P then
+				pcall(function() nAdd = #P.proposal.addedSegments end)
+				pcall(function() nRm = #P.proposal.removedSegments end)
+			end
+			if not okp or not P or nAdd == 0 or nRm <= nAdd then return attempt(k + 1) end
+			local before = edgeCount()
+			local pn = nodePosition(c.n)
+			deferredSend(G.wbp(P, playerContext(), false, true), function(res, success)
+				G.waits[#G.waits + 1] = { at = G.frames + 20, fn = function()
+					local line = "trackmerge segment " .. e .. " at junction " .. c.n .. " (-" .. nRm .. " +" .. nAdd .. "): "
+						.. (success and "removed" or "refused") .. ", edges " .. before .. " -> " .. edgeCount()
+					log("AUTOTEST " .. line)
+					AUTO.results[#AUTO.results + 1] = line
+					if success then
+						AUTO.points[#AUTO.points + 1] = pn
+						G.waits[#G.waits + 1] = { at = G.frames + 120, fn = autoFinish }
+					else
+						attempt(k + 1)
+					end
+				end }
+			end)
+		end
+		attempt(1)
+	end)
+	if not ok then
+		log("TRACKMERGE failed: " .. tostring(err))
+		AUTO.results[#AUTO.results + 1] = "trackmerge error " .. tostring(err)
 		autoFinish()
 	end
 end

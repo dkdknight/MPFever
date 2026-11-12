@@ -71,6 +71,7 @@ with its cause and the test that now guards it.
 | A **speed request** a player clicks is always sent; only the same request repeated frame after frame, after the session took it and another player changed the speed, is held (#252). The once-a-second resend of a request not yet taken stays. | 0.8.4 | U.speedRepeatHeld (ui wrapper) | test_speedrepeat084.py |
 | A game that runs **without (or with) a mod taken for personal by hand** tells every player in the chat, once per session; interface-only personal mods stay silent, and the load plan (drops/adds) is unchanged (#233 #251). | 0.8.4 | Mods.RiskyPlan, MainForm (load_mods) | test_modriskchat084.py |
 | A stop or signal whose **model belongs to a mod this game does not run** is not replayed (resynchronisation); the game's own models ("::/...") are never looked up, a mod's model found here is replayed as before (#253). | 0.8.4 | G.missingEdgeModel | test_stopobjcheck084.py |
+| A **removal of tracks the tool joined again**: the engine's own removal by default; MPFEVER_TRACKMERGENATIVE=1 (off until a real bulldozer test) replays the tool's native proposal (#221). | 0.8.4 | G.trackMergeNative | test_trackmerge084.py |
 
 ## Regressions found
 
@@ -86,6 +87,7 @@ with its cause and the test that now guards it.
 | 2026-11-08 (the user) | 0.7.8 | The join review no longer opened for most players. | DLCSESSION dropped the "different DLCs" warning, and the review opened on that warning only. | 0.7.10 | test_reviewdlc0710.py |
 | 2026-11-08 (#133) | 0.7.6 | A track upgrade replayed in its rebuilt form was shipped again by every game: several resyncs. | The #131 fix (node configs given again) changed what the replay builds, and the capture compared it with the shipped build. | 0.7.7 | test_rebuiltsig077.py |
 | 2026-11-08 | 0.7.1 | The signals and stops mods put up by script (Auto Signals...) were refused on every game. | A script names an edge object's segment by edgeEntity, not as a tool does. | 0.7.8 | test_scripteo077.py |
+| 2026-11-12 (autotest dsignal, before any release) | 0.8.4 first build (STREETSIGDRY, mine) | Every signal on a plain track was replayed the old way (replayStop): the node configurations drifted right after the signal. | G.streetSignalDry read the street/track kind from BASE_EDGE.type, which is the segment's bridge/tunnel kind (0 for a plain track too). | the same day: plan.segType (the tool's proposal) | test_stopobjcheck084.py, autotest dsignal |
 
 ## Before every release
 

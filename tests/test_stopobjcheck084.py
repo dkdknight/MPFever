@@ -72,11 +72,12 @@ try:
     check("MPFEVER_STOPOBJCHECK=0: as before", differ(T(2), T(T(1, 2), T(2, 2)), T(True), "0") is None)
     sig = L.eval("""function(segType, cat, env)
       ENVV.MPFEVER_STREETSIGDRY = env
-      return G.streetSignalDry({ objs = { { category = cat } } }, { type = segType })
+      -- (c.type is BASE_EDGE's bridge/tunnel kind, 0 for a plain track too: never the street/track test)
+      return G.streetSignalDry({ segType = segType, objs = { { category = cat } } }, { type = 0 })
     end""")
-    check("a signal (category 2) on a street (type 0): the old way", sig(0, 2, None) is True)
+    check("a signal (category 2) on a street (segType 0): the old way", sig(0, 2, None) is True)
     check("  a stop (category 0) on a street: the dry run as before", sig(0, 0, None) is False)
-    check("  a signal on a track (type 1): as before", sig(1, 2, None) is False)
+    check("  a signal on a plain track (segType 1, its BASE_EDGE.type 0): as before (the 0.8.4 first build sent it the old way: node configurations drifted)", sig(1, 2, None) is False)
     check("  MPFEVER_STREETSIGDRY=1: the dry run as before", sig(0, 2, "1") is False)
 
     # (0.8.4) a model of a mod this game does not run (marce's "Deutsche Signale", not on leinl's game)
