@@ -78,7 +78,7 @@ E.PRIVATE_FEE = os.getenv("MPFEVER_PRIVATEFEE") ~= "0"
 -- type: reading it failed for every segment, so no train ever paid a toll. Read once, every game is started with the same value
 -- (MPFEVER_TRACKTYPE=0: as before)
 E.TRACK_STREET = os.getenv("MPFEVER_TRACKTYPE") ~= "0"
-E.RESERVE = { line = 50000, vehicle = 50000, station = 100000, depot = 50000 }
+E.RESERVE = { line = 50000, vehicle = 50000, station = 100000, depot = 50000, warehouse = 50000 }
 -- (0.7.4) The auction of a bankrupt company, as the host chooses it (reg.rules.auction, "mode:minutes"; the lobby, the Rules tab):
 --   assets   every lot (each line with its vehicles, each station, each depot) for sale at once, one clock for all of them
 --            (0.7.3: one lot after the other, a minute each: an advanced company's twenty lines took twenty minutes, and the
@@ -343,6 +343,38 @@ local function depotsOf(env, ent)
 	return out
 end
 
+-- (0.8.3, a player's report: "the warehouses were not sold again") A company's warehouses (cargo warehouses, warehouses/...con):
+-- lots of their own at its auction (E.lotsOf), sold or demolished as a depot is. Before, they were no lot: they stayed with the
+-- bankrupt company and went to its heir with what was left. MPFEVER_LOTWAREHOUSE=0: as before
+local function warehouseKey(con)
+	local ok, k = pcall(function()
+		local c = api.engine.getComponent(con, api.type.ComponentType.CONSTRUCTION)
+		local t = c.transf
+		return "W:" .. tostring(c.fileName) .. "@" .. string.format("%.0f,%.0f", t[13], t[14])
+	end)
+	return ok and k or ("W:" .. tostring(con))
+end
+E.warehouseKey = warehouseKey
+function E.isWarehouseFile(f)
+	return type(f) == "string" and f:find("warehouse", 1, true) ~= nil
+end
+local function warehousesOf(env, ent)
+	local out = {}
+	if os.getenv("MPFEVER_LOTWAREHOUSE") == "0" then return out end
+	for _, e in ipairs(env.R.withoutAssets(env.R.entitiesWith("CONSTRUCTION"))) do
+		local ok, isMine = pcall(function()
+			local c = api.engine.getComponent(e, api.type.ComponentType.CONSTRUCTION)
+			if not (c and E.isWarehouseFile(c.fileName)) then return false end
+			if c.depots and #c.depots > 0 then return false end
+			local po = api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED)
+			return po and po.player == ent
+		end)
+		if ok and isMine then out[#out + 1] = e end
+	end
+	return out
+end
+E.warehousesOf = warehousesOf
+
 local function stationsOf(env, ent)
 	local out = {}
 	for _, sg in ipairs(env.R.entitiesWith("STATION_GROUP")) do
@@ -387,12 +419,17 @@ function E.lotsOf(env, c)
 	for _, d in ipairs(depotsOf(env, c.ent)) do
 		depots[#depots + 1] = { kind = "depot", key = depotKey(d), label = nameOf(d), reserve = E.RESERVE.depot }
 	end
+	local warehouses = {}
+	for _, w in ipairs(warehousesOf(env, c.ent)) do
+		warehouses[#warehouses + 1] = { kind = "warehouse", key = warehouseKey(w), label = nameOf(w), reserve = E.RESERVE.warehouse }
+	end
 	local function byKey(a, b) return a.key < b.key end
 	table.sort(lines, byKey)
 	table.sort(stations, byKey)
 	table.sort(depots, byKey)
+	table.sort(warehouses, byKey)
 	local lots = {}
-	for _, t in ipairs({ lines, stations, depots }) do for _, l in ipairs(t) do lots[#lots + 1] = l end end
+	for _, t in ipairs({ lines, stations, depots, warehouses }) do for _, l in ipairs(t) do lots[#lots + 1] = l end end
 	return lots
 end
 
@@ -443,6 +480,14 @@ local function lotEntities(env, c, lot)
 					local okc, cc = pcall(api.engine.getComponent, e, api.type.ComponentType.CONSTRUCTION)
 					if okc and cc then cons[#cons + 1] = e end
 				end
+				break
+			end
+		end
+	elseif lot.kind == "warehouse" then
+		for _, w in ipairs(warehousesOf(env, c.ent)) do
+			if warehouseKey(w) == lot.key then
+				ents[#ents + 1] = w
+				cons[#cons + 1] = w
 				break
 			end
 		end

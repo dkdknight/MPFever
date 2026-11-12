@@ -20020,6 +20020,10 @@ G.coLotDetail = function(reg, au, i, lot)
 			d.lines[#d.lines + 1] = #vehicles > 0 and C.Tf("Véhicules dans le dépôt (%s) : %s", "Vehicles in the depot (%s): %s", #vehicles, table.concat(G.coByModel(vehicles), ", "))
 				or C.T("Aucun véhicule dans le dépôt.", "No vehicle in the depot.")
 			d.focus = ents[1]
+		elseif lot.kind == "warehouse" then
+			-- (0.8.3) a company's warehouse (mpfever_eco.lua: warehousesOf)
+			d.lines[#d.lines + 1] = C.T("Un entrepôt de marchandises de l'entreprise.", "A goods warehouse of the company.")
+			d.focus = ents[1]
 		end
 	end
 	if d.focusLine and not d.focus then
@@ -20119,6 +20123,7 @@ G.coNewsText = function(reg, n)
 		if n.lk == "station" and n.lot and n.town and os.getenv("MPFEVER_LOTTOWN") ~= "0" then n.label = C.Tf("Gare sans nom à %s (lot %s)", "Unnamed station in %s (lot %s)", n.town, n.lot)
 		elseif n.lk == "station" and n.lot then n.label = C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", n.lot)
 		elseif n.lk == "depot" and n.lot then n.label = C.Tf("Dépôt sans nom (lot %s)", "Unnamed depot (lot %s)", n.lot)
+		elseif n.lk == "warehouse" and n.lot then n.label = C.Tf("Entrepôt sans nom (lot %s)", "Unnamed warehouse (lot %s)", n.lot)
 		else n.label = C.T("sans nom", "unnamed") end
 	end
 	if k == "lot_sold" then return C.Tf("Adjugé : « %s » à %s pour %s.", "Sold: « %s » to %s for %s.", n.label, nm(n.to), G.coMoney(n.amount)) end

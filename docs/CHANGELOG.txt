@@ -28,6 +28,10 @@ MPFever - Changelog
     ~1~Hainichen ZOB", every 2 s of game time) made 72000 actions in 75 minutes for 147 buses; G.modSkip (0.7.1) ships every new
     value. A value that comes back right after another one 6 times within a minute is no longer shipped for 10 minutes of game
     time (the host decides, every game keeps the same name). MPFEVER_MODPINGPONG=0: as before. Test: tests/test_modpingpong083.py.
+  - FIX (a player's report: "the warehouses were not sold again"): a bankrupt company's warehouses were no lots of its auction (only
+    its lines, stations and depots), so they stayed with it and went to its heir. Each warehouse it owns is now a lot of its own
+    (reserve 50000), sold to the best bid or, unsold, demolished as a depot is; the Auctions page lists them under « Warehouses ».
+    MPFEVER_LOTWAREHOUSE=0: as before. Test: tests/test_lotwarehouse083.py.
   - NEW (Zoey's suggestion, the owner's rules): loans between companies (one company per player). In another company's sheet
     (the Company tab), « Loan »: the BORROWER asks (amount, months, the interest it offers in % of the amount for the whole loan);
     the other chief accepts, refuses or makes a counter-offer, and so on in turn; either can withdraw. Accepted: the lender pays the

@@ -3859,16 +3859,20 @@ U.auLotTitle = function(lot)
 		end
 		if lot.kind == "station" then return C.Tf("Gare sans nom (lot %s)", "Unnamed station (lot %s)", lot.idx or "?") end
 		if lot.kind == "depot" then return C.Tf("Dépôt sans nom (lot %s)", "Unnamed depot (lot %s)", lot.idx or "?") end
+		if lot.kind == "warehouse" then return C.Tf("Entrepôt sans nom (lot %s)", "Unnamed warehouse (lot %s)", lot.idx or "?") end
 	end
 	if lot.kind == "line" then return C.Tf("Ligne « %s »", "Line « %s »", lot.label) end
 	if lot.kind == "station" then return C.Tf("Gare « %s »", "Station « %s »", lot.label) end
 	if lot.kind == "depot" then return C.Tf("Dépôt « %s »", "Depot « %s »", lot.label) end
+	-- (0.8.3) a company's warehouse, a lot of its own
+	if lot.kind == "warehouse" then return C.Tf("Entrepôt « %s »", "Warehouse « %s »", lot.label) end
 	return C.Tf("L'entreprise entière : %s", "The whole company: %s", lot.label)
 end
 U.auLotSub = function(lot)
 	if lot.kind == "line" then return C.Tf("avec ses %s véhicule(s)", "with its %s vehicle(s)", lot.vehicles) end
 	if lot.kind == "company" then return C.Tf("%s ligne(s), %s gare(s), %s dépôt(s), %s véhicule(s), voies et routes", "%s line(s), %s station(s), %s depot(s), %s vehicle(s), tracks and roads", lot.lines, lot.stations, lot.depots, lot.vehicles) end
 	if lot.kind == "station" then return T("avec ses quais et ses voies", "with its platforms and tracks") end
+	if lot.kind == "warehouse" then return T("un entrepôt de marchandises", "a goods warehouse") end
 	return T("avec les véhicules qu'il contient", "with the vehicles in it")
 end
 U.auHelp = function(K, rows, W)
@@ -3964,7 +3968,7 @@ U.TABS.auction = function(K, st, ctx)
 	end
 	rows[#rows + 1] = K.card(head)
 	-- the lots, by kind
-	local kinds = { { "company", T("Entreprise", "Company") }, { "line", T("Lignes", "Lines") }, { "station", T("Gares", "Stations") }, { "depot", T("Dépôts", "Depots") } }
+	local kinds = { { "company", T("Entreprise", "Company") }, { "line", T("Lignes", "Lines") }, { "station", T("Gares", "Stations") }, { "depot", T("Dépôts", "Depots") }, { "warehouse", T("Entrepôts", "Warehouses") } }
 	for _, kd in ipairs(kinds) do
 		local these = {}
 		for _, lot in ipairs(au.lots) do if lot.kind == kd[1] then these[#these + 1] = lot end end

@@ -24960,6 +24960,71 @@
       "ko": "아직 %s을(를) 갚아야 합니다 (월 %s).",
       "zh-CN": "您仍欠它 %s（每月 %s）。",
       "zh-TW": "您仍欠它 %s（每月 %s）。"
+    },
+    "A goods warehouse of the company.": {
+      "de": "Ein Warenlager der Firma.",
+      "es": "Un almacén de mercancías de la empresa.",
+      "it": "Un magazzino merci dell'azienda.",
+      "nl": "Een goederenmagazijn van het bedrijf.",
+      "pl": "Magazyn towarów firmy.",
+      "pt-BR": "Um armazém de mercadorias da empresa.",
+      "ru": "Товарный склад компании.",
+      "ja": "会社の貨物倉庫です。",
+      "ko": "회사의 화물 창고입니다.",
+      "zh-CN": "公司的货物仓库。",
+      "zh-TW": "公司的貨物倉庫。"
+    },
+    "Unnamed warehouse (lot %s)": {
+      "de": "Unbenanntes Lager (Los %s)",
+      "es": "Almacén sin nombre (lote %s)",
+      "it": "Magazzino senza nome (lotto %s)",
+      "nl": "Naamloos magazijn (kavel %s)",
+      "pl": "Magazyn bez nazwy (partia %s)",
+      "pt-BR": "Armazém sem nome (lote %s)",
+      "ru": "Склад без названия (лот %s)",
+      "ja": "名前のない倉庫（ロット %s）",
+      "ko": "이름 없는 창고 (로트 %s)",
+      "zh-CN": "未命名仓库（第 %s 批）",
+      "zh-TW": "未命名倉庫（第 %s 批）"
+    },
+    "Warehouse « %s »": {
+      "de": "Lager « %s »",
+      "es": "Almacén « %s »",
+      "it": "Magazzino « %s »",
+      "nl": "Magazijn « %s »",
+      "pl": "Magazyn « %s »",
+      "pt-BR": "Armazém « %s »",
+      "ru": "Склад « %s »",
+      "ja": "倉庫「%s」",
+      "ko": "창고 « %s »",
+      "zh-CN": "仓库“%s”",
+      "zh-TW": "倉庫「%s」"
+    },
+    "Warehouses": {
+      "de": "Lager",
+      "es": "Almacenes",
+      "it": "Magazzini",
+      "nl": "Magazijnen",
+      "pl": "Magazyny",
+      "pt-BR": "Armazéns",
+      "ru": "Склады",
+      "ja": "倉庫",
+      "ko": "창고",
+      "zh-CN": "仓库",
+      "zh-TW": "倉庫"
+    },
+    "a goods warehouse": {
+      "de": "ein Warenlager",
+      "es": "un almacén de mercancías",
+      "it": "un magazzino merci",
+      "nl": "een goederenmagazijn",
+      "pl": "magazyn towarów",
+      "pt-BR": "um armazém de mercadorias",
+      "ru": "товарный склад",
+      "ja": "貨物倉庫",
+      "ko": "화물 창고",
+      "zh-CN": "货物仓库",
+      "zh-TW": "貨物倉庫"
     }
   }
 }
