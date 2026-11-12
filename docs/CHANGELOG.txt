@@ -2,6 +2,19 @@ MPFever - Changelog
 ===================
 
 0.8.3 - (in progress)
+  - FIX (#225, first 0.8.2 drift report): a player joining a running game from the main menu built again builds that were in
+    the savegame he loaded (Knight-HD#2:64 stamped before the save, #65 stamped at the save's very time and built by the host
+    before it saved): 14 new segment ids on his game only, the free-id queue apart from his first step, then people, vehicles
+    and ages. The leave-out of G.staleDrop (0.6.10) only ran after a resynchronisation over an existing session; the first load
+    in a session now sets it too, and a build stamped at the savegame's time is left out when its builder made it before that
+    load (its lt is older) and not in the pause after it; the hold announced for it goes too. MPFEVER_STALEJOIN=0: as before.
+    Test: tests/test_stalejoin083.py.
+  - FIX (#228): the game's landmarks script (base landmarks.script) rebuilds a new landmark at its level from its update. On a
+    game standing at the build's time (the replaying one) the engine called that update with dt 0 and the rebuild went in the
+    same step outside the systems; on the builder's game it went in the next step's GameScriptSystem, after the animals took the
+    freed id: ids split (step 390012). That script's update is now called with the steps only in a session, as the mods'
+    scripts since 0.7.0 (this one script only: the global STANDSKIP of 2026-10-27 stays off). MPFEVER_LANDMARKDT0=1: as before.
+    Test: tests/test_landmarkdt0083.py.
 
 0.8.2 - 2026-11-11: the players' reports tell where a drift begins (drift diagnostic)
   - DIAGNOSTIC (the people drift of #150, the user's request: "the players' logs must tell for sure where the drift comes from,

@@ -65,7 +65,7 @@ G = {}
     check("the reading of in.log asks it only on the first read after the load",
           "G.staleNow, G.staleBefore = G.staleBefore, nil" in src
           and "if G.staleNow and G.staleDrop(kind, payload, G.staleNow) then h = nil end" in src
-          and re.search(r"G\.staleDrop\(kind, payload, G\.staleNow\).*?G\.staleNow = nil", src, re.S) is not None)
+          and re.search(r"G\.staleDrop\(kind, payload, G\.staleNow\).*?G\.staleNow(?:, G\.staleLid)? = nil(?:, nil)?", src, re.S) is not None)
     check("set after the messages received during the load, unless MPFEVER_STALEDROP=0",
           re.search(r'bytes of messages received during the load are read.*?if os\.getenv\("MPFEVER_STALEDROP"\) ~= "0" then.*?G\.staleBefore = tL',
                     src, re.S) is not None)

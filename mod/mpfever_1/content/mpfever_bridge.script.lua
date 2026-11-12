@@ -2226,6 +2226,25 @@ function DET.wrapModEvents()
 			end
 			log("mod script events watched: " .. k)
 		end
+		-- (0.8.3, #228) The game's landmarks script rebuilds a landmark at its level from its update: a new arena is rebuilt at
+		-- once. On the game that replays another player's build, the game stands at the build's time and the engine calls the
+		-- update with dt 0 there: the rebuild went in the same step, before the step's systems; on the builder's game, which did
+		-- not stand, it went in the next step's scripts, after the animals. The animals took the freed entity id first on one game
+		-- only, and from then on the ids, the people and the towns differed (Knight-HD's arena, 2026-11-11, step 390012). Its
+		-- update is called with the steps only, the same step on every game. MPFEVER_LANDMARKDT0=1: every call, as before
+		if k == "::/landmarks/landmarks.script" and type(v) == "table" and type(v.update) == "function" and not v.__mpfLmDt
+			and os.getenv("MPFEVER_LANDMARKDT0") ~= "1" then
+			v.__mpfLmDt = true
+			local origL = v.update
+			v.update = function(u, st, dt, ...)
+				if dt == 0 and (C.ROLE == "host" or C.ROLE == "client") then
+					SIM.lmDt0 = (SIM.lmDt0 or 0) + 1
+					return
+				end
+				return origL(u, st, dt, ...)
+			end
+			log("the game's landmarks script: update called with the steps only")
+		end
 		-- (0.7.0) The engine calls the game scripts' update once per step with dt 0.2, and with dt 0 in a batch of no step (a
 		-- game standing at a stop point, a pause): how many of those calls a game makes depends on its frames. A mod that works
 		-- at every call (Cargo & Passenger Station Range rebuilds two stations per call during an "apply to all") then did more
@@ -4952,13 +4971,26 @@ end
 
 -- The first read of in.log after a load over an existing session (G.staleBefore, set there): a build or an action stamped before
 -- the time of the savegame loaded is in that savegame already, and is not applied again (MPFEVER_STALEDROP=0: it was, late)
+-- (0.8.3) A player's first load in a session (G.staleLid, the resynchronisation's number, see the load) also leaves out a build
+-- stamped at the savegame's very time when its builder made it before that resynchronisation's load (its a.lt is older) and not in
+-- the pause after it: the host built it, then saved (Knight-HD#2:65, 2026-11-11). And the hold of a build left out goes with it.
 G.staleDrop = function(kind, p, before)
 	if (kind ~= "act" and kind ~= "nat_pending") or type(p) ~= "table" then return false end
 	local at = tonumber(p.at)
-	if not at or at >= before then return false end
+	if not at then return false end
+	local same = at == before and type(G.staleLid) == "number" and not p.paused and type(p.lt) == "number" and p.lt < G.staleLid
+	if at >= before and not same then return false end
 	G.staleDropped = (G.staleDropped or 0) + 1
 	log("after the load: " .. kind .. " " .. tostring(p.uid or p.id) .. " of " .. tostring(p.origin) .. " for t=" .. at
 		.. " left out, the savegame loaded (t=" .. before .. ") has it already")
+	if kind == "act" and p.native and type(G.natWait) == "table" then
+		local keep = {}
+		for _, w in ipairs(G.natWait) do
+			local match = w.origin == p.origin and ((p.natId ~= nil and w.id == p.natId) or (p.natId == nil and w.at == at))
+			if not match then keep[#keep + 1] = w end
+		end
+		G.natWait = keep
+	end
 	return true
 end
 
@@ -19184,6 +19216,14 @@ local function resumeAfterLoad(state)
 			f:close()
 			G.loadId = tonumber(s:match("%d+"))
 			if G.loadId then log("loaded from the main menu: savegame of resynchronisation " .. G.loadId) end
+			-- (0.8.3: a player who joins starts a game of its own and reads everything its launcher received since it joined,
+			-- builds made before the host saved included: LauchusMaximus, 2026-11-11, built Knight-HD's 13 streets of #64 and his
+			-- street of #65 a second time after resynchronisation 3's load, new entity ids on that game only, then the people
+			-- and the vehicles apart and resynchronisation 4. The first read leaves them out as after a resynchronisation's load,
+			-- see G.staleDrop; MPFEVER_STALEJOIN=0: as before)
+			if G.loadId and os.getenv("MPFEVER_STALEDROP") ~= "0" and os.getenv("MPFEVER_STALEJOIN") ~= "0" and type(G.loadT) == "number" then
+				G.staleBefore, G.staleLid = G.loadT, G.loadId
+			end
 			local w = C.IO.open(C.DIR .. BS .. "load_id.txt", "wb")
 			if w then w:close() end
 		end)
@@ -21277,7 +21317,7 @@ local function guiUpdate(userParams, state, guiState)
 			end
 		end
 	end
-	G.staleNow = nil
+	G.staleNow, G.staleLid = nil, nil
 
 	do
 		local okT, tNow = pcall(gameTime)
