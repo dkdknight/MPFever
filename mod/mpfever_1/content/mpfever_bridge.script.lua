@@ -14377,6 +14377,94 @@ H.bulldoze = function(from, p)
 	end
 end
 
+-- (0.8.4, issue #221, a test with the real bulldozer) The host's camera is put over one track of a junction of three (no station's,
+-- no depot's), whose middle is at the screen's centre; a person (or a click harness) bulldozes it by hand within 300 s. The
+-- client's replay shows which path it took (MPFEVER_TRACKMERGENATIVE=1: "a removal of tracks the tool joined again"); the sync
+-- check says whether both games have the same tracks and ground.
+H.trackmergeui = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	if C.ROLE ~= "host" then
+		AUTO.results[#AUTO.results + 1] = "trackmergeui: the host bulldozes"
+		return autoFinish()
+	end
+	local ok, err = pcall(function()
+		local pick = nil
+		-- (the bulldozer takes only this player's own tracks: another company's are not even shown under the tool)
+		local me = api.engine.util.getPlayer()
+		for n, segs in pairs(api.engine.system.streetSystem.getNode2SegmentMap() or {}) do
+			local k = 0
+			pcall(function() k = #segs end)
+			if k == 3 and not pick then
+				local good = true
+				for i = 1, 3 do
+					local okS, street = pcall(api.engine.getComponent, segs[i], api.type.ComponentType.BASE_EDGE_STREET)
+					local okC, con = pcall(api.engine.system.streetConnectorSystem.getConstructionEntityForEdge, segs[i])
+					if not okS or street ~= nil or (okC and type(con) == "number" and con >= 0) then good = false end
+					if good and R.ownerOf(segs[i]) ~= me then good = false end
+				end
+				if good then pick = { n = n, e = segs[1] } end
+			end
+		end
+		-- (MPFEVER_TMUI_SIGNAL=1: this player's newest track segment carrying a signal instead, e.g. the one dsignal just put: the
+		-- bulldozer then takes a piece of it with its signal, #221's shape: signals removed, pieces of track joined again)
+		if os.getenv("MPFEVER_TMUI_SIGNAL") == "1" then
+			pick = nil
+			for _, e in ipairs(R.allEdges()) do
+				local okc2, c2 = pcall(api.engine.getComponent, e, api.type.ComponentType.BASE_EDGE)
+				local okS, street = pcall(api.engine.getComponent, e, api.type.ComponentType.BASE_EDGE_STREET)
+				if okc2 and c2 and #c2.objects > 0 and okS and street == nil and R.ownerOf(e) == me and (not pick or e > pick.e) then
+					pick = { n = c2.node0, e = e }
+				end
+			end
+		end
+		if not pick then
+			AUTO.results[#AUTO.results + 1] = "trackmergeui: no junction of three plain tracks (or no signal of this player)"
+			return autoFinish()
+		end
+		local c = api.engine.getComponent(pick.e, api.type.ComponentType.BASE_EDGE)
+		local mid = {
+			x = 0.5 * c.position0.x + 0.5 * c.position1.x + 0.125 * c.tangent0.x - 0.125 * c.tangent1.x,
+			y = 0.5 * c.position0.y + 0.5 * c.position1.y + 0.125 * c.tangent0.y - 0.125 * c.tangent1.y,
+			z = 0.5 * c.position0.z + 0.5 * c.position1.z }
+		local cam = api.gui.camera
+		local okc, why = pcall(function()
+			local d = cam.getCameraData()
+			if d.x ~= nil then d.x, d.y = mid.x, mid.y else d[1], d[2], d[3] = mid.x, mid.y, 90 end
+			cam.setCameraData(d)
+		end)
+		log(string.format("AUTOTEST trackmergeui: segment %d at junction %d, its middle %.1f, %.1f, %.1f; camera %s", pick.e, pick.n, mid.x, mid.y, mid.z,
+			okc and "set" or tostring(why)))
+		C.appendFile(C.DIR .. BS .. "trackmergeui.txt", string.format("%d %.1f %.1f\n", pick.e, mid.x, mid.y))
+		local edgesBefore = edgeCount()
+		local waited = 0
+		local function watch()
+			waited = waited + 1
+			if not api.engine.entityExists(pick.e) then
+				local line = "trackmergeui: segment " .. pick.e .. " bulldozed by hand, edges " .. edgesBefore .. " -> " .. edgeCount()
+				log("AUTOTEST " .. line)
+				AUTO.results[#AUTO.results + 1] = line
+				AUTO.points[#AUTO.points + 1] = mid
+				G.waits[#G.waits + 1] = { at = G.frames + 300, fn = autoFinish }
+				return
+			end
+			if waited > 300 then
+				AUTO.results[#AUTO.results + 1] = "trackmergeui: segment " .. pick.e .. " not bulldozed within 300 s"
+				return autoFinish()
+			end
+			G.waits[#G.waits + 1] = { at = G.frames + 60, fn = watch }
+		end
+		watch()
+	end)
+	if not ok then
+		log("TRACKMERGEUI failed: " .. tostring(err))
+		AUTO.results[#AUTO.results + 1] = "trackmergeui error " .. tostring(err)
+		autoFinish()
+	end
+end
+
 -- (0.8.4, issue #221) A track removed at a junction of three tracks: the engine joins the two left into one (the tool's shape of
 -- #221, segments removed and a joined one added), built here as a held native build; the other games replay it as the tool's
 -- native proposal (G.trackMergeNative). The sync check says whether every game has the same tracks and ground.
