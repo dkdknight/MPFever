@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.8.4 - (in progress)
+  - FIX (#253, why the signal's dry run was built): marce's game ran the "Deutsche Signale" mod (tf3_signale_de_1), the host's
+    not ("Couldn't find resource for edge object"). A new stop or signal whose model belongs to a mod this game does not run is
+    no longer replayed (nothing built): the games differ, a resynchronisation follows. Only a mod's models ("modid::/...") are
+    looked up. MPFEVER_EOMODELCHECK=0: as before. Test: tests/test_stopobjcheck084.py.
   - CHANGE (#233 #251, the user's choice: warn everybody): a player's game that runs WITHOUT a mod of the host's game taken for
     personal by hand (by the host or by this player), or WITH one of its own taken by hand, says so to every player in the
     session's chat, once per session ("MPFever: this game runs WITHOUT ... If they change the game, the games will desync").

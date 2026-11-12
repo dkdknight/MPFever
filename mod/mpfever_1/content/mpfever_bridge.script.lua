@@ -5649,6 +5649,23 @@ G.stopObjsDiffer = function(plan, c)
 	return nil
 end
 
+-- (0.8.4, issue #253) A new stop or signal whose model belongs to a mod this game does not run ("modid::/file.con", not found in
+-- this game's constructions): marce's game ran "Deutsche Signale" (tf3_signale_de_1), the host's not ("Couldn't find resource for
+-- edge object"); its replay could not be the builder's build, and its dry run was built. Such a replay fails at once (a
+-- resynchronisation), nothing built. Only a mod's models are looked up (the game's own, "::/...", always exist).
+-- MPFEVER_EOMODELCHECK=0: as before
+G.missingEdgeModel = function(plan)
+	if os.getenv("MPFEVER_EOMODELCHECK") == "0" then return nil end
+	for _, o in ipairs(plan.objs or {}) do
+		local m = type(o) == "table" and o.model
+		if type(m) == "string" and m:match("^[%w_%-%.]+::") then
+			local ok, id = pcall(api.res.constructionRep.find, m)
+			if ok and type(id) == "number" and id < 0 then return m end
+		end
+	end
+	return nil
+end
+
 -- (0.8.4, issue #253) A signal put on a STREET segment (a mod's signal, "Deutsche Signale" tf3_signale_de_1): the engine BUILT
 -- the dry run of its conversion (G.eoDryRun, made to be refused) on the replaying game, every time (5 of 5 in that session), so
 -- that game got the signals twice and a resynchronisation each time, then the crash above. Such a stop goes the old way
@@ -7360,6 +7377,11 @@ G.replayNativeStop = function(a, plan)
 		log("NATIVE REPLAY " .. uid .. " native stop: segment " .. plan.E .. " " .. differ .. ": not built (resynchronisation)")
 		return replayFailed(a, "native stop: the segment's objects differ")
 	end
+	local noModel = G.missingEdgeModel(plan)
+	if noModel then
+		log("NATIVE REPLAY " .. uid .. " native stop: model " .. noModel .. " not in this game (a mod it does not run): not built (resynchronisation)")
+		return replayFailed(a, "native stop: model of a mod not run here")
+	end
 	if G.streetSignalDry(plan, c) then return asBefore("a signal on a street (the engine builds its dry run)") end
 	-- (this game's segment the other way round than the builder's: the tool's segment replaces it the builder's way round, as
 	-- replayStop does; not with stops already on it, whose places count from this game's first node)
@@ -7839,6 +7861,11 @@ local function replayNative(a, formIndex)
 				if differ then
 					log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: segment " .. plan.E .. " " .. differ .. ": not built (resynchronisation)")
 					return replayFailed(a, "stop: the segment's objects differ")
+				end
+				local noModel = G.missingEdgeModel(plan)
+				if noModel then
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: model " .. noModel .. " not in this game (a mod it does not run): not built (resynchronisation)")
+					return replayFailed(a, "stop: model of a mod not run here")
 				end
 				return replayStop(a, plan)
 			end

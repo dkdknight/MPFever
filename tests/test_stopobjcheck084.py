@@ -42,6 +42,10 @@ check("  objects that differ: not built, the replay fails (resynchronisation)",
       'return replayFailed(a, "native stop: the segment\'s objects differ")' in ns)
 
 # the script path (replayStop) is checked too
+check("the native path refuses a mod's model this game lacks, before the dry run",
+      ns.index("local noModel = G.missingEdgeModel(plan)") < ns.index("pcall(G.eoDryRun, m,")
+      and 'return replayFailed(a, "native stop: model of a mod not run here")' in ns)
+check("  the script path too, before replayStop", 'return replayFailed(a, "stop: model of a mod not run here")' in src)
 check("the script path checks the objects before replayStop",
       'local differ = c0 and G.stopObjsDiffer(plan, c0)' in src and 'return replayFailed(a, "stop: the segment\'s objects differ")' in src)
 
@@ -74,6 +78,19 @@ try:
     check("  a stop (category 0) on a street: the dry run as before", sig(0, 0, None) is False)
     check("  a signal on a track (type 1): as before", sig(1, 2, None) is False)
     check("  MPFEVER_STREETSIGDRY=1: the dry run as before", sig(0, 2, "1") is False)
+
+    # (0.8.4) a model of a mod this game does not run (marce's "Deutsche Signale", not on leinl's game)
+    f3 = re.search(r"^G\.missingEdgeModel = function\(plan\)\n.*?^end\n", src, re.S | re.M).group(0)
+    L.execute("api = { res = { constructionRep = { find = function(n) if n:find('tf3_signale_de_1', 1, true) then return -1 end return 7 end } } }\n" + f3)
+    miss = L.eval("""function(model, env)
+      ENVV.MPFEVER_EOMODELCHECK = env
+      return G.missingEdgeModel({ objs = { { model = model } } })
+    end""")
+    check("a mod's model this game does not have: named (the replay fails, nothing built)",
+          miss("tf3_signale_de_1::/infrastructure/de_ks_ma/de_ks_ma.con", None) == "tf3_signale_de_1::/infrastructure/de_ks_ma/de_ks_ma.con")
+    check("  a mod's model this game has: nothing", miss("other_mod_1::/stops/stop.con", None) is None)
+    check("  the game's own models (::/...) are not looked up", miss("::/station/street/bus_stop.con", None) is None)
+    check("  MPFEVER_EOMODELCHECK=0: as before", miss("tf3_signale_de_1::/infrastructure/de_ks_ma/de_ks_ma.con", "0") is None)
 except ImportError:
     print("lupa is not installed: the functions' cases not run")
 
