@@ -5547,9 +5547,9 @@ end
 -- (0.8.4, issue #221) A removal of tracks the tool joined again (segments removed, and the pieces left re-joined into new ones,
 -- every new one a track): replayed by the engine's own removal, the ground was put back otherwise than on the builder's game (LPEM
 -- bulldozed 20 tracks with signals, -5 +1 segments: terrain alignment removed 141.750 there, 99.417 on ls_pa's game, a
--- resynchronisation). The tool's own native proposal is replayed instead, as for a segment with stops cut. Streets: as before.
--- OFF by default until a test with the real bulldozer: the engine's own removal joins nothing (the autotest trackmerge found no
--- joined shape at 40 junctions), so no script can make the tool's shape. MPFEVER_TRACKMERGENATIVE=1: on
+-- resynchronisation). The tool's own native proposal is replayed instead, as for a segment with stops cut.
+-- (the autotest trackmerge cannot make the tool's shape: the engine's own removal joins nothing) ON by default since 0.8.5,
+-- after the test with the real bulldozer (see below). MPFEVER_TRACKMERGENATIVE=0: the engine's removal, as before
 -- (0.8.4, #255-#261, Kasper + Eier) The same with streets: Eier bulldozed streets the tool joined again (-8 +2 segments, twice);
 -- the engine's own removal left one segment more on Kasper's game (edges 5589 / 5588), and Eier's next street there was refused
 -- by the engine ("IsNodeLocked": a node his proposal removes still held a segment on Kasper's game), a resynchronisation each time.
@@ -5558,7 +5558,9 @@ end
 -- anyway); MPFEVER_STREETMERGENATIVE=0: the engine's removal, as before. Tracks stay OFF (not met in that test); a street and a
 -- track together: as before
 G.trackMergeNative = function(probe)
-	local tracks, streets = os.getenv("MPFEVER_TRACKMERGENATIVE") == "1", os.getenv("MPFEVER_STREETMERGENATIVE") ~= "0"
+	-- ((0.8.5) tracks ON by default too: the same bulldozer test with tracks, 2026-11-12 21:31, four paused removals the tool
+	-- joined again (-3 +1, -5 +2), the same on both games, in sync after. MPFEVER_TRACKMERGENATIVE=0: the engine's removal)
+	local tracks, streets = os.getenv("MPFEVER_TRACKMERGENATIVE") ~= "0", os.getenv("MPFEVER_STREETMERGENATIVE") ~= "0"
 	if not tracks and not streets then return false end
 	local st = probe and probe[1] and probe[1].proposal
 	if type(st) ~= "table" then return false end
@@ -7775,7 +7777,8 @@ local function replayNative(a, formIndex)
 				if type(z) == "number" then zmin = math.min(zmin or z, z) zmax = math.max(zmax or z, z) end
 			end
 			for _, sg in ipairs(st.addedSegments or {}) do
-				kinds[#kinds + 1] = tostring(sg.comp and sg.comp.type) .. "/" .. tostring(sg.comp and sg.comp.typeIndex)
+				-- ((0.8.5) the segment's kind first, street or track (sg.type); comp.type is its bridge/tunnel kind, 0 for both)
+				kinds[#kinds + 1] = (sg.type == 1 and "track " or (sg.type == 0 and "street " or "")) .. tostring(sg.comp and sg.comp.type) .. "/" .. tostring(sg.comp and sg.comp.typeIndex)
 			end
 			do
 				local at = {}

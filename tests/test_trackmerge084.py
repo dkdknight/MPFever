@@ -53,14 +53,15 @@ try:
     check("  streets joined again (type 0) with the street switch off: as before", tm(T(0), 3, None, "0") is False)
     check("  a street and a track: as before", tm(T(0, 1), 5, None) is False)
     check("  as many added as removed (no removal): as before", tm(T(1, 1), 2, None) is False)
-    check("  tracks: off by default (unset: as before), not met in the bulldozer test", tm(T(1), 5, "", "0") is False)
+    check("  tracks: on by default since the bulldozer test with tracks (0.8.5)", tm(T(1), 5, "", None) is True)
+    check("  tracks, MPFEVER_TRACKMERGENATIVE=0: the engine's removal as before", tm(T(1), 5, "0", None) is False)
     # (0.8.4, #255-#261) streets the tool joined again: Eier's -8 +2, then IsNodeLocked on the next street (MPFEVER_STREETMERGENATIVE=1)
     check("#261: streets joined again (-8 +2): the native proposal (on by default since the bulldozer test)", tm(T(0, 0), 8, "", None) is True)
     check("  streets, MPFEVER_STREETMERGENATIVE=0: the engine's removal as before", tm(T(0, 0), 8, "1", "0") is False)
-    check("  tracks with the street switch only: as before", tm(T(1), 5, "", "1") is False)
+    check("  tracks with the track switch off, streets on: as before", tm(T(1), 5, "0", "1") is False)
     check("  a street and a track, both switches: as before", tm(T(0, 1), 5, "1", "1") is False)
     check("  a pure street removal (-2 +0), street switch: the engine's removal", tm(T(), 2, "", "1") is False)
-    check("  streets on, tracks off by default: a track join stays the engine's removal", tm(T(1), 5, "", None) is False)
+    check("  streets off, tracks on: a street join stays the engine's removal", tm(T(0), 3, None, "0") is False)
 except ImportError:
     print("lupa is not installed: the function's cases not run")
 
