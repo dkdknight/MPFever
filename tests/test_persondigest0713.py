@@ -203,7 +203,8 @@ def main():
 
     # the launcher
     mf = read(MAINFORM)
-    check('static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds", "personsDigest" };' in mf,
+    # ((0.8.3) "stepsDigest" joined the set: its own test, test_stepsdigest083.py)
+    check(re.search(r'static readonly HashSet<string> DiagnosticParts = new HashSet<string> \{ "buildIds", "personsDigest"(, "[A-Za-z]+")* \};', mf) is not None,
           "the launcher: a diagnostic part (logged only, never a reason to reload)")
     nl = mf[mf.index("static readonly HashSet<string> NeverLocalParts"):][:300]
     check('"buildIds"' in nl and '"personsDigest"' in nl.split(";")[0], "  never a local measure after a reload (still logged)")

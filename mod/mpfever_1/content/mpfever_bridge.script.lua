@@ -603,6 +603,26 @@ end
 
 local hashShown = false
 K.hashCostsShown = 0
+-- (0.8.3) The native module's digest of the 50 simulation steps up to the check's step less 20, rounded down to 10 (every game has
+-- made those, see StepsWindow in mpfever_native.cpp): "stepsDigest", a diagnostic part of the checks (never a reason to reload).
+-- The launcher asks every game for its drift rings at the first check where it differs, so they still hold the step where the
+-- games parted. "off": no native module or MPFEVER_STEPSDIGEST=0; "absent": that step not in its file (or not 50 steps in a row
+-- since the load yet). K.stepsDigestAt(at, text): text is native_steps.txt's content (read here when nil)
+K.stepsDigestAt = function(at, text)
+	if os.getenv("MPFEVER_STEPSDIGEST") == "0" or type(at) ~= "number" then return "off" end
+	if text == nil then
+		local f = C.IO and C.IO.open(C.DIR .. C.BS .. "native_steps.txt", "rb")
+		if not f then return "off" end
+		text = f:read("*a") or ""
+		f:close()
+	end
+	local step = math.floor(at / STEP) - 20
+	step = step - step % 10
+	for s, h in tostring(text):gmatch("(%d+) (%d+)") do
+		if tonumber(s) == step then return (h ~= "0") and h or "absent" end
+	end
+	return "absent"
+end
 local function simHash(terrainSig, reg, n, buildIds, at)
 	local tStart = os.clock()
 	-- the expensive parts take turns (issue #32: the whole check held the simulation step about 0.3 s every 10 s): every
@@ -652,6 +672,7 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 		end
 	end
 	parts.buildIds = bn .. "/" .. bs
+	pcall(function() parts.stepsDigest = K.stepsDigestAt(tonumber(at)) end)
 	-- ((0.7.5) with the halves, "owners" takes its turn too, with "edges2": it reads every road, construction and vehicle
 	-- again, 0.03 to 0.07 s of every check)
 	local skipOwners = R.hashSkip and R.hashSkip.owners
@@ -8415,6 +8436,28 @@ local function nativeHoldAt()
 		end
 		if a.stillWait and a.at <= now then return now end
 	end
+	-- (0.8.3, #237: Wretched's warehouse edit pc:19, stamped t=28092200, was due on chris's game while the replay before it
+	-- (dujuk#6:10) was still in the engine's hands; the action waited in the queue, but nothing held the game at its time any
+	-- more (only actions still to come did, a.at > now): the game went on one step, released its own build there (t=28092400),
+	-- then the edit came "1 step late after another build" and the host's game was reloaded. A due action not applied yet now
+	-- holds the game where it is until it is applied, from the frame after it became due (that frame is as before: the
+	-- action is sent later in it); not a paused one, which has its turns (see G.pt); not longer than 10 s each.
+	-- MPFEVER_DUEHOLD=0: as before)
+	if os.getenv("MPFEVER_DUEHOLD") ~= "0" then
+		for _, a in ipairs(G.nativeQueue or {}) do
+			if a.at <= now and not a.paused and a.fn ~= "mpfCoJoin" then
+				-- (the frame it becomes due, as before: it is sent later in this frame; kept past it, it holds)
+				a.dueF = a.dueF or G.frames
+				if G.frames > a.dueF and G.frames - a.dueF < 600 then
+					if not a.dueHoldLogged then
+						a.dueHoldLogged = true
+						log("NATIVE REPLAY " .. tostring(a.uid) .. ": due at t=" .. tostring(a.at) .. ", the replay before it still under way: the game holds at t=" .. tostring(now) .. " [frame " .. G.frames .. "]")
+					end
+					return now
+				end
+			end
+		end
+	end
 	for _, a in ipairs(G.nativeQueue or {}) do
 		if a.at > now then local t = approach(a.at) if m == nil or t < m then m = t end end
 	end
@@ -8465,6 +8508,42 @@ G.modSkip = function(p, now, nameOf)
 	G.modSlots[key] = { val = val, t = now, fails = 0 }
 	return false
 end
+
+-- (0.8.3, #232) Two mods that set the same entity's name in turn: Liniennamen (ln.script) names a bus "Bus 11", Betriebshof
+-- (bh.script) names it "Bus 11 ... ~1~Hainichen ZOB" back, every 2 s of game time, forever (Florian's session of 2026-11-11: 72000
+-- names shipped in 75 minutes, 147 vehicles; each value is new against the one before, so G.modSkip0 ships them all). Such a
+-- back-and-forth (a value that comes back right after another one, 6 times within a minute each) is no longer shipped for 10
+-- minutes of game time, then again until it goes on (2 more turns). Only the host ships these, so every game keeps the same
+-- name; the name stays on one of the two mods' choices meanwhile, as it would flicker between them alone. MPFEVER_MODPINGPONG=0:
+-- every turn shipped, as before
+G.modPing = {}
+G.modPingPong = function(p, now)
+	if os.getenv("MPFEVER_MODPINGPONG") == "0" or type(p) ~= "table" or type(p.args) ~= "table" or type(p.args[1]) ~= "number" then return false end
+	now = tonumber(now) or 0
+	local okS, val = pcall(C.ser, { p.args[2], p.args[3], p.args[4] })
+	val = okS and val or tostring(p.args[2])
+	local key = tostring(p.fn) .. "|" .. p.args[1]
+	local pp = G.modPing[key]
+	if pp and pp.mute then
+		if now >= pp.at and now < pp.mute then return true end
+		pp.mute, pp.flips = nil, 4
+	end
+	if not pp then G.modPing[key] = { last = val, flips = 0, at = now } return false end
+	if val == pp.last then return false end
+	if val == pp.prev and now >= pp.at and now - pp.at < 60000 then pp.flips = pp.flips + 1 else pp.flips = 0 end
+	pp.prev, pp.last, pp.at = pp.last, val, now
+	if pp.flips >= 6 then
+		pp.mute = now + 600000
+		G.modPings = (G.modPings or 0) + 1
+		if G.modPings <= 20 or G.modPings % 100 == 0 then
+			log("mod command " .. tostring(p.fn) .. " of " .. tostring(p.mod) .. " on " .. p.args[1] .. ": two values in turn (two mods at odds?), "
+				.. "not shipped for 10 minutes of game time [" .. G.modPings .. " so far]")
+		end
+		return true
+	end
+	return false
+end
+
 
 -- (0.7.1) The commands that the mods' GAME SCRIPTS send from their interface half (guiUpdate, guiHandleEvent of a *.gs.lua's
 -- script). MPFever's interface hook (mpfever_ui.script.lua) wraps the commands of the interface's own state (windows, react
@@ -9656,6 +9735,11 @@ end
 -- 4-hour session of 2026-10-29 had none late at all. MPFEVER_LATERESYNC=0: built as before
 function G.lateSkip(a, now)
 	if a.at >= now or a.fn == "mpfCoJoin" or os.getenv("MPFEVER_LATERESYNC") == "0" then return false end
+	-- (0.8.3, #239: a terrain edit is shipped once made, so it always comes some steps late to the other games (Bence#16:51, 9 steps
+	-- on YkeWoudstra's game, who had built in between: the host's game was reloaded). It makes no entity: built after another build
+	-- here, no id is numbered otherwise; its cells are copied as its builder made them. Built late, as before 0.5.14.
+	-- MPFEVER_LATETERRAIN=0: left out and reloaded, as 0.5.14 to 0.8.2)
+	if a.fn == "terrainEdit" and os.getenv("MPFEVER_LATETERRAIN") ~= "0" then return false end
 	local since = (G.builtAt or -1) > a.at and G.builtAt or nil
 	-- (a build of this game released and not shipped yet stands here already, or will at the next step)
 	for _, e in ipairs(G.natShipIds or {}) do
@@ -10823,8 +10907,10 @@ local function stampHeld()
 		elseif G.session.resync then
 			-- (during a resynchronisation the launcher keeps no command: applied here only, the games would differ)
 			log("resynchronisation under way: mod command " .. tostring(p.fn) .. " of " .. tostring(p.mod) .. " dropped")
-		elseif G.modSkip(p, gameTime(), function(x) local n = api.engine.getComponent(x, api.type.ComponentType.NAME) return n and n.name end) then
-			-- (0.7.1, issue #128: a name it already has, the same command still on its way, or one that never takes, see G.modSkip)
+		elseif G.modSkip(p, gameTime(), function(x) local n = api.engine.getComponent(x, api.type.ComponentType.NAME) return n and n.name end)
+			or G.modPingPong(p, gameTime()) then
+			-- (0.7.1, issue #128: a name it already has, the same command still on its way, or one that never takes, see G.modSkip;
+			-- (0.8.3, #232) two mods setting it in turn, see G.modPingPong)
 		else
 			pcall(R.translateOut, p.fn, p.args, G.rev)
 			local now = gameTime()
@@ -18510,7 +18596,20 @@ H.conbulldoze = function(from, p)
 	local ok, err = pcall(function()
 		local want = os.getenv("MPFEVER_CONEDIT_FILE")
 		local pick, pc = nil, nil
-		for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+		-- (0.8.3, #230 #242: MPFEVER_CONBULLDOZE_IND=1 bulldozes an industry with its entrance street instead, nobody's)
+		if os.getenv("MPFEVER_CONBULLDOZE_IND") == "1" then
+			local nInd, nOwned = 0, 0
+			for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+				local okc, c = pcall(function() return api.engine.getComponent(e, api.type.ComponentType.CONSTRUCTION) end)
+				if okc and c and R.isIndustryConstruction(c) then
+					nInd = nInd + 1
+					if R.ownerOf(e) then nOwned = nOwned + 1
+					elseif (not want or tostring(c.fileName):find(want, 1, true)) and (not pick or e > pick) then pick, pc = e, c end
+				end
+			end
+			log("AUTOTEST conbulldoze: industries " .. nInd .. " (with an owner " .. nOwned .. ")")
+		end
+		for _, e in ipairs(pick and {} or R.entitiesWith("CONSTRUCTION")) do
 			local okc, c = pcall(function() return api.engine.getComponent(e, api.type.ComponentType.CONSTRUCTION) end)
 			if okc and c and R.ownerOf(e) then
 				local f = tostring(c.fileName)

@@ -2,6 +2,33 @@ MPFever - Changelog
 ===================
 
 0.8.3 - (in progress)
+  - FIX (CRASH, #230 #231 #242 #245, three times on 2026-11-11): bulldozing an industry (a farm, a quarry) crashed the other
+    players' games (assertion AreAllNodesEmpty, TransportNetworkSystem.cpp:635). The replay removed the industry's entrance street
+    and the node at its end with the engine's segment removal, plus the constructions of R.removedConstructions, which kept the
+    player-owned ones only (issue #15): the industry, nobody's, stayed connected to the removed node. The industries of a removal
+    are now removed with it. MPFEVER_INDREMOVE=0: as before. Test: tests/test_indremove083.py (the engine's components as
+    userdata, as in the game); autotest conbulldoze with MPFEVER_CONBULLDOZE_IND=1 (an industry instead of a station), 2026-11-12
+    on "Test Gameplay": a coal mine and its 12 street segments bulldozed by the host, replayed on the other game, in sync; with
+    MPFEVER_INDREMOVE=0 the other game crashed on the players' assertion (AreAllNodesEmpty).
+  - FIX (#237): a due action of another player (Wretched's warehouse edit) waited in the queue while the replay before it was
+    still in the engine's hands, but nothing held the game at its time any more: chris's game went one step on, released its own
+    build there, the edit came "1 step late after another build" and the host's game was reloaded. A due action still waiting a
+    frame after it became due now holds the game where it is until it is applied (not a paused one, not a join; 10 s at most).
+    MPFEVER_DUEHOLD=0: as before. Test: tests/test_latehold083.py.
+  - FIX (#239): a terrain edit is shipped once made, so it always reaches the other games some steps late; one that came after a
+    build of the receiving game was left out and the host's game reloaded (Bence's terrain edit, 9 steps late on YkeWoudstra's
+    game). It makes no entity, so no id is numbered otherwise: built late, as before 0.5.14. MPFEVER_LATETERRAIN=0: as 0.5.14 to
+    0.8.2. Test: tests/test_latehold083.py.
+  - FIX (#232, mods): two mods setting the same vehicles' names in turn (Liniennamen "Bus 11", Betriebshof "Bus 11 ...
+    ~1~Hainichen ZOB", every 2 s of game time) made 72000 actions in 75 minutes for 147 buses; G.modSkip (0.7.1) ships every new
+    value. A value that comes back right after another one 6 times within a minute is no longer shipped for 10 minutes of game
+    time (the host decides, every game keeps the same name). MPFEVER_MODPINGPONG=0: as before. Test: tests/test_modpingpong083.py.
+  - DIAGNOSTIC (the drifts of 0.8.2's reports, "older than the rings" in #238 #241): the native module reduces every 10 steps the
+    digests of the last 50 simulation steps to one hash (native_steps.txt, written by a thread of its own); each check carries
+    the one of its step ("stepsDigest", a diagnostic part: logged, never a reason to reload), and at the first check where it
+    differs the launcher asks every game for its drift rings, which then still hold the step where the games parted (the
+    entity ring holds about 3000 steps of a big map). MPFEVER_STEPSDIGEST=0 (native and mod) / MPFEVER_STEPSDUMP=0 (launcher):
+    off. tools/drift_diff.py leaves out "step 0" (what a game did while it loaded). Test: tests/test_stepsdigest083.py.
   - FIX (#225, first 0.8.2 drift report): a player joining a running game from the main menu built again builds that were in
     the savegame he loaded (Knight-HD#2:64 stamped before the save, #65 stamped at the save's very time and built by the host
     before it saved): 14 new segment ids on his game only, the free-id queue apart from his first step, then people, vehicles

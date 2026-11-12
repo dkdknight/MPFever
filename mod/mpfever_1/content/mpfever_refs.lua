@@ -736,10 +736,26 @@ end
 -- The player entity owning an entity: its own owner, else the owner of its station group's first station, else of its construction
 -- The player's constructions in a removal (translated args): owned by a company. Town buildings belong to nobody, and
 -- every game's own removal proposal finds them.
+-- (0.8.3, #230 #242 #245: an industry bulldozed (a farm, a quarry) belongs to nobody either, but no game's segment removal takes it
+-- away: the replay removed its entrance street and the node at its end, the industry stayed connected to that node and the
+-- replaying game crashed (assertion AreAllNodesEmpty, TransportNetworkSystem.cpp:635), three times on 2026-11-11, while the
+-- builder's game took the industry away. The industries of the removal are now removed with it, as the player's own
+-- constructions since issue #15. MPFEVER_INDREMOVE=0: as before)
+function R.isIndustryConstruction(c)
+	-- (the engine's component is a userdata, not a table: its field read through pcall)
+	if c == nil then return false end
+	local ok, f = pcall(function() return c.fileName end)
+	return ok and type(f) == "string" and f:find("industr", 1, true) ~= nil
+end
+
 function R.removedConstructions(margs)
 	local out = {}
+	local ind = os.getenv("MPFEVER_INDREMOVE") ~= "0"
 	for _, e in ipairs((margs[1] or {}).toRemove or {}) do
-		if type(e) == "number" and e >= 0 and comp(e, "CONSTRUCTION") and R.ownerOf(e) then out[#out + 1] = e end
+		if type(e) == "number" and e >= 0 then
+			local c = comp(e, "CONSTRUCTION")
+			if c and (R.ownerOf(e) or (ind and R.isIndustryConstruction(c))) then out[#out + 1] = e end
+		end
 	end
 	return out
 end

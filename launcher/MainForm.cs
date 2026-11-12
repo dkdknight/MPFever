@@ -339,12 +339,16 @@ namespace MPFever
         // ((0.7.13, #150/#166: the persons' drift showed only minutes later, through the towns and the fares) "personsDigest", one
         // person in eight by where it is and where it goes, tells when the persons went otherwise first; the bridge's
         // MPFEVER_PERSONDIGEST=0 gives "off", not compared)
-        static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds", "personsDigest" };
+        // ((0.8.3) "stepsDigest": the native module's digest of 50 simulation steps (the free-id queue, the entities made and taken
+        // away), see StepsWindow; at the first check where it differs, every game keeps its drift rings, see stepsDumped)
+        static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds", "personsDigest", "stepsDigest" };
+        // (0.8.3) the drift rings asked for once per run at the first check whose steps' digests differ (a reload starts a new run)
+        bool stepsDumped;
         string lastDiagDiffs = "";
         // game state that is never a local measure, even when it differs right after a reload (a company a game missed must be seen)
         // ((0.7.5) "edges2": the segments' second half, see the checks' halves in the bridge's simHash)
         // ((0.7.13) "personsDigest", a diagnostic: still logged after a reload, never "a local measure")
-        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "edges2", "ages", "buildIds", "constructions", "lines", "personsDigest" };
+        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "edges2", "ages", "buildIds", "constructions", "lines", "personsDigest", "stepsDigest" };
         // the simulation's own state (passengers boarding, vehicle positions, the towns and what follows them): it used to drift
         // by itself (the game's Lua walked its tables in a different order on every PC, fixed in 0.3.4), so it was only reloaded
         // when it lasted. The games now stay identical: a difference there comes from an action applied differently and must be
@@ -2675,7 +2679,7 @@ namespace MPFever
             lock (resyncParts) resyncParts.Clear();   // a host game half received in the session that ends
             hostSaveSha = ""; hostSaveState = ""; hostSaveLocal = null;   // (a lobby opened again is looked at again)
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
-            resyncing = false; resyncDropping = false; resyncSending = false; resyncWaiting.Clear(); ignoredParts.Clear(); unmeasuredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = ""; lock (partStreak) partStreak.Clear();
+            resyncing = false; resyncDropping = false; resyncSending = false; resyncWaiting.Clear(); ignoredParts.Clear(); unmeasuredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = ""; stepsDumped = false; lock (partStreak) partStreak.Clear();
             joinPending = false;
             lock (reviewing) reviewing.Clear();
             reviewSend = null; reviewAccepted = null;
@@ -5013,6 +5017,16 @@ namespace MPFever
             string diagNow = string.Join(";", diag);
             if (diagNow != lastDiagDiffs) foreach (var d in diag) Log.Dim("    (diagnostic) " + d);
             lastDiagDiffs = diagNow;
+            // (0.8.3) the steps' digests differ: the games' entities parted within the last minute; every game keeps its drift
+            // rings at the next check (forced, as after a difference), while they still hold the step where it began. Once per
+            // run. MPFEVER_STEPSDUMP=0: not asked for
+            if (!stepsDumped && diag.Any(d => DiffKey(d) == "stepsDigest") && Environment.GetEnvironmentVariable("MPFEVER_STEPSDUMP") != "0")
+            {
+                stepsDumped = true;
+                worldDumpNext = true;
+                // (a line for the reports, as the other diagnostic lines: not translated)
+                Log.Dim("    (diagnostic) stepsDigest: the simulation's steps differ, every game keeps its drift rings at the next check");
+            }
             diffs = diffs.Where(d => !DiagnosticParts.Contains(DiffKey(d))).ToList();
             // (0.7.7) a difference of the simulation (not money, which the host corrects, nor the names): the next check asks every
             // game for the whole dump, every vehicle with its whole state, at the same moment (see RequestHash, SDUMP.forceWorld)
@@ -5202,6 +5216,7 @@ namespace MPFever
             {
                 lastResync = Now;
                 diffStreak = 0;
+                stepsDumped = false;
                 lock (partStreak) partStreak.Clear();
                 bool wasDropping = resyncDropping;
                 resyncDropping = false;

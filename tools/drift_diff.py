@@ -52,6 +52,9 @@ def steps(path):
         m = STEP.match(l)
         if m:
             s = int(m.group(1))
+            # (0.8.3: "step 0" holds what the engine did outside its steps, while a game loaded: not a step, each game has its own)
+            if s == 0:
+                continue
             out[s] = {"queue": (int(m.group(2)), int(m.group(3)), int(m.group(4))), "ops": (int(m.group(5)), int(m.group(6)), int(m.group(7)))}
     return out
 
@@ -60,7 +63,7 @@ def ops(path):
     by = collections.defaultdict(list)
     for l in open(path, encoding="utf-8", errors="replace"):
         m = OP.match(l)
-        if m:
+        if m and int(m.group(1)) != 0:
             by[int(m.group(1))].append((m.group(2) + m.group(3), m.group(4), m.group(5)))
     return by
 

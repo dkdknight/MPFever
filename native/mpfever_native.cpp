@@ -3727,6 +3727,61 @@ static bool QueueDigest(u8* eng, u32* size, u64* sum, u32* hash)
     return ok;
 }
 
+// (0.8.3) The steps' digests, every game's, in the mod's checks: a drift is caught within seconds, while the rings above still
+// hold the step it began at. In the players' reports of 0.8.2 the forced check came minutes after the entities parted (people,
+// towns), and the operations ring (131072, about 3000 steps of a big map with three players) no longer held that step: "older than
+// the rings" (#238, #241). Every 10 steps the simulation's thread reduces the digests of the last 50 steps (made since the last load
+// and in a row) to one hash; a thread of its own writes the last 40 of them to native_steps.txt ("<step> <hash>"), the mod puts the
+// one for its check's step into the check ("stepsDigest", a diagnostic part: never a reason to reload) and the launcher asks every
+// game for its rings at the first check where it differs. MPFEVER_STEPSDIGEST=0: none (native_steps.txt not written).
+struct StepsWin { u32 step; u32 hash; };
+static StepsWin g_win[64];
+static volatile long g_winN = 0;
+static bool g_winOn = false;
+static inline u32 StepHash(const DiagStep& s)
+{
+    u32 h = 2166136261u;
+    u32 v[7] = { s.qsize, (u32)s.qsum, (u32)(s.qsum >> 32), s.qhash, s.adds, s.rems, s.setHash };
+    for (int i = 0; i < 7; i++) { h = (h ^ v[i]) * 16777619u; h ^= h >> 13; }
+    return h;
+}
+static void StepsWindow(u32 made)
+{
+    if (!g_winOn || !g_dSteps || made % 10 != 0) return;
+    long end = g_dStepN;
+    u32 h = 0x811c9dc5u, want = made, got = 0;
+    // (from the newest back: the steps made, one after the other; a load (its steps start again lower or jump) ends the window)
+    for (long k = 1; k <= 50 && k <= end && k <= DIAG_STEPS; k++) {
+        const DiagStep& s = g_dSteps[(end - k) & (DIAG_STEPS - 1)];
+        if (s.step != want) break;
+        h = (h * 1000003u) ^ StepHash(s);
+        got++;
+        if (want == 0) break;
+        want--;
+    }
+    long i = g_winN & 63;
+    g_win[i].step = made;
+    g_win[i].hash = got == 50 ? (h ? h : 1) : 0;
+    _InterlockedIncrement(&g_winN);
+}
+static DWORD WINAPI StepsWriter(void*)
+{
+    long last = -1;
+    for (;;) {
+        Sleep(250);
+        long n = g_winN;
+        if (n == last) continue;
+        last = n;
+        Buf b;
+        long from = n > 40 ? n - 40 : 0;   // (40 lines fit the buffer; the slots written next are not among them)
+        for (long k = from; k < n; k++) {
+            const StepsWin& w = g_win[k & 63];
+            b.dec((i64)w.step).str(" ").dec((i64)w.hash).str("\r\n");
+        }
+        WriteSessionFile("native_steps.txt", b.s, b.n);
+    }
+}
+
 // before every step of the simulation's engine (the steps' wrapper, see InstallStepSnap): the step just made, then the next one
 static void DriftStep(void* engine)
 {
@@ -3741,6 +3796,7 @@ static void DriftStep(void* engine)
     QueueDigest((u8*)engine, &d.qsize, &d.qsum, &d.qhash);
     g_stepAdds = g_stepRems = g_stepSet = 0;
     g_diagStep = step;
+    StepsWindow(d.step);
 }
 
 struct DriftDump { long check; DiagOp* ops; long nOps, opEnd; DiagStep* steps; long nSteps, stepEnd; long sysN; char (*names)[48]; };
@@ -3849,6 +3905,14 @@ static void InstallDriftDiag()
     InstallDetour(RVA_REMOVEENTITY, P_REMOVEENTITY, sizeof(P_REMOVEENTITY), (void*)&RemoveEntityDetour, (void**)&g_remEntOrig);
     g_entDetours = true;
     g_driftOn = true;
+    {
+        char sd[4] = {};
+        if (!(GetEnvironmentVariableA("MPFEVER_STEPSDIGEST", sd, 3) > 0 && sd[0] == '0')) {
+            HANDLE t = CreateThread(0, 0, StepsWriter, 0, 0, 0);
+            if (t) { CloseHandle(t); g_winOn = true; }
+        }
+        Buf sb; sb.str(g_winOn ? "steps' digests: every 10 steps, written to native_steps.txt (MPFEVER_STEPSDIGEST)" : "steps' digests: off"); LogLine(sb);
+    }
     Buf b; b.str("drift diagnostic: on (entity operations ring ").dec(DIAG_OPS).str(", steps ring ").dec(DIAG_STEPS).str(", system loop at ").hex(loop).str(")"); LogLine(b);
 }
 
