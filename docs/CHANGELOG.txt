@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.8.6 - (in progress)
+
 0.8.5 - 2026-11-12: loans between companies work, a player's broken install is told to everyone, track joins kept in sync
   - CHANGE (#221, tested 2026-11-12 with the real bulldozer): the track joins of the bulldozer are ON by default too: four paused
     track removals the tool joined again (-3 +1, -5 +2) were replayed as the tool's proposal, the same on both games, in sync
