@@ -66,6 +66,9 @@ with its cause and the test that now guards it.
 | The other companies' lines at this company's stations: **on demand** only (a closed section of its sheet), one company per player; nothing read in normal play. | 0.8.3 | U.otherLinesAtMine | test_otherlines083.py |
 | A bankrupt company's **warehouses** are lots of its auction (after its depots), sold or demolished as a depot; another company's warehouse never. | 0.8.3 | E.lotsOf, lotEntities (warehousesOf) | test_lotwarehouse083.py, test_auction074.py |
 | A computer company's **long-term freight line** waits only for its own budget (not the buses' growth); one that earned back all it cost is paid; the other freight still waits for growth and plenty of money. | 0.8.3 | step (ltProject), ltJudge | test_ailtalways083.py, test_ai_longfreight.py |
+| A stop or signal **removed by its rank** from a segment is replayed only when that segment carries the builder's objects (same count, same kinds); else the replay fails (resynchronisation), never a removal of another object (#253 crash). | 0.8.4 | G.stopObjsDiffer, replayNativeStop, stops' script path | test_stopobjcheck084.py |
+| A **signal on a street** goes the old way (replayStop), never through the conversion dry run (the engine builds it there); stops on streets and signals on tracks keep their paths (#253). | 0.8.4 | G.streetSignalDry | test_stopobjcheck084.py |
+| A **speed request** a player clicks is always sent; only the same request repeated frame after frame, after the session took it and another player changed the speed, is held (#252). The once-a-second resend of a request not yet taken stays. | 0.8.4 | U.speedRepeatHeld (ui wrapper) | test_speedrepeat084.py |
 
 ## Regressions found
 

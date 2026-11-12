@@ -2,6 +2,18 @@ MPFever - Changelog
 ===================
 
 0.8.4 - (in progress)
+  - FIX (CRASH, #253): a game replaying the removal of a stop or signal from a street segment whose objects already differed on
+    that game (one more object, or another kind at its rank) took another object and stopped (assertion GetComponentDataIndex,
+    13 s after the games parted). Such a replay is no longer built: the games differ already, a resynchronisation follows.
+    MPFEVER_STOPOBJCHECK=0: as before. Test: tests/test_stopobjcheck084.py.
+  - FIX (#253, the resync every 3 to 5 minutes of that session): a signal put on a STREET (a mod's signal, "Deutsche Signale"
+    tf3_signale_de_1) was replayed through the engine's conversion made to be refused, and the engine BUILT it (5 times of 5):
+    the replaying game got the signal twice, a resynchronisation each time. Such a signal is replayed the old way (replayStop).
+    MPFEVER_STREETSIGDRY=1: as before. Test: tests/test_stopobjcheck084.py.
+  - FIX (#252): a player's interface that kept asking for the pause frame after frame paused the session again within a
+    second of every speed another player set (28 times in two minutes). Once the session took a request and another player
+    changed the speed since, the same request repeated frame after frame is no longer sent; a new click is. The first held
+    request logs where it came from. MPFEVER_SPEEDREPEAT=0: as before. Test: tests/test_speedrepeat084.py.
 
 0.8.3 - 2026-11-12: industry bulldoze crash fixed, fewer resyncs, loans between companies
   - FIX (CRASH, #230 #231 #242 #245, three times on 2026-11-11): bulldozing an industry (a farm, a quarry) crashed the other

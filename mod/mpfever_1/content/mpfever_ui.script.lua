@@ -241,6 +241,10 @@ local function install()
 			U.stats.speed = U.stats.speed + 1
 			-- the interface repeats its request every frame while the game holds another speed: one per second at most
 			local now = os.clock()
+			if U.speedRepeatHeld and U.speedRepeatHeld(tag.args[1], now) then
+				if cb then pcall(cb, nil, true, {}) end
+				return
+			end
 			if tag.args[1] ~= U.lastSpeedReq or now - (U.lastSpeedAt or -10) > 1 then
 				U.lastSpeedReq, U.lastSpeedAt = tag.args[1], now
 				sendLine("speed_req", { speed = tag.args[1] })
@@ -1406,6 +1410,31 @@ local function pollStatus()
 	end
 	U.status = st
 	U.statusVersion = (U.statusVersion or 0) + 1
+end
+
+-- (0.8.4, issue #252) A speed request repeated by the interface frame after frame (a stream: the calls less than 0.5 s apart)
+-- once the session took it and another player changed the speed since: not sent again. tybjo's game asked for the pause once
+-- a second for two minutes (99 requests), so every speed jmm15 set was paused again within a second (28 times): something of
+-- its interface kept asking for 0 while the engine ran. A new request (another speed, or the same one after a gap of 0.5 s: a
+-- real click) is sent as before. The first held request logs where it came from (the next report names the caller).
+-- MPFEVER_SPEEDREPEAT=0: as before (once a second)
+U.speedRepeatHeld = function(v, now)
+	if os.getenv("MPFEVER_SPEEDREPEAT") == "0" then return false end
+	local stream = v == U.speedStreamV and now - (U.speedStreamAt or -10) < 0.5
+	U.speedStreamV, U.speedStreamAt = v, now
+	if not stream then U.speedStreamDone = false; return false end
+	local cur = tonumber(U.status and U.status.speed)
+	-- (the session took this request: from then on a speed other than it was set by another player)
+	if cur == v then U.speedStreamDone = true; return false end
+	if not U.speedStreamDone then return false end
+	if U.speedHeldLogged ~= v then
+		U.speedHeldLogged = v
+		local tb = ""
+		pcall(function() tb = debug.traceback("", 2):gsub("\n%s*", " | "):sub(1, 600) end)
+		log("speed: this game's interface keeps asking for speed " .. tostring(v) .. " while another player set " .. tostring(cur)
+			.. ": not asked again (from:" .. tb .. ")")
+	end
+	return true
 end
 
 -- the speed the game's speed buttons show during a session (nil: the engine's own): the speed this player just asked

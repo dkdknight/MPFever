@@ -5625,7 +5625,40 @@ local function stopPlan(margs)
 	for k, o in ipairs((rm.comp or {}).objects or {}) do
 		if type(o) == "table" and gone[o[1]] then removeIdx[k] = true end
 	end
-	return { E = E, seg = ad, objs = objs, removeIdx = removeIdx, nodeConfigs = st.nodeConfigsToAdd or {}, segType = rm.type }
+	-- (0.8.4: the kinds of the objects the builder's segment carried, see G.stopObjsDiffer)
+	local oldKinds = {}
+	for k, o in ipairs((rm.comp or {}).objects or {}) do oldKinds[k] = (type(o) == "table") and o[2] or false end
+	return { E = E, seg = ad, objs = objs, removeIdx = removeIdx, nodeConfigs = st.nodeConfigsToAdd or {}, segType = rm.type, oldKinds = oldKinds }
+end
+
+-- (0.8.4, issue #253) A stop or signal removed from a segment is written by its rank on the segment: when this game's segment
+-- carries other objects than the builder's (a count or a kind that differs: here a signal's conversion built twice, see
+-- G.streetSignalDry), the removal took another object, and the engine stopped on it ("GetComponentDataIndex", a crash of the
+-- replaying game 13 s after). Such a replay is not built: the games differ already, a resynchronisation follows.
+-- MPFEVER_STOPOBJCHECK=0: as before
+G.stopObjsDiffer = function(plan, c)
+	if os.getenv("MPFEVER_STOPOBJCHECK") == "0" or next(plan.removeIdx or {}) == nil or type(plan.oldKinds) ~= "table" then return nil end
+	local here = #c.objects
+	if here ~= #plan.oldKinds then return "carries " .. here .. " object(s) here, " .. #plan.oldKinds .. " on the builder's game" end
+	for k = 1, here do
+		local kind = c.objects[k][2]
+		if plan.oldKinds[k] ~= false and plan.oldKinds[k] ~= nil and kind ~= plan.oldKinds[k] then
+			return "object " .. k .. " is of kind " .. tostring(kind) .. " here, " .. tostring(plan.oldKinds[k]) .. " on the builder's game"
+		end
+	end
+	return nil
+end
+
+-- (0.8.4, issue #253) A signal put on a STREET segment (a mod's signal, "Deutsche Signale" tf3_signale_de_1): the engine BUILT
+-- the dry run of its conversion (G.eoDryRun, made to be refused) on the replaying game, every time (5 of 5 in that session), so
+-- that game got the signals twice and a resynchronisation each time, then the crash above. Such a stop goes the old way
+-- (replayStop). MPFEVER_STREETSIGDRY=1: the dry run, as before
+G.streetSignalDry = function(plan, c)
+	if os.getenv("MPFEVER_STREETSIGDRY") == "1" or c.type ~= 0 then return false end
+	for _, o in ipairs(plan.objs or {}) do
+		if o.category == 2 then return true end
+	end
+	return false
 end
 
 -- A tool's stop or signal pays nothing for the segment it replaces (the street or track under it); a script's command pays a
@@ -7322,6 +7355,12 @@ G.replayNativeStop = function(a, plan)
 	local m = cArgs[1]
 	local c = api.engine.getComponent(plan.E, api.type.ComponentType.BASE_EDGE)
 	if not c then return asBefore("segment " .. tostring(plan.E) .. " missing") end
+	local differ = G.stopObjsDiffer(plan, c)
+	if differ then
+		log("NATIVE REPLAY " .. uid .. " native stop: segment " .. plan.E .. " " .. differ .. ": not built (resynchronisation)")
+		return replayFailed(a, "native stop: the segment's objects differ")
+	end
+	if G.streetSignalDry(plan, c) then return asBefore("a signal on a street (the engine builds its dry run)") end
 	-- (this game's segment the other way round than the builder's: the tool's segment replaces it the builder's way round, as
 	-- replayStop does; not with stops already on it, whose places count from this game's first node)
 	local sc = (type(plan.seg) == "table" and type(plan.seg.comp) == "table") and plan.seg.comp or {}
@@ -7793,7 +7832,16 @@ local function replayNative(a, formIndex)
 			-- (a stop on a bridge or in a tunnel: the tool's own native proposal, see G.replayNativeStop; MPFEVER_NATIVESTOP=0: as
 			-- before)
 			if okp and plan and G.nativeStopWanted(a, plan) then return G.replayNativeStop(a, plan) end
-			if okp and plan then return replayStop(a, plan) end
+			if okp and plan then
+				-- (0.8.4, #253: a removal by rank on a segment whose objects differ here, see G.stopObjsDiffer)
+				local c0 = api.engine.getComponent(plan.E, api.type.ComponentType.BASE_EDGE)
+				local differ = c0 and G.stopObjsDiffer(plan, c0)
+				if differ then
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: segment " .. plan.E .. " " .. differ .. ": not built (resynchronisation)")
+					return replayFailed(a, "stop: the segment's objects differ")
+				end
+				return replayStop(a, plan)
+			end
 			-- a street with stops on it taken away with the bulldozer: the engine's own removal proposal removes the stops with it
 			local removal0 = (#(stp.edgeObjectsToAdd or {}) == 0) and removalPlan(probe) or nil
 			if removal0 then
