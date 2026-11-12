@@ -814,6 +814,8 @@ namespace MPFever
             GameInstall.DiagEnv(psi.EnvironmentVariables);
             // (0.7.10) this player's settings the native module reads at the game's start (none since 0.7.13, see Options.NativeEnv)
             foreach (var kv in Options.NativeEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;
+            // (0.8.6) the autotests: the session settings their environment leaves unset, at the players' defaults (see Options.TestDefaults)
+            foreach (var kv in Options.TestDefaults()) psi.EnvironmentVariables[kv.Key] = kv.Value;
             // tests: settings for one game only, MPFEVER_ENV_HOST / MPFEVER_ENV_CLIENT = "NAME=value;NAME=value"
             var roleEnv = Environment.GetEnvironmentVariable("MPFEVER_ENV_" + (Role ?? "").ToUpperInvariant());
             if (!string.IsNullOrEmpty(roleEnv))

@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.8.6 - (in progress)
+  - TESTS: the autotests (no settings.txt) ran without « Responsive builds » (MPFEVER_BUILDLEAD, read on "1" only), which every
+    player has on by default. The session settings their environment leaves unset now go to the test games with the players'
+    defaults (a variable set in the environment, or in MPFEVER_ENV_HOST / _CLIENT, still decides). MPFEVER_TESTDEFAULTS=0: as
+    before. Test: tests/test_testdefaults086.py.
 
 0.8.5 - 2026-11-12: loans between companies work, a player's broken install is told to everyone, track joins kept in sync
   - CHANGE (#221, tested 2026-11-12 with the real bulldozer): the track joins of the bulldozer are ON by default too: four paused

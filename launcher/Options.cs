@@ -140,6 +140,22 @@ namespace MPFever
             return d;
         }
 
+        /// <summary>(0.8.6) The autotests (Disabled: no settings.txt) took a session setting only from their environment, and the mod
+        /// reads « Responsive builds » (MPFEVER_BUILDLEAD) on "1" only: every autotest and every manual test of 2026-11-12 ran without
+        /// it, while every player has it on by default (600 BUILDLEAD lines in Kasper's game of #261). The session settings not set
+        /// in the launcher's environment now go to the test games with the players' defaults; a variable set there (or in
+        /// MPFEVER_ENV_HOST / _CLIENT, applied after) still decides. MPFEVER_TESTDEFAULTS=0: the environment alone, as before.</summary>
+        public static IEnumerable<KeyValuePair<string, string>> TestDefaults()
+        {
+            if (!Disabled || Environment.GetEnvironmentVariable("MPFEVER_TESTDEFAULTS") == "0") yield break;
+            foreach (var o in All.Where(x => x.Session && !x.Launcher))
+            {
+                if (Environment.GetEnvironmentVariable(o.Key) != null) continue;
+                var v = Value(o, o.DefaultOn);
+                if (!string.IsNullOrEmpty(v)) yield return new KeyValuePair<string, string>(o.Key, v);
+            }
+        }
+
         /// <summary>(0.7.10) This player's own settings the game's native module reads at its start: KEY=value of each one on (none
         /// since 0.7.13: « Same platform order (test) » was the only one).</summary>
         public static IEnumerable<KeyValuePair<string, string>> NativeEnv() =>

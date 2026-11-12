@@ -80,6 +80,7 @@ with its cause and the test that now guards it.
 | The **first drift since the load is kept apart** (sdump_drift_first.txt written once per load; the native module never removes that check's rings); the three rotating slots stay as before. | 0.8.4 | SDUMP.keepDrift, DriftPoll | test_driftloadreset084.py |
 | The **loan form keeps what was typed**; an empty field takes its grey example (1000000 / 12 / 10); emptied once sent, kept when the send failed; wrong terms still refused (#266). | 0.8.5 | U.loanTermsIn, U.loanCard | test_loanform085.py |
 | A game's **hello says whether its native module runs** (nat on/off/none); the host warns everyone once per player for off/none; a hello without nat (older mod): nothing (#268). | 0.8.5 | WarnNative | test_nativecheck085.py |
+| The **autotests run with the players' default session settings** (BUILDLEAD on included); an environment variable or MPFEVER_ENV_HOST/_CLIENT still decides; players' sessions unchanged (settings.txt). | 0.8.6 | Options.TestDefaults | test_testdefaults086.py |
 
 ## Regressions found
 
