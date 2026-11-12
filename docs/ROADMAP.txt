@@ -64,8 +64,11 @@ it is stable enough.
   [x] Street stops without waiting too (0.7.15): each form given to the game's verdict first, the right one sent at its step
   [ ] The field's reports with it on: sessions of 3 players or more without a resynchronisation
   [ ] Big station edits without their last freeze
+  [x] Streets and tracks bulldozed while paused, the pieces left joined again, rebuilt the same on every game (0.8.4 / 0.8.5,
+      tested with the real bulldozer); a player's incomplete MPFever (native module off) told to everyone (0.8.5)
   [ ] The last recurring desyncs: the people/towns drift (#150), reproduced on two PCs with no input (2026-11-11); since 0.8.2
-      every report records where a drift begins (drift diagnostic): next, the causes it names
+      every report records where a drift begins (drift diagnostic), since 0.8.4 its very first moment even after a
+      resynchronisation: next, the causes it names. Builds rebuilt otherwise on another game: #261
 
 1.0 - Stable and complete
   [ ] Sessions of several hours between different PCs without a recurring resynchronisation or crash, one company for
