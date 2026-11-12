@@ -2,6 +2,13 @@ MPFever - Changelog
 ===================
 
 0.8.4 - (in progress)
+  - REPORTS (#263): a player whose game crashed left the session before its report, so the other players' reports could no
+    longer be asked for (gs_as's crash: nothing of the host's game). Its MPFever now tells the host before leaving, and the host
+    asks every player in the chat to send « Report a problem » now. MPFEVER_CRASHNOTICE=0: as before.
+  - REPORTS (#254 #262): report.txt says what runs on the PC (the games of Transport Fever 3 and since when, Steam running or
+    not, MPFever as administrator) and the game's last exit code: a game closed with code 53 at its start could not be told
+    apart (Steam not running, other rights, or a game already running). MPFEVER_REPORTENV=0: no such line.
+    Test: tests/test_reportgaps084.py.
   - FIX (#255-#261, Kasper + Eier, 8 resynchronisations in 1 h 30): two of Eier's streets were refused by the engine on
     Kasper's game ("IsNodeLocked"), each right after Eier bulldozed streets the tool joined again (-8 +2 segments): replayed by
     the engine's own removal, that left one segment more on Kasper's game (edges 5589 / 5588), and the next street there no longer

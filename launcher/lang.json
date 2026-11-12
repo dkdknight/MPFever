@@ -25077,6 +25077,19 @@
       "ko": "게임이 Steam에 연결하지 못해 바로 종료되었습니다. Steam을 실행하고 로그인한 다음 MPFever를 다시 실행하세요. Steam과 MPFever는 같은 권한으로 실행되어야 합니다: 둘 다 « 관리자 권한으로 » 실행하지 않거나, 둘 다 실행하세요.",
       "zh-CN": "游戏无法连接 Steam，已立即关闭。请启动 Steam 并登录，然后重新启动 MPFever。Steam 和 MPFever 必须以相同权限运行：都不要 « 以管理员身份 » 运行，或者都以管理员身份运行。",
       "zh-TW": "遊戲無法連線 Steam，已立即關閉。請啟動 Steam 並登入，然後重新啟動 MPFever。Steam 和 MPFever 必須以相同權限執行：都不要 « 以系統管理員身分 » 執行，或者都以系統管理員身分執行。"
+    },
+    "{0}'s game crashed. To help find why, every player please send « Report a problem » now, before leaving the session.": {
+      "de": "Das Spiel von {0} ist abgestürzt. Damit wir die Ursache finden: Jeder Spieler bitte jetzt « Problem melden » senden, bevor er die Sitzung verlässt.",
+      "es": "El juego de {0} se ha bloqueado. Para ayudar a encontrar la causa, que cada jugador envíe « Informar de un problema » ahora, antes de salir de la sesión.",
+      "it": "Il gioco di {0} si è bloccato. Per aiutare a trovare la causa, ogni giocatore invii ora « Segnala un problema », prima di lasciare la sessione.",
+      "nl": "Het spel van {0} is gecrasht. Om de oorzaak te vinden: laat elke speler nu « Probleem melden » versturen, voordat hij de sessie verlaat.",
+      "pl": "Gra gracza {0} uległa awarii. Aby pomóc znaleźć przyczynę, niech każdy gracz wyśle teraz « Zgłoś problem », zanim opuści sesję.",
+      "pt-BR": "O jogo de {0} travou. Para ajudar a encontrar a causa, cada jogador envie « Relatar um problema » agora, antes de sair da sessão.",
+      "ru": "Игра {0} вылетела. Чтобы найти причину, пусть каждый игрок сейчас отправит « Сообщить о проблеме », прежде чем покинуть сессию.",
+      "ja": "{0} のゲームがクラッシュしました。原因を調べるため、セッションを離れる前に各プレイヤーは今すぐ « 問題を報告 » を送ってください。",
+      "ko": "{0}의 게임이 충돌했습니다. 원인을 찾을 수 있도록, 세션을 나가기 전에 모든 플레이어가 지금 « 문제 신고 »를 보내 주세요.",
+      "zh-CN": "{0} 的游戏崩溃了。为帮助查明原因，请每位玩家在离开会话前立即发送 « 报告问题 »。",
+      "zh-TW": "{0} 的遊戲當機了。為協助找出原因，請每位玩家在離開工作階段前立即傳送 « 回報問題 »。"
     }
   }
 }

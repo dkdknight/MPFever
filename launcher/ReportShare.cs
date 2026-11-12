@@ -79,6 +79,16 @@ namespace MPFever
             sb.AppendLine("Processor: " + Reporter.Processor() + "; " + Reporter.WindowsVersion());
             // (0.6.9: the game's DLCs here, and what differs from the host's or a player's)
             sb.AppendLine("DLCs: " + Mods.InstalledDlcs() + (PlayerDlcWarn() != "" ? " | " + PlayerDlcWarn() : "") + (HostDlcWarn() != "" ? " | " + HostDlcWarn() : ""));
+            // (0.8.4, #254 #262) the game closed with code 53 at its start: Steam not running, MPFever and Steam with other rights,
+            // or the game already running (stefa's, since the day before) could not be told apart from the report.
+            // MPFEVER_REPORTENV=0: no such line
+            if (Environment.GetEnvironmentVariable("MPFEVER_REPORTENV") != "0")
+                try
+                {
+                    var exit = games.Select(x => x.ExitCode).LastOrDefault(x => x != null);
+                    sb.AppendLine("This PC now: " + Reporter.RunningNow() + "; the game's last exit code: " + (exit == null ? "none (running or not started)" : exit.Value.ToString(CultureInfo.InvariantCulture)));
+                }
+                catch { }
             sb.AppendLine("Report made " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + (crashed ? " after a crash of the game" : "")
                 + (forWhom != null ? " for " + forWhom + "'s report" : ""));
             return sb.ToString();

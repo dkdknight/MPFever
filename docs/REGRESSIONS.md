@@ -75,6 +75,8 @@ with its cause and the test that now guards it.
 | The game **closed with code 53 within 30 s** of its start gets a warning (Steam not reached: start Steam, same rights for both); a later exit with 53 or any other code: the exit code alone, as before (#254). | 0.8.4 | SteamUnreachableExit | test_steamhint084.py |
 | A **removal of streets the tool joined again**: the engine's own removal by default; MPFEVER_STREETMERGENATIVE=1 (off until a real bulldozer test) replays the tool's native proposal; a street and a track together: the engine's removal always (#255-#261). | 0.8.4 | G.trackMergeNative | test_trackmerge084.py |
 | The **drift diagnostic's rings and steps' windows start again empty after every load** (not at the process's first game); nothing is recorded for the step that straddles the load; the simulation is never touched (#255-#261). | 0.8.4 | DriftStep | test_driftloadreset084.py |
+| A player's MPFever whose **game crashed tells the host before leaving** ("game_crashed", only after a crash, never passed on to the games); the host asks every player in the chat to send a report (#263). | 0.8.4 | OnPlayerCrashed | test_reportgaps084.py |
+| **report.txt says what runs on the PC** (Transport Fever 3 games and start times, Steam, administrator) and the game's last exit code; every reading guarded (#254 #262). | 0.8.4 | Reporter.RunningNow | test_reportgaps084.py |
 
 ## Regressions found
 

@@ -160,6 +160,31 @@ namespace MPFever
 
         [DllImport("kernel32.dll")] static extern bool IsProcessorFeaturePresent(int feature);
 
+        /// <summary>(0.8.4, #254 #262) What runs on this PC when the report is made: the games of Transport Fever 3 (with their start
+        /// times), Steam, and whether MPFever runs as administrator (a game started by an MPFever with other rights than Steam's
+        /// closes at once with code 53, as does a second game while one already runs).</summary>
+        internal static string RunningNow()
+        {
+            var parts = new List<string>();
+            try
+            {
+                var tf = Process.GetProcessesByName("TransportFever3");
+                var since = tf.Select(p => { try { return p.StartTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture); } catch { return "?"; } }).ToList();
+                parts.Add("Transport Fever 3 running " + tf.Length + (tf.Length > 0 ? " (started " + string.Join(", ", since) + ")" : ""));
+                foreach (var p in tf) p.Dispose();
+            }
+            catch { parts.Add("Transport Fever 3 running ?"); }
+            try { var st = Process.GetProcessesByName("steam"); parts.Add("Steam " + (st.Length > 0 ? "running" : "NOT running")); foreach (var p in st) p.Dispose(); }
+            catch { parts.Add("Steam ?"); }
+            try
+            {
+                using (var id = System.Security.Principal.WindowsIdentity.GetCurrent())
+                    parts.Add("MPFever as administrator " + (new System.Security.Principal.WindowsPrincipal(id).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator) ? "yes" : "no"));
+            }
+            catch { parts.Add("MPFever as administrator ?"); }
+            return string.Join(", ", parts);
+        }
+
         /// <summary>The processor, and whether it has AVX2 (the C library's maths then take their FMA3 versions: two players
         /// with and without them may compute some values a little differently).</summary>
         public static string Processor()

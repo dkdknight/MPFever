@@ -2622,6 +2622,19 @@ namespace MPFever
         /// Kept, a player's MPFever went on reconnecting to the host with no game behind it; the player started MPFever again, and
         /// the old one and the new one took each other's place every 5 s (the host closes the old connection of a name that comes
         /// back), with a resynchronisation each time. MPFEVER_EXITKEEPSESSION=1: as before.</summary>
+        static bool CrashNoticeOn() => Environment.GetEnvironmentVariable("MPFEVER_CRASHNOTICE") != "0";
+
+        /// <summary>(0.8.4, #263, the host) A player's game crashed (its MPFever said so before leaving): every other player is
+        /// asked in the chat to send a report now, while their games still hold what happened; said in the host's log too.</summary>
+        void OnPlayerCrashed(string who)
+        {
+            if (!CrashNoticeOn() || string.IsNullOrEmpty(who)) return;
+            var text = F("Le jeu de {0} a planté. Pour aider à trouver pourquoi, chaque joueur peut envoyer « Signaler un problème » maintenant, avant de quitter la session.",
+                "{0}'s game crashed. To help find why, every player please send « Report a problem » now, before leaving the session.", who);
+            Log.Warn(text);
+            HostChat("msg", "MPFever", text);
+        }
+
         void LeaveOnGameExit()
         {
             if (ServerMode || Environment.GetEnvironmentVariable("MPFEVER_EXITKEEPSESSION") == "1") return;
@@ -2646,6 +2659,16 @@ namespace MPFever
             // (taken and emptied at once: a reconnection that adds its connection in between finds the session left, see
             // StartClient, or has its connection closed here)
             Client[] gone; lock (clients) { gone = clients.ToArray(); clients.Clear(); }
+            // (0.8.4, #263) a player's game crashed: its report has its own logs only, its connection is closed here before the
+            // report is made and the others' reports cannot be asked for any more (gs_as's crash: nothing of the host's game). The
+            // host is told first, and asks every player in the chat to send a report now. MPFEVER_CRASHNOTICE=0: as before
+            if (gone.Length > 0 && CrashNoticeOn())
+                try
+                {
+                    if (Reporter.CrashedSince(gameStartedAt, menuGame?.Dir, menuGame?.ExitCode, menuGame != null && menuGame.OtherGameSeen))
+                        foreach (var cl in gone) try { cl.Send(Msg.Make("game_crashed", reportMe ?? menuGame?.Name ?? "", "{}")); } catch { }
+                }
+                catch { }
             foreach (var cl in gone) try { cl.Leave(); } catch { }
             var r = relay; relay = null;
             if (r != null) { try { r.Dispose(); } catch { } PortMap.Close(); }
@@ -4452,6 +4475,8 @@ namespace MPFever
             }
             // (0.7.9) a player's report asked for, or sent to whoever asked: never passed on to every game (see ReportShare)
             if (OnHostReportMessage(m, from)) return;
+            // (0.8.4, #263) a player's game crashed: never passed on to the games; the session is told to send reports now
+            if (m.Kind == "game_crashed") { if (from != null) OnPlayerCrashed(BaseName(from.Name)); return; }
             switch (m.Kind)
             {
                 case "hello":
