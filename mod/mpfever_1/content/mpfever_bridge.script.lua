@@ -7902,7 +7902,7 @@ local function replayNative(a, formIndex)
 			-- a street with stops on it taken away with the bulldozer: the engine's own removal proposal removes the stops with it
 			local removal0 = (#(stp.edgeObjectsToAdd or {}) == 0) and removalPlan(probe) or nil
 			if removal0 and G.trackMergeNative(probe) then
-				log("NATIVE REPLAY " .. tostring(a.uid) .. ": a removal of tracks the tool joined again (signals included): native street proposal")
+				log("NATIVE REPLAY " .. tostring(a.uid) .. ": a removal of tracks or streets the tool joined again (signals included): native street proposal")
 				return replayNativeStreet(a)
 			end
 			if removal0 then
@@ -7994,7 +7994,7 @@ local function replayNative(a, formIndex)
 		end
 		local removal = (#missing == 0) and removalPlan(probe) or nil
 		if removal and G.trackMergeNative(probe) then
-			log("NATIVE REPLAY " .. tostring(a.uid) .. ": a removal of tracks the tool joined again: native street proposal")
+			log("NATIVE REPLAY " .. tostring(a.uid) .. ": a removal of tracks or streets the tool joined again: native street proposal")
 			return replayNativeStreet(a)
 		end
 		if removal then
