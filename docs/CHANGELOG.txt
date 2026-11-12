@@ -1,7 +1,13 @@
 MPFever - Changelog
 ===================
 
-0.8.4 - (in progress)
+0.8.4 - 2026-11-12: street rebuilds after a bulldozer kept in sync, drift reports that keep the first drift
+  - CHANGE (#255-#261, tested 2026-11-12): the street joins of the bulldozer (MPFEVER_STREETMERGENATIVE) are ON by default:
+    two games, a paused street removal the tool joined again (-3 +1): replayed as the tool's proposal, the same on both games,
+    in sync after. MPFEVER_STREETMERGENATIVE=0: the engine's removal as before. Tracks stay OFF (MPFEVER_TRACKMERGENATIVE=1).
+  - REPORTS: the first drift since the game was loaded is kept apart and never overwritten (sdump_drift_first.txt, and that
+    check's drift rings): a session that drifted again and again kept only its last three, and the first drift was gone from
+    the reports. MPFEVER_DRIFTFIRST=0: as before. Test: tests/test_driftloadreset084.py.
   - REPORTS (#263): a player whose game crashed left the session before its report, so the other players' reports could no
     longer be asked for (gs_as's crash: nothing of the host's game). Its MPFever now tells the host before leaving, and the host
     asks every player in the chat to send « Report a problem » now. MPFEVER_CRASHNOTICE=0: as before.
@@ -12,8 +18,8 @@ MPFever - Changelog
   - FIX (#255-#261, Kasper + Eier, 8 resynchronisations in 1 h 30): two of Eier's streets were refused by the engine on
     Kasper's game ("IsNodeLocked"), each right after Eier bulldozed streets the tool joined again (-8 +2 segments): replayed by
     the engine's own removal, that left one segment more on Kasper's game (edges 5589 / 5588), and the next street there no longer
-    fitted. The #221 replay (the tool's own native proposal) now covers streets too, with its own switch: OFF by default until the
-    test with the real bulldozer (MPFEVER_STREETMERGENATIVE=1; tracks: MPFEVER_TRACKMERGENATIVE=1). Test: tests/test_trackmerge084.py.
+    fitted. The #221 replay (the tool's own native proposal) now covers streets too, with its own switch (ON by default since the
+    bulldozer test, see above; tracks: MPFEVER_TRACKMERGENATIVE=1). Test: tests/test_trackmerge084.py.
   - FIX (diagnostic, #255-#261): the drift diagnostic's rings ran on across a resynchronisation (the games reload the save of the
     paused time and go on at the next step numbers): "stepsDigest: the steps differ" right after every resynchronisation, a
     false alarm that used up the forced dump, and the rings of a later drift began with the drift before (drift_diff named a step

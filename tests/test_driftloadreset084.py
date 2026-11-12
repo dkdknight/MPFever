@@ -68,5 +68,35 @@ before, after = run(False), run(True)
 check("as before: the window of step 1110 spans the load (steps of the drift before mixed in)", before[1110] is True)
 check("with the reset: no window over the load (1100..1140 'absent'), whole again from 1150", all(not after[s] for s in range(1100, 1150, 10)) and after[1150])
 
+# (0.8.4) the first drift since the load kept apart (mod: sdump_drift_first.txt; native: that check's rings never removed)
+BR = os.path.join(HERE, "..", "mod", "mpfever_1", "content", "mpfever_bridge.script.lua")
+br = open(BR, encoding="utf-8").read().replace("\r\n", "\n")
+kd = br[br.index("function SDUMP.keepDrift(n, dump)"):]
+kd = kd[:kd.index("\nend\n")]
+check("mod: the first drift since the load written once to sdump_drift_first.txt", "sdump_drift_first.txt" in kd and "if not SDUMP.firstKept" in kd and "SDUMP.firstKept = true" in kd)
+check("  switch MPFEVER_DRIFTFIRST=0", 'os.getenv("MPFEVER_DRIFTFIRST") ~= "0"' in kd)
+dp = src[src.index("static void DriftPoll()\n{"):]
+dp = dp[:dp.index("\n}\n")]
+check("native: the first check kept since the last load is never removed by the rotation", "if (old > 0 && old == g_driftFirst) old = 0;" in dp and "firstLoads != g_ctlLoads" in dp)
+check("  switch MPFEVER_DRIFTFIRST=0 (read in InstallDriftDiag)", 'GetEnvironmentVariableA("MPFEVER_DRIFTFIRST"' in src and "g_driftFirstOn" in dp)
+
+
+def rotation(checks, keep_first):
+    kept, first, removed = [0, 0, 0], 0, []
+    for v in checks:
+        old = kept[0]
+        kept = kept[1:] + [v]
+        if keep_first and first == 0:
+            first = v
+        if old > 0 and old == first:
+            old = 0
+        if old > 0:
+            removed.append(old)
+    return removed
+
+
+check("  replayed: drifts at checks 17, 25, 27, 29, 31: the first (17) stays", 17 not in rotation([17, 25, 27, 29, 31], True) and 17 in rotation([17, 25, 27, 29, 31], False))
+
+
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

@@ -3648,6 +3648,8 @@ static volatile long g_sysN = 1;
 static long g_driftLast = 0;
 static long g_driftKept[3] = { 0, 0, 0 };
 static long g_driftPoll = 0;
+static long g_driftFirst = 0;                     // (0.8.4) the first check kept since the last load (never removed, see DriftPoll)
+static bool g_driftFirstOn = true;                // (MPFEVER_DRIFTFIRST=0: false, set in InstallDriftDiag)
 
 static inline u32 MixId(i32 id, u32 add) { u32 x = (u32)id * 2654435761u ^ (add ? 0x9e3779b9u : 0x7f4a7c15u); x ^= x >> 15; x *= 2246822519u; x ^= x >> 13; return x; }
 
@@ -3902,6 +3904,11 @@ static void DriftPoll()
     // (the files of the check before the last three removed: a long session keeps three drifts)
     long old = g_driftKept[0];
     g_driftKept[0] = g_driftKept[1]; g_driftKept[1] = g_driftKept[2]; g_driftKept[2] = v;
+    // (0.8.4) the first check kept since the last load is never removed (the mod keeps its dump as sdump_drift_first.txt): a session
+    // that drifted again and again kept only its last three, and the first drift was gone from the reports. MPFEVER_DRIFTFIRST=0: as before
+    static long firstLoads = -1;
+    if (g_driftFirstOn && firstLoads != g_ctlLoads) { firstLoads = g_ctlLoads; g_driftFirst = v; }
+    if (old > 0 && old == g_driftFirst) old = 0;
     if (old > 0) {
         for (int w = 0; w < 2; w++) {
             Buf o; o.str("drift_").dec(old).str(w ? "_ops.txt" : "_steps.txt");
@@ -3931,6 +3938,7 @@ static void InstallDriftDiag()
     InstallDetour(RVA_REMOVEENTITY, P_REMOVEENTITY, sizeof(P_REMOVEENTITY), (void*)&RemoveEntityDetour, (void**)&g_remEntOrig);
     g_entDetours = true;
     g_driftOn = true;
+    { char df[4] = {}; if (GetEnvironmentVariableA("MPFEVER_DRIFTFIRST", df, 3) == 1 && df[0] == '0') g_driftFirstOn = false; }
     {
         char sd[4] = {};
         if (!(GetEnvironmentVariableA("MPFEVER_STEPSDIGEST", sd, 3) > 0 && sd[0] == '0')) {

@@ -167,6 +167,17 @@ function SDUMP.keepDrift(n, dump)
 		f:write("t = " .. tostring(gameTime()) .. " check " .. tostring(n), NL, table.concat(dump, NL), NL)
 		f:close()
 	end
+	-- (0.8.4) the first drift since this game was loaded also kept apart, never overwritten by the three slots (in #255-#261 and the
+	-- test of 2026-11-12 the slots held checks 25, 27, 29 on one game and 25, 27, 30 on the other: the first drift was gone from
+	-- both reports). The native module keeps that check's rings too. MPFEVER_DRIFTFIRST=0: the three slots only, as before
+	if not SDUMP.firstKept and os.getenv("MPFEVER_DRIFTFIRST") ~= "0" then
+		SDUMP.firstKept = true
+		local ff = C.IO.open(C.DIR .. BS .. "sdump_drift_first.txt", "wb")
+		if ff then
+			ff:write("t = " .. tostring(gameTime()) .. " check " .. tostring(n) .. " (the first drift since the load)", NL, table.concat(dump, NL), NL)
+			ff:close()
+		end
+	end
 	local w = C.IO.open(C.DIR .. BS .. "native_drift.txt", "wb")
 	if w then w:write(tostring(n), NL); w:close() end
 	log("drift diagnostic: check " .. tostring(n) .. " kept (sdump_drift_" .. tostring(slot) .. ".txt, the native module's rings asked for)")
@@ -5542,10 +5553,12 @@ end
 -- (0.8.4, #255-#261, Kasper + Eier) The same with streets: Eier bulldozed streets the tool joined again (-8 +2 segments, twice);
 -- the engine's own removal left one segment more on Kasper's game (edges 5589 / 5588), and Eier's next street there was refused
 -- by the engine ("IsNodeLocked": a node his proposal removes still held a segment on Kasper's game), a resynchronisation each time.
--- Streets only (every new segment a street) with MPFEVER_STREETMERGENATIVE=1, OFF by default for the same test with the real
--- bulldozer; a street and a track together: as before
+-- Streets only (every new segment a street), ON by default since the test with the real bulldozer (2026-11-12, two games, a paused
+-- street removal the tool joined again, -3 +1: the same on both games, in sync after; the running builds ship the tool's copy
+-- anyway); MPFEVER_STREETMERGENATIVE=0: the engine's removal, as before. Tracks stay OFF (not met in that test); a street and a
+-- track together: as before
 G.trackMergeNative = function(probe)
-	local tracks, streets = os.getenv("MPFEVER_TRACKMERGENATIVE") == "1", os.getenv("MPFEVER_STREETMERGENATIVE") == "1"
+	local tracks, streets = os.getenv("MPFEVER_TRACKMERGENATIVE") == "1", os.getenv("MPFEVER_STREETMERGENATIVE") ~= "0"
 	if not tracks and not streets then return false end
 	local st = probe and probe[1] and probe[1].proposal
 	if type(st) ~= "table" then return false end
