@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.8.5 - (in progress)
+
 0.8.4 - 2026-11-12: street rebuilds after a bulldozer kept in sync, drift reports that keep the first drift
   - CHANGE (#255-#261, tested 2026-11-12): the street joins of the bulldozer (MPFEVER_STREETMERGENATIVE) are ON by default:
     two games, a paused street removal the tool joined again (-3 +1): replayed as the tool's proposal, the same on both games,
