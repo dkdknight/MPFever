@@ -40,6 +40,8 @@ E.EVENTS = {
 	co_rules = true, co_join_ask = true, co_join_answer = true, co_leave = true, co_cancel = true, co_merge_ask = true,
 	co_merge_answer = true, co_bid = true, co_lot_close = true, co_track_rule = true, co_depot_rule = true, co_test = true, co_month = true,
 	co_stop_rule = true, co_depot_default = true, co_road_rule = true, co_auction_close = true,
+	-- (0.8.3) loans between companies, see E.loanEvent
+	co_loan_ask = true, co_loan_counter = true, co_loan_answer = true, co_loan_cancel = true,
 }
 -- (0.7.4) the smallest bid a lot takes: its reserve, or the best bid and 5 %
 function E.minBid(lot)
@@ -47,6 +49,16 @@ function E.minBid(lot)
 end
 E.BANKRUPT_DEFAULT = 12        -- months in debt
 E.BANKRUPT_CHOICES = { 0, 3, 6, 12, 24 }
+-- (0.8.3, Zoey's suggestion, the owner's rules of 2026-11-12) Loans between companies. The BORROWER asks: how much, over how many
+-- months, and the interest it offers (in % of the amount, for the whole loan); the lender's chief accepts, refuses or makes a
+-- counter-offer, and so on in turn. Accepted: the lender pays the amount at once (refused when it has not got it), then the
+-- borrower pays back the amount and the interest in equal parts, one at each new month of the game (co_month, the same step on
+-- every game; a borrower without the money goes into debt, the bankruptcy rule then counts). A borrower gone bankrupt: the lender
+-- loses what is left; a lender gone: the borrower keeps it. Chiefs only. MPFEVER_LOANS=0: no loan asked nor paid back
+E.LOAN_MONTHS_MAX = 120
+E.LOAN_RATE_MAX = 100
+E.LOAN_AMOUNT_MAX = 1e10
+E.LOANS = os.getenv("MPFEVER_LOANS") ~= "0"
 E.LOT_SECONDS = tonumber(os.getenv("MPFEVER_LOTSECONDS") or "") or 60   -- a lot stays open that long (seconds of the game's time since 0.8.3, see the bridge's G.auClock)
 E.LAST_BID_SECONDS = math.min(15, E.LOT_SECONDS)                         -- and that long after its last bid
 E.MIN_RAISE = 0.05             -- a bid beats the best one by 5 % at least
@@ -1299,6 +1311,119 @@ local function moveMember(st, key, t, env)
 	env.log("companies: player '" .. key .. "' joins company " .. t.id .. (cur and (" (leaves company " .. cur.id .. ")") or ""))
 end
 
+-- (0.8.3) A loan's terms from an event: amount (whole money), months (1..E.LOAN_MONTHS_MAX), rate (% of the amount for the whole
+-- loan, 0..E.LOAN_RATE_MAX); nil and why when they cannot be taken
+function E.loanTerms(param)
+	local a = math.floor(tonumber(param.amount) or 0)
+	local m = math.floor(tonumber(param.months) or 0)
+	local r = math.floor(tonumber(param.rate) or -1)
+	if a <= 0 or a > E.LOAN_AMOUNT_MAX then return nil, "amount " .. tostring(param.amount) end
+	if m < 1 or m > E.LOAN_MONTHS_MAX then return nil, "months " .. tostring(param.months) end
+	if r < 0 or r > E.LOAN_RATE_MAX then return nil, "rate " .. tostring(param.rate) end
+	return { amount = a, months = m, rate = r }
+end
+
+-- what the borrower pays back in all, and each month
+function E.loanPlan(t)
+	local total = math.floor(t.amount * (100 + t.rate) / 100 + 0.5)
+	return total, math.ceil(total / t.months)
+end
+
+-- the loans' events: co_loan_ask {to, amount, months, rate} (the borrower's chief), co_loan_counter {id, amount, months, rate} and
+-- co_loan_answer {id, accept} (the chief whose turn it is), co_loan_cancel {id} (either chief). reg.loanOffers: { id, borrower,
+-- lender, amount, months, rate, turn = "lender" | "borrower" (who answers next) }; reg.loans: { id, borrower, lender, amount, months,
+-- rate, total, monthly, rest }
+function E.loanEvent(st, name, param, env, mine, key, refuse)
+	local reg = st.co
+	if not E.LOANS then return refuse("loans are off (MPFEVER_LOANS=0)") end
+	if not (live(mine) and mine.ent and env.CO.chief(mine) == key) then return refuse("not the chief of a company") end
+	reg.loanOffers = reg.loanOffers or {}
+	reg.loans = reg.loans or {}
+	local function findOffer(id)
+		for i, o in ipairs(reg.loanOffers) do if o.id == tonumber(id) then return o, i end end
+	end
+	if name == "co_loan_ask" then
+		local t = env.CO.find(reg, tonumber(param.to))
+		if not (live(t) and t.ent) or t.id == mine.id then return refuse("no such company") end
+		local terms, why = E.loanTerms(param)
+		if not terms then return refuse(why) end
+		-- (one offer between two companies: a new ask takes the place of the last one)
+		for i = #reg.loanOffers, 1, -1 do
+			local o = reg.loanOffers[i]
+			if o.borrower == mine.id and o.lender == t.id then table.remove(reg.loanOffers, i) end
+		end
+		reg.loanSeq = (reg.loanSeq or 0) + 1
+		reg.loanOffers[#reg.loanOffers + 1] = { id = reg.loanSeq, borrower = mine.id, lender = t.id, amount = terms.amount, months = terms.months,
+			rate = terms.rate, turn = "lender", at = gt() }
+		while #reg.loanOffers > 20 do table.remove(reg.loanOffers, 1) end
+		news(reg, { kind = "loan_ask", co = mine.id, to = t.id, amount = terms.amount, months = terms.months, rate = terms.rate })
+		env.log("companies: company " .. mine.id .. " asks company " .. t.id .. " for a loan of " .. terms.amount .. " over " .. terms.months .. " month(s) at " .. terms.rate .. " %")
+		return
+	end
+	local o, idx = findOffer(param.id)
+	if not o then return refuse("no such offer") end
+	local myTurn = (o.turn == "lender" and mine.id == o.lender) or (o.turn == "borrower" and mine.id == o.borrower)
+	if name == "co_loan_cancel" then
+		if mine.id ~= o.lender and mine.id ~= o.borrower then return refuse("not its offer") end
+		table.remove(reg.loanOffers, idx)
+		news(reg, { kind = "loan_refused", co = o.borrower, to = o.lender, by = mine.id })
+		return
+	end
+	if not myTurn then return refuse("not its turn") end
+	if name == "co_loan_counter" then
+		local terms, why = E.loanTerms(param)
+		if not terms then return refuse(why) end
+		o.amount, o.months, o.rate = terms.amount, terms.months, terms.rate
+		o.turn = o.turn == "lender" and "borrower" or "lender"
+		o.at = gt()
+		news(reg, { kind = "loan_counter", co = mine.id, to = (mine.id == o.lender) and o.borrower or o.lender, amount = o.amount, months = o.months, rate = o.rate })
+		env.log("companies: company " .. mine.id .. " answers loan offer " .. o.id .. ": " .. o.amount .. " over " .. o.months .. " month(s) at " .. o.rate .. " %")
+		return
+	end
+	if name == "co_loan_answer" then
+		table.remove(reg.loanOffers, idx)
+		if not param.accept then
+			news(reg, { kind = "loan_refused", co = o.borrower, to = o.lender, by = mine.id })
+			return
+		end
+		local lender, borrower = env.CO.find(reg, o.lender), env.CO.find(reg, o.borrower)
+		if not (live(lender) and lender.ent and live(borrower) and borrower.ent) then return refuse("a company is gone") end
+		local bal = balanceOf(lender.ent)
+		if not (bal and bal >= o.amount) then
+			news(reg, { kind = "loan_nomoney", co = o.borrower, to = o.lender, amount = o.amount })
+			return refuse("the lender has " .. tostring(bal) .. ", not " .. o.amount)
+		end
+		book(lender.ent, -o.amount)
+		book(borrower.ent, o.amount)
+		local total, monthly = E.loanPlan(o)
+		reg.loans[#reg.loans + 1] = { id = o.id, borrower = o.borrower, lender = o.lender, amount = o.amount, months = o.months, rate = o.rate,
+			total = total, monthly = monthly, rest = total, at = gt() }
+		news(reg, { kind = "loan_ok", co = o.borrower, to = o.lender, amount = o.amount, months = o.months, rate = o.rate })
+		env.log("companies: loan " .. o.id .. ": company " .. o.lender .. " lends " .. o.amount .. " to company " .. o.borrower .. ", " .. total .. " to pay back, " .. monthly .. " a month")
+	end
+end
+
+-- (0.8.3) each new month (co_month, every game at the same step): the loans' parts paid back
+function E.loanMonth(reg, env)
+	if not E.LOANS or type(reg.loans) ~= "table" or #reg.loans == 0 then return end
+	local keep = {}
+	for _, l in ipairs(reg.loans) do
+		local b, le = env.CO.find(reg, l.borrower), env.CO.find(reg, l.lender)
+		if not (live(b) and b.ent) then
+			news(reg, { kind = "loan_lost", co = l.borrower, to = l.lender, amount = l.rest })
+		elseif not (live(le) and le.ent) then
+			news(reg, { kind = "loan_freed", co = l.borrower, to = l.lender, amount = l.rest })
+		else
+			local pay = math.min(l.rest, l.monthly)
+			book(b.ent, -pay)
+			book(le.ent, pay)
+			l.rest = l.rest - pay
+			if l.rest > 0 then keep[#keep + 1] = l else news(reg, { kind = "loan_done", co = l.borrower, to = l.lender, amount = l.total }) end
+		end
+	end
+	reg.loans = keep
+end
+
 function E.event(st, name, param, env)
 	E.env = env
 	local reg = st.co
@@ -1307,6 +1432,7 @@ function E.event(st, name, param, env)
 	local key, plain = keyOf(param.mpfFrom)
 	local mine = tonumber(param.mpfCo) and env.CO.find(reg, tonumber(param.mpfCo)) or nil
 	local function refuse(why) env.log("companies: " .. name .. " of '" .. tostring(param.mpfFrom) .. "' refused: " .. why) end
+	if name:sub(1, 8) == "co_loan_" then return E.loanEvent(st, name, param, env, mine, key, refuse) end
 	if name == "co_rules" then
 		if not fromHost(param.mpfFrom) then return refuse("not the host") end
 		local b = tonumber(param.bankrupt)
@@ -1472,6 +1598,8 @@ function E.event(st, name, param, env)
 				if live(c) and (c.debt or 0) >= limit and not (E.AI_NO_BANKRUPT and E.isAi(c)) then E.bankrupt(st, c, env) break end
 			end
 		end
+		-- (0.8.3) the loans' monthly parts
+		E.loanMonth(reg, env)
 	elseif name == "co_test" then
 		-- (autotests only, MPFEVER_SCENARIO set: a company goes bankrupt at once, with its first lots only. 0.7.4: or the host's
 		-- test button, MPFEVER_AUCTIONTEST=1 on the host's PC, hostTest: taken from the host only, by every game alike)

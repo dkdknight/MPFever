@@ -63,6 +63,8 @@ with its cause and the test that now guards it.
 | A window's step that reads an entity taken away by another player's build (**"Invalid entity"**) is left for that frame in a session; any other error of a step, and every error alone, is raised as before (#224). | 0.8.3 | U.swallowInvalid, react.onStep wrapper | test_uiinvalid083.py |
 | The **persons' and land vehicles' moves in one piece** on the simulation's thread (since 0.8.3 by default; the animals' since 0.5.12); MPFEVER_PERSONSERIAL=0 / MPFEVER_VEHSERIAL=0 on every game: in chunks. A behaviour changed on purpose (the 0.8.2 reports' drifts began in the moves). | 0.8.3 | InstallPersonSerial | test_personserial0713.py |
 | The **auction's clock** is the game's time (stops in a pause, x4 at x4); only the host's closes it; MPFEVER_AUCTIONREAL=1: the host's real time. | 0.8.3 | G.auClock, U countdown | test_auclock083.py, test_auction074.py |
+| **Loans** between companies: the borrower asks, turns alternate, chiefs only, the lender's money checked, equal monthly parts at co_month on every game; bankrupt borrower: the lender loses the rest. | 0.8.3 | E.loanEvent, E.loanMonth, U.loanCard | test_loans083.py, autotest loantest |
+| The other companies' lines at this company's stations: **on demand** only (a closed section of its sheet), one company per player; nothing read in normal play. | 0.8.3 | U.otherLinesAtMine | test_otherlines083.py |
 
 ## Regressions found
 

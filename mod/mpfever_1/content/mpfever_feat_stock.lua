@@ -850,7 +850,9 @@ M.view = function(lines, T, myBal)
 	for _, h in ipairs(v.hold) do
 		if h.co == v.me and h.by ~= v.me and byId[h.by] then v.holders[#v.holders + 1] = { id = h.by, name = byId[h.by].name, n = h.n, alert = h.n >= 3 } end
 	end
-	v.portfolio = { value = 0, got = (v.divs[v.me] or {}).got or 0 }
+	-- (0.8.3, Akamari's suggestion) the dividends this company paid to its holders too, and the balance (received less paid)
+	v.portfolio = { value = 0, got = (v.divs[v.me] or {}).got or 0, paid = (v.divs[v.me] or {}).paid or 0 }
+	v.portfolio.balance = v.portfolio.got - v.portfolio.paid
 	for _, h in ipairs(v.hold) do
 		if h.by == v.me and h.co ~= v.me and byId[h.co] then v.portfolio.value = v.portfolio.value + h.n * byId[h.co].price end
 	end
@@ -888,7 +890,8 @@ function M.ui(u)
 		"Every company has 10 shares. Price = value / 10; value = money - loans + resale value of the vehicles, measured by the host every month. The money of a purchase goes to the company; beyond 50 %, you take the whole company over.")))
 	add(u.muted(v.optText))
 	if v.me > 0 then
-		add(u.text(fmt(T("Votre portefeuille : %s. Dividendes reçus : %s.", "Your portfolio: %s. Dividends received: %s."), money(v.portfolio.value), money(v.portfolio.got))))
+		add(u.text(fmt(T("Votre portefeuille : %s. Dividendes reçus : %s, versés : %s, bilan : %s.", "Your portfolio: %s. Dividends received: %s, paid: %s, balance: %s."),
+			money(v.portfolio.value), money(v.portfolio.got), money(v.portfolio.paid), money(v.portfolio.balance))))
 		for _, h in ipairs(v.holders) do
 			local s = fmt(T("%s détient %s actions sur 10 de votre entreprise.", "%s holds %s of the 10 shares of your company."), h.name, h.n)
 			add(h.alert and u.text(s) or u.muted(s))
@@ -944,7 +947,8 @@ function M.uiRich(u, v, myBal, now)
 	add(u.muted(v.optText))
 	if v.me > 0 then
 		add(u.gap(6))
-		add(u.stats({ { T("Votre portefeuille", "Your portfolio"), money(v.portfolio.value) }, { T("Dividendes reçus", "Dividends received"), money(v.portfolio.got) } }, 220))
+		add(u.stats({ { T("Votre portefeuille", "Your portfolio"), money(v.portfolio.value) }, { T("Dividendes reçus", "Dividends received"), money(v.portfolio.got) },
+			{ T("Dividendes versés", "Dividends paid"), money(v.portfolio.paid) }, { T("Bilan des dividendes", "Dividend balance"), money(v.portfolio.balance) } }, 220))
 		for _, h in ipairs(v.holders) do
 			local s = fmt(T("%s détient %s actions sur 10 de votre entreprise.", "%s holds %s of the 10 shares of your company."), h.name, h.n)
 			add(h.alert and u.text(s, "warning") or u.muted(s))
@@ -1019,7 +1023,8 @@ function M.uiCards(u, v, myBal, now)
 	add(u.muted(v.optText))
 	if v.me > 0 then
 		add(u.gap(6))
-		add(u.stats({ { T("Votre portefeuille", "Your portfolio"), money(v.portfolio.value) }, { T("Dividendes reçus", "Dividends received"), money(v.portfolio.got) } }, 220))
+		add(u.stats({ { T("Votre portefeuille", "Your portfolio"), money(v.portfolio.value) }, { T("Dividendes reçus", "Dividends received"), money(v.portfolio.got) },
+			{ T("Dividendes versés", "Dividends paid"), money(v.portfolio.paid) }, { T("Bilan des dividendes", "Dividend balance"), money(v.portfolio.balance) } }, 220))
 		for _, h in ipairs(v.holders) do
 			local s = fmt(T("%s détient %s actions sur 10 de votre entreprise.", "%s holds %s of the 10 shares of your company."), h.name, h.n)
 			add(h.alert and u.text(s, "warning") or u.muted(s))

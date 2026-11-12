@@ -453,6 +453,15 @@ U.pollEco = function()
 		elseif k == "fees" then e.fees[tonumber(f1[2])] = { si = tonumber(f1[3]) or 0, se = tonumber(f1[4]) or 0, ti = tonumber(f1[5]) or 0, te = tonumber(f1[6]) or 0 }
 		elseif k == "req" then e.requests[#e.requests + 1] = { key = f1[2], name = f1[3], to = tonumber(f1[4]) }
 		elseif k == "merge" then e.merges[#e.merges + 1] = { from = tonumber(f1[2]), to = tonumber(f1[3]) }
+		-- (0.8.3) the loans' offers and the loans under way (see U.loanCard)
+		elseif k == "loanoffer" then
+			e.loanOffers = e.loanOffers or {}
+			e.loanOffers[#e.loanOffers + 1] = { id = tonumber(f1[2]), borrower = tonumber(f1[3]), lender = tonumber(f1[4]), amount = tonumber(f1[5]) or 0,
+				months = tonumber(f1[6]) or 0, rate = tonumber(f1[7]) or 0, turn = f1[8] }
+		elseif k == "loan" then
+			e.loans = e.loans or {}
+			e.loans[#e.loans + 1] = { id = tonumber(f1[2]), borrower = tonumber(f1[3]), lender = tonumber(f1[4]), rest = tonumber(f1[5]) or 0,
+				monthly = tonumber(f1[6]) or 0, total = tonumber(f1[7]) or 0 }
 		elseif k == "auction" then
 			e.auction = { seq = tonumber(f1[2]), co = tonumber(f1[3]), idx = tonumber(f1[4]), n = tonumber(f1[5]), kind = f1[6], label = f1[7],
 				reserve = tonumber(f1[8]) or 0, best = tonumber(f1[9]) or 0, bidder = tonumber(f1[10]) or 0, left = tonumber(f1[11]) or 0, min = tonumber(f1[12]) or 0 }
@@ -1869,6 +1878,54 @@ U.focusLine = function(l)
 	if not ok then log("AI lines: camera not moved: " .. tostring(err)) end
 end
 
+-- (0.8.3, Zoey's suggestion: "the window of a stop showing the other players' lines that use it") The other companies' lines that
+-- stop at this company's stations: { station group, its name, line, its name, company, its vehicles }, by station then line. Read
+-- here in the interface, only while this company's sheet shows them (the button of its section, closed by default: nothing of it
+-- in normal play), again every 5 s. companies: the tab's list (id, ent); label(c): the name shown. Changes nothing in any game
+U.otherLinesAtMine = function(companies, label)
+	local now = os.clock()
+	if U.olCache and now - U.olCache.at < 5 and now >= U.olCache.at then return U.olCache.rows end
+	local mineEnt, lineCo = nil, {}
+	for _, c in ipairs(companies or {}) do
+		if c.id == U.myCo then mineEnt = c.ent
+		elseif c.ent then
+			pcall(function() for _, l in ipairs(api.engine.system.lineSystem.getLinesForPlayer(c.ent)) do lineCo[l] = c end end)
+		end
+	end
+	local rows = {}
+	if mineEnt then
+		local function nameOf(e) local n = tostring(e) pcall(function() n = api.engine.getComponent(e, api.type.ComponentType.NAME).name end) return n end
+		for _, sg in ipairs(R.entitiesWith("STATION_GROUP")) do
+			if R.ownerOf(sg) == mineEnt then
+				local seen = {}
+				pcall(function()
+					for _, ls in ipairs(api.engine.system.lineSystem.getLineStops(sg)) do
+						local l = ls[1]
+						if lineCo[l] and not seen[l] then
+							seen[l] = true
+							local nv = 0
+							pcall(function() nv = #api.engine.system.transportVehicleSystem.getLineVehicles(l) end)
+							rows[#rows + 1] = { sg = sg, sgName = nameOf(sg), line = l, lineName = nameOf(l), co = label and label(lineCo[l]) or tostring(lineCo[l].id), nv = nv }
+						end
+					end
+				end)
+			end
+		end
+	end
+	table.sort(rows, function(a, b) if a.sgName ~= b.sgName then return a.sgName < b.sgName end return a.lineName < b.lineName end)
+	U.olCache = { at = now, rows = rows }
+	return rows
+end
+
+-- the camera on a station group (its first station)
+U.focusStationGroup = function(sg)
+	local ok, err = pcall(function()
+		local c = api.engine.getComponent(sg, api.type.ComponentType.STATION_GROUP)
+		api.gui.camera.focusEntity(c.stations[1])
+	end)
+	if not ok then log("other companies' lines: camera not moved: " .. tostring(err)) end
+end
+
 -- a computer company's lines in its card of the Company tab: name, vehicles, "Show" (10 at most)
 U.aiLineRows = function(K, c, card, CW)
 	if (c.lines or 0) == 0 then return end
@@ -2874,6 +2931,98 @@ U.give = function(c, ctx, myBal)
 	U.winChanged()
 end
 
+-- (0.8.3, Zoey's suggestion) A loan between this player's company and company c, in c's sheet: the offer under way (its terms, and
+-- Accept / Refuse / a counter-offer when it is this company's turn, Withdraw else), else the fields to ask for one (the borrower
+-- asks: amount, months, interest in % of the amount for the whole loan); the loans under way between the two. The events go to
+-- every game (mpfever_eco.lua: E.loanEvent), which checks the terms, the chiefs and the lender's money.
+U.loanIn = U.loanIn or {}
+U.loanNum = function(v)
+	return tonumber((tostring(v or ""):gsub("[%s%.,'%%]", "")))
+end
+U.loanSend = function(name, param)
+	U.loanMsg = nil
+	if not U.coSend(name, param) then U.loanMsg = T("Envoi impossible.", "Could not send.") end
+	U.loanGen = (U.loanGen or 0) + 1
+	U.winChanged()
+end
+U.loanTermsIn = function(c)
+	local i = U.loanIn[c.id] or {}
+	local a, m, r = U.loanNum(i.a), U.loanNum(i.m), U.loanNum(i.r)
+	if not a or a <= 0 then return nil, T("Entrez un montant.", "Enter an amount.") end
+	if not m or m < 1 or m > 120 then return nil, T("Durée : de 1 à 120 mois.", "Duration: 1 to 120 months.") end
+	if not r or r < 0 or r > 100 then return nil, T("Intérêts : de 0 à 100 %.", "Interest: 0 to 100 %.") end
+	return { amount = math.floor(a), months = math.floor(m), rate = math.floor(r) }
+end
+U.loanCard = function(K, c, eco)
+	if not U.myCo then return nil end
+	local me = U.myCo
+	local card = {}
+	local function fields(c2)
+		local g = tostring(U.loanGen or 0)
+		local function field(key, ph, w)
+			return K.builtin.TextInputField {
+				meta = { class = "font-scale-body", localKey = "mpfever-loan-" .. key .. "-" .. g .. "-" .. c2.id, styleSheet = K.style { size = { w, -1 } } },
+				value = "", placeholderText = ph, maxLength = 15, acceptOnFocusLoss = true,
+				onTyping = function(v) U.loanIn[c2.id] = U.loanIn[c2.id] or {}; U.loanIn[c2.id][key] = v end,
+				onValueChange = function(v) U.loanIn[c2.id] = U.loanIn[c2.id] or {}; U.loanIn[c2.id][key] = v end,
+			}
+		end
+		return K.row { K.muted(T("Montant", "Amount"), 70), field("a", "1000000", 130), K.gap(8, 1), K.muted(T("Mois", "Months"), 50), field("m", "12", 60),
+			K.gap(8, 1), K.muted(T("Intérêts %", "Interest %"), 80), field("r", "10", 60) }
+	end
+	-- the offer under way between the two companies
+	local offer = nil
+	for _, o in ipairs(eco.loanOffers or {}) do
+		if (o.borrower == me and o.lender == c.id) or (o.lender == me and o.borrower == c.id) then offer = o end
+	end
+	if offer then
+		local total = math.floor(offer.amount * (100 + offer.rate) / 100 + 0.5)
+		local iBorrow = offer.borrower == me
+		card[#card + 1] = K.text(C.Tf(iBorrow and "Vous empruntez %s sur %s mois, à %s % : %s à rembourser." or "Elle vous emprunte %s sur %s mois, à %s % : %s à rembourser.",
+			iBorrow and "You borrow %s over %s month(s), at %s %: %s to pay back." or "It borrows %s from you over %s month(s), at %s %: %s to pay back.",
+			money(offer.amount), offer.months, offer.rate, money(total)), nil, nil, K.CARD_TEXT_W)
+		local myTurn = (offer.turn == "lender" and offer.lender == me) or (offer.turn == "borrower" and offer.borrower == me)
+		if myTurn then
+			card[#card + 1] = K.row {
+				K.btn(T("Accepter", "Accept"), nil, function() U.loanSend("co_loan_answer", { id = offer.id, accept = true }) end, true),
+				K.gap(8, 1),
+				K.btn(T("Refuser", "Refuse"), nil, function() U.loanSend("co_loan_answer", { id = offer.id, accept = false }) end),
+			}
+			card[#card + 1] = K.gap(1, 6)
+			card[#card + 1] = K.muted(T("Ou proposez d'autres conditions :", "Or offer other terms:"), K.CARD_TEXT_W)
+			card[#card + 1] = fields(c)
+			card[#card + 1] = K.row { K.btn(T("Contre-proposition", "Counter-offer"), nil, function()
+				local t, why = U.loanTermsIn(c)
+				if not t then U.loanMsg = why; U.winChanged(); return end
+				U.loanSend("co_loan_counter", { id = offer.id, amount = t.amount, months = t.months, rate = t.rate })
+			end) }
+		else
+			card[#card + 1] = K.muted(T("En attente de sa réponse.", "Waiting for its answer."), K.CARD_TEXT_W)
+			card[#card + 1] = K.row { K.btn(T("Retirer", "Withdraw"), nil, function() U.loanSend("co_loan_cancel", { id = offer.id }) end) }
+		end
+	else
+		card[#card + 1] = K.muted(T("Demander un prêt à cette entreprise : vous fixez le montant, la durée et les intérêts que vous offrez (en % du montant, pour tout le prêt). Vous remboursez une part chaque mois.",
+			"Ask this company for a loan: you set the amount, the duration and the interest you offer (in % of the amount, for the whole loan). You pay back a part each month."), K.CARD_TEXT_W)
+		card[#card + 1] = fields(c)
+		card[#card + 1] = K.row { K.btn(T("Demander le prêt", "Ask for the loan"), nil, function()
+			local t, why = U.loanTermsIn(c)
+			if not t then U.loanMsg = why; U.winChanged(); return end
+			U.loanSend("co_loan_ask", { to = c.id, amount = t.amount, months = t.months, rate = t.rate })
+		end, true) }
+	end
+	-- the loans under way between the two
+	for _, l in ipairs(eco.loans or {}) do
+		if l.borrower == me and l.lender == c.id then
+			card[#card + 1] = K.text(C.Tf("Vous lui devez encore %s (%s par mois).", "You still owe it %s (%s a month).", money(l.rest), money(l.monthly)), nil, "warning", K.CARD_TEXT_W)
+		elseif l.lender == me and l.borrower == c.id then
+			card[#card + 1] = K.text(C.Tf("Elle vous doit encore %s (%s par mois).", "It still owes you %s (%s a month).", money(l.rest), money(l.monthly)), nil, "success", K.CARD_TEXT_W)
+		end
+	end
+	card[#card + 1] = K.muted(T("Seul le chef d'une entreprise peut demander ou accepter un prêt.", "Only a company's chief can ask for or accept a loan."), K.CARD_TEXT_W)
+	if U.loanMsg then card[#card + 1] = K.muted(U.loanMsg, K.CARD_TEXT_W) end
+	return card
+end
+
 -- ---------------------------------------------------------------- the tabs (each one a list of rows, drawn in a scroll area)
 U.TABS = {}
 
@@ -3330,7 +3479,35 @@ U.TABS.company = function(K, st, ctx)
 			}
 			if U.giveMsg then acard[#acard + 1] = K.muted(U.giveMsg, K.CARD_TEXT_W) end
 			rows[#rows + 1] = K.card(acard)
+			-- (0.8.3) a loan between this company and that one (see U.loanCard)
+			if os.getenv("MPFEVER_LOANS") ~= "0" then
+				local okL, lcard = pcall(U.loanCard, K, c, eco)
+				if okL and lcard then
+					rows[#rows + 1] = K.gap(1, 10)
+					rows[#rows + 1] = K.section(K.ICON_PLAYERS, T("Prêt", "Loan"))
+					rows[#rows + 1] = K.card(lcard)
+				elseif not okL then log("loans: card: " .. tostring(lcard)) end
+			end
 		elseif isMine then
+			-- (0.8.3) the other companies' lines at this company's stations, on demand (see U.otherLinesAtMine; MPFEVER_OTHERLINES=0: none)
+			if os.getenv("MPFEVER_OTHERLINES") ~= "0" and #list > 1 then
+				local ocard = { K.muted(T("Les lignes des autres entreprises qui s'arrêtent à vos gares, quand vous voulez les voir.", "The other companies' lines that stop at your stations, when you want to see them."), K.CARD_TEXT_W),
+					K.row { K.btn(U.otherLinesOpen and T("Masquer", "Hide") or T("Voir", "Show"), nil, function() U.otherLinesOpen = not U.otherLinesOpen; U.olCache = nil; U.winChanged() end) } }
+				if U.otherLinesOpen then
+					local okO, orows = pcall(U.otherLinesAtMine, list, label)
+					orows = okO and orows or {}
+					if #orows == 0 then ocard[#ocard + 1] = K.muted(T("Aucune ligne d'une autre entreprise ne s'arrête à vos gares.", "No line of another company stops at your stations."), K.CARD_TEXT_W) end
+					for i, o in ipairs(orows) do
+						if i > 30 then ocard[#ocard + 1] = K.muted(C.Tf("… et %s autres lignes", "… and %s more lines", #orows - 30), K.CARD_TEXT_W); break end
+						local sg = o.sg
+						ocard[#ocard + 1] = K.row { K.text(C.Tf("%s : %s (%s, %s véhicule(s))", "%s: %s (%s, %s vehicle(s))", o.sgName, o.lineName, o.co, o.nv), nil, nil, K.CARD_TEXT_W - 80), K.gap(6, 1),
+							K.btn(T("Voir", "Show"), T("Amener la caméra sur la gare", "Take the camera to the station"), function() U.focusStationGroup(sg) end) }
+					end
+				end
+				rows[#rows + 1] = K.gap(1, 10)
+				rows[#rows + 1] = K.section(K.ICON_PLAYERS, T("Lignes des autres entreprises à vos gares", "Other companies' lines at your stations"))
+				rows[#rows + 1] = K.card(ocard)
+			end
 			local nPl = #names
 			if nPl > 1 then
 				rows[#rows + 1] = K.gap(1, 10)

@@ -15861,6 +15861,61 @@ end
 -- host opens its tracks for a toll; the client asks to join company 1 (the host's chief accepts), leaves it (a new company),
 -- offers to merge it into company 1 (accepted), leaves again; then company 1 goes bankrupt (its first two lots at auction): the
 -- client bids on the first, nobody on the second. The checks then say whether every game did the same.
+-- (0.8.3) autotest loantest (one company per player): the host's company asks the client's for a loan of 100000 over 2 months at
+-- 10 % (scenario by host), the client's accepts it (scenario by client), then each game reads both balances: the lender 100000
+-- less, the borrower 100000 more, the same on both games (the session's checks then compare them)
+H.loantest = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function ev(name, param) uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = name, [4] = param }) end
+	local function note(t) AUTO.results[#AUTO.results + 1] = t; log("AUTOTEST loantest " .. t) end
+	local ok, err = pcall(function()
+		if not (G.co and G.myCo) then note("not in the companies mode"); return autoFinish() end
+		local function bal(c) local okB, b = pcall(api.engine.util.finance.getPlayersBalance, c.ent) return okB and b or nil end
+		local mine = CO.find(G.co, G.myCo)
+		-- (the other player's company: its chief is the other game's player, "client" or "host"; it may come a few seconds later)
+		local want = C.ROLE == "host" and "client" or "host"
+		local function otherCo()
+			for _, c in ipairs(G.co.list or {}) do
+				if c.id ~= G.myCo and c.ent and not c.gone and tostring(CO.chief(c) or ""):lower() == want then return c end
+			end
+		end
+		local tries = 0
+		local function go()
+			tries = tries + 1
+			local other = otherCo()
+			mine = CO.find(G.co, G.myCo)
+			local o = (G.co.loanOffers or {})[1]
+			if not other or not mine or (C.ROLE == "client" and not o) then
+				if tries < 60 then G.waits[#G.waits + 1] = { at = G.frames + 60, fn = go } return end
+				note(not other and "no other company" or (not mine and "no company here" or "no offer to answer"))
+				return autoFinish()
+			end
+			if C.ROLE == "host" then
+				ev("co_loan_ask", { to = other.id, amount = 100000, months = 2, rate = 10 })
+				G.waits[#G.waits + 1] = { at = G.frames + 300, fn = function()
+					local o2 = (G.co.loanOffers or {})[1]
+					note("ask: " .. (o2 and ("offer " .. o2.id .. " " .. o2.amount .. "/" .. o2.months .. "/" .. o2.rate .. " turn " .. o2.turn .. " from " .. o2.borrower .. " to " .. o2.lender) or "no offer"))
+					autoFinish()
+				end }
+				return
+			end
+			local b0, l0 = bal(other), bal(mine)
+			ev("co_loan_answer", { id = o.id, accept = true })
+			G.waits[#G.waits + 1] = { at = G.frames + 300, fn = function()
+				local l = (G.co.loans or {})[1]
+				note("accepted: " .. (l and ("loan " .. l.id .. ", " .. l.total .. " to pay back, " .. l.monthly .. " a month") or "no loan")
+					.. "; borrower " .. tostring(b0) .. " -> " .. tostring(bal(other)) .. ", lender " .. tostring(l0) .. " -> " .. tostring(bal(mine)))
+				autoFinish()
+			end }
+		end
+		go()
+	end)
+	if not ok then note("error " .. tostring(err)); autoFinish() end
+end
+
 H.coeco = function(from, p)
 	if p.role ~= C.ROLE or AUTO.running then return end
 	AUTO.running = true
@@ -19683,6 +19738,13 @@ G.coEco = function(st, reg, c)
 	if rs ~= G.stopRulesSig then G.stopRulesSig = rs; G.hudShareAt = nil end
 	for _, r in ipairs(reg.requests or {}) do L[#L + 1] = "req\t" .. clean(r.key) .. "\t" .. clean(r.name) .. "\t" .. tostring(r.to) end
 	for _, o in ipairs(reg.mergeOffers or {}) do L[#L + 1] = "merge\t" .. tostring(o.from) .. "\t" .. tostring(o.to) end
+	-- (0.8.3) the loans' offers and the loans under way (mpfever_eco.lua: E.loanEvent), for the Company tab
+	for _, o in ipairs(reg.loanOffers or {}) do
+		L[#L + 1] = table.concat({ "loanoffer", tostring(o.id), tostring(o.borrower), tostring(o.lender), tostring(o.amount), tostring(o.months), tostring(o.rate), tostring(o.turn) }, "\t")
+	end
+	for _, l in ipairs(reg.loans or {}) do
+		L[#L + 1] = table.concat({ "loan", tostring(l.id), tostring(l.borrower), tostring(l.lender), tostring(l.rest), tostring(l.monthly), tostring(l.total) }, "\t")
+	end
 	local au = reg.auction
 	-- (when this game saw the lot open: the time left it shows)
 	local nowT = G.auClock and G.auClock() or os.time()
@@ -20032,6 +20094,15 @@ end
 G.coNewsText = function(reg, n)
 	local function nm(id) return G.coName(reg, id) end
 	local k = n.kind
+	-- (0.8.3) the loans between companies (mpfever_eco.lua: E.loanEvent, E.loanMonth)
+	if k == "loan_ask" then return C.Tf("%s demande à %s un prêt de %s sur %s mois, à %s % d'intérêts.", "%s asks %s for a loan of %s over %s month(s), at %s % interest.", nm(n.co), nm(n.to), G.coMoney(n.amount), n.months, n.rate) end
+	if k == "loan_counter" then return C.Tf("%s propose à %s : %s sur %s mois, à %s % d'intérêts.", "%s offers %s: %s over %s month(s), at %s % interest.", nm(n.co), nm(n.to), G.coMoney(n.amount), n.months, n.rate) end
+	if k == "loan_ok" then return C.Tf("%s prête %s à %s sur %s mois, à %s % d'intérêts.", "%s lends %s to %s over %s month(s), at %s % interest.", nm(n.to), G.coMoney(n.amount), nm(n.co), n.months, n.rate) end
+	if k == "loan_refused" then return C.Tf("Pas de prêt entre %s et %s.", "No loan between %s and %s.", nm(n.to), nm(n.co)) end
+	if k == "loan_nomoney" then return C.Tf("%s n'a pas %s à prêter à %s : pas de prêt.", "%s has not got %s to lend to %s: no loan.", nm(n.to), G.coMoney(n.amount), nm(n.co)) end
+	if k == "loan_done" then return C.Tf("%s a remboursé son prêt à %s (%s en tout).", "%s has paid back its loan to %s (%s in all).", nm(n.co), nm(n.to), G.coMoney(n.amount)) end
+	if k == "loan_lost" then return C.Tf("%s ne remboursera pas les %s qu'elle devait à %s (faillite).", "%s will not pay back the %s it owed %s (bankruptcy).", nm(n.co), G.coMoney(n.amount), nm(n.to)) end
+	if k == "loan_freed" then return C.Tf("%s n'a plus à rembourser les %s qu'elle devait à %s.", "%s no longer has to pay back the %s it owed %s.", nm(n.co), G.coMoney(n.amount), nm(n.to)) end
 	if k == "bankrupt" then return C.Tf("%s fait faillite : %s lot(s) mis aux enchères. Ses joueurs reçoivent une nouvelle entreprise.", "%s goes bankrupt: %s lot(s) put up for auction. Its players get a new company.", nm(n.co), n.lots or 0) end
 	if k == "debt" then
 		if (n.limit or 0) <= 0 then return nil end

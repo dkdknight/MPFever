@@ -28,6 +28,19 @@ MPFever - Changelog
     ~1~Hainichen ZOB", every 2 s of game time) made 72000 actions in 75 minutes for 147 buses; G.modSkip (0.7.1) ships every new
     value. A value that comes back right after another one 6 times within a minute is no longer shipped for 10 minutes of game
     time (the host decides, every game keeps the same name). MPFEVER_MODPINGPONG=0: as before. Test: tests/test_modpingpong083.py.
+  - NEW (Zoey's suggestion, the owner's rules): loans between companies (one company per player). In another company's sheet
+    (the Company tab), « Loan »: the BORROWER asks (amount, months, the interest it offers in % of the amount for the whole loan);
+    the other chief accepts, refuses or makes a counter-offer, and so on in turn; either can withdraw. Accepted: the lender pays the
+    amount at once (no loan when it has not got it), then the borrower pays back the amount and the interest in equal parts at each
+    new month of the game (every game at the same step; short of money it goes into debt, the bankruptcy rule then counts). A
+    borrower gone bankrupt: the lender loses the rest; a lender gone: the borrower keeps it. Chiefs only; the chat tells each step.
+    MPFEVER_LOANS=0: off. Tests: tests/test_loans083.py; autotest loantest.
+  - NEW (Zoey's suggestion, the owner's choice: on demand only, one company per player): this company's sheet has « Other
+    companies' lines at your stations », closed by default; « Show » lists, for each of its stations, the lines of the other
+    companies that stop there (company, vehicles, a button that takes the camera to the station). Read in the interface only.
+    MPFEVER_OTHERLINES=0: none. Test: tests/test_otherlines083.py.
+  - NEW (Akamari's suggestion): the stock market's overview shows the dividends this company paid and the balance (received less
+    paid), beside those it received (text and boxes). Test: tests/test_stockdivs083.py.
   - CHANGE (a player's suggestion: "the functions added to the game keep going while the simulation is paused"): the auction of a
     bankrupt company runs on the game's time (G.auClock, seconds of the simulation): it stops while the session is paused and
     goes 4 times faster at x4, as the game's months; before, the host's real time, and an auction could end during a pause. The
