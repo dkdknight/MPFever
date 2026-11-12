@@ -78,6 +78,8 @@ with its cause and the test that now guards it.
 | A player's MPFever whose **game crashed tells the host before leaving** ("game_crashed", only after a crash, never passed on to the games); the host asks every player in the chat to send a report (#263). | 0.8.4 | OnPlayerCrashed | test_reportgaps084.py |
 | **report.txt says what runs on the PC** (Transport Fever 3 games and start times, Steam, administrator) and the game's last exit code; every reading guarded (#254 #262). | 0.8.4 | Reporter.RunningNow | test_reportgaps084.py |
 | The **first drift since the load is kept apart** (sdump_drift_first.txt written once per load; the native module never removes that check's rings); the three rotating slots stay as before. | 0.8.4 | SDUMP.keepDrift, DriftPoll | test_driftloadreset084.py |
+| The **loan form keeps what was typed**; an empty field takes its grey example (1000000 / 12 / 10); emptied once sent, kept when the send failed; wrong terms still refused (#266). | 0.8.5 | U.loanTermsIn, U.loanCard | test_loanform085.py |
+| A game's **hello says whether its native module runs** (nat on/off/none); the host warns everyone once per player for off/none; a hello without nat (older mod): nothing (#268). | 0.8.5 | WarnNative | test_nativecheck085.py |
 
 ## Regressions found
 

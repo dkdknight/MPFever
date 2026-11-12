@@ -144,6 +144,35 @@ namespace MPFever
         }
 
         /// <summary>(0.7.9) The host: a game's mod version from its "hello" (see ModCopies.VersionProblem).</summary>
+        /// <summary>(0.8.4, #268) A game whose native module does not run (its hello's "nat": "off" or "none"): Arne had started
+        /// MPFever.exe away from its archive's folder, an old winhttp.dll stayed in the game's folder with hooks off, and the towns
+        /// drifted every 3 minutes (13 resynchronisations) while his own warning went unseen. Said to everyone, once per player.
+        /// A hello without "nat" (an older mod): nothing. MPFEVER_NATIVECHECK=0: not said</summary>
+        internal static string NativeProblem(string who, string payload)
+        {
+            var h = LuaLit.Parse(payload) as Dictionary<object, object>;
+            var nat = h != null && h.TryGetValue("nat", out var v) ? v as string : null;
+            if (nat != "off" && nat != "none") return null;
+            return F("Le module natif de MPFever ne tourne pas sur le jeu de {0} (MPFever.exe lancé hors du dossier de son archive ?) : ce jeu va dériver des autres. {0}, extrayez toute l'archive MPFever dans un dossier et lancez MPFever.exe depuis ce dossier.",
+                "MPFever's native module does not run on {0}'s game (MPFever.exe started away from its archive's folder?): that game will drift away from the others. {0}, please extract the whole MPFever archive into one folder and start MPFever.exe from there.", who);
+        }
+
+        readonly HashSet<string> nativeWarned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void WarnNative(string who, string payload)
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_NATIVECHECK") == "0") return;
+            try
+            {
+                var text = NativeProblem(BaseName(who ?? ""), payload);
+                if (text == null) return;
+                lock (nativeWarned) if (!nativeWarned.Add(BaseName(who ?? ""))) return;
+                Log.Err(text);
+                HostChat("msg", "MPFever", text);
+            }
+            catch { }
+        }
+
         void WarnModVersion(string who, string payload)
         {
             if (Environment.GetEnvironmentVariable("MPFEVER_MODVERCHECK") == "0") return;

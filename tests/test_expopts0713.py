@@ -83,7 +83,7 @@ for name, text in (("ModCopies.cs", mc), ("MainForm.cs", mf)):
 hello = mf[mf.index('                if (m.Kind == "hello") { g.InGame = true;'):][:700]   # (0.7.13: the game's memory logged aside, see test_resyncspeed0713.py)
 check("\n                lock (waiting)\n" in hello, "(b) a player's hello goes on to the host as its game wrote it")
 hh = mf[mf.index('                case "hello":\n                    lock (players) players.Add(m.From);'):][:300]
-check("                    WarnModVersion(m.From, m.Payload);\n                    // (0.7.4, MODRETRY" in hh, "(b) the host looks at the mod version only")
+check("                    WarnModVersion(m.From, m.Payload);\n                    WarnNative(m.From, m.Payload);\n                    // (0.7.4, MODRETRY" in hh, "(b) the host looks at the mod version (and, 0.8.5, #268, whether its native module runs) only")
 rs = st[st.index("        static bool RunExpOpts0713()"):]
 rs = rs[:rs.index("\n        }\n")]
 check(re.search(r"ok &= RunDeadDirect0713\(\);(\s+ok &= Run\w+\(\);)*\s+ok &= RunExpOpts0713\(\);", st) is not None, "(b) the selftest runs its check, after RunDeadDirect0713")

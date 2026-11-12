@@ -4482,6 +4482,7 @@ namespace MPFever
                 case "hello":
                     lock (players) players.Add(m.From);
                     WarnModVersion(m.From, m.Payload);
+                    WarnNative(m.From, m.Payload);
                     // (0.7.4, MODRETRY: the server's world is loaded, its mods were all there)
                     if (m.From == hostName) serverModRetries = 0;
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));

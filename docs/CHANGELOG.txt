@@ -2,6 +2,14 @@ MPFever - Changelog
 ===================
 
 0.8.5 - (in progress)
+  - FIX (#266, Creeper + Akamari): the loan form showed its fields empty again after every refresh (their grey examples,
+    "1000000", looked like the amount going back to a default) and an empty field was no amount at all: Akamari's ask never
+    left the form. The fields keep what was typed, an empty field takes its grey example (1000000, 12 months, 10 %), and they
+    are emptied once sent. MPFEVER_LOANFORMKEEP=0: as in 0.8.3. Test: tests/test_loanform085.py.
+  - FIX (#268, Jakob + Arne, 13 resynchronisations; #257): Arne started MPFever.exe away from its archive's folder: an old
+    winhttp.dll in the game's folder found no signature file and switched its hooks off, and the towns drifted every 3 minutes;
+    the warning was on Arne's screen only. Every game now says in its hello whether its native module runs ("nat"), and the host
+    tells every player in the chat when one does not. MPFEVER_NATIVECHECK=0: not said. Test: tests/test_nativecheck085.py.
 
 0.8.4 - 2026-11-12: street rebuilds after a bulldozer kept in sync, drift reports that keep the first drift
   - CHANGE (#255-#261, tested 2026-11-12): the street joins of the bulldozer (MPFEVER_STREETMERGENATIVE) are ON by default:

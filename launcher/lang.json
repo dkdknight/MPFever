@@ -25090,6 +25090,19 @@
       "ko": "{0}의 게임이 충돌했습니다. 원인을 찾을 수 있도록, 세션을 나가기 전에 모든 플레이어가 지금 « 문제 신고 »를 보내 주세요.",
       "zh-CN": "{0} 的游戏崩溃了。为帮助查明原因，请每位玩家在离开会话前立即发送 « 报告问题 »。",
       "zh-TW": "{0} 的遊戲當機了。為協助找出原因，請每位玩家在離開工作階段前立即傳送 « 回報問題 »。"
+    },
+    "MPFever's native module does not run on {0}'s game (MPFever.exe started away from its archive's folder?): that game will drift away from the others. {0}, please extract the whole MPFever archive into one folder and start MPFever.exe from there.": {
+      "de": "Das native Modul von MPFever läuft nicht im Spiel von {0} (MPFever.exe außerhalb des Ordners seines Archivs gestartet?): Dieses Spiel wird von den anderen abweichen. {0}, bitte das ganze MPFever-Archiv in einen Ordner entpacken und MPFever.exe von dort starten.",
+      "es": "El módulo nativo de MPFever no funciona en el juego de {0} (¿MPFever.exe iniciado fuera de la carpeta de su archivo?): ese juego se desviará de los demás. {0}, extrae todo el archivo de MPFever en una carpeta e inicia MPFever.exe desde allí.",
+      "it": "Il modulo nativo di MPFever non funziona nel gioco di {0} (MPFever.exe avviato fuori dalla cartella del suo archivio?): quel gioco si discosterà dagli altri. {0}, estrai l'intero archivio di MPFever in una cartella e avvia MPFever.exe da lì.",
+      "nl": "De native module van MPFever draait niet in het spel van {0} (MPFever.exe buiten de map van zijn archief gestart?): dat spel zal van de andere afwijken. {0}, pak het hele MPFever-archief uit in één map en start MPFever.exe vanaf daar.",
+      "pl": "Moduł natywny MPFever nie działa w grze gracza {0} (MPFever.exe uruchomiony poza folderem swojego archiwum?): ta gra będzie się rozjeżdżać z pozostałymi. {0}, rozpakuj całe archiwum MPFever do jednego folderu i uruchom MPFever.exe stamtąd.",
+      "pt-BR": "O módulo nativo do MPFever não está rodando no jogo de {0} (MPFever.exe iniciado fora da pasta do seu arquivo?): esse jogo vai se desviar dos outros. {0}, extraia o arquivo inteiro do MPFever numa pasta e inicie o MPFever.exe a partir dela.",
+      "ru": "Нативный модуль MPFever не работает в игре {0} (MPFever.exe запущен не из папки своего архива?): эта игра будет расходиться с остальными. {0}, распакуйте весь архив MPFever в одну папку и запускайте MPFever.exe оттуда.",
+      "ja": "{0} のゲームで MPFever のネイティブモジュールが動いていません（MPFever.exe をアーカイブのフォルダー以外から起動しましたか？）。このゲームは他とずれていきます。{0} さん、MPFever のアーカイブ全体を1つのフォルダーに展開し、そこから MPFever.exe を起動してください。",
+      "ko": "{0}의 게임에서 MPFever 네이티브 모듈이 실행되지 않습니다 (MPFever.exe를 압축 파일의 폴더 밖에서 실행했나요?): 이 게임은 다른 게임들과 어긋나게 됩니다. {0}님, MPFever 압축 파일 전체를 한 폴더에 풀고 그 폴더에서 MPFever.exe를 실행하세요.",
+      "zh-CN": "MPFever 的原生模块没有在 {0} 的游戏中运行（MPFever.exe 是在其压缩包文件夹之外启动的吗？）：该游戏将与其他人的游戏产生偏差。{0}，请将整个 MPFever 压缩包解压到一个文件夹，并从那里启动 MPFever.exe。",
+      "zh-TW": "MPFever 的原生模組沒有在 {0} 的遊戲中執行（MPFever.exe 是在其壓縮檔資料夾之外啟動的嗎？）：該遊戲將與其他人的遊戲產生偏差。{0}，請將整個 MPFever 壓縮檔解壓縮到一個資料夾，並從那裡啟動 MPFever.exe。"
     }
   }
 }

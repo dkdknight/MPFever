@@ -2968,15 +2968,27 @@ U.loanIn = U.loanIn or {}
 U.loanNum = function(v)
 	return tonumber((tostring(v or ""):gsub("[%s%.,'%%]", "")))
 end
+-- (0.8.5, #266) the form keeps what was typed (the card is drawn again on every refresh: its fields came back empty, showing
+-- their grey examples, and Creeper took "1000000" for the amount the field went back to), an empty field counts as its grey
+-- example (1000000, 12, 10: Akamari's ask never left the form, "Enter an amount"), and the fields are emptied once sent.
+-- MPFEVER_LOANFORMKEEP=0: as in 0.8.3
+U.LOANFORM = os.getenv("MPFEVER_LOANFORMKEEP") ~= "0"
+U.LOAN_DEFAULTS = { a = "1000000", m = "12", r = "10" }
 U.loanSend = function(name, param)
 	U.loanMsg = nil
-	if not U.coSend(name, param) then U.loanMsg = T("Envoi impossible.", "Could not send.") end
+	if not U.coSend(name, param) then U.loanMsg = T("Envoi impossible.", "Could not send.")
+	elseif U.LOANFORM then U.loanIn = {} end
 	U.loanGen = (U.loanGen or 0) + 1
 	U.winChanged()
 end
 U.loanTermsIn = function(c)
 	local i = U.loanIn[c.id] or {}
-	local a, m, r = U.loanNum(i.a), U.loanNum(i.m), U.loanNum(i.r)
+	local function val(k)
+		local v = i[k]
+		if U.LOANFORM and (v == nil or tostring(v):match("^%s*$")) then v = U.LOAN_DEFAULTS[k] end
+		return v
+	end
+	local a, m, r = U.loanNum(val("a")), U.loanNum(val("m")), U.loanNum(val("r"))
 	if not a or a <= 0 then return nil, T("Entrez un montant.", "Enter an amount.") end
 	if not m or m < 1 or m > 120 then return nil, T("Durée : de 1 à 120 mois.", "Duration: 1 to 120 months.") end
 	if not r or r < 0 or r > 100 then return nil, T("Intérêts : de 0 à 100 %.", "Interest: 0 to 100 %.") end
@@ -2991,7 +3003,7 @@ U.loanCard = function(K, c, eco)
 		local function field(key, ph, w)
 			return K.builtin.TextInputField {
 				meta = { class = "font-scale-body", localKey = "mpfever-loan-" .. key .. "-" .. g .. "-" .. c2.id, styleSheet = K.style { size = { w, -1 } } },
-				value = "", placeholderText = ph, maxLength = 15, acceptOnFocusLoss = true,
+				value = U.LOANFORM and tostring((U.loanIn[c2.id] or {})[key] or "") or "", placeholderText = ph, maxLength = 15, acceptOnFocusLoss = true,
 				onTyping = function(v) U.loanIn[c2.id] = U.loanIn[c2.id] or {}; U.loanIn[c2.id][key] = v end,
 				onValueChange = function(v) U.loanIn[c2.id] = U.loanIn[c2.id] or {}; U.loanIn[c2.id][key] = v end,
 			}

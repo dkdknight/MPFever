@@ -21753,8 +21753,19 @@ local function guiUpdate(userParams, state, guiState)
 		if not okn then log("emissions: " .. tostring(errn)) end
 		-- ((0.7.13) and the test switches of the persons and the vehicles in one piece (the native module's InstallPersonSerial),
 		-- when set: the host's log shows every game's with its "game ready" line. Unset: the hello as before)
+		-- ((0.8.4, #268) and whether this game's native module runs: "on" (it wrote native_state.txt when its fixes went in),
+		-- "off" (it started but found nothing: an old winhttp.dll left in the game's folder, MPFever.exe started away from its
+		-- archive's folder), "none" (no native module at all). Arne's game ran with it off and the towns drifted every 3 minutes:
+		-- the host now says it in the chat. MPFEVER_NATIVECHECK=0 (on the host): not said)
+		local nat = "none"
+		pcall(function()
+			local f = C.IO.open(C.DIR .. BS .. "native_state.txt", "rb")
+			if f then f:close(); nat = "on" return end
+			local l = C.IO.open(C.DIR .. BS .. "native.log", "rb")
+			if l then l:close(); nat = "off" end
+		end)
 		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime(), mv = C.MODVERSION,
-			personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil })
+			personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil, nat = nat })
 	end
 	-- the native module holds the tools' builds while this script runs, and hears from it here from its first frame on
 	-- (bridge_alive.txt, a counter rewritten every 2 s). A game loaded with MPFever disabled while a lobby was open has no such
