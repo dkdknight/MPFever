@@ -6685,7 +6685,12 @@ local function replayNativeConstruction(a)
 	pcall(G.conOwner, a, m, { player = api.engine.util.getPlayer() })
 	if G.lagMark then G.lagMark("owner") end
 	-- the engine's conversion of the construction (twice: guaranteed collision, so that nothing is built)
-	local spCon = C.rebuildProposal(m, { noStreet = true, seed = 7919 })
+	-- (0.8.6, #279: a new industry with fields keeps the fields its builder's tool chose, the engine's autofill off, see
+	-- C.newFieldIndustry; MPFEVER_FIELDSKEEP=0: autofilled again, as before)
+	local keepFields = os.getenv("MPFEVER_FIELDSKEEP") ~= "0" and not a.industryEdit
+	C.keptFields = 0
+	local spCon = C.rebuildProposal(m, { noStreet = true, seed = 7919, keepFields = keepFields })
+	if (C.keptFields or 0) > 0 then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: a new industry with fields keeps the tool's fields (autofill off, #279)") end
 	if G.lagMark then G.lagMark("rebuilt") end
 	local cons = {}
 	do
@@ -6694,7 +6699,7 @@ local function replayNativeConstruction(a)
 		-- C.rebuildNativeWithConstruction; then the first one again, the collision)
 		local nc = os.getenv("MPFEVER_ALLCONS") ~= "0" and #one or 1
 		for i = 1, nc do cons[i] = one[i] end
-		local two = C.rebuildProposal(m, { noStreet = true, seed = 7919 }).constructionsToAdd
+		local two = C.rebuildProposal(m, { noStreet = true, seed = 7919, keepFields = keepFields }).constructionsToAdd
 		cons[nc + 1] = two[1]
 		spCon.constructionsToAdd = cons
 	end
@@ -15297,22 +15302,23 @@ H.farmdraw = function(from, p)
 	-- fields it gives. 2026-11-13: without them the count is the tool's but the engine's autofill picks other slots; with them it
 	-- adds that many again; gatherFields changes nothing; createProposalReplaceConstruction keeps the given fields exactly)
 	local function asReplay(j, toolParams, toolKeys, k)
-		local variants = { true, false, "nogather" }
+		local variants = { "keep", false }
 		local v = 0
 		local step
 		step = function()
 			v = v + 1
 			local fresh = variants[v]
 			if fresh == nil then k(); return end
-			local nogather = fresh == "nogather"
-			if nogather then fresh = false end
+			local keep = fresh == "keep"
+			local nogather = false
+			if keep then fresh = false end
 			local okp, err = pcall(function()
 				local t = C.plain(tpl.c.transf)
 				t[13] = t[13] + 1500
 				local tp = C.plain(toolParams)
 				if fresh then tp.modules = nil end
 				local m = { toAdd = { { fileName = tpl.c.fileName, params = tp, transf = t, playerEntity = api.engine.util.getPlayer() } } }
-				local sp = C.rebuildProposal(m, { noStreet = true, seed = 7919 })
+				local sp = C.rebuildProposal(m, { noStreet = true, seed = 7919, keepFields = keep })
 				sp.constructionsToAdd = { sp.constructionsToAdd[1], twin() }
 				local ctx = api.type.Context.new()
 				ctx.checkTerrainAlignment = false
@@ -15324,7 +15330,7 @@ H.farmdraw = function(from, p)
 				api.cmd.sendCommand(cmd, function(res, success)
 					local ks = "?"
 					pcall(function() ks = keys(res.proposal.toAdd[1].params.modules) end)
-					say("seed " .. j.s .. " replay " .. (nogather and "tool's fields, gatherFields off" or fresh and "freshFields" or "as before") .. ": " .. count((function() local o = {} for q in ks:gmatch("[^,]+") do o[#o + 1] = q end return o end)())
+					say("seed " .. j.s .. " replay " .. (keep and "tool's fields, autofill off (0.8.6 fix)" or fresh and "freshFields" or "as before") .. ": " .. count((function() local o = {} for q in ks:gmatch("[^,]+") do o[#o + 1] = q end return o end)())
 						.. " field(s), " .. (ks == toolKeys and "THE TOOL'S" or ("NOT the tool's {" .. tostring(toolKeys) .. "}")) .. " {" .. ks .. "}")
 					G.waits[#G.waits + 1] = { at = G.frames + 5, fn = step }
 				end)

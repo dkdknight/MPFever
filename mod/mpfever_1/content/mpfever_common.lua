@@ -10,7 +10,7 @@ C.TAB = string.char(9)
 -- (0.7.9) this mod's version, the same as MPFever.exe's (tests/check_repo.py): the game says it in its "hello", and the launcher
 -- warns when the game runs another copy of the mod than the one it installed (issue #136: an old copy in the game's own
 -- mods folder, mods/release/MPFever/mod/mpfever_1, which the game takes before the player's mods folder)
-C.MODVERSION = "0.8.6"
+C.MODVERSION = "0.8.7"
 -- (0.7.11, #156) a custom entity's commands that name one (its move, its state, its removal), see the bridge's guard
 C.CUSTOM_ENTITY_FNS = { makeCustomEntityUpdateTransformationCmd = true, makeCustomEntityUpdateStateCmd = true, makeCustomEntityDestroyCmd = true }
 -- (0.7.11, #156/#158) Is entity e no mod's custom entity on this game? Such a command names it by its id on the game that made
@@ -1281,6 +1281,19 @@ function C.scriptEdgeObjects(st)
 	return n
 end
 
+-- (0.8.6, #279) an industry with fields (the game gives only those an "industrySize" parameter, industryutil.makeIndustryParams),
+-- with its fields as modules, that the build adds as a new one: no construction removed, none replaced
+function C.newFieldIndustry(fileName, params, m)
+	if type(params) ~= "table" or params.industrySize == nil or type(params.modules) ~= "table" or next(params.modules) == nil then return false end
+	if not tostring(fileName or ""):find("/industries/", 1, true) then return false end
+	if type(m) == "table" then
+		local rm = m.constructionsToRemove or m.toRemove
+		if type(rm) == "table" and next(rm) ~= nil then return false end
+		if type(m.old2newByRank) == "table" and next(m.old2newByRank) ~= nil then return false end
+	end
+	return true
+end
+
 -- Proposal (native, from the construction tools) or SimpleProposal -> SimpleProposal for makeWorldBuildProposalCmd
 -- opts.noStreet: constructions only (their .con template regenerates its own street connector)
 -- opts.seed: deterministic seed for constructions that have none (a script ConstructionEntity needs params.seed)
@@ -1307,6 +1320,12 @@ function C.rebuildProposal(m, opts)
 		if type(player) ~= "number" then player = api.engine.util.getPlayer() end
 		c.playerEntity = player
 		if ce.hq == true then pcall(function() c.setAsHeadquarterHack = true end) end
+		-- (0.8.6, #279) a new industry with fields keeps exactly the fields its builder's tool chose (its modules): the engine's
+		-- autofill would add as many again at slots of its own choosing (a replay got the tool's 12 plus 12 more: 20)
+		if opts.keepFields and C.newFieldIndustry(ce.fileName, params, m) then
+			local okA = pcall(function() c.autoFillSlots = false end)
+			C.keptFields = (C.keptFields or 0) + (okA and 1 or 0)
+		end
 		local name = ce.name
 		if type(name) ~= "string" or name == "" then name = baseName(ce.fileName) end
 		pcall(function() c.name = name end)

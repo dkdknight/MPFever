@@ -1,7 +1,16 @@
 MPFever - Changelog
 ===================
 
-0.8.6 - (in progress)
+0.8.7 - (in progress)
+  - FIX (#279, Erik's session): a new farm (an industry with fields) built by a player got other fields on the other games: the
+    builder's tool chose 12, every replay 20. A farm's fields are slots the game fills itself at random each time it builds one, on
+    top of the fields it is given; a replay now gives the tool's fields with that filling off (ConstructionEntity.autoFillSlots),
+    so every game builds exactly the builder's fields. Measured in game with the engine's own conversion (autotest farmdraw: 10
+    seeds of 10 give the tool's fields, 20 fields before); a farm built with the real tool in a session not tested yet (no test
+    company has the farm prospection). An industry edit is unchanged. MPFEVER_FIELDSKEEP=0: as before. Test:
+    tests/test_fieldskeep086.py.
+
+0.8.6 - 2026-11-13: a slow drift of one company per player fixed, same-moment actions in sync, commodity market, your own Company value chart
   - FIX (#190, Creeper + Akamari; one company per player): the Finances window's « Bank account / Company value » chart showed
     every player but the host the host's history (the game writes those two series for the savegame's company only), with their
     own figures as the last point. Each game now notes its own company's bank account and value once a game month (the game's
