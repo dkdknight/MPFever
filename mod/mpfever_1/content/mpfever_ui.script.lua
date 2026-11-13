@@ -6528,6 +6528,30 @@ function N.test(p)
 	end
 end
 
+-- (0.8.6, #190) the « Company value » chart of the Finances window for this game's company (mpfever_valuechart.lua): installed at
+-- the first tick, a new point looked for every 300 ticks
+U.valueChart = function()
+	if not U.vc then
+		local ok, VC = pcall(ug_require, "mpfever_valuechart.lua")
+		if not (ok and type(VC) == "table") then ok, VC = pcall(ug_require, "mpfever_1::/mpfever_valuechart.lua") end
+		if not (ok and type(VC) == "table") then U.vc = { failed = true }; log("value chart: module not loaded: " .. tostring(VC)); return end
+		U.vc = VC
+		local function mine()
+			if not U.coMap or not U.myCo then return nil end
+			for e, id in pairs(U.coMap) do if id == U.myCo then return e end end
+			return nil
+		end
+		VC.install({ log = log, io = C.IO, dir = (C.DIR:match("^(.*)[\\/][^\\/]+$") or C.DIR), mine = mine,
+			canon = function() return U.canon end, separate = function() return U.coMap ~= nil and U.myCo ~= nil and next(U.coMap) ~= nil end })
+	end
+	if U.vc.failed then return end
+	U.vcTicks = (U.vcTicks or 0) + 1
+	if U.vcTicks % 300 == 1 then
+		local ok, err = pcall(U.vc.poll)
+		if not ok and not U.vcPollSaid then U.vcPollSaid = true; log("value chart: point not noted: " .. tostring(err):sub(1, 200)) end
+	end
+end
+
 local function tick(pendingState)
 	-- which company the interface acts as (logged when it changes, and how often it read another one in between)
 	pcall(function()
@@ -6541,6 +6565,8 @@ local function tick(pendingState)
 	end)
 	pcall(pollBindings)
 	pcall(pollCompanies)
+	-- (0.8.6, #190: the Finances window's « Company value » chart for this game's own company, see mpfever_valuechart.lua)
+	pcall(U.valueChart)
 	-- (0.7.0: the mods' guiUpdate, when the interface has a table of game scripts; a script may start late: every 300 ticks)
 	U.autoTicks = (U.autoTicks or 0) + 1
 	if U.modAutoOn and U.autoTicks % 300 == 1 then pcall(U.wrapModGuiUpdates) end

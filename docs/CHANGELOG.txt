@@ -2,6 +2,17 @@ MPFever - Changelog
 ===================
 
 0.8.6 - (in progress)
+  - FIX (#190, Creeper + Akamari; one company per player): the Finances window's « Bank account / Company value » chart showed
+    every player but the host the host's history (the game writes those two series for the savegame's company only), with their
+    own figures as the last point. Each game now notes its own company's bank account and value once a game month (the game's
+    own figures for the local player), keeps them in a file beside the session folders (per savegame and company), and the
+    chart reads them when this game plays another company than the savegame's (the same chart, in the same window). Nothing of
+    the simulation changes, nothing is sent. The history starts with this version. MPFEVER_VALUECHART=0: as before. Test:
+    tests/test_valuechart086.py.
+  - RESEARCH (#279): autotest farmdraw (MPFEVER_SCENARIO=farmdraw, MPFEVER_FARMDRAW_MODE=replay|replace): a farm's fields are
+    slots the engine fills itself at random at each conversion, on top of the modules it is given (a replay got the tool's 12
+    fields plus 12 more); the random generator is not the cause; only the replacement of a construction keeps the given fields
+    exactly. Not fixed yet (a resynchronisation follows a new farm built by a player).
   - FIX (#150, one company per player; reproduced on one PC: two games at x4 on Test Gameplay parted at step 135926, an
     animal's octree node made on one game only, 6 runs of 10; with the fix, 0 of 10): to keep the money shown above the buildings to the player's own
     company, the native module emptied, before the copy for the interface, every company's account but THIS machine's: the

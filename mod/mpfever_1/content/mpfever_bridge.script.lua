@@ -2104,6 +2104,8 @@ local function installRandom()
 	end
 	local origSeed = (DET.seed and math.randomseed == DET.seed) and DET.origSeed or math.randomseed
 	DET.origSeed = origSeed
+	-- (0.8.6, #279 research: the game's own math.random, kept for the autotest farmdraw)
+	if math.random ~= DET.random then DET.origRandom = math.random end
 	DET.seed = function(s)
 		now()
 		local key = where()
@@ -15243,6 +15245,180 @@ H.farmnew = function(from, p)
 		if not okp then say("place " .. k .. " failed: " .. shortErr(err)); G.waits[#G.waits + 1] = { at = G.frames + 20, fn = try } end
 	end
 	try()
+end
+
+-- (0.8.6, #279 research) autotest farmdraw, on the host only: how many fields does the engine's conversion of a farm give (what a
+-- replay builds), by seed, with this script's deterministic math.random and with the game's own? The same farm twice (a collision:
+-- nothing is built). #279: the builder's tool made 12 fields with seed 5, every other game's replay 20.
+H.farmdraw = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST farmdraw " .. t); AUTO.results[#AUTO.results + 1] = t end
+	local file = os.getenv("MPFEVER_FARMNEW_FILE") or "industries/farm/farm.con"
+	local CT = api.type.ComponentType
+	local tpl = nil
+	for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+		local c = api.engine.getComponent(e, CT.CONSTRUCTION)
+		if c and tostring(c.fileName):find(file, 1, true) and not tpl then tpl = { e = e, c = c } end
+	end
+	if not tpl then say("no " .. file .. " on this map"); G.waits[#G.waits + 1] = { at = G.frames + 60, fn = autoFinish }; return end
+	local jobs = {}
+	local replayMode = os.getenv("MPFEVER_FARMDRAW_MODE") == "replay"
+	for s = 0, 9 do
+		for _, rng in ipairs({ "mpfever", "native" }) do
+			for _, mods in ipairs({ "template", "none" }) do
+				if not replayMode or (rng == "mpfever" and mods == "none") then jobs[#jobs + 1] = { s = s, rng = rng, mods = mods } end
+			end
+		end
+	end
+	local function twin()
+		local ce = C.newOf("ConstructionEntity")
+		ce.fileName = tpl.c.fileName
+		ce.params = C.plain(tpl.c.params)
+		ce.transf = C.plain(tpl.c.transf)
+		ce.playerEntity = api.engine.util.getPlayer()
+		return ce
+	end
+	local function count(t)
+		local n = 0
+		pcall(function() for _ in pairs(t) do n = n + 1 end end)
+		return n
+	end
+	local function keys(t)
+		local l = {}
+		pcall(function() for q in pairs(t) do l[#l + 1] = tostring(q) end end)
+		table.sort(l)
+		return table.concat(l, ",")
+	end
+	-- (MPFEVER_FARMDRAW_MODE=replay: the "tool's" farm of each seed (converted without modules) converted again as a replay
+	-- converts it, C.rebuildProposal with its fields as modules, without them ("freshFields"), or with them and gatherFields off: the
+	-- fields it gives. 2026-11-13: without them the count is the tool's but the engine's autofill picks other slots; with them it
+	-- adds that many again; gatherFields changes nothing; createProposalReplaceConstruction keeps the given fields exactly)
+	local function asReplay(j, toolParams, toolKeys, k)
+		local variants = { true, false, "nogather" }
+		local v = 0
+		local step
+		step = function()
+			v = v + 1
+			local fresh = variants[v]
+			if fresh == nil then k(); return end
+			local nogather = fresh == "nogather"
+			if nogather then fresh = false end
+			local okp, err = pcall(function()
+				local t = C.plain(tpl.c.transf)
+				t[13] = t[13] + 1500
+				local tp = C.plain(toolParams)
+				if fresh then tp.modules = nil end
+				local m = { toAdd = { { fileName = tpl.c.fileName, params = tp, transf = t, playerEntity = api.engine.util.getPlayer() } } }
+				local sp = C.rebuildProposal(m, { noStreet = true, seed = 7919 })
+				sp.constructionsToAdd = { sp.constructionsToAdd[1], twin() }
+				local ctx = api.type.Context.new()
+				ctx.checkTerrainAlignment = false
+				ctx.cleanupStreetGraph = false
+				ctx.gatherBuildings = true
+				ctx.gatherFields = not nogather
+				ctx.player = api.engine.util.getPlayer()
+				local cmd = api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true)
+				api.cmd.sendCommand(cmd, function(res, success)
+					local ks = "?"
+					pcall(function() ks = keys(res.proposal.toAdd[1].params.modules) end)
+					say("seed " .. j.s .. " replay " .. (nogather and "tool's fields, gatherFields off" or fresh and "freshFields" or "as before") .. ": " .. count((function() local o = {} for q in ks:gmatch("[^,]+") do o[#o + 1] = q end return o end)())
+						.. " field(s), " .. (ks == toolKeys and "THE TOOL'S" or ("NOT the tool's {" .. tostring(toolKeys) .. "}")) .. " {" .. ks .. "}")
+					G.waits[#G.waits + 1] = { at = G.frames + 5, fn = step }
+				end)
+			end)
+			if not okp then say("seed " .. j.s .. " replay failed: " .. shortErr(err)); G.waits[#G.waits + 1] = { at = G.frames + 5, fn = step } end
+		end
+		step()
+	end
+	local i = 0
+	local nextJob
+	nextJob = function()
+		i = i + 1
+		local j = jobs[i]
+		if not j then G.waits[#G.waits + 1] = { at = G.frames + 60, fn = autoFinish }; return end
+		local okp, err = pcall(function()
+			local function one()
+				local ce = C.newOf("ConstructionEntity")
+				ce.fileName = tpl.c.fileName
+				local params = C.plain(tpl.c.params)
+				params.seed = j.s
+				params.industrySize = 0
+				if j.mods == "none" then params.modules = nil end
+				ce.params = params
+				local t = C.plain(tpl.c.transf)
+				t[13] = t[13] + 1500
+				ce.transf = t
+				ce.playerEntity = api.engine.util.getPlayer()
+				return ce
+			end
+			local sp = C.newOf("SimpleProposal")
+			sp.constructionsToAdd = { one(), twin() }
+			local ctx = api.type.Context.new()
+			ctx.checkTerrainAlignment = false
+			ctx.cleanupStreetGraph = false
+			ctx.gatherBuildings = true
+			ctx.gatherFields = true
+			ctx.player = api.engine.util.getPlayer()
+			local saved = math.random
+			if j.rng == "native" and DET.origRandom then math.random = DET.origRandom end
+			local okc, cmd = pcall(function() return api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true) end)
+			math.random = saved
+			if not okc or not cmd then say("seed " .. j.s .. " " .. j.rng .. " " .. j.mods .. ": no command " .. shortErr(cmd)); G.waits[#G.waits + 1] = { at = G.frames + 5, fn = nextJob }; return end
+			api.cmd.sendCommand(cmd, function(res, success)
+				local n, lvl = "?", "?"
+				pcall(function() n = count(res.proposal.toAdd[1].params.modules) end)
+				say("seed " .. j.s .. " " .. j.rng .. " modules " .. j.mods .. ": converted " .. tostring(n) .. " module(s), built " .. tostring(success))
+				local toolParams, toolKeys = nil, nil
+				pcall(function() toolParams = C.plain(res.proposal.toAdd[1].params); toolKeys = keys(res.proposal.toAdd[1].params.modules) end)
+				if replayMode and toolParams then
+					asReplay(j, toolParams, toolKeys, function() G.waits[#G.waits + 1] = { at = G.frames + 5, fn = nextJob } end)
+					return
+				end
+				-- (MPFEVER_FARMDRAW_MODE=replace, first seed only: the template farm replaced, as an industry edit is replayed,
+				-- by one with the "tool's" fields: does the engine keep them as they are, adding none?)
+				if os.getenv("MPFEVER_FARMDRAW_MODE") == "replace" and toolParams and not G.farmReplaced then
+					G.farmReplaced = true
+					local okr, errr = pcall(function()
+						local P = api.engine.util.proposal.createProposalReplaceConstruction(tpl.e, toolParams)
+						local ctx = api.type.Context.new()
+						ctx.checkTerrainAlignment = false
+						ctx.cleanupStreetGraph = true
+						ctx.gatherBuildings = false
+						ctx.gatherFields = true
+						ctx.player = api.engine.util.getPlayer()
+						api.cmd.sendCommand(api.cmd.makeWorldBuildProposalCmd(P, ctx, false, true), function(res2, ok2)
+							local ks = "?"
+							pcall(function() ks = keys(res2.proposal.toAdd[1].params.modules) end)
+							say("replace with the tool's " .. tostring(n) .. " field(s): built " .. tostring(ok2) .. ", " .. (ks == toolKeys and "THE TOOL'S FIELDS" or ("OTHER fields {" .. ks .. "}")) .. " {" .. tostring(toolKeys) .. "}")
+							G.waits[#G.waits + 1] = { at = G.frames + 60, fn = function()
+								local c = api.engine.getComponent(tpl.e, CT.CONSTRUCTION)
+								local built = "gone"
+								for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+									local cc = api.engine.getComponent(e, CT.CONSTRUCTION)
+									if cc and tostring(cc.fileName):find(file, 1, true) then
+										local mm = R.matPos(cc.transf)
+										local tt = R.matPos(tpl.c.transf)
+										if math.abs(mm.x - tt.x) + math.abs(mm.y - tt.y) < 5 then built = keys(cc.params.modules) end
+									end
+								end
+								say("the farm there now has {" .. built .. "}: " .. (built == toolKeys and "THE TOOL'S FIELDS" or "other fields"))
+								autoFinish()
+							end }
+						end)
+					end)
+					if not okr then say("replace failed: " .. shortErr(errr)); G.waits[#G.waits + 1] = { at = G.frames + 30, fn = autoFinish } end
+					return
+				end
+				G.waits[#G.waits + 1] = { at = G.frames + 5, fn = nextJob }
+			end)
+		end)
+		if not okp then say("seed " .. j.s .. " failed: " .. shortErr(err)); G.waits[#G.waits + 1] = { at = G.frames + 5, fn = nextJob } end
+	end
+	say("template " .. tostring(tpl.c.fileName) .. " with " .. count(tpl.c.params.modules) .. " module(s), seed " .. tostring(tpl.c.params.seed) .. ", size " .. tostring(tpl.c.params.industrySize))
+	nextJob()
 end
 
 -- Industry extends (MPFEVER_SCENARIO=extend with MPFEVER_PAUSED=1 and a build after it, "extend,newroad"; the friends' 0.5.12
