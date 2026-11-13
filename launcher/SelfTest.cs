@@ -67,6 +67,7 @@ namespace MPFever
             ok &= RunFineTimer();
             ok &= RunServerJoin074();
             ok &= RunSharedLog075();
+            ok &= RunModRoot086();
             ok &= RunServer076();
             ok &= RunReport077();
             ok &= RunReport079();
@@ -846,6 +847,38 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             }
             catch (Exception e) { C(false, "mod.io: " + e.Message); }
             finally { try { Directory.Delete(dir, true); } catch { } }
+            return ok;
+        }
+
+        /// <summary>(0.8.6, #280) A mod whose resources are at its own root, without a content/ folder ("Canadian Names":
+        /// names/canada_wp/canada_wp.names.lua), is not an interface mod: the game loads them. MPFEVER_MODROOTFILES=0: as before.</summary>
+        static bool RunModRoot086()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-modroot-" + Guid.NewGuid().ToString("N"));
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_MODROOTFILES");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_MODROOTFILES", null);
+                Directory.CreateDirectory(Path.Combine(dir, "names", "canada_wp", "en"));
+                File.WriteAllText(Path.Combine(dir, "mod.json"), "{\"modId\":\"spearin_names_canadian\"}");
+                File.WriteAllText(Path.Combine(dir, "names", "canada_wp", "canada_wp.names.lua"), "function data() return {} end");
+                File.WriteAllText(Path.Combine(dir, "names", "canada_wp", "en", "towns.lua"), "return {}");
+                var why = Mods.Personal(dir);
+                Check(why.StartsWith("game resources (names/"), "mod root: a names mod without content/ is no interface mod (" + why + ")");
+                Environment.SetEnvironmentVariable("MPFEVER_MODROOTFILES", "0");
+                Check(Mods.Personal(dir) == "", "mod root: MPFEVER_MODROOTFILES=0, as before (personal)");
+                Environment.SetEnvironmentVariable("MPFEVER_MODROOTFILES", null);
+                Directory.Delete(Path.Combine(dir, "names"), true);
+                Directory.CreateDirectory(Path.Combine(dir, "content", "res", "ui"));
+                File.WriteAllText(Path.Combine(dir, "content", "res", "ui", "x.res.lua"), "local t = \"react-plugin\" return t");
+                File.WriteAllText(Path.Combine(dir, "preview.png"), "x");
+                File.WriteAllText(Path.Combine(dir, "README.md"), "x");
+                Check(Mods.Personal(dir) == "", "mod root: an interface mod with an image and a readme at its root stays personal (" + Mods.Personal(dir) + ")");
+            }
+            catch (Exception e) { Check(false, "mod root: " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_MODROOTFILES", kept); try { Directory.Delete(dir, true); } catch { } }
             return ok;
         }
 

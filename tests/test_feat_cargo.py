@@ -98,6 +98,8 @@ check(abs(t(1000, 250, 1000) - 200) < 1e-9, "a quarter served: 200 (short: up)")
 check(abs(t(1000, 0, 1000) - 200) < 1e-9, "nothing served: at most 4x short (200)")
 check(abs(t(1000, 1000, 4000) - 50) < 1e-9, "four times the demand made: 50 (down)")
 check(abs(t(0, 0, 500) - 50) < 1e-9, "made but asked by nobody: 50")
+check(abs(t(1000, 1000, 250) - 100) < 1e-9, "all served though little is made: 100 (only a surplus lowers it)")
+check(abs(t(1000, 250, 250) - 200) < 1e-9, "short and little made: 200 at most")
 check(run(A, "return M.nextPrice(100, 200, 33)") == 133 and run(A, "return M.nextPrice(100, 50, 50)") == 75, "part of the way, whole")
 check(run(A, "return M.nextPrice(12, 0, 100)") == 10 and run(A, "return M.nextPrice(990, 5000, 100)") == 1000, "within 10..1000")
 

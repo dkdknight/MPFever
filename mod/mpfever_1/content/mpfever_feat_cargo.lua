@@ -6,9 +6,9 @@
 -- game month the host reads the game's own yearly figures (api.engine.util.stock for the industries, the town buildings' supply
 -- and limit for the towns): what the consumers could take of each cargo (demand), what reached them (delivered) and what the
 -- industries made (production). It moves each price part of the way (the option's speed) to its target and sends the prices:
---   target = 100 x sqrt(shortage) / sqrt(abundance), between 25 and 400:
+--   target = 100 x sqrt(shortage) / sqrt(abundance), between 50 and 200:
 --     shortage  = demand / delivered, from 1 (all served) to 4: a cargo the consumers lack goes up;
---     abundance = production / demand, from 1/4 to 4: a cargo made far beyond what is taken goes down.
+--     abundance = production / demand, from 1 to 4: a cargo made far beyond what is taken goes down.
 --   The players' own transport moves the prices: deliver much wood to the saw mills and its price falls; leave them short and it
 --   rises. The prices go both ways, whatever the players do.
 -- A company buys lots of a cargo at the month's price (a lot is worth the option's lot size x index / 100) and sells them back at
@@ -97,7 +97,9 @@ M.target = function(dem, del, prod)
 	local shortage, abundance = 1, 1
 	if dem > 0 then
 		shortage = math.min(4, math.max(1, dem / math.max(del, 1)))
-		abundance = math.min(4, math.max(0.25, prod / dem))
+		-- (only a production beyond the demand lowers it: a production short of the demand is already the shortage's, and counted
+		-- twice it sent most cargos of a young map to the top, 388 to 399 in the first test of 2026-11-13)
+		abundance = math.min(4, math.max(1, prod / dem))
 	elseif prod > 0 then
 		abundance = 4
 	end

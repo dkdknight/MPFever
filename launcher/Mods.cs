@@ -697,13 +697,21 @@ namespace MPFever
                     if (Skip.IsMatch(rel)) continue;
                     var name = Path.GetFileName(rel).ToLowerInvariant();
                     var ext = Path.GetExtension(name);
+                    string inner;
                     if (!rel.StartsWith("content/", StringComparison.OrdinalIgnoreCase))
                     {
-                        // outside content/ the game loads nothing but mod.json (and mod.lua, TF2's way)
                         if (name == "mod.lua") return "mod.lua";
-                        continue;
+                        // (0.8.6, #280) the game also loads resources from a mod's own root, as a mod of TF2's layout puts them
+                        // ("Canadian Names": names/canada_wp/canada_wp.names.lua, no content/ folder; the game read its name list
+                        // "spearin_names_canadian::/names/canada_wp/canada_wp.names"). Taken for an interface mod, the host's game had
+                        // it and the player's left it out: the player's game crashed on the first name it looked for. The root's files
+                        // are read as content/'s (mod.json, the images and texts stay inert). MPFEVER_MODROOTFILES=0: outside
+                        // content/ nothing counts, as before
+                        if (Environment.GetEnvironmentVariable("MPFEVER_MODROOTFILES") == "0") continue;
+                        if (name == "mod.json" || !rel.Contains("/") && InertExt.Contains(ext)) continue;
+                        inner = rel;
                     }
-                    var inner = rel.Substring(8);
+                    else inner = rel.Substring(8);
                     if (ResourceDir.IsMatch("/" + inner)) return "game resources (" + inner + ")";
                     if (ext == ".lua")
                     {

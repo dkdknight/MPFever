@@ -2,6 +2,11 @@ MPFever - Changelog
 ===================
 
 0.8.6 - (in progress)
+  - FIX (#280, Alex + Logan, a crash at the first minute): a mod of TF2's layout, its resources at its own root without a content/
+    folder ("Canadian Names": names/canada_wp/...), was taken for an interface mod (personal): the host's game had it, the
+    player's left it out and crashed on the first town name it looked for. The root's files now count as content/'s for the
+    personal check (mod.json and the root's images and texts stay inert). MPFEVER_MODROOTFILES=0: as before. Tests:
+    tests/test_modroot086.py, MPFever.exe --selftest (RunModRoot086).
   - DIAGNOSTIC (#150): native.log says the floating-point control (MXCSR) of the simulation's thread at the first step and when
     it changes (#274 drifted between an AMD and an Intel PC on the same Windows build; the game's code has no rsqrt/rcp
     instruction). MPFEVER_FPLOG=0: not said. Test: tests/test_fplog086.py.

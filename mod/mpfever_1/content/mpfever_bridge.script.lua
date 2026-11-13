@@ -21526,6 +21526,70 @@ H.stocktest = function(from, p)
 	nextStep()
 end
 
+-- (0.8.6) Commodity market scenario (MPFEVER_SCENARIO=cargotest on both games, the game option "cargo" on in the host's lobby (or
+-- gameopts=cargo=1 in its mpfever_settings.txt), MPFEVER_TOGETHER=1, MPFEVER_SPEED=4 advised): once the market opens, the client buys
+-- 2 lots of the first cargo listed and sells 1 back. Each game notes the market's state (the month, the prices, the lots held) at
+-- every change: the two logs must show the same states, and the checks no resynchronisation.
+H.cargotest = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function note(t) AUTO.results[#AUTO.results + 1] = t; log("AUTOTEST " .. t) end
+	local function S() local st = G.featSt; return st and type(st.feat) == "table" and st.feat.cargo or nil end
+	local function sorted(t) local ks = {} for k in pairs(t or {}) do ks[#ks + 1] = k end table.sort(ks, function(a, b) return tostring(a) < tostring(b) end) return ks end
+	local me = tostring((G.co and G.myCo) or 1)
+	local function first() local s = S(); return s and sorted(s.price)[1] end
+	local function held(k) local s = S(); return math.floor(tonumber(k and s and s.hold and s.hold[k] and s.hold[k][me]) or 0) end
+	local function sig()
+		local s = S()
+		if not s then return "none" end
+		local t = { "month " .. tostring(s.month) }
+		for _, k in ipairs(sorted(s.price)) do t[#t + 1] = tostring(k):match("([^/]+)%.cargo$") .. "=" .. tostring(s.price[k]) end
+		for _, k in ipairs(sorted(s.hold)) do for _, h in ipairs(sorted(s.hold[k])) do t[#t + 1] = "hold " .. tostring(k):match("([^/]+)%.cargo$") .. "/" .. h .. "=" .. tostring(s.hold[k][h]) end end
+		return table.concat(t, " ")
+	end
+	local function ask(kind, payload) local okR, errR = pcall(G.featRequest, { m = "cargo", kind = kind, payload = payload }); if not okR then note(kind .. " failed: " .. tostring(errR)) end end
+	local since, lastSig, done = os.clock(), nil, false
+	local together = os.getenv("MPFEVER_TOGETHER") == "1"
+	local function watch()
+		local s = sig()
+		if s ~= lastSig then lastSig = s; note("cargo state: " .. s) end
+		if done or (C.ROLE == "host" and (not together or os.clock() - since > 200)) or os.clock() - since > 220 then return autoFinish() end
+		G.waits[#G.waits + 1] = { at = G.frames + 120, fn = watch }
+	end
+	local okOn = G.featSt and type(G.featSt.opts) == "table" and G.featSt.opts.cargo == "1"
+	note(C.ROLE .. " plays company " .. me .. "; option cargo " .. (okOn and "on" or "not on yet"))
+	watch()
+	if C.ROLE == "host" then return end
+	local key = nil
+	local steps = {
+		{ "the market opens", function() end, function() key = first(); return key ~= nil end },
+		{ "buy 2 lots", function() ask("buy", { cargo = key, n = 2 }) end, function() return held(key) == 2 end },
+		{ "sell 1 back", function() ask("sell", { cargo = key, n = 1 }) end, function() return held(key) == 1 end },
+	}
+	local i, at = 0, 0
+	local function nextStep()
+		i = i + 1
+		local s = steps[i]
+		if not s then
+			note("client holds " .. held(key) .. " lot(s) of " .. tostring(key))
+			G.waits[#G.waits + 1] = { at = G.frames + 300, fn = function() done = true end }
+			return
+		end
+		pcall(s[2])
+		at = os.clock()
+		local function poll()
+			local okP, d = pcall(s[3])
+			if okP and d then note("step '" .. s[1] .. "': done in " .. math.floor(os.clock() - at) .. " s"); return nextStep() end
+			if os.clock() - at > 150 then note("step '" .. s[1] .. "': NOT DONE within 150 s"); return nextStep() end
+			G.waits[#G.waits + 1] = { at = G.frames + 60, fn = poll }
+		end
+		G.waits[#G.waits + 1] = { at = G.frames + 60, fn = poll }
+	end
+	nextStep()
+end
+
 G.pingTick = function()
 	for key, s in pairs(G.pings) do
 		if G.frames > s.till or G.frames < s.till - 2000 then
