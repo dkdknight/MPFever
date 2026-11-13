@@ -21886,10 +21886,63 @@ end
 -- game companies (mpfever_ai.lua): what the module needs from here, then its step on the host. MPFEVER_AIDEV=<folder>: the module
 -- is read again from that folder whenever it changes, and ai_probe.lua there runs once each time it changes (tests)
 G.aiEnv = function()
-	return { api = api, G = G, C = C, R = R, CO = CO, log = log, send = send, queueLocal = queueLocal, toSim = toSim,
+	-- (0.8.7) the computer companies' log: to mod.log only, see C.fileLogger. MPFEVER_AILOGPRINT=1: the game's debugPrint too, as before
+	G.aiFileLog = G.aiFileLog or C.fileLogger("mod.log")
+	local aiLog = os.getenv("MPFEVER_AILOGPRINT") == "1" and log or G.aiFileLog
+	local env = { api = api, G = G, C = C, R = R, CO = CO, log = aiLog, send = send, queueLocal = queueLocal, toSim = toSim,
 		stampFor = stampFor, pausedStamp = pausedStamp, gameTime = gameTime, gameSpeed = gameSpeed, deferredSend = deferredSend,
 		replaySend = replaySend, nodePosition = nodePosition, groundZ = groundZ, vec = vec, shortErr = shortErr, nativeCtl = nativeCtl,
 		playerContext = playerContext, withActor = withActor, STEP = STEP, BS = BS, NL = NL, H = H }
+	-- (0.8.7, test MPFEVER_AIPROF=1: every call of the game's api and of these functions timed, in G.aiProf and G.aiProfMax)
+	if os.getenv("MPFEVER_AIPROF") == "1" then
+		local function timed(name, f)
+			return function(...)
+				local t0 = os.clock()
+				local r = table.pack(f(...))
+				local dt = os.clock() - t0
+				local P, X = G.aiProf, G.aiProfMax
+				if P then P[name] = (P[name] or 0) + dt end
+				if X then X[name] = math.max(X[name] or 0, dt) end
+				return table.unpack(r, 1, r.n)
+			end
+		end
+		G.aiProxyCache = G.aiProxyCache or {}
+		local function proxy(orig, prefix)
+			local c = G.aiProxyCache[prefix]
+			if c then return c end
+			local made = {}
+			-- (some of the api's functions are callable tables, api.engine.getComponent: the proxy calls them as they are)
+			local callT = timed("(" .. prefix:sub(1, -2) .. ")", function(...) return orig(...) end)
+			c = setmetatable({}, { __call = function(_, ...) return callT(...) end, __index = function(_, k)
+				if made[k] ~= nil then return made[k] end
+				local v = orig[k]
+				if type(v) == "function" then v = timed("(" .. prefix .. tostring(k) .. ")", v)
+				elseif type(v) == "table" and type(k) == "string" and (prefix:gsub("[^.]", "")):len() < 4 then v = proxy(v, prefix .. k .. ".") end
+				made[k] = v
+				return v
+			end })
+			G.aiProxyCache[prefix] = c
+			return c
+		end
+		env.api = proxy(api, "api.")
+		-- (the log's two parts timed apart: the game's debugPrint, the line appended to mod.log)
+		env.log = function(msg)
+			local t0 = os.clock()
+			if aiLog == log then pcall(debugPrint, "[MPFEVER] " .. msg) end
+			local t1 = os.clock()
+			if C.ACTIVE then pcall(C.appendFile, C.DIR .. BS .. "mod.log", os.date("%H:%M:%S") .. " " .. msg .. NL) end
+			local t2 = os.clock()
+			local P, X = G.aiProf, G.aiProfMax
+			for _, kv in ipairs({ { "(log: debugPrint)", t1 - t0 }, { "(log: mod.log)", t2 - t1 } }) do
+				if P then P[kv[1]] = (P[kv[1]] or 0) + kv[2] end
+				if X then X[kv[1]] = math.max(X[kv[1]] or 0, kv[2]) end
+			end
+		end
+		for _, k in ipairs({ "send", "queueLocal", "toSim", "gameTime", "nodePosition", "groundZ", "withActor", "deferredSend", "replaySend" }) do
+			if type(env[k]) == "function" then env[k] = timed("(E." .. k .. ")", env[k]) end
+		end
+	end
+	return env
 end
 G.aiStep = function(st)
 	local dev = os.getenv("MPFEVER_AIDEV")
@@ -21926,7 +21979,54 @@ G.aiStep = function(st)
 		if okm and type(m) == "table" then G.aiMod = m else log("AI module not loaded: " .. tostring(m)) end
 	end
 	if G.aiMod and G.aiMod.tick then
-		local okt, errt = pcall(G.aiMod.tick, G.aiEnv(), st)
+		local okt, errt
+		local c0 = os.clock()
+		-- (test MPFEVER_AIPROF=1: the step's phases and calls timed, see mpfever_ai.lua's ph and G.aiEnv, logged every minute)
+		if os.getenv("MPFEVER_AIPROF") == "1" then G.aiProf = G.aiProf or {}; G.aiProfMax = G.aiProfMax or {} end
+		-- (0.8.7) the step in a coroutine: a long plan (a passenger railway between two towns) works in slices of a few ms and
+		-- goes on at the next frame instead of holding the game (mpfever_ai.lua, RL.inTime); a step under way is resumed before
+		-- any new one. Only while a plan needs it (M.slicingWanted: the passenger railway, off by default); else in one go, as in
+		-- 0.8.6. MPFEVER_AISLICE=1: always, =0: never
+		local sl = os.getenv("MPFEVER_AISLICE")
+		if G.aiMod.slicing and (sl == "1" or (sl ~= "0" and G.aiMod.slicingWanted and G.aiMod.slicingWanted())) then
+			-- (a step under way is left when the session paused, resynchronises or stopped meanwhile: the world it read may be another;
+			-- each look starts from what it sees, the next one begins again)
+			local S0 = G.session
+			if G.aiCo and coroutine.status(G.aiCo) == "suspended" and not (G.connected and S0 and S0.started and not S0.resync and S0.pauseAt == nil and G.cmode == "separate") then
+				pcall(G.aiMod.slicing, false)
+				G.aiCo = nil
+				log("AI step under way left: the session paused, resynchronises or stopped")
+			end
+			if G.aiCo and coroutine.status(G.aiCo) == "suspended" then
+				okt, errt = coroutine.resume(G.aiCo)
+			else
+				G.aiCo = coroutine.create(function(env, st0) G.aiMod.slicing(true); local r = G.aiMod.tick(env, st0); G.aiMod.slicing(false); return r end)
+				okt, errt = coroutine.resume(G.aiCo, G.aiEnv(), st)
+			end
+			if okt and coroutine.status(G.aiCo) == "suspended" then G.aiSlices = (G.aiSlices or 0) + 1 end
+			if not okt then pcall(G.aiMod.slicing, false); G.aiCo = nil end
+		else
+			okt, errt = pcall(G.aiMod.tick, G.aiEnv(), st)
+		end
+		-- (what the step held this frame: the longest of each minute logged, with the slices taken)
+		G.aiFrameMax = math.max(G.aiFrameMax or 0, os.clock() - c0)
+		if G.frames - (G.aiSliceLogAt or 0) > 3600 then
+			G.aiSliceLogAt = G.frames
+			log(string.format("AI step: longest frame of the last minute %.0f ms, %d slice(s)", (G.aiFrameMax or 0) * 1000, G.aiSlices or 0))
+			G.aiFrameMax, G.aiSlices = 0, 0
+			for _, pr in ipairs({ { "aiProf", "time in all", 20 }, { "aiProfMax", "longest at once", 16 } }) do
+				local T = G[pr[1]]
+				if T then
+					local l = {}
+					for k, n in pairs(T) do l[#l + 1] = { k = k, n = n } end
+					table.sort(l, function(x, y) return x.n > y.n end)
+					local s = {}
+					for i = 1, math.min(pr[3], #l) do s[i] = l[i].k .. "=" .. string.format("%.0fms", l[i].n * 1000) end
+					log("AI profile (" .. pr[2] .. ", the last minute): " .. table.concat(s, " "))
+					G[pr[1]] = {}
+				end
+			end
+		end
 		if not okt and G.frames - (G.aiErrAt or -10000) > 600 then G.aiErrAt = G.frames; log("AI step failed: " .. tostring(errt)) end
 	end
 end

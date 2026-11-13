@@ -138,7 +138,8 @@ def main():
     a3 = pj2.find("pcall(RL.corridor, E, co, r.from, r.to, a, function(_, _, town) return found[town.e] end)")
     check(0 < a1 < a2 < a3 and "place = place or RL.stationPlace" in src,
           "its plan in three looks: the first station's place, the second's, the track's way with them (RL.corridor); the cargo's as before")
-    check("if os.clock() - t0 > RP.PLACE then return fallback end" in src, "  each place found within RP.PLACE s (the first plan held the host's game over 2 s, px1)")
+    check("if RL.active() - t0 > RP.PLACE then return fallback end" in src, "  each place found within RP.PLACE s of work (the first plan held the host's game over 2 s, px1;"
+          " 0.8.7: the work's time only, RL.active, a sliced step standing aside between frames)")
     check("RP.buildStation(E, co, r.from, a, \"A\", P.pa)" in pj2 and "if A.paxBegun[r.key] > 2 then RP.leave(E, r.key" in pj2,
           "  the first station built where its plan found it; a pair whose first station never came after two asks is left")
     pj = src[src.find("function RP.project(E, co, lines, money, begin)"):]

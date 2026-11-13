@@ -83,9 +83,53 @@ local RP = { MIN = 3000, MAX = 14000, POP = 300, RINGS = { 300, 400, 500, 650, 8
 -- (0.6.9) the time a railway's plan may take on the host's game, see RL.corridor (MPFEVER_AIRAILBUDGET seconds, 2; 0: no limit,
 -- as before)
 RL.BUDGET = tonumber(os.getenv("MPFEVER_AIRAILBUDGET") or "") or 2
+-- (0.8.7) A plan taken in slices: when the host's game runs the companies' step in a coroutine (the bridge, MPFEVER_AISLICE), the
+-- planner gives the frame back after RL.SLICE s of work and goes on at the next frame, so a long plan (a track between two towns,
+-- through their streets) no longer holds the game; its limit is then RL.SLICED s of work in all (MPFEVER_AIRAILSLICED), the time
+-- between the slices not counted. RL.active(): the planner's clock without the time it stood aside (see RP.place)
+RL.SLICE = 0.02
+RL.SLICED = tonumber(os.getenv("MPFEVER_AIRAILSLICED") or "") or 20
+RL.away = 0
+function RL.active() return os.clock() - (RL.away or 0) end
+function RL.sliced()
+	local co, main = coroutine.running()
+	return co ~= nil and not main and RL.sliceOn == true
+end
 function RL.inTime()
-	if RL.deadline and os.clock() > RL.deadline then
+	local now = os.clock()
+	if RL.sliced() then
+		RL.sliceAt = RL.sliceAt or now
+		if now - RL.sliceAt > RL.SLICE then
+			RL.spent = (RL.spent or 0) + (now - RL.sliceAt)
+			if RL.deadline and RL.spent > RL.SLICED then
+				error(string.format("the plan took more than %g s of work: left", RL.SLICED), 0)
+			end
+			local y0 = os.clock()
+			coroutine.yield("ai slice")
+			RL.away = (RL.away or 0) + (os.clock() - y0)
+			RL.sliceAt = os.clock()
+		end
+		return
+	end
+	if RL.deadline and now > RL.deadline then
 		error(string.format("the plan took longer than %g s, the games waiting meanwhile: left", RL.BUDGET), 0)
+	end
+end
+
+-- (0.8.7) A place where any long look gives the frame back after a slice of work, in the bridge's coroutine only (M.slicing on):
+-- the truck routes' searches (industries x industries x cargos, the towns' buildings) held the host's game 0.4 to 1.6 s at once
+-- (test n13pf of 2026-11-13, MPFEVER_AIPROF). No limit and no error here, the look goes on at the next frame; nothing out of the
+-- coroutine. Placed at a loop's head only, where no engine object of the last turn is held. MPFEVER_AISLICEALL=0: never
+RL.allOff = os.getenv("MPFEVER_AISLICEALL") == "0"
+function RL.yield()
+	if RL.allOff or not RL.sliced() then return end
+	local now = os.clock()
+	RL.sliceAt = RL.sliceAt or now
+	if now - RL.sliceAt > RL.SLICE then
+		local y0 = os.clock()
+		coroutine.yield("ai slice")
+		RL.away = (RL.away or 0) + (os.clock() - y0)
+		RL.sliceAt = os.clock()
 	end
 end
 
@@ -1508,7 +1552,13 @@ end
 -- a line's earnings less its upkeep over the last two game months (4000 ms of game time a day), nil if unknown
 local function lineBalance(E, line)
 	local now = E.gameTime()
+	local t0 = E.G.aiProf and os.clock()
 	local ok, b = pcall(function() return E.api.engine.util.finance.calculateBalance({ line }, now - 240000, now, true) end)
+	if t0 then
+		local P, X = E.G.aiProf, E.G.aiProfMax
+		P["(calculateBalance)"] = (P["(calculateBalance)"] or 0) + (os.clock() - t0)
+		if X then X["(calculateBalance)"] = math.max(X["(calculateBalance)"] or 0, os.clock() - t0) end
+	end
 	return ok and type(b) == "number" and b or nil
 end
 
@@ -1522,6 +1572,7 @@ local function companyResult(E, lines, tag)
 		if c and E.G.frames - c.at < 600 then return c.r end
 		local sum, known = 0, 0
 		for _, l in ipairs(lines) do
+			RL.yield()
 			local b = lineBalance(E, l.e)
 			if b then sum = sum + b; known = known + 1 end
 		end
@@ -1532,6 +1583,7 @@ local function companyResult(E, lines, tag)
 	A.opAt = E.G.frames
 	local sum, known = 0, 0
 	for _, l in ipairs(lines) do
+		RL.yield()
 		local b = lineBalance(E, l.e)
 		if b then sum = sum + b; known = known + 1 end
 	end
@@ -2553,6 +2605,7 @@ local function industries(E)
 	local OUT, IN = api.type.enum.StockListType.OutputStock, api.type.enum.StockListType.InputStock
 	local list = {}
 	for _, e in ipairs(R.entitiesWith("INDUSTRY")) do
+		RL.yield()
 		pcall(function()
 			local ind = api.engine.getComponent(e, api.type.ComponentType.INDUSTRY)
 			local con = ind and api.engine.getComponent(ind.construction, api.type.ComponentType.CONSTRUCTION)
@@ -2899,6 +2952,7 @@ local function bestFreight(E, co, lines, mode)
 				-- (0.6, long-term: a raw producer, or one the company feeds; producedOf gives nothing for the latter until it makes)
 				if lt and not (p.primary or fed[p.e]) then prod = nil end
 				for _, q in ipairs(prod and inds or {}) do
+					RL.yield()
 					-- (an industry found cut off from the streets is left out until a street reaches it, see roadProject)
 					if q.e ~= p.e and not others[q.road.group] and cut[p.e] ~= false and cut[q.e] ~= false and takes(E, q, c) then
 						local d = dist(p.pos, q.pos)
@@ -3025,6 +3079,7 @@ local function townDropPoint(E, town, cargo)
 			T.tbMap, T.tbAt = api.engine.system.townBuildingSystem.getTown2BuildingMap(), E.G.frames
 		end
 		for _, b in ipairs(T.tbMap[town] or {}) do
+			RL.yield()
 			local tb = api.engine.getComponent(b, api.type.ComponentType.TOWN_BUILDING)
 			if tb and (stockTakes(E, tb.stockList, cargo) or stockTakes(E, b, cargo)) then
 				local con = api.engine.getComponent(tb.construction, api.type.ComponentType.CONSTRUCTION)
@@ -3069,6 +3124,7 @@ local function bestTownFreight(E, co, lines, mode)
 	-- (0.6, F5: no delivery to a point in a player's territory, its stop would be there, see territoryCheck)
 	local terr = territoryCheck(E)
 	for _, t in ipairs(townsBySize(E)) do
+		RL.yield()
 		if t.size >= 300 then
 			for _, w in ipairs(townWants(E, t.e)) do
 				local p = centre(E, t.e, api.type.enum.LandUseType[w.use])
@@ -3076,6 +3132,7 @@ local function bestTownFreight(E, co, lines, mode)
 				if p and terr and terr(p.x, p.y) then p = nil end
 				if p then
 					for _, ind in ipairs(inds) do
+						RL.yield()
 						if not others[ind.road.group] and (A.roadChecked or {})[ind.e] ~= false
 							and (not fed or (fed[ind.e] and not (A.ltFailed or {})[ind.e .. ">town" .. t.e .. ":" .. w.cargo])) then
 							for _, c in ipairs(ind.outputs) do
@@ -4601,6 +4658,7 @@ function RL.corridor(E, co, from, to, a, place)
 	-- (0.6.9) within RL.BUDGET s: the plan of a long railway on a big map held the host's game 17 s (the others stopped waiting
 	-- for its builds and applied them late, test fz1 of 2026-11-02; 0.6.8's st2 too); a plan that takes longer is left
 	RL.deadline = RL.BUDGET > 0 and os.clock() + RL.BUDGET or nil
+	RL.spent, RL.sliceAt = 0, os.clock()
 	local okC, r1, r2 = pcall(RL.corridorIn, E, co, from, to, a, place)
 	RL.deadline = nil
 	if not okC then error(r1, 0) end
@@ -5280,10 +5338,12 @@ end
 function RP.place(E, co, town, a, tag)
 	local params = RP.stationParams(currentYear(E), RL.LEN)
 	local tried, fallback = 0, nil
-	local t0 = os.clock()
+	local t0 = RL.active()
 	for _, r in ipairs(RP.RINGS) do
 		for _, side in ipairs({ 0, 1, -1, 2, -2 }) do
-			if os.clock() - t0 > RP.PLACE then return fallback end
+			-- ((0.8.7) the work's time only, a step taken in slices standing aside between them, see RL.inTime)
+			RL.inTime()
+			if RL.active() - t0 > RP.PLACE then return fallback end
 			local b = a + side * math.pi / 4
 			local x, y = town.pos.x + math.cos(b) * r, town.pos.y + math.sin(b) * r
 			tried = tried + 1
@@ -5593,10 +5653,25 @@ local function join(E)
 	L(E, "company announced: " .. AINAME)
 end
 
+-- (0.8.7, test MPFEVER_AIPROF=1: the step's time by phase, in the bridge's G.aiProf, logged every minute; nothing without it)
+local PHAT = 0
+local function ph(E, name)
+	local P = E.G.aiProf
+	if not P then return end
+	local now = RL.active()
+	if name then
+		P[name] = (P[name] or 0) + (now - PHAT)
+		local X = E.G.aiProfMax
+		if X then X[name] = math.max(X[name] or 0, now - PHAT) end
+	end
+	PHAT = now
+end
+
 local function step(E)
 	local G = E.G
 	local A = G.AI
 	local co = aiCompany(E)
+	ph(E, "company")
 	if not co then return join(E) end
 	if not co.ent then return end
 	-- (0.5.14: a new company under this number, after a bankruptcy: the last one's memory of its towns, lines and garages is
@@ -5637,11 +5712,17 @@ local function step(E)
 		elseif age > 1200 then L(E, A.busy.what .. ": no answer, given up"); A.busy = nil end
 		if A.busy then return end
 	end
+	ph(E, "busy")
 	local money = balanceOf(E, co.ent)
+	ph(E, "money")
 	local stops = myStops(E, co.ent)
+	ph(E, "myStops")
 	local depots = myDepots(E, co.ent)
+	ph(E, "myDepots")
 	local lines = myLines(E, co.ent)
+	ph(E, "myLines")
 	local vehicles = myVehicles(E, co.ent)
+	ph(E, "myVehicles")
 	-- (0.5.14) the money kept back: the level's, and at least a few months of what its vehicles cost to run (a fixed reserve let a
 	-- grown fleet fall into debt at its first bad months). Read at most every 10 s. MPFEVER_AIRESERVE=0: the level's only
 	if os.getenv("MPFEVER_AIRESERVE") ~= "0" then
@@ -5672,6 +5753,7 @@ local function step(E)
 	end
 	-- (0.6) its floor, see FLOOR and spendOk
 	FLOOR = floorOf(A.runCost, A.loanMonthly, RESERVE)
+	ph(E, "reserve+loans")
 	if G.frames - (A.reportAt or -100000) > 1800 then
 		A.reportAt = G.frames
 		-- (0.5.14: what it keeps back, its lines' result together over the last two months and its fleet's running costs a year)
@@ -5696,6 +5778,7 @@ local function step(E)
 	end
 	-- vehicles without a line go to the line they were bought for, else the company's last line (once a minute at most each)
 	A.lineSent = A.lineSent or {}
+	ph(E, "report+groups")
 	for _, v in ipairs(vehicles) do
 		local okD, vdepot = pcall(function() return E.api.engine.getComponent(v.e, E.api.type.ComponentType.TRANSPORT_VEHICLE).depot end)
 		local linked = okD and type(vdepot) == "number" and vdepot >= 0 and depotLinked(E, vdepot)
@@ -5749,8 +5832,10 @@ local function step(E)
 	-- the lines first (a bus more where full, a broken line given up), then the best pair of towns, then the big towns' own lines
 	-- (the towns' own lines across their streets first, as the players' best filled lines; then the lines between towns)
 	sampleUse(E, lines)
+	ph(E, "vehicleLoop+sampleUse")
 	-- (0.6: its long-term freight lines' samples and verdicts first, the fleet rules read them, see ltSync)
 	ltSync(E, co, lines, vehicles, money)
+	ph(E, "ltSync")
 	if manageLines(E, co, lines, vehicles, money) then return end
 	-- every freight line its first two trucks as soon as it is there (whatever the turn of the projects below: a line left without a
 	-- truck was given up as empty after a few looks)
@@ -5780,14 +5865,17 @@ local function step(E)
 	end
 	-- (0.5.14: whether it may open something new now, see mayExpand)
 	local grow = mayExpand(E, co, lines, money)
+	ph(E, "manage+trucks+mayExpand")
 	-- (0.6.4) its railway: one under way goes on (a station, the track, the depot, the line, the train, each as soon as it has the
 	-- money); a new one only when it may grow and holds plenty besides its reserve (RL.project checks the railway's whole price)
 	if RL.on() then
 		local begin = grow and money - (A.loanCash or 0) >= RESERVE + (LV.freeCash or 0)
 		local r = RL.project(E, co, myLines(E, co.ent, true), money, begin)
+		ph(E, "RL.project")
 		if r == true then return end
 		-- (and its lines of trains: a train more where cargo piles up, see RL.manage)
 		if RL.manage(E, co, money) == true then return end
+		ph(E, "RL.manage")
 		-- (0.7.5) its passenger railway, see "passenger trains": one under way goes on; a new one when a railway of cargo could
 		-- begin, none is under way and none waits for its money
 		if RP.on() then
@@ -5808,6 +5896,7 @@ local function step(E)
 	-- 270 a year until its cargo is carried, and no freight line of the tests of 2026-10-30 paid its truck, 160 000 a year, while
 	-- the lines between towns earned up to 350 000 in two months. MPFEVER_AIFREIGHTRICH=0: with the growth gate only, as before)
 	local freightRich = os.getenv("MPFEVER_AIFREIGHTRICH") == "0" or money - (A.loanCash or 0) >= RESERVE + (LV.freeCash or 0)
+	ph(E, "RP+ltProject")
 	if os.getenv("MPFEVER_AIFREIGHT") ~= "0" and grow and freightRich then
 		local nf = 0
 		for _, l in ipairs(lines) do if freightOf(E, l) then nf = nf + 1 end end
@@ -5818,12 +5907,15 @@ local function step(E)
 	-- earned: the lines between towns before the towns' own lines, a fare grows with the distance flown and the short town lines
 	-- earn the least. MPFEVER_AIORDER=0: the towns first, as before)
 	local pairsFirst = LV.profitFirst and os.getenv("MPFEVER_AIORDER") ~= "0"
+	ph(E, "freightProject")
 	-- (a pair that only waits for money lets the towns' lines and their buses go on, see pairProject's "wait")
 	if pairsFirst and pairProject(E, co, stops, lines, vehicles, money, grow) == true then return end
+	ph(E, "pairProject")
 	-- (0.7.5, see SH: the towns where the company has stops of its own, and whether a town free of the other companies' stops is
 	-- left to it, for Normal's choice)
 	local ownTown, freeLeft = {}, false
 	local townList = townsForLines(E, co.ent)
+	ph(E, "townsForLines")
 	if SH.on() then
 		for _, s in ipairs(stops) do local tw = SH.townOf(E, s.station); if tw then ownTown[tw] = true end end
 		for _, t in ipairs(townList) do
@@ -6030,6 +6122,13 @@ function M.retiredBy(st, key)
 	return type(S) == "table" and type(S.retired) == "table" and S.retired[tostring(key)] == true
 end
 
+-- (0.8.7) the bridge runs the step in a coroutine and says so: the planner then works in slices (see RL.inTime)
+function M.slicing(on) RL.sliceOn = on == true; RL.sliceAt = os.clock() end
+-- (the slices only for the plans that need them: the passenger railway, off by default (MPFEVER_AIPAXRAIL). Without it the step
+-- runs in one go as in 0.8.6: in the coroutine, the game's debugPrint took 200 ms a line, see C.fileLogger; test n13pf0 of
+-- 2026-11-13, the step in one go: the longest frame 33 to 60 ms. MPFEVER_AISLICE=1: always, =0: never)
+function M.slicingWanted() local v = os.getenv("MPFEVER_AIPAXRAIL"); return v == "1" or v == "hard" end
+
 function M.tick(E, st)
 	local G, C = E.G, E.C
 	if C.ROLE ~= "host" or G.cmode ~= "separate" then return end
@@ -6103,7 +6202,9 @@ function M.tick(E, st)
 	-- (what a step costs this game's interface: the slowest one of each minute is logged)
 	local t0 = os.clock()
 	local busyBefore = G.AI.busy
+	ph(E)
 	step(E)
+	ph(E, "towns, buses, pairs (the step's last part)")
 	-- (after a purchase, a build or a new line, the level's pause: a Hard company that acted at every look spent its 2 million in
 	-- 90 s on a map of 1972, then sold everything in debt)
 	if G.AI.busy and G.AI.busy ~= busyBefore then G.AI.lookAt = math.max(G.AI.lookAt or 0, G.frames + (LV.pause or 600)) end

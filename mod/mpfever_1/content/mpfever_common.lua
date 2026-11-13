@@ -183,9 +183,35 @@ function C.keptOpen(path)
 	return f
 end
 
+-- (0.8.7) The same log line, to its file only, without the game's debugPrint (and so not in the game's stdout.txt). The computer
+-- companies' lines: the game's debugPrint took 200 to 260 ms for each of them (0.05 ms for the bridge's own lines, measured in the
+-- same session, test n13pf of 2026-11-13), about 20 lines a minute, and held the host's game 0.4 to 1.7 s at once
+function C.fileLogger(fileName)
+	return function(msg)
+		if C.ACTIVE then pcall(C.appendFile, C.DIR .. BS .. fileName, os.date("%H:%M:%S") .. " " .. msg .. NL) end
+	end
+end
+
+-- (0.8.7, test MPFEVER_LOGPROF=1: the time of the game's debugPrint, every log line of this state, summed up once a minute)
+C.logProf = os.getenv("MPFEVER_LOGPROF") == "1" and { n = 0, sum = 0, max = 0, slow = 0, at = os.clock() } or nil
 function C.logger(prefix, fileName)
 	return function(msg)
-		pcall(debugPrint, "[MPFEVER" .. prefix .. "] " .. msg)
+		local LP = C.logProf
+		if LP then
+			local t0 = os.clock()
+			pcall(debugPrint, "[MPFEVER" .. prefix .. "] " .. msg)
+			local dt = os.clock() - t0
+			LP.n, LP.sum, LP.max = LP.n + 1, LP.sum + dt, math.max(LP.max, dt)
+			if dt > 0.05 then LP.slow = LP.slow + 1 end
+			if os.clock() - LP.at > 60 then
+				local s = string.format("log timing (the last minute, %s): %d line(s), debugPrint %.0f ms in all, longest %.0f ms, %d over 50 ms",
+					fileName, LP.n, LP.sum * 1000, LP.max * 1000, LP.slow)
+				LP.n, LP.sum, LP.max, LP.slow, LP.at = 0, 0, 0, 0, os.clock()
+				if C.ACTIVE then pcall(C.appendFile, C.DIR .. BS .. fileName, os.date("%H:%M:%S") .. " " .. s .. NL) end
+			end
+		else
+			pcall(debugPrint, "[MPFEVER" .. prefix .. "] " .. msg)
+		end
 		if C.ACTIVE then
 			pcall(C.appendFile, C.DIR .. BS .. fileName, os.date("%H:%M:%S") .. " " .. msg .. NL)
 		end

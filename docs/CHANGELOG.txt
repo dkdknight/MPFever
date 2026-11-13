@@ -9,6 +9,17 @@ MPFever - Changelog
     seeds of 10 give the tool's fields, 20 fields before); a farm built with the real tool in a session not tested yet (no test
     company has the farm prospection). An industry edit is unchanged. MPFEVER_FIELDSKEEP=0: as before. Test:
     tests/test_fieldskeep086.py.
+  - AI (passenger railway of the computer companies, still off by default, MPFEVER_AIPAXRAIL=1): its plan (the way of its track
+    through the towns' streets) took more than 2 s and was left, the host's game held meanwhile. The plan now works in slices of
+    20 ms, one a frame, up to 20 s of work; the truck routes' searches, the industries read and the lines' results give the frame
+    back the same way. A step under way is left when the session pauses, resynchronises or stops. Without the passenger railway
+    the computer companies' step runs in one go, exactly as in 0.8.6. MPFEVER_AISLICE=1: always in slices, =0: never. Test:
+    tests/test_aislice087.py.
+  - AI: in that step's coroutine the game's debugPrint took 200 to 260 ms for each line the computer companies log (0.05 ms
+    elsewhere, 1 ms in one go; measured with MPFEVER_AIPROF and MPFEVER_LOGPROF): their lines now go to mod.log only (0.2 ms),
+    not to the game's stdout.txt. MPFEVER_AILOGPRINT=1: as before. Test: tests/test_ailog087.py.
+  - TEST: MPFEVER_AIPROF=1 times the computer companies' step by phase and every call of the game's api it makes (logged every
+    minute); MPFEVER_LOGPROF=1 times the game's debugPrint of every log line. Nothing without them.
 
 0.8.6 - 2026-11-13: a slow drift of one company per player fixed, same-moment actions in sync, commodity market, your own Company value chart
   - FIX (#190, Creeper + Akamari; one company per player): the Finances window's « Bank account / Company value » chart showed
