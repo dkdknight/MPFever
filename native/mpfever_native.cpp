@@ -885,6 +885,21 @@ static unsigned g_defHead = 0, g_defTail = 0;
 // for the first time is a game that has just been loaded: the entity ids given for the previous one mean nothing there (the mod
 // gives them again once it knows its companies).
 static void* g_preSeen[16]; static int g_nPreSeen = 0, g_preNext = 0;
+// (0.8.6, #150) The same account changes on every game (MPFEVER_CLEARSAME=0: as before). ClearPositions (0xcd6110 on 40425)
+// empties a vector of the company's ecs::component::Account (the money shown above the buildings) AND tells the world's engine
+// the component changed: its listeners, the entity's change counter and the change log that the copy for the interface replays
+// into the state the simulation runs next. Before the copy, the native module emptied every company but THIS machine's: the
+// host emptied the client's account, the client the host's, so the two games' simulation states took other changes at every
+// iteration (a soak of two games of one company per player parted at an animal's octree node, 6 runs of 10; 0 of 10 with this). Now every game makes
+// the same calls in the same order at both places (every company, the smallest entity first, this machine's and the savegame's
+// included), and this machine's figures are put back right after its own call (the clear only moves the vector's end to its
+// start: ClearPosSeen notes the end inside that call, the end is set back after it), so the interface still shows this machine's
+// popups only. g_clearSame: -1 not installed, 0 off, 1 on (ClearPositions spliced at +0x8e, where it holds the component).
+static volatile long g_clearSame = -1;
+static volatile long g_keepEnt = 0, g_keepTid = 0;
+static u8* volatile g_keepVec = 0;
+static u64 g_keepBegin = 0, g_keepEnd = 0;
+static volatile long g_clearSameKept = 0, g_clearSameMissed = 0, g_clearSameFull = 0, g_clearSameBytes = 0;
 static void ClearOthersIn(u8* gs, bool learn)
 {
     if (!gs) return;
@@ -912,6 +927,42 @@ static void ClearOthersIn(u8* gs, bool learn)
     for (long i = 0; i < n && i < 32; i++) if (g_others[i]) list[k++] = (u32)g_others[i];
     list[k++] = mine;
     list[k++] = word;
+    if (g_clearSame == 1) {
+        // every company once, the smallest entity first: the same set and order on every game
+        u32 s[34]; int m = 0;
+        for (int i = 0; i < k; i++) {
+            u32 e = list[i];
+            bool dup = !e;
+            for (int j = 0; j < m && !dup; j++) if (s[j] == e) dup = true;
+            if (!dup) s[m++] = e;
+        }
+        for (int i = 1; i < m; i++) { u32 x = s[i]; int j = i - 1; while (j >= 0 && s[j] > x) { s[j + 1] = s[j]; j--; } s[j + 1] = x; }
+        for (int i = 0; i < m; i++) {
+            u32 e = s[i];
+            // (before the copy for the interface: this machine's figures are put back after its call)
+            bool keep = !learn && e == mine;
+            if (keep) { g_keepVec = 0; g_keepTid = (long)GetCurrentThreadId(); g_keepEnt = (long)e; }
+            g_clearPos(world, e);
+            if (keep) {
+                g_keepEnt = 0;
+                u8* c = g_keepVec;
+                g_keepVec = 0;
+                if (c && *(u64*)c == g_keepBegin && *(u64*)(c + 8) == g_keepBegin && g_keepEnd >= g_keepBegin) {
+                    *(u64*)(c + 8) = g_keepEnd;
+                    _InterlockedIncrement(&g_clearSameKept);
+                    // (figures there to show: counted, with the largest, to see in native.log that the popups still reach the interface)
+                    if (g_keepEnd > g_keepBegin) {
+                        g_clearSameFull++;
+                        if ((long)(g_keepEnd - g_keepBegin) > g_clearSameBytes) g_clearSameBytes = (long)(g_keepEnd - g_keepBegin);
+                    }
+                }
+                else _InterlockedIncrement(&g_clearSameMissed);
+            }
+            static long shownSame = 0;
+            if (shownSame < 6) { shownSame++; Buf b; b.str("positions of company ").dec(e).str(" emptied, the same on every game (this machine plays ").dec(mine).str(keep ? ", its figures put back" : "").str(", word ").dec(word).str(", learn ").dec(learn ? 1 : 0).str(")"); LogLine(b); }
+        }
+        return;
+    }
     for (int i = 0; i < k; i++) {
         u32 e = list[i];
         bool dup = false;
@@ -4365,6 +4416,40 @@ static void InstallModuleBuilderGuard()
     LogLine(b);
 }
 
+// (0.8.6, #150, see g_clearSame) inside ClearPositions, right after it found the account's component (rax; the player in ebx):
+// the vector's begin and end are noted when the native module asked for this machine's figures to be kept (on its own thread)
+static void ClearPosSeen(SavedRegs* r)
+{
+    long want = g_keepEnt;
+    if (!want || (u32)r->rbx != (u32)want || (long)GetCurrentThreadId() != g_keepTid) return;
+    u8* c = (u8*)r->rax;
+    if (!c || !Readable(c, 0x20) || !c[0x18]) return;
+    g_keepBegin = *(u64*)c;
+    g_keepEnd = *(u64*)(c + 8);
+    g_keepVec = c;
+}
+
+static void InstallClearSame()
+{
+    char v[4] = {};
+    Buf b;
+    if (GetEnvironmentVariableA("MPFEVER_CLEARSAME", v, 3) > 0 && v[0] == '0') {
+        g_clearSame = 0; b.str("account changes: this machine's company kept out of the clear before the copy, as before 0.8.6 (MPFEVER_CLEARSAME=0)"); LogLine(b); return;
+    }
+    // ClearPositions as on 40425: "mov rdi,rax / mov [rsp+0x30],rax" at +0x8e (the component), then "cmp byte [rdi+0x18],0 / je /
+    // mov rax,[rdi] / cmp rax,[rdi+8] / je / mov [rdi+8],rax" at +0xb2 (the clear moves the end to the begin, nothing else)
+    static const u8 site[] = { 0x48, 0x8B, 0xF8, 0x48, 0x89, 0x44, 0x24, 0x30 };
+    static const u8 clr[] = { 0x80, 0x7F, 0x18, 0x00, 0x74, 0x3D, 0x48, 0x8B, 0x07, 0x48, 0x3B, 0x47, 0x08, 0x74, 0x04, 0x48, 0x89, 0x47, 0x08 };
+    u8* f = (u8*)g_clearPos;
+    bool shape = f && Readable(f, 0xd8) && memcmp(f + 0x8e, site, sizeof(site)) == 0 && memcmp(f + 0xb2, clr, sizeof(clr)) == 0;
+    u8* mem = shape ? AllocNear(0x100) : 0;
+    bool ok = mem && Splice(mem, (u32)((u64)f + 0x8e - g_base), (int)sizeof(site), ClearPosSeen);
+    g_clearSame = ok ? 1 : 0;
+    if (ok) b.str("account changes: the same on every game (every company emptied in one order, this machine's figures put back), ClearPositions at ").hex((u64)f - g_base);
+    else b.str("account changes: ClearPositions ").str(f ? (shape ? "not spliced" : "of another shape") : "not found").str(": this machine's company kept out of the clear, as before");
+    LogLine(b);
+}
+
 static void InstallNoGameAutosave()
 {
     char v[4] = {};
@@ -5115,6 +5200,8 @@ static void LogOrderCounts()
     // (the platform-decision flags: copies after the loop's Replicate / flags that differed and were copied / vehicle lists
     // taken / refused / decision reads off the simulation thread)
     b.str("; decision flags ").dec(g_dsSyncs).str("/").dec(g_dsCopied).str("/").dec(g_dsNotes).str("/").dec(g_dsRefused).str("/").dec(g_dsOther);
+    // (0.8.6, #150: the same account changes on every game, this machine's figures put back / not found)
+    if (g_clearSame == 1) b.str("; own figures put back ").dec(g_clearSameKept).str("/").dec(g_clearSameMissed).str(" (with figures ").dec(g_clearSameFull).str(", largest ").dec(g_clearSameBytes).str(" bytes)");
     // (the commands' new entities given a fresh id / the same in a copy of the state / refused, another engine)
     // (the scripts' commands' entities: counted, the queue's ids)
     b.str("; fresh ids ").dec(g_freshCmd).str("/").dec(g_freshReplay).str("/").dec(g_freshOther).str(", left to the queue ").dec(g_freshSkip)
@@ -5868,6 +5955,7 @@ static DWORD WINAPI Init(void*)
             g_clearPos = (ClearPosF)(tp + sizeof(P_PREITER) + 5 + *(int*)(tp + sizeof(P_PREITER) + 1));
             Buf t; t.str("ClearPositions found at ").hex((u64)g_clearPos - g_base); LogLine(t);
         }
+        if (g_clearPos) InstallClearSame();
         if (InstallDetour(RVA_PREITER, P_PREITER, sizeof(P_PREITER), (void*)&PreIterDetour, (void**)&g_preIterOrig)) g_preIterOn = true;
         if (RVA_REPL) g_replOn = InstallDetour(RVA_REPL, P_REPL, sizeof(P_REPL), (void*)&ReplDetour, (void**)&g_replOrig);
     }
