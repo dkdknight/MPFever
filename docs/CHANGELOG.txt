@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.8.7 - (in progress)
+0.8.7 - 2026-11-13: a new farm is the same on every game
   - FIX (#279, Erik's session): a new farm (an industry with fields) built by a player got other fields on the other games: the
     builder's tool chose 12, every replay 20. A farm's fields are slots the game fills itself at random each time it builds one, on
     top of the fields it is given; a replay now gives the tool's fields with that filling off (ConstructionEntity.autoFillSlots),
