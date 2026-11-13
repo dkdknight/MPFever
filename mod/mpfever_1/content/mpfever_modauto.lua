@@ -44,6 +44,9 @@ M.STRICT = {
 	-- (Real Track Cant: its monthly bonus only; its cant is computed after this player's own track builds, on their game)
 	{ pat = "/devers/devers_bonus", name = "Real Track Cant (bonus)" },
 	{ pat = "/gui/rct/", name = "Just More Weather (clock)" },
+	-- (0.8.6) Deutsche Signale's interface sends the player's camera to its engine (the signals worked within 1100 m of it): from
+	-- the host's game only, never a camera that jumps from one player's to another's
+	{ pat = "/de_signal_engine/", name = "Deutsche Signale (camera)" },
 }
 
 -- a source file path as debug.getinfo gives it ("@C:/Users/Public/mod.io/10640/mods/6419266/content/...")

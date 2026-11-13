@@ -341,7 +341,7 @@ namespace MPFever
         // MPFEVER_PERSONDIGEST=0 gives "off", not compared)
         // ((0.8.3) "stepsDigest": the native module's digest of 50 simulation steps (the free-id queue, the entities made and taken
         // away), see StepsWindow; at the first check where it differs, every game keeps its drift rings, see stepsDumped)
-        static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds", "personsDigest", "stepsDigest" };
+        static readonly HashSet<string> DiagnosticParts = new HashSet<string> { "buildIds", "personsDigest", "stepsDigest", "industriesDigest" };
         // (0.8.3) the drift rings asked for once per run at the first check whose steps' digests differ (a reload starts a new run)
         bool stepsDumped;
         // (0.8.4) the risky personal mods of this player's load last told in the chat (see Mods.RiskyPlan), once per session
@@ -350,7 +350,7 @@ namespace MPFever
         // game state that is never a local measure, even when it differs right after a reload (a company a game missed must be seen)
         // ((0.7.5) "edges2": the segments' second half, see the checks' halves in the bridge's simHash)
         // ((0.7.13) "personsDigest", a diagnostic: still logged after a reload, never "a local measure")
-        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "edges2", "ages", "buildIds", "constructions", "lines", "personsDigest", "stepsDigest" };
+        static readonly HashSet<string> NeverLocalParts = new HashSet<string> { "companies", "money", "owners", "loans", "edges", "edges2", "ages", "buildIds", "constructions", "lines", "personsDigest", "stepsDigest", "industriesDigest" };
         // the simulation's own state (passengers boarding, vehicle positions, the towns and what follows them): it used to drift
         // by itself (the game's Lua walked its tables in a different order on every PC, fixed in 0.3.4), so it was only reloaded
         // when it lasted. The games now stay identical: a difference there comes from an action applied differently and must be
@@ -1731,7 +1731,12 @@ namespace MPFever
                 || (localOn && srcs.TryGetValue(id, out var sv) && Mods.LocalSource(sv))).ToList();
             if (noHub.Count == 0) { modAskState = ""; modOffer = ""; }
             else if (modAskState == "") modAskState = "waiting";
-            try { client?.Send(Msg.Make("modcheck", name, "{[\"differs\"]=" + LuaLit.Quote(string.Join(", ", c.Differs)) + ",[\"nohub\"]=" + LuaLit.Quote(string.Join(",", noHub)) + "}")); } catch { }
+            // (0.8.6, #276) and the mods taken for personal by hand that change the game (Mods.RiskyPlan: "+id" run here alone,
+            // "-name" the host's left out here): the host tells every player in the lobby, before the start. MPFEVER_MODRISKLOBBY=0:
+            // not sent, as before (the chat at the load only)
+            string riskyLobby = "";
+            try { if (Environment.GetEnvironmentVariable("MPFEVER_MODRISKLOBBY") != "0") riskyLobby = string.Join(",", Mods.RiskyPlan(mods)); } catch { }
+            try { client?.Send(Msg.Make("modcheck", name, "{[\"differs\"]=" + LuaLit.Quote(string.Join(", ", c.Differs)) + ",[\"nohub\"]=" + LuaLit.Quote(string.Join(",", noHub)) + ",[\"risky\"]=" + LuaLit.Quote(riskyLobby) + "}")); } catch { }
             MenuStatus();
         }
 
@@ -2632,6 +2637,37 @@ namespace MPFever
             var text = F("Le jeu de {0} a planté. Pour aider à trouver pourquoi, chaque joueur peut envoyer « Signaler un problème » maintenant, avant de quitter la session.",
                 "{0}'s game crashed. To help find why, every player please send « Report a problem » now, before leaving the session.", who);
             Log.Warn(text);
+            HostChat("msg", "MPFever", text);
+        }
+
+        /// <summary>(0.8.6, #276, the host) A player's mods taken for personal by hand that change the game ("+id": run in that
+        /// player's game alone, "-name": the host's left out of it, see Mods.RiskyPlan), from its lobby check: every player is told
+        /// in the chat and the host's log, before the start, once per player and list. Only the mods found personal by their files
+        /// (the interface alone, Mods.Personal) stay silent. marce ran "Deutsche Signale" so on 2026-11-12: the games drifted
+        /// apart within seconds, a resynchronisation every 3 to 5 minutes, told only in a chat line at the load.</summary>
+        readonly Dictionary<string, string> riskyTold = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        void OnPlayerRiskyMods(string who, string risky)
+        {
+            if (string.IsNullOrEmpty(who)) return;
+            risky = risky ?? "";
+            lock (riskyTold)
+            {
+                if (riskyTold.TryGetValue(who, out var was) && was == risky) return;
+                riskyTold[who] = risky;
+            }
+            if (risky == "") return;
+            var items = risky.Split(',').Select(x => x.Trim()).Where(x => x.Length > 1).ToList();
+            string with = string.Join(", ", items.Where(x => x.StartsWith("+")).Select(x => x.Substring(1)));
+            string without = string.Join(", ", items.Where(x => x.StartsWith("-")).Select(x => x.Substring(1)));
+            var text = with != "" && without == ""
+                ? F("{0} joue AVEC {1}, pris pour personnel(s) à la main : ce mod change la partie, les jeux vont se désynchroniser. Tout le monde doit avoir les mêmes mods (ou {0} le retire de ses mods personnels).",
+                    "{0} plays WITH {1}, taken for personal by hand: this mod changes the game, the games will desync. Everybody needs the same mods (or {0} takes it out of their personal mods).", who, with)
+                : with == "" && without != ""
+                ? F("{0} jouera SANS {1}, pris pour personnel(s) à la main : ce mod change la partie, les jeux vont se désynchroniser. Tout le monde doit avoir les mêmes mods.",
+                    "{0} will play WITHOUT {1}, taken for personal by hand: this mod changes the game, the games will desync. Everybody needs the same mods.", who, without)
+                : F("{0} jouera SANS {1} et AVEC {2}, pris pour personnels à la main : ces mods changent la partie, les jeux vont se désynchroniser. Tout le monde doit avoir les mêmes mods.",
+                    "{0} will play WITHOUT {1} and WITH {2}, taken for personal by hand: these mods change the game, the games will desync. Everybody needs the same mods.", who, without, with);
+            Log.Err(text);
             HostChat("msg", "MPFever", text);
         }
 
@@ -4523,6 +4559,9 @@ namespace MPFever
                             else if (ids.Count == 0) modAsks.Remove(from.Name);
                         }
                         if (differs != "") Log.Warn(F("{0} n'a pas la même version que vous de ces mods : {1}. Il ne pourra pas charger la partie tant qu'il ne les a pas mis à jour.", "{0} does not have your version of these mods: {1}. They cannot load the game until they update them.", BaseName(from.Name), differs));
+                        // (0.8.6, #276) a player's mods taken for personal by hand that change the game: every player told now
+                        var risky = h.TryGetValue("risky", out var rv) && rv is string rs ? rs : "";
+                        OnPlayerRiskyMods(BaseName(from.Name), risky);
                         BroadcastLobby();
                         MenuStatus();
                     }

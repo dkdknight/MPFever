@@ -183,6 +183,72 @@ function SDUMP.keepDrift(n, dump)
 	log("drift diagnostic: check " .. tostring(n) .. " kept (sdump_drift_" .. tostring(slot) .. ".txt, the native module's rings asked for)")
 end
 
+-- (0.8.6, #150) the cargo waiting in each stock and the industries' production state, in the world part of the dump: #274's
+-- drift began as ONE cargo item more on one game ("stocks" 22969/22970, then a cargo item removed by the engine's StockListSystem
+-- on one game only), and the dumps of both games were alike, holding no stock. Each stock by its holder's kind and place (ids
+-- may differ between games): "~stock <holder> s<stock> = <items>"; each industry: "~stocklist <file>@x,y = <hash of its stock
+-- list component> <rule states>"; the cargo on board by line: "~onboard <line> = <items>". MPFEVER_SDUMPSTOCKS=0: not
+function SDUMP.stocks(dump)
+	if os.getenv("MPFEVER_SDUMPSTOCKS") == "0" then return end
+	local CT = api.type.ComponentType
+	local place = {}
+	-- (the holders' places: a station's construction, an industry's construction, a town building's construction)
+	pcall(function()
+		for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+			local c = api.engine.getComponent(e, CT.CONSTRUCTION)
+			if c then
+				local p = R.matPos(c.transf)
+				local where = tostring(c.fileName):match("[^/]*$") .. "@" .. string.format("%.0f,%.0f", p.x or 0, p.y or 0)
+				pcall(function() for _, ind in ipairs(c.industries) do place[ind] = "industry " .. where end end)
+				pcall(function() for _, s in ipairs(c.stations) do place[s] = "station " .. where end end)
+				pcall(function() for _, b in ipairs(c.townBuildings) do place[b] = "townbuilding " .. where end end)
+			end
+		end
+	end)
+	local function holder(e)
+		if place[e] then return place[e] end
+		local tb = api.engine.getComponent(e, CT.TOWN_BUILDING)
+		if tb then
+			local w = "?"
+			pcall(function() local cc = api.engine.getComponent(tb.construction, CT.CONSTRUCTION); local m = R.matPos(cc.transf); w = string.format("%.0f,%.0f", m.x, m.y) end)
+			return "townbuilding @" .. w
+		end
+		return "entity"
+	end
+	pcall(function()
+		for k, list in pairs(api.engine.system.simEntityAtStockSystem.getStock2SimEntityMap() or {}) do
+			local e, sid = nil, nil
+			pcall(function() e, sid = k[1], k[2] end)
+			if e == nil then pcall(function() e, sid = k.entity, k.stockId end) end
+			dump[#dump + 1] = "~stock " .. (type(e) == "number" and holder(e) or "?") .. " s" .. tostring(sid) .. " = " .. tostring(#list)
+		end
+	end)
+	pcall(function()
+		for _, ind in ipairs(R.entitiesWith("INDUSTRY")) do
+			local sl = api.engine.getComponent(ind, CT.STOCK_LIST)
+			if sl then
+				local whole = C.dump(sl)
+				local rules = {}
+				pcall(function() for i = 1, #sl.ruleDatas do rules[#rules + 1] = C.dump(sl.ruleDatas[i]):gsub("%s+", " "):sub(1, 120) end end)
+				dump[#dump + 1] = "~stocklist " .. holder(ind) .. " = #" .. tostring(C.hashStr(0, whole)) .. " thrown " .. tostring(sl.thrownAwayCargo) .. " rules " .. table.concat(rules, " | ")
+			end
+		end
+	end)
+	pcall(function()
+		for v, byCargo in pairs(api.engine.system.simEntityAtVehicleSystem.getVehicle2Cargo2SimEntitesMap() or {}) do
+			local n = 0
+			for _, list in pairs(byCargo) do n = n + #list end
+			local ln = "-"
+			pcall(function()
+				local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
+				local nm = tv and tv.line and tv.line >= 0 and api.engine.getComponent(tv.line, CT.NAME)
+				ln = nm and tostring(nm.name) or "-"
+			end)
+			dump[#dump + 1] = "~onboard " .. ln .. " = " .. n
+		end
+	end)
+end
+
 local function extendedParts(parts, checkN)
 	local dump = SDUMP.on and (not SDUMP.all or SDUMP.n < 40 or os.getenv("MPFEVER_SDUMP") == "all") and {}
 	-- (0.7.5) the dump's cost, apart (K.dumpCost, in the "hash costs" lines): the dump is a diagnostic, the check holds the
@@ -283,6 +349,8 @@ local function extendedParts(parts, checkN)
 			end
 			for f, n in pairs(kinds) do dump[#dump + 1] = "~constructions " .. f .. " = " .. n end
 		end)
+		-- (0.8.6, #150: the stocks, see SDUMP.stocks)
+		pcall(SDUMP.stocks, dump)
 		-- ((0.7.13, #150/#166: no report had the persons, the dump's persons being a test switch, MPFEVER_SDUMP_PERSONS=1: the
 		-- person that went otherwise first, before the towns' happiness and the fares, could not be told) the persons and the
 		-- town buildings too in the dump the launcher asks for after a difference, on every game at the same check.
@@ -619,6 +687,26 @@ K.hashCostsShown = 0
 -- The launcher asks every game for its drift rings at the first check where it differs, so they still hold the step where the
 -- games parted. "off": no native module or MPFEVER_STEPSDIGEST=0; "absent": that step not in its file (or not 50 steps in a row
 -- since the load yet). K.stepsDigestAt(at, text): text is native_steps.txt's content (read here when nil)
+-- (0.8.6, #150) "industriesDigest", a diagnostic part of the checks (never a reason to reload): the production state of every
+-- industry (its stock list's rules' and stocks' runtime data, the cargo it threw away), an order-free sum over the industries.
+-- #274's drift began as one cargo item more on one game and showed in "stocks" and "vehicles" only later: this tells at which
+-- check the industries went apart first (then the dumps' "~stocklist" lines tell which one). MPFEVER_INDDIGEST=0: not measured
+K.industriesDigest = function()
+	if os.getenv("MPFEVER_INDDIGEST") == "0" then return nil end
+	local n, sum = 0, 0
+	for _, ind in ipairs(R.entitiesWith("INDUSTRY")) do
+		local sl = api.engine.getComponent(ind, api.type.ComponentType.STOCK_LIST)
+		if sl then
+			local t = {}
+			pcall(function() t[#t + 1] = C.dump(sl.ruleDatas) end)
+			pcall(function() t[#t + 1] = C.dump(sl.stockDatas) end)
+			pcall(function() t[#t + 1] = tostring(sl.thrownAwayCargo) end)
+			sum = (sum + C.hashStr(0, table.concat(t, "|"))) % 4294967296
+			n = n + 1
+		end
+	end
+	return n .. "/" .. sum
+end
 K.stepsDigestAt = function(at, text)
 	if os.getenv("MPFEVER_STEPSDIGEST") == "0" or type(at) ~= "number" then return "off" end
 	if text == nil then
@@ -684,6 +772,7 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	end
 	parts.buildIds = bn .. "/" .. bs
 	pcall(function() parts.stepsDigest = K.stepsDigestAt(tonumber(at)) end)
+	pcall(function() parts.industriesDigest = K.industriesDigest() end)
 	-- ((0.7.5) with the halves, "owners" takes its turn too, with "edges2": it reads every road, construction and vehicle
 	-- again, 0.03 to 0.07 s of every check)
 	local skipOwners = R.hashSkip and R.hashSkip.owners
@@ -2277,6 +2366,26 @@ function DET.wrapModEvents()
 			end
 			log("the game's landmarks script: update called with the steps only")
 		end
+		-- (0.8.6, Elias, #276) "Deutsche Signale" (tf3_signale_de_1): after every load its engine sweeps the lamps no signal keeps,
+		-- 400 entities an evaluation at most but stopping once 2 ms of the PC's clock have gone (its CLOCK, os.clock): each PC
+		-- finished at another step, destroyed the orphan lamps at other steps, and the freed ids went to other entities (a resync a
+		-- few minutes after the start). Its CLOCK is made the clock it uses when os.clock is missing (always 0): every game sweeps
+		-- 400 entities an evaluation. MPFEVER_SIGNALECLOCK=0: as before
+		if type(k) == "string" and k:find("de_signal_engine", 1, true) and type(v) == "table" and type(v.update) == "function"
+			and not v.__mpfClock and os.getenv("MPFEVER_SIGNALECLOCK") ~= "0" then
+			v.__mpfClock = true
+			local okC, how = pcall(function()
+				if type(debug) ~= "table" or type(debug.getupvalue) ~= "function" or type(debug.setupvalue) ~= "function" then return "no debug library" end
+				for i = 1, 255 do
+					local name = debug.getupvalue(v.update, i)
+					if name == nil then break end
+					if name == "CLOCK" then debug.setupvalue(v.update, i, function() return 0 end); return "set" end
+				end
+				return "no CLOCK in its update"
+			end)
+			log("Deutsche Signale: its engine's clock " .. ((okC and how == "set") and "is the same on every game now (its clean-up sweeps 400 entities an evaluation)"
+				or ("not changed (" .. tostring(how) .. ")")) .. ": " .. k)
+		end
 		-- (0.7.0) The engine calls the game scripts' update once per step with dt 0.2, and with dt 0 in a batch of no step (a
 		-- game standing at a stop point, a pause): how many of those calls a game makes depends on its frames. A mod that works
 		-- at every call (Cargo & Passenger Station Range rebuilds two stations per call during an "apply to all") then did more
@@ -3208,6 +3317,8 @@ SIM.addReplaySig = function(st, t, sig)
 	log("replay at t=" .. tostring(t) .. ": its rebuilt form's signature kept too (" .. #st.replaySigs.list .. " for this time)")
 end
 
+SIM.idReadPost = function() return os.getenv("MPFEVER_IDREADPOST") ~= "0" end
+
 SIM.idResolve = function(state, force)
 	if not SIM.idChecks then return end
 	local keep = {}
@@ -3216,7 +3327,11 @@ SIM.idResolve = function(state, force)
 	local okT, tCk = pcall(gameTime)
 	for _, ck in ipairs(SIM.idChecks) do
 		ck.ticks = ck.ticks + 1
-		if okT and (tCk >= ck.at + 2 * STEP or (force and ck.at <= tCk)) then
+		-- (0.8.6: force "post", the engine's onPostBuildProposal of the build itself, reads that step's builds only: see
+		-- SIM.idReadPost)
+		local due = (force == "post") and (okT and ck.at == tCk)
+			or (force ~= "post" and okT and (tCk >= ck.at + 2 * STEP or (force and ck.at <= tCk)))
+		if due then
 			-- (0.7.7, lag research F4: what this costs the simulation thread on a big map, said in a line of its own when it is more
 			-- than 20 ms; the "build ids" line itself stays the same on every game)
 			local idc0 = os.clock()
@@ -3579,7 +3694,8 @@ local function captureNativeBuild(state, param)
 		local okg, sig = pcall(C.buildSig, compact)
 		if okg and sig and st.replaySigs and st.replaySigs.at == now then
 			for i, s in ipairs(st.replaySigs.list or {}) do
-				if s == sig then
+				-- (0.8.6, #278: and the same constructions taken away, see C.sigSame; MPFEVER_SIGRM=0 makes no "|rm|" part)
+				if (C.sigSame and C.sigSame(s, sig)) or s == sig then
 					-- (once: a third build alike at this time is the player's own)
 					if os.getenv("MPFEVER_SIGCON") ~= "0" then table.remove(st.replaySigs.list, i) end
 					log("build at t=" .. now .. ": the same as the action just applied here (the engine applies it again): not shipped")
@@ -3821,6 +3937,12 @@ local function handleEvent(userParams, state, src, id, name, param)
 	SIM.evN = (SIM.evN or 0) + 1
 	if id == "apply_command" and name == "onPostBuildProposal" then
 		log("engine: post build t=" .. tostring(gameTime()))
+		-- (0.8.6) the build's own ids, read as soon as the engine has applied it: with Responsive builds a player's next build
+		-- lands 2 steps later and can split a segment of this one before the read two steps after; that game read -1 where the
+		-- others read the segment, and "buildIds" told a difference that was none, 49 minutes before the real drift (#274,
+		-- Peter's build at t=29110400). Every game reads at the same place now: right after that build. MPFEVER_IDREADPOST=0: as
+		-- before (two steps after, or before the next captured build)
+		if SIM.idChecks and SIM.idReadPost() then pcall(SIM.idResolve, state, "post") end
 		do
 			local okK, errK = pcall(SIM.keepStreetOwner, "post", param)
 			if not okK and not SIM.ksoFailed then SIM.ksoFailed = true; log("companies: street owners: " .. tostring(errK)) end
@@ -9726,7 +9848,7 @@ local function runNativeRelease()
 			else
 				keep[#keep + 1] = r
 			end
-		elseif ((now >= r.at and (gameSpeed() == 0 or (now == r.at and G.nstopStanding()))) or (now < r.at and G.nstopWillStand(r.at))) and not (G.eoHoldOwn and G.frames < (G.replayQuiet or 0)) and not G.sameStepWait(r.at, G.me) and not G.ownWaitsReplay(r) then
+		elseif ((now >= r.at and (gameSpeed() == 0 or (now == r.at and G.nstopStanding()))) or (now < r.at and G.nstopWillStand(r.at))) and not (G.eoHoldOwn and G.frames < (G.replayQuiet or 0)) and not (not r.paused and G.terrainEarlyFirst and G.terrainEarlyFirst(r.at, G.me)) and not G.sameStepWait(r.at, G.me) and not G.ownWaitsReplay(r) then
 			-- (0.7.13, #161 #166: not while a replay of another player's build is in the engine's hands, see G.ownWaitsReplay)
 			-- (the simulation about to stand at its time: released for that time, see G.nstopWillStand)
 			local at = math.max(now, r.at)
@@ -10488,6 +10610,77 @@ G.sameStepWait = function(at, origin)
 	return false
 end
 
+-- (0.8.6, #272) A terrain edit and a build at the same step, in one order on every game. yoyo's held build and Bence's terrain
+-- edit were both at t=19676400: yoyo's game applied its build, then the edit; Bence's game, standing at t for that build (Bence led
+-- with the terrain tool), had the edit first. The games took other free ids from there and drifted apart 20 minutes later.
+--   - the usual order: the builds announced for a step first, then the terrain edits of that step. A terrain edit waits here while
+--     a build announced for its step is not applied yet (another player's, not sent to the engine yet or in its hands, or this
+--     game's own held build, not released yet);
+--   - an edit its builder made while builds of that step were still to come there ("early", the builder standing at the step of
+--     another's build, as Bence): it comes before them, as on its builder's game. It is applied at once here, and those builds
+--     (this game's own held one too) wait for it. One already applied here when the edit comes: the games differ, said in the log
+--     ("TERRAIN ORDER"), where the drift diagnostic will find it.
+-- MPFEVER_TERRAINORDER=0: as before (the terrain edits as they come)
+G.terrainOrderOn = function() return os.getenv("MPFEVER_TERRAINORDER") ~= "0" end
+-- the builds announced for step t and not applied here yet: { origin = true }
+G.buildsPendingAt = function(t)
+	local p = {}
+	for _, w in ipairs(G.natWait or {}) do if w.at == t then p[tostring(w.origin)] = true end end
+	for _, r in ipairs(G.natRelease or {}) do if r.at == t then p[tostring(G.me)] = true end end
+	return p
+end
+-- (the builder of a terrain edit, as it ships it) the players whose builds of that step are still to come here
+G.terrainEarlyOf = function(t)
+	if not G.terrainOrderOn() then return nil end
+	local list = {}
+	for o in pairs(G.buildsPendingAt(t)) do list[#list + 1] = o end
+	table.sort(list)
+	return #list > 0 and list or nil
+end
+-- whether a terrain edit due now waits for the builds of its step
+G.terrainWaitsBuilds = function(a)
+	if not G.terrainOrderOn() or type(a.at) ~= "number" then return false end
+	-- (a real pause of the session keeps its turns; an edit marked "paused" only because its game stood at a held build's step,
+	-- as Bence's at t=19676400, is the case at hand: the simulation counts that stand as a pause, see runPausedActions)
+	if G.session.pauseAt ~= nil and a.at >= G.session.pauseAt then return false end
+	if type(a.early) == "table" and #a.early > 0 then
+		if not a.earlyChecked then
+			a.earlyChecked = true
+			local pend = G.buildsPendingAt(a.at)
+			for _, o in ipairs(a.early) do
+				if not pend[tostring(o)] then
+					log("TERRAIN ORDER " .. tostring(a.uid) .. ": made on its builder's game before the build of " .. tostring(o) .. " at t=" .. a.at
+						.. ", which this game applied before it: the games differ [frame " .. G.frames .. "]")
+					G.terrainOrderMiss = (G.terrainOrderMiss or 0) + 1
+				end
+			end
+		end
+		return false
+	end
+	local busy = next(G.buildsPendingAt(a.at)) ~= nil
+		or (G.replayAt == a.at and ((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)))
+	if not busy then a.orderWait = nil; return false end
+	a.orderWait = a.orderWait or G.frames
+	if G.frames - a.orderWait > 900 then
+		if not a.orderGaveUp then a.orderGaveUp = true; log("TERRAIN ORDER " .. tostring(a.uid) .. ": the builds of t=" .. a.at .. " not applied in 15 s: the edit goes [frame " .. G.frames .. "]") end
+		return false
+	end
+	if not a.orderLogged then a.orderLogged = true; log("terrain edit " .. tostring(a.uid) .. " for t=" .. a.at .. " waits: the builds announced for that step come first [frame " .. G.frames .. "]") end
+	return true
+end
+-- whether a build of `origin` at step t waits for an early terrain edit of that step (queued here, not applied yet)
+G.terrainEarlyFirst = function(t, origin)
+	if not G.terrainOrderOn() then return false end
+	local function names(q)
+		if q and q.fn == "terrainEdit" and q.at == t and type(q.early) == "table" then
+			for _, o in ipairs(q.early) do if tostring(o) == tostring(origin) then return true end end
+		end
+		return false
+	end
+	for _, q in ipairs(G.nativeQueue or {}) do if names(q) then return true end end
+	return G.terrainBusy ~= nil and names(G.terrainBusy.a)
+end
+
 -- (0.7.13, #161 #166: two players' held builds announced for the same step. This game's, ranked second, waited for the other's
 -- announcement (G.sameStepWait), which nativeArrived drops as soon as that replay's first command is sent: the own build was
 -- released on the next frame. A stop or a signal replayed by the engine's conversion is two commands (a dry run, then the build,
@@ -10543,7 +10736,10 @@ local function runNativeReplays()
 		-- (a native build of the engine's own kind may go as the simulation is about to stand at its time, see G.nstopWillStand)
 		local due = a.at <= now or (a.native and not G.reallyPaused(a, seq) and a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and a.fn ~= "assetBuild" and G.nstopWillStand(a.at))
 		if due and ((a.fn == "terrainEdit" and G.terrainBusy) or (a.fn == "mpfCoJoin" and (G.coBusy or jt == false or G.frames - (a.recvFrame or 0) < K.JOIN_GATHER))
-			or (a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and replayBusy()) or et == false) then
+			or (a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and replayBusy()) or et == false
+			-- (0.8.6, #272: a terrain edit and the builds of its step in one order, see G.terrainWaitsBuilds)
+			or (a.fn == "terrainEdit" and not seq and G.terrainWaitsBuilds and G.terrainWaitsBuilds(a))
+			or (a.native and a.fn ~= "terrainEdit" and not seq and G.terrainEarlyFirst and G.terrainEarlyFirst(a.at, a.origin))) then
 			keep[#keep + 1] = a      -- the previous one is still being handed to the engine (or its turn has not been given yet)
 		elseif due and seq and not G.ptMayGo(seq) then
 			keep[#keep + 1] = a      -- a paused build whose turn has not come here yet
@@ -11139,6 +11335,16 @@ local function shipTerrain(o)
 	G.oseq = G.oseq + 1
 	local a = { fn = "terrainEdit", args = { x0 = d.x0, y0 = d.y0, w = d.w, h = d.h, fnv = b.fnv, blob = txt }, at = o.at, origin = G.me,
 		oseq = G.oseq, uid = G.me .. ":" .. G.oseq, native = true, paused = o.paused, co = G.myCo }
+	-- (0.8.6, #272) made before builds of its step that are still to come here: the others apply it before them (see
+	-- G.terrainWaitsBuilds)
+	-- (an edit made while this game stood at a held build's step is marked paused: the case at hand; not in a real pause)
+	if not (G.session.pauseAt ~= nil and o.at >= G.session.pauseAt) then
+		local early = G.terrainEarlyOf(o.at)
+		if early then
+			a.early = early
+			log("terrain edit " .. a.uid .. " made at t=" .. tostring(o.at) .. " before the build(s) of " .. table.concat(early, ", ") .. " at that step: it comes first on every game")
+		end
+	end
 	send("act", a)
 	-- (0.6: to the game options' modules that keep a copy of the players' builds, see G.featNativeAct)
 	if G.featOn then pcall(G.featNativeAct, a) end
@@ -13584,11 +13790,24 @@ H.terrainlead = function(from, p)
 			return true
 		end
 		G.tlHold = true
+		-- (0.8.6, #272: MPFEVER_TERRAINLEAD_ATHOLD=1) the edits made only while this game stands at the step of the other game's
+		-- announced build, before its replay: yoyo's build and Bence's edit at t=19676400, applied in another order on each game
+		local atHold = os.getenv("MPFEVER_TERRAINLEAD_ATHOLD") == "1"
+		local lastHoldT = nil
+		local function standingAtBuild()
+			local okT, now = pcall(gameTime)
+			if not okT then return false end
+			for _, w in ipairs(G.natWait or {}) do
+				if w.at == now and w.origin ~= G.me and lastHoldT ~= now then lastHoldT = now; return true end
+			end
+			return false
+		end
 		local function keep()
 			if not G.tlHold or G.frames > last then G.tlHold = nil; log("AUTOTEST terrainlead: terrain tool put away after " .. k .. " edits"); return end
 			terrainLead("autotest terrainlead")
 			calls = calls + 1
-			if edits and calls % 2 == 0 and behind() then
+			if edits and ((atHold and standingAtBuild()) or (not atHold and calls % 2 == 0 and behind())) then
+				if atHold then log("AUTOTEST terrainlead: edit while standing at the other game's build of t=" .. tostring(lastHoldT)) end
 				k = k + 1
 				local i, x0 = k, bx + ((k - 1) % 4) * 10
 				local okE, errE = pcall(function()
@@ -13603,7 +13822,7 @@ H.terrainlead = function(from, p)
 				end)
 				if not okE then log("AUTOTEST terrainlead: edit " .. i .. " failed: " .. shortErr(errE)) end
 			end
-			G.waits[#G.waits + 1] = { at = G.frames + 60, fn = keep }
+			G.waits[#G.waits + 1] = { at = G.frames + (atHold and 1 or 60), fn = keep }
 		end
 		keep()
 		return
@@ -14905,6 +15124,118 @@ H.badui = function(from, p)
 	for k = 1, 2 do uiRequest("makeWorldBuildProposalCmd", { n = 4, "not a proposal " .. k, false, false, true }) end
 	AUTO.results[1] = "2 builds no game can replay sent at t=" .. tostring(gameTime())
 	G.waits[#G.waits + 1] = { at = G.frames + 300, fn = autoFinish }
+end
+
+-- (0.8.6, #190, research) The logbooks the game keeps (MPFEVER_SCENARIO=logprobe, no build): the world's logs (the finances'
+-- « Goodwill » chart reads "companyBalance" and "companyTotalValue" there, for the savegame's company only) and those of every
+-- company's player entity, with their number of entries and their last value, in the results.
+H.logprobe = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST logprobe " .. t); AUTO.results[#AUTO.results + 1] = t end
+	local CT = api.type.ComponentType
+	local function logsOf(e, tag)
+		local ok, err = pcall(function()
+			local lb = api.engine.getComponent(e, CT.LOG_BOOK)
+			if not lb then say(tag .. ": no LOG_BOOK"); return end
+			local names = {}
+			pcall(function() for k in pairs(lb.name2log) do names[#names + 1] = tostring(k) end end)
+			table.sort(names)
+			local parts = {}
+			for _, k in ipairs(names) do
+				local lg = lb.name2log[k]
+				local n, last = 0, "?"
+				pcall(function() n = #lg.values; last = tostring(lg.values[n]) end)
+				parts[#parts + 1] = k .. "(" .. n .. ":" .. last .. ")"
+			end
+			say(tag .. ": " .. #names .. " log(s) " .. table.concat(parts, " "):sub(1, 1500))
+		end)
+		if not ok then say(tag .. ": " .. shortErr(err)) end
+	end
+	logsOf(api.engine.util.getWorld(), "world")
+	pcall(function()
+		local seen = {}
+		api.engine.forEachEntityWithComponent(function(pl) if not seen[pl] then seen[pl] = true; logsOf(pl, "player " .. pl) end end, CT.PLAYER)
+	end)
+	say("this game's player: " .. tostring(api.engine.util.getPlayer()))
+	G.waits[#G.waits + 1] = { at = G.frames + 60, fn = autoFinish }
+end
+
+-- (0.8.6, #279) A new farm built as the industry tool builds one (MPFEVER_SCENARIO=farmnew; with MPFEVER_PAUSED=1 as in #279:
+-- ErikHoffmann's farm in the autosave's pause had 12 fields on his game and 20 on the host's, "TOWN STATS DIFFER", a
+-- resynchronisation). The farm next to an existing one (MPFEVER_FARMNEW_FILE: another industry), with its parameters and a seed
+-- of its own (MPFEVER_FARMNEW_MODULES=0: without its modules), sent as the tool sends a build. Results: the new farm's modules on
+-- this game, read from the world; the other game's are in its log ("native construction: modules tool ... converted ...") and in
+-- the checks (conParams).
+H.farmnew = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST farmnew " .. t); AUTO.results[#AUTO.results + 1] = t end
+	local file = os.getenv("MPFEVER_FARMNEW_FILE") or "industries/farm/farm.con"
+	local CT = api.type.ComponentType
+	local src = {}
+	for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+		local c = api.engine.getComponent(e, CT.CONSTRUCTION)
+		if c and tostring(c.fileName):find(file, 1, true) then src[#src + 1] = { e = e, c = c } end
+	end
+	table.sort(src, function(a, b) return a.e < b.e end)
+	if #src == 0 then say("no " .. file .. " on this map"); G.waits[#G.waits + 1] = { at = G.frames + 60, fn = autoFinish }; return end
+	local offsets = { { 700, 0 }, { -700, 0 }, { 0, 700 }, { 0, -700 }, { 900, 900 }, { -900, -900 }, { 900, -900 }, { -900, 900 } }
+	local k = 0
+	local function modulesNear(x, y)
+		local best, bd = nil, 60
+		for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+			local c = api.engine.getComponent(e, CT.CONSTRUCTION)
+			if c and tostring(c.fileName):find(file, 1, true) then
+				local m = R.matPos(c.transf)
+				local d = math.abs(m.x - x) + math.abs(m.y - y)
+				if d < bd then best, bd = c, d end
+			end
+		end
+		if not best then return nil end
+		local mods = {}
+		pcall(function() for key in pairs(best.params.modules) do mods[#mods + 1] = tostring(key) end end)
+		table.sort(mods, function(a, b) return tonumber(a) < tonumber(b) end)
+		return mods
+	end
+	local try
+	try = function()
+		k = k + 1
+		if k > #offsets * math.min(#src, 3) then say("no free place found"); G.waits[#G.waits + 1] = { at = G.frames + 60, fn = autoFinish }; return end
+		local s = src[math.floor((k - 1) / #offsets) % #src + 1]
+		local off = offsets[(k - 1) % #offsets + 1]
+		local okp, err = pcall(function()
+			local sp = C.newOf("SimpleProposal")
+			local ce = C.newOf("ConstructionEntity")
+			ce.fileName = s.c.fileName
+			local params = C.plain(s.c.params)
+			params.seed = 4000 + k
+			if os.getenv("MPFEVER_FARMNEW_MODULES") == "0" then params.modules = nil end
+			ce.params = params
+			local t = C.plain(s.c.transf)
+			t[13], t[14] = t[13] + off[1], t[14] + off[2]
+			ce.transf = t
+			ce.playerEntity = api.engine.util.getPlayer()
+			pcall(function() ce.name = "MPFever farm " .. k end)
+			sp.constructionsToAdd = { ce }
+			deferredSend(G.wbp(sp, playerContext(), false, true), function(res, success)
+				if not success then say("place " .. k .. " refused"); G.waits[#G.waits + 1] = { at = G.frames + 20, fn = try }; return end
+				G.waits[#G.waits + 1] = { at = G.frames + 120, fn = function()
+					local mods = modulesNear(t[13], t[14])
+					say("farm built at place " .. k .. " (" .. string.format("%.0f,%.0f", t[13], t[14]) .. "), parameters' modules "
+						.. tostring(type(params.modules) == "table" and #(function() local l = {} for q in pairs(params.modules) do l[#l + 1] = q end return l end)() or "none")
+						.. ", built here with " .. (mods and (#mods .. " {" .. table.concat(mods, ",") .. "}") or "?"))
+					G.waits[#G.waits + 1] = { at = G.frames + 600, fn = autoFinish }
+				end }
+			end)
+		end)
+		if not okp then say("place " .. k .. " failed: " .. shortErr(err)); G.waits[#G.waits + 1] = { at = G.frames + 20, fn = try } end
+	end
+	try()
 end
 
 -- Industry extends (MPFEVER_SCENARIO=extend with MPFEVER_PAUSED=1 and a build after it, "extend,newroad"; the friends' 0.5.12

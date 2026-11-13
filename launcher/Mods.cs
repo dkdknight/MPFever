@@ -59,7 +59,9 @@ namespace MPFever
             ["hohenzollern_bridge"] = () => new Verdict { Level = "fixed", Note = T("Le nettoyage d'un pont démoli ne part plus que d'un jeu (0.7.15).", "The clean-up of a bulldozed bridge now goes from one game only (0.7.15).") },
             ["sushiflux_betterpriority"] = () => new Verdict { Level = "caution", Note = T("Ses décisions automatiques ne partent plus que d'un jeu (0.7.15) : à vérifier en partie.", "Its automatic decisions now go from one game only (0.7.15): to check in a session.") },
             ["jm_german_trafficlights"] = () => new Verdict { Level = "caution", Note = T("Découpe ses ensembles au rythme des pas (0.7.15) : à vérifier en partie.", "Splits its presets at the steps' pace (0.7.15): to check in a session.") },
-            ["tf3_signale_de_1"] = () => new Verdict { Level = "caution", Note = T("Freine les trains près de la caméra d'un joueur : à vérifier en partie.", "Brakes the trains near a player's camera: to check in a session.") },
+            // (0.8.6, #276 and Elias's reports: its scripts read, docs/MODS.md) its clean-up paced by the PC's clock made the same
+            // (MPFEVER_SIGNALECLOCK), its camera the host's (mpfever_modauto.lua)
+            ["tf3_signale_de_1"] = () => new Verdict { Level = "caution", Note = T("Jamais en mod personnel. Freine les trains près de la caméra de l'hôte ; réglage « Einfach / Simple » conseillé en multijoueur (0.8.6).", "Never as a personal mod. Brakes the trains near the host's camera; its « Einfach / Simple » setting is advised in multiplayer (0.8.6).") },
             ["jm_german_railroadcrossings"] = () => new Verdict { Level = "caution", Note = T("Risqué : crée ses objets à des moments propres à chaque jeu (resyncs possibles).", "Risky: makes its objects at moments of each game's own (resyncs likely).") },
             ["jm_signal_builder"] = () => new Verdict { Level = "caution", Note = T("Risqué : crée ses objets selon l'horloge du PC (resyncs possibles).", "Risky: makes its objects by the PC's clock (resyncs likely).") },
         };
@@ -77,6 +79,8 @@ namespace MPFever
             "jansc_fehlerstellen", "train_horns_1", "square_better_minimap", "build_anyway_1", "zhenya_doubleclick_to_edit",
             // (0.7.15, Elias's wish list)
             "bostrab_signals", "db_class_430_neu", "mrnickert_ultimate_metro",
+            // (0.8.6: scripts read, Import Hub and Era Industries: Oil Platform)
+            "hary_goods_complex", "era_oil_platform",
         };
         static readonly string[] FixedHostNames = { "visual_auto_namer", "gameburrow_destinationdisplays" };
         static readonly string[] Fixed0613 =

@@ -2,6 +2,58 @@ MPFever - Changelog
 ===================
 
 0.8.6 - (in progress)
+  - NEW game option « Commodity market » (#277, Akamari's idea; off by default, both company modes, lobby group « Trade between
+    players »): every cargo the map's industries make or take and the towns ask for has a price index (100 at the opening). Once
+    a game month the host reads the game's own yearly figures (what the consumers could take, what reached them, what was made)
+    and moves each price part of the way to its target: a cargo the consumers lack goes up, one made far beyond the demand goes
+    down, so the players' own transport moves the prices both ways. A company buys lots at the month's price and sells them back
+    at the month's price less 2 %; the money goes to and comes from the market. Parameters: the lot's value, the speed of the
+    prices, the lots a month per cargo; 100 lots of a cargo at most. Its tab « Commodities » in the MPFever window. Test:
+    tests/test_feat_cargo.py.
+  - DIAGNOSTIC (#150, #274): "industriesDigest", a diagnostic part of the checks (logged only, never a reason to reload): the
+    production state of every industry (its stock list's runtime data), to tell at which check the industries went apart first.
+    MPFEVER_INDDIGEST=0: not measured. Test: tests/test_inddigest086.py.
+  - FIX (#278, Creeper + Akamari): two players bulldozed a construction at the same step. Both builds' signatures read "one
+    construction removed": the host took its own demolition for the engine's second application of the other player's replay,
+    never shipped it, and kept one construction less (owners c1 45/46, a resynchronisation). The signature now names which
+    constructions a build takes away (file and place; "?" when one side cannot tell, which matches any). MPFEVER_SIGRM=0: the
+    counts only, as before. Test: tests/test_sigrm086.py.
+  - FIX (#272, yoyo + Bence, reproduced by the autotest terrainlead with MPFEVER_TERRAINLEAD_ATHOLD=1): a terrain edit and a
+    held build at the same step were applied in another order on the two games (the builder's build first on its game, the
+    edit first on the game of the player who shaped the ground while standing at that step): other free ids from there, a drift
+    20 minutes later. One order on every game now: an edit made while builds of its step were still to come on its builder's
+    game ("early") goes before them everywhere (those builds, the announcer's own held one too, wait for it); any other edit
+    goes after the builds announced for its step. An early edit that comes after the build was applied is said in the log
+    ("TERRAIN ORDER"). MPFEVER_TERRAINORDER=0: as before. Test: tests/test_terrainorder086.py.
+  - FIX (#277, Akamari): a share sold back gave at most the average price its seller had paid (520 392 for a share priced
+    7.4 million; a share bought at 7.4 million and sold at once gave 2.8 million), while the window said "Selling a share gives
+    you its price of the moment". A share now sells back to its company at the month's price less 2 %, and the money a
+    company got from selling its shares (less what it paid to buy them back) is not counted in its price, so that buying a
+    friend's shares never raises their price (no pump). The sell button shows what the sale gives. MPFEVER_STOCKSELLPRICE=0:
+    as before. Tests: tests/test_stocksell086.py (tests/test_feat_stock.py runs the old rule).
+  - MODS (#276, the user's rule): a player's mods taken for personal by hand that change the game ("Deutsche Signale" in
+    #276: the games apart within 23 s, a resynchronisation every 3 to 5 minutes) are told to every player in the lobby, before
+    the start, by the host (chat and log), once per player and list; only the mods found personal by their files (the
+    interface alone) stay silent. MPFEVER_MODRISKLOBBY=0: the chat at the load only, as before. Test:
+    tests/test_modrisklobby086.py.
+  - MODS (Elias, #276; scripts read): "Deutsche Signale" swept its orphan lamps after every load for 2 ms of the PC's clock:
+    each PC freed other ids at other steps. Its clock is now the same on every game (MPFEVER_SIGNALECLOCK=0: as before), its
+    camera (its signals brake the trains near it) is the host's only (modauto's strict list), and the launcher says: never as a
+    personal mod, « Einfach / Simple » advised. Import Hub and Era Industries: Oil Platform read: they work. Test:
+    tests/test_signale086.py.
+  - DIAGNOSTIC (#274): with Responsive builds, a player's next build 2 steps later split a segment of the one before before its
+    ids were read: "buildIds" told a difference that was none, 49 minutes before the real drift. Each build's ids are read as
+    soon as the engine has applied it, at the same place on every game. MPFEVER_IDREADPOST=0: as before. Test:
+    tests/test_idreadpost086.py.
+  - DIAGNOSTIC (#274, #150): #274's drift began as one cargo item more on one game, and the drift dumps held no stock. They now
+    hold the cargo waiting in each stock (its holder's kind and place), each industry's stock list (hash, rules) and the cargo
+    on board by line. MPFEVER_SDUMPSTOCKS=0: not. Test: tests/test_sdumpstocks086.py.
+  - DIAGNOSTIC: tools/drift_diff.py says "SAME WORK, OTHER ORDER" when two games made the same operations in another order (two
+    actions at one step, #272) and lists each game's operations outside the engine's systems with their callers. Test:
+    tests/test_driftorder086.py.
+  - REPORTS (#278, #272): « Report a problem » also takes the evening's earlier sessions (two at most, of the last 8 hours: their
+    logs and drift files, no savegame) under session-earlier/: a game started again had put its folder in place of the one
+    where the resync happened. MPFEVER_REPORTEARLIER=0: the current ones only; =<hours>. Test: tests/test_reportearlier086.py.
   - TESTS: the autotests (no settings.txt) ran without « Responsive builds » (MPFEVER_BUILDLEAD, read on "1" only), which every
     player has on by default. The session settings their environment leaves unset now go to the test games with the players'
     defaults (a variable set in the environment, or in MPFEVER_ENV_HOST / _CLIENT, still decides). MPFEVER_TESTDEFAULTS=0: as

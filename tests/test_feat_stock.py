@@ -22,6 +22,10 @@ Run: python tests/test_feat_stock.py
 import os
 import sys
 
+# (0.8.6, #277) these are the 0.6 rules: a sale at most at the average price paid, the price on the whole value. The 0.8.6 rule
+# (the month's price, the money of the shares out of the price) is tested by tests/test_stocksell086.py
+os.environ["MPFEVER_STOCKSELLPRICE"] = "0"
+
 try:
     import lupa.lua52 as lua52
 except ImportError:

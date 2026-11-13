@@ -748,6 +748,99 @@
   },
   {
    "desc": [
+    "Chaque marchandise a un cours qui suit l'offre et la demande de la carte : achetez des lots quand elle manque, revendez-les quand elle monte. Vos transports font bouger les cours.",
+    "Every cargo has a price that follows the map's supply and demand: buy lots when it is short, sell them when it rises. Your transport moves the prices."
+   ],
+   "id": "cargo",
+   "modes": "both",
+   "module": "cargo",
+   "params": [
+    {
+     "default": "50000",
+     "id": "lot",
+     "label": [
+      "Valeur d'un lot (cours 100)",
+      "Lot value (price 100)"
+     ],
+     "perPlayer": false,
+     "values": [
+      {
+       "en": "10000 $",
+       "fr": "10000 $",
+       "v": "10000"
+      },
+      {
+       "en": "50000 $",
+       "fr": "50000 $",
+       "v": "50000"
+      },
+      {
+       "en": "200000 $",
+       "fr": "200000 $",
+       "v": "200000"
+      }
+     ]
+    },
+    {
+     "default": "33",
+     "id": "speed",
+     "label": [
+      "Vitesse des cours",
+      "Price speed"
+     ],
+     "perPlayer": false,
+     "values": [
+      {
+       "en": "20 %",
+       "fr": "20 %",
+       "v": "20"
+      },
+      {
+       "en": "33 %",
+       "fr": "33 %",
+       "v": "33"
+      },
+      {
+       "en": "50 %",
+       "fr": "50 %",
+       "v": "50"
+      }
+     ]
+    },
+    {
+     "default": "10",
+     "id": "limit",
+     "label": [
+      "Lots par mois et marchandise",
+      "Lots a month per cargo"
+     ],
+     "perPlayer": false,
+     "values": [
+      {
+       "en": "5",
+       "fr": "5",
+       "v": "5"
+      },
+      {
+       "en": "10",
+       "fr": "10",
+       "v": "10"
+      },
+      {
+       "en": "20",
+       "fr": "20",
+       "v": "20"
+      }
+     ]
+    }
+   ],
+   "title": [
+    "Bourse des marchandises",
+    "Commodity market"
+   ]
+  },
+  {
+   "desc": [
     "Le salon apparaît dans la liste publique des parties, avec votre identifiant Steam : n'importe quel joueur de la même version peut le rejoindre par Steam, sans port à ouvrir.",
     "The lobby shows in the public list of games, with your Steam id: any player with the same version can join it through Steam, with no port to open."
    ],

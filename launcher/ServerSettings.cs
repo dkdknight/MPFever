@@ -943,6 +943,7 @@ namespace MPFever
                 case "perms": return T("Équipes", "Teams");
                 case "trade": return T("Commerce entre entreprises", "Trade between companies");
                 case "stock": return T("Bourse", "Stock market");
+                case "cargo": return T("Bourse des marchandises", "Commodity market");
             }
             return m;
         }

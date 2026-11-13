@@ -25,6 +25,7 @@
         "mpfever_feat_perms.lua",
         "mpfever_feat_trade.lua",
         "mpfever_feat_stock.lua",
+        "mpfever_feat_cargo.lua",
         "mpfever_feat_public.lua",
         "mpfever_modauto.lua",
         "mpfever_asset.con.lua",

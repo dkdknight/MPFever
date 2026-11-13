@@ -403,6 +403,58 @@ namespace MPFever
 
         sealed class Entry { public string Path, Name; }
 
+        /// <summary>(0.8.6) The sessions of the last hours next to the current ones (the same sessions folder), newest first, two
+        /// at most: a game started again (a new session after "back to the main menu", or after a crash) put its folder in place
+        /// of the one where the resync happened, and the report held only the later one (#278: Creeper's first session of the
+        /// evening, its first resync, was in no report; #272: the first drift). MPFEVER_REPORTEARLIER=0: the current ones only,
+        /// as before; MPFEVER_REPORTEARLIER=&lt;hours&gt; (8 by default).</summary>
+        public static List<string> EarlierSessions(IEnumerable<string> current)
+        {
+            var res = new List<string>();
+            var sw = Environment.GetEnvironmentVariable("MPFEVER_REPORTEARLIER");
+            if (sw == "0") return res;
+            double hours = 8;
+            if (!string.IsNullOrEmpty(sw) && double.TryParse(sw, NumberStyles.Float, CultureInfo.InvariantCulture, out var h) && h > 0) hours = h;
+            try
+            {
+                var cur = new HashSet<string>(current.Select(d => Path.GetFullPath(d).TrimEnd('\\', '/')), StringComparer.OrdinalIgnoreCase);
+                var since = DateTime.Now.AddHours(-hours);
+                foreach (var parent in cur.Select(Path.GetDirectoryName).Where(p => p != null && Directory.Exists(p)).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    var found = Directory.GetDirectories(parent)
+                        .Where(d => !cur.Contains(Path.GetFullPath(d).TrimEnd('\\', '/')))
+                        .Select(d => new { d, t = LastActivity(d) })
+                        .Where(x => x.t >= since)
+                        .OrderByDescending(x => x.t)
+                        .Take(2)
+                        .Select(x => x.d);
+                    res.AddRange(found);
+                }
+            }
+            catch { }
+            return res.Take(2).ToList();
+        }
+
+        /// <summary>When a session folder was last written to: its mod.log, else the folder itself.</summary>
+        static DateTime LastActivity(string dir)
+        {
+            try
+            {
+                var log = Path.Combine(dir, "mod.log");
+                return File.Exists(log) ? File.GetLastWriteTime(log) : Directory.GetLastWriteTime(dir);
+            }
+            catch { return DateTime.MinValue; }
+        }
+
+        /// <summary>The files of an earlier session that a report takes: the logs and the drift diagnostic (no savegame).</summary>
+        public static bool EarlierFile(string path)
+        {
+            var n = Path.GetFileName(path).ToLowerInvariant();
+            if (n.StartsWith("drift_") || n.StartsWith("sdump_drift") || n == "native_drift.txt") return true;
+            return n == "mod.log" || n == "out.log" || n == "in.log" || n == "native.log" || n == "native_events.log" || n == "results.log"
+                || n == "resync_claims.txt" || n == "companies.txt" || n == "identity.txt";
+        }
+
         /// <summary>Writes the zip: the session folders given (the current game's first), the launcher's logs of today and
         /// the previous run's, the game's log (and the previous one), its newest crash dump, and report.txt (what the zip
         /// is, the session's state). Returns the zip's path.</summary>
@@ -422,9 +474,14 @@ namespace MPFever
                 if (Private(name)) { var why = PrivateNote(name); if (!privLeft.Contains(why)) privLeft.Add(why); return; }
                 try { if (File.Exists(path)) files.Add(new Entry { Path = path, Name = name.Replace('\\', '/') }); } catch { }
             }
-            foreach (var dir in sessionDirs.Where(d => d != null && Directory.Exists(d)).Distinct())
+            var current = sessionDirs.Where(d => d != null && Directory.Exists(d)).Distinct().ToList();
+            foreach (var dir in current)
                 foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
                     Add(f, "session/" + Path.GetFileName(dir) + "/" + f.Substring(dir.Length).TrimStart('\\', '/'));
+            // (0.8.6) the evening's earlier sessions too, their logs and drift files only (see EarlierSessions)
+            foreach (var dir in EarlierSessions(current))
+                foreach (var f in Directory.GetFiles(dir, "*", SearchOption.TopDirectoryOnly).Where(EarlierFile))
+                    Add(f, "session-earlier/" + Path.GetFileName(dir) + "/" + Path.GetFileName(f));
             try
             {
                 foreach (var f in Directory.GetFiles(LogsDir, "launcher-*.log").OrderByDescending(File.GetLastWriteTimeUtc).Take(3))

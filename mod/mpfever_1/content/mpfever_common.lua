@@ -1152,7 +1152,60 @@ function C.buildSig(m)
 				.. ((type(t) == "table" and type(t[13]) == "number") and string.format("%.0f,%.0f", t[13], t[14] or 0) or "?")
 		end
 	end
+	-- (0.8.6, #278) which constructions it takes away, by file and place, after "|rm|": two players' demolitions at the same step
+	-- both read "one construction removed". The host took its own for the engine's second application of the other player's
+	-- replay, never shipped it, and kept one construction less than the other game (Creeper, 2026-11-13 00:20:26, a
+	-- resynchronisation). A removal whose construction is not known here gives "?", which C.sigSame takes for any.
+	-- MPFEVER_SIGRM=0: counts only, as before
+	if os.getenv("MPFEVER_SIGRM") ~= "0" and type(m.toRemove) == "table" and #m.toRemove > 0 then
+		local rms = {}
+		for i = 1, #m.toRemove do rms[i] = C.sigRemoved(m.toRemove[i]) end
+		parts[#parts + 1] = "|rm|" .. table.concat(rms, ";")
+	end
 	return table.concat(parts, "/")
+end
+
+-- (0.8.6, #278) a construction taken away, for C.buildSig: "file@x,y" from a reference ({ k = "con", f = ..., p = ... }) or
+-- from the entity itself (its CONSTRUCTION component), "?" when neither tells it
+function C.sigRemoved(r)
+	local f, x, y = nil, nil, nil
+	if type(r) == "table" then
+		f = r.f
+		local p = r.p
+		if type(p) == "table" then x, y = p.x or p[1], p.y or p[2] end
+	elseif type(r) == "number" and r >= 0 then
+		pcall(function()
+			local c = api.engine.getComponent(r, api.type.ComponentType.CONSTRUCTION)
+			if c then
+				f = c.fileName
+				local t = c.transf
+				x, y = t[13], t[14]
+			end
+		end)
+	end
+	if type(f) ~= "string" or type(x) ~= "number" or type(y) ~= "number" then return "?" end
+	return f:match("[^/]*$") .. "@" .. string.format("%.0f,%.0f", x, y)
+end
+
+-- (0.8.6, #278) whether two signatures of C.buildSig name the same build: the same counts and places, and the same
+-- constructions taken away where both know them ("?" matches any; a signature without "|rm|" part, an older one, compares
+-- by its counts as before)
+function C.sigSame(a, b)
+	if a == b then return true end
+	if type(a) ~= "string" or type(b) ~= "string" then return false end
+	local ba, ra = a:match("^(.-)/|rm|(.*)$")
+	local bb, rb = b:match("^(.-)/|rm|(.*)$")
+	if not ra and not rb then return false end
+	if (ba or a) ~= (bb or b) then return false end
+	if not ra or not rb then return true end
+	local la, lb = {}, {}
+	for s in (ra .. ";"):gmatch("([^;]*);") do la[#la + 1] = s end
+	for s in (rb .. ";"):gmatch("([^;]*);") do lb[#lb + 1] = s end
+	if #la ~= #lb then return false end
+	for i = 1, #la do
+		if la[i] ~= lb[i] and la[i] ~= "?" and lb[i] ~= "?" then return false end
+	end
+	return true
 end
 
 -- (0.7.7, issue #133) The signature of what a rebuilt form builds: the shipped build (m) with the node configurations the

@@ -66,6 +66,13 @@ M.LIMIT = 2          -- shares a company buys of another one (or of itself) in a
 M.PROTECT = 24       -- months a new company's shares are not for sale (the host's "protect" parameter since 0.6.12: 24, 60 or 120)
 M.SPREAD = 98        -- a sale gets 98 % (against buying and selling over and over)
 M.FLOOR_MIN = 1000   -- the lowest price of a share, whatever the start money
+-- (0.8.6, #277) A share sells back to its company at the month's price, less 2 % (M.SPREAD). Before, a sale got at most what the
+-- seller had paid on average: Akamari's first shares, bought at the floor, sold for 520 392 at a price of 7.4 million; one bought
+-- at 7.4 million and sold back at once gave 2.8 million (the average), the rest stayed with the other company, again and again.
+-- And no pump between friends: the money a company got from the sale of its shares (less what it paid to buy them back) is not
+-- counted in its price (S.raised), so buying shares of a friend's company never raises their price. MPFEVER_STOCKSELLPRICE=0:
+-- as before (at most the average price paid, the price on the whole value)
+M.sellAtPrice = function() return os.getenv("MPFEVER_STOCKSELLPRICE") ~= "0" end
 M.NEWS = 20          -- what happened, the last 20 (told in every game's chat)
 M.RESEND = 15        -- seconds (real time, on the host) before a price not applied yet is sent again
 M.SETTLE = 5         -- seconds a company's entity is known before the host reads its account (the engine asserts before)
@@ -222,7 +229,7 @@ M.checkSell = function(S, reg, sellerId, targetId, n)
 	if not n or n < 1 or n > h then return false, "count" end
 	local c = num(get2(S.cost, k, hk)) or 0
 	local part = math.floor(c * n / h)
-	local proceeds = math.floor(math.min(P * n, part) * M.SPREAD / 100)
+	local proceeds = math.floor((M.sellAtPrice() and P * n or math.min(P * n, part)) * M.SPREAD / 100)
 	local own = H.id == T.id
 	if not own then
 		-- (the company buys them back with its money of the month, as the host measured it)
@@ -251,7 +258,7 @@ local function addCum(S, name, k, amount) set1(S, name, k, (num(S[name] and S[na
 
 -- every entry of a company that is no longer listed (taken over, gone)
 local function forget(S, k)
-	for _, name in ipairs({ "hold", "cost", "bought", "price", "prev", "value", "result", "cash", "div", "until", "out" }) do set1(S, name, k, nil) end
+	for _, name in ipairs({ "hold", "cost", "bought", "price", "prev", "value", "result", "cash", "div", "until", "out", "raised" }) do set1(S, name, k, nil) end
 end
 
 -- company h's shares of company k go to company m (taken over or merged into it): its own when m is k
@@ -346,7 +353,9 @@ local function applyPrice(st, S, param, env)
 	local listed = 0
 	for _, row in ipairs(rows) do
 		local k = key(row.id)
-		set1(S, "price", k, math.max(floor, math.floor(row.v / M.SHARES)))
+		-- (0.8.6, #277: on the value less the money its shares brought in, see M.sellAtPrice)
+		local raised = M.sellAtPrice() and math.max(0, num(S.raised and S.raised[k]) or 0) or 0
+		set1(S, "price", k, math.max(floor, math.floor((row.v - raised) / M.SHARES)))
 		set1(S, "value", k, row.v)
 		set1(S, "result", k, row.r)
 		set1(S, "cash", k, row.c)
@@ -431,6 +440,7 @@ local function buy(st, S, param, env)
 	book(env, B, -cost)
 	-- (another company's shares: the money goes to it, D5. Its own: to the market)
 	if not info.own then book(env, T, cost) end
+	if not info.own and M.sellAtPrice() then addCum(S, "raised", k, cost) end
 	local h = (num(get2(S.hold, k, bk)) or 0) + n
 	set2(S, "hold", k, bk, h)
 	set2(S, "cost", k, bk, (num(get2(S.cost, k, bk)) or 0) + cost)
@@ -454,6 +464,7 @@ local function sell(st, S, param, env)
 	if not info.own then
 		book(env, T, -info.proceeds)
 		set1(S, "out", k, (num(S.out and S.out[k]) or 0) + info.proceeds)
+		if M.sellAtPrice() then addCum(S, "raised", k, -info.proceeds) end
 	end
 	book(env, H, info.proceeds)
 	local h = (num(get2(S.hold, k, hk)) or 0) - n
@@ -834,7 +845,12 @@ M.view = function(lines, T, myBal)
 			elseif n >= 1 and not row.status then
 				row.buy = { n = 1, cost = c.price, allowed = myBal == nil or myBal >= c.price }
 			end
-			if myN > 0 then row.sell = { n = 1 } end
+			if myN > 0 then
+				-- (0.8.6, #277: what the sale of one share gives, shown on its button)
+				local _, myCost = holdOf(c.id, v.me)
+				local each = M.sellAtPrice() and c.price or math.min(c.price, math.floor((myCost or 0) / myN))
+				row.sell = { n = 1, proceeds = math.floor(each * M.SPREAD / 100) }
+			end
 			if not row.buy and not row.takeover and n < 1 and not row.status then
 				row.note = c.float < 1 and T("Plus aucune action sur le marché.", "No share left on the market.")
 					or T("Limite du mois atteinte (2 actions).", "This month's limit reached (2 shares).")
@@ -922,7 +938,7 @@ function M.ui(u)
 			end, armed, r.takeover.allowed and (myBal == nil or myBal >= r.takeover.total))
 		end
 		if r.sell then
-			buttons[#buttons + 1] = u.button(T("Vendre 1", "Sell 1"), function() u.request("sell", { co = r.id, n = 1 }) end, false, true)
+			buttons[#buttons + 1] = u.button(r.sell.proceeds and fmt(T("Vendre 1 (%s)", "Sell 1 (%s)"), money(r.sell.proceeds)) or T("Vendre 1", "Sell 1"), function() u.request("sell", { co = r.id, n = 1 }) end, false, true)
 		end
 		add(u.muted(info))
 		if r.status then add(u.muted(r.status)) end
@@ -993,7 +1009,7 @@ function M.uiRich(u, v, myBal, now)
 			end, armed, r.takeover.allowed and (myBal == nil or myBal >= r.takeover.total))
 		end
 		if r.sell then
-			buttons[#buttons + 1] = u.button(T("Vendre 1", "Sell 1"), function() u.request("sell", { co = r.id, n = 1 }) end, false, true)
+			buttons[#buttons + 1] = u.button(r.sell.proceeds and fmt(T("Vendre 1 (%s)", "Sell 1 (%s)"), money(r.sell.proceeds)) or T("Vendre 1", "Sell 1"), function() u.request("sell", { co = r.id, n = 1 }) end, false, true)
 		end
 		if #buttons > 0 then kids[#kids + 1] = u.row(buttons) end
 		add(u.gap(8))
@@ -1062,7 +1078,7 @@ function M.uiCards(u, v, myBal, now)
 			end, armed, r.takeover.allowed and (myBal == nil or myBal >= r.takeover.total))
 		end
 		if r.sell then
-			buttons[#buttons + 1] = u.button(T("Vendre 1", "Sell 1"), function() u.request("sell", { co = r.id, n = 1 }) end, false, true)
+			buttons[#buttons + 1] = u.button(r.sell.proceeds and fmt(T("Vendre 1 (%s)", "Sell 1 (%s)"), money(r.sell.proceeds)) or T("Vendre 1", "Sell 1"), function() u.request("sell", { co = r.id, n = 1 }) end, false, true)
 		end
 		if #buttons > 0 then kids[#kids + 1] = u.gap(4); kids[#kids + 1] = u.row(buttons) end
 		add(u.gap(8))

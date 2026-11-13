@@ -688,6 +688,7 @@ local function setup()
 		sales = "::/gui/entity_window/icons/symbol_shopping_cart.tga",
 		contracts = "::/gui/entity_window/icons/symbol_cargo.tga",
 		stock = "::/gui/radial_menu/icons/symbol_coin_stack_48.tga",
+		cargo = "::/gui/entity_window/icons/symbol_cargo.tga",
 		public = "::/gui/menu/icons/mod_management/mod-public.tga",
 		join_bans = "::/gui/builtin/window/icons/cancel.tga",
 		join_approve = "::/gui/menu/icons/symbol_check.tga",
@@ -814,7 +815,7 @@ local function setup()
 		local groups = {
 			{ title = T("Coopération", "Co-op"), ids = { "journal", "builtby", "playerview", "perms", "plans" } },
 			{ title = T("Compétition", "Competition"), ids = { "goal", "stats", "yearly", "market", "territory", "handicap", "tenders" } },
-			{ title = T("Économie entre joueurs", "Trade between players"), ids = { "sales", "contracts", "stock" } },
+			{ title = T("Économie entre joueurs", "Trade between players"), ids = { "sales", "contracts", "stock", "cargo" } },
 			{ title = T("Partie publique", "Public game"), ids = { "public" }, prefix = "join_" },
 			{ title = T("Autres", "Other"), ids = {} },
 		}

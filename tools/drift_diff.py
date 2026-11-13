@@ -95,6 +95,25 @@ def compare(dir_a, dir_b, check=None, out=print):
         out("  on B only: " + (", ".join("%s by %s" % x for x in res["only_b"][:20]) or "-"))
         systems = collections.Counter(s for _, s in res["only_a"] + res["only_b"])
         out("  systems involved: " + (", ".join("%s (%d)" % kv for kv in systems.most_common()) or "-"))
+        # (0.8.6, #272) the same work in another order: both games made as many additions and removals from the same places
+        # (system and caller), only the ids differ (each took the free ids in its own order). Two actions applied in another
+        # order at that step, not a computation that differs: the order of each game's operations made outside the engine's
+        # systems ("-": commands, builds, terrain) follows, with their callers.
+        ka = collections.Counter((o[0], s, c) for o, s, c in oa)
+        kb = collections.Counter((o[0], s, c) for o, s, c in ob)
+        res["same_work_other_order"] = bool(oa) and ka == kb
+        if res["same_work_other_order"]:
+            out("  SAME WORK, OTHER ORDER: both games added and removed as many entities from the same systems and callers;")
+            out("  only the order differs (two actions applied in another order at this step?). Outside the systems:")
+        if oa or ob:
+            sa_ = [("%s@%s" % (o, c)) for o, s, c in oa if s == "-"]
+            sb_ = [("%s@%s" % (o, c)) for o, s, c in ob if s == "-"]
+            if sa_ or sb_:
+                out("  A, in order: " + (" ".join(sa_[:30]) or "-"))
+                out("  B, in order: " + (" ".join(sb_[:30]) or "-"))
+                ca_ = [c for o, s, c in oa if s == "-"]
+                cb_ = [c for o, s, c in ob if s == "-"]
+                res["callers_a"], res["callers_b"] = ca_, cb_
     if first_q is not None:
         out("first step whose free-id queue differs: %d (A %s, B %s)" % (first_q, sa[first_q]["queue"], sb[first_q]["queue"]))
     else:
