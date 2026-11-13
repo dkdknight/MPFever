@@ -71,8 +71,8 @@ it is stable enough.
   [x] One company per player: a slow drift found and fixed, the account clean-up of the money popups made the same on
       every game (0.8.6: two games on one PC drifted in 6 runs of 10, in 0 of 10 with the fix)
   [x] The game's « Company value » chart shows each player's own company (0.8.6)
-  [ ] A new farm (an industry with fields) built by a player gets the same fields on every game (#279: the game fills
-      a farm's fields at random each time it builds one; a resynchronisation follows for now)
+  [x] A new farm (an industry with fields) built by a player gets the same fields on every game (0.8.7, #279: the
+      game filled a farm's fields at random each time it built one; the other games now get the builder's fields)
   [ ] The last recurring desyncs: the people/towns drift between PCs (#150), reproduced on two PCs with no input (2026-11-11); since 0.8.2
       every report records where a drift begins (drift diagnostic), since 0.8.4 its very first moment even after a
       resynchronisation: next, the causes it names. Builds rebuilt otherwise on another game: #261
