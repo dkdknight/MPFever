@@ -44,10 +44,19 @@ CT = { MOVE_PATH_AIRCRAFT = 1, AIRCRAFT = 2, ANIMAL = 3, MOVE_PATH = 4, SIM_ENTI
   SIM_ENTITY_AT_TERMINAL = 7, SIM_ENTITY_AT_BUILDING = 8, SIM_ENTITY_IDLE = 9, SIM_PERSON_AT_VEHICLE = 10, SIM_PERSON = 11, SIM_CARGO = 12 }
 local byName = {}
 for k, v in pairs(CT) do byName[v] = k end
-ENTS = { MOVE_PATH_AIRCRAFT = { 701, 702 }, AIRCRAFT = { 701, 702 }, ANIMAL = { 900, 901, 902 }, SIM_PERSON = { 5, 6 }, SIM_ENTITY_MOVING = { 5 } }
-api = { type = { ComponentType = CT }, engine = {} }
+-- (like the real engine: the component loop lists neither the aircraft nor the animals; their systems do)
+ENTS = { TRANSPORT_VEHICLE = { 701, 702, 800 }, SIM_PERSON = { 5, 6 }, SIM_ENTITY_MOVING = { 5 } }
+MODE = MODE or "systems"
+local function each(list) return function(cb) for _, e in ipairs(list) do cb(e) end end end
+api = { type = { ComponentType = CT }, engine = { system = {} } }
+if MODE == "systems" then
+  api.engine.system.aircraftMoveSystem = { forEach = each({ 702, 701 }) }
+  api.engine.system.animalMoveSystem = { forEach = each({ 902, 900, 901 }) }
+end
 function api.engine.getComponent(e, ct)
   local step = (T - 1000) / 200
+  if (ct == CT.MOVE_PATH_AIRCRAFT or ct == CT.AIRCRAFT) and e ~= 701 and e ~= 702 then return nil end
+  if ct == CT.ANIMAL and (e < 900 or e > 902) then return nil end
   if ct == CT.MOVE_PATH_AIRCRAFT then
     local sp = 50 + e + step * 0.5
     if e == 702 and step >= 30 then sp = sp + SKEW end
@@ -82,9 +91,9 @@ E = { api = api, log = function(s) LOGS[#LOGS + 1] = s end, gameTime = function(
 '''
 
 
-def run_game(skew, steps=60, drift_at=None):
+def run_game(skew, steps=60, drift_at=None, mode="systems"):
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
-    L.execute("SKEW = " + repr(skew) + "\n" + GAME)
+    L.execute("SKEW = " + repr(skew) + "\nMODE = " + repr(mode) + "\n" + GAME)
     M = L.execute(mod)
     L.globals().M = M
     L.execute("FD = M.init(E)")
@@ -104,7 +113,13 @@ check(A.eval("FD.count") == 60, "one entry a step, a step noted once even when u
 logs = "\n".join(A.eval("LOGS")[i] for i in range(1, len(A.eval("LOGS")) + 1))
 check("fine diagnostic: on" in logs and "finediag_57.txt written" in logs, "said in the log", logs[:200])
 check("A 701 speed=751 " in fa and "pathPos0.pos01=0.20000000000000001" in fa and "aircraftState.dyn.v=751" in fa and "ac.reservedTo=-1" in fa, "every aircraft's numbers, nested ones too, exact (%.17g)")
-check("N 3 " in fa and "\na 900 " in fa, "the animals' sums and each one's numbers")
+check("N 3 " in fa and "\na 900 " in fa, "the animals' sums and each one's numbers (found by their system: the component loop lists none)")
+check(fa.index("\nA 701 ") < fa.index("\nA 702 ") and "\nA 800 " not in fa, "  the aircraft by id, a vehicle that is no aircraft left out")
+V = run_game(0.0, steps=60, drift_at=40, mode="vehicles")
+fv = V.eval('FILES["D/finediag_57.txt"]')
+check(fv is not None and "\nA 701 speed=" in fv and "\nA 702 speed=" in fv and "\nA 800 " not in fv, "no aircraft system: the aircraft found among the transport vehicles")
+vlogs = "\n".join(V.eval("LOGS")[i] for i in range(1, len(V.eval("LOGS")) + 1))
+check("N 0 " in fv, "  no animal system and no component loop: none, said", fv[:0])
 check("P SIM_ENTITY_MOVING 1 " in fa and "SIM_PERSON 2 " in fa, "the persons and cargo by state")
 check(fa.count("\nP ") == 2, "  at the first step, then every 25 steps (MPFEVER_FINEDIAG_PERSONS): twice in the 48 steps written", fa.count("\nP "))
 

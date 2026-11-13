@@ -40,6 +40,52 @@ local function pathInfo(p)
 	return tostring(n) .. "/" .. tostring(off)
 end
 
+-- the entities of a kind, sorted by id. The engine's per-component loop does not list every component (ANIMAL and
+-- MOVE_PATH_AIRCRAFT give nothing: 0.8.7 diagnostic build, first two-PC run), so the system that moves them is asked first
+-- (api.engine.system.<name>.forEach), then the component loop; with ct, only the entities that have that component.
+-- how = the way they were found (logged once a minute).
+local function listOf(E, sysName, ctName, ct)
+	local api, r, how = E.api, {}, "none"
+	if sysName then
+		pcall(function()
+			local sys = api.engine.system[sysName]
+			local ret = sys.forEach(function(e) if type(e) == "number" then r[#r + 1] = e end end)
+			if #r == 0 and type(ret) == "table" then for i = 1, #ret do r[#r + 1] = ret[i] end end
+		end)
+		if #r > 0 then how = sysName end
+	end
+	if #r == 0 and ctName then
+		r = E.R.entitiesWith(ctName)
+		if #r > 0 then how = "component" end
+	end
+	if ct and #r > 0 and (how ~= "component" or api.type.ComponentType[ctName] ~= ct) then
+		local k = {}
+		for _, e in ipairs(r) do
+			local ok, c = pcall(api.engine.getComponent, e, ct)
+			if ok and c then k[#k + 1] = e end
+		end
+		r = k
+	end
+	table.sort(r)
+	return r, how
+end
+M.listOf = listOf
+
+-- the aircraft: the aircraft system, the component loop, else the transport vehicles that have MOVE_PATH_AIRCRAFT (that
+-- list kept 50 steps: asking a vehicle for a component it has not is slow)
+local function aircraftList(FD)
+	local E = FD.E
+	local CT = E.api.type.ComponentType
+	local r, how = listOf(E, "aircraftMoveSystem", "MOVE_PATH_AIRCRAFT", CT.MOVE_PATH_AIRCRAFT)
+	if #r > 0 then return r, how end
+	if not FD.airByVeh or FD.head - (FD.airByVehAt or 0) >= 50 then
+		FD.airByVeh, FD.airByVehAt = listOf(E, "transportVehicleSystem", "TRANSPORT_VEHICLE", CT.MOVE_PATH_AIRCRAFT), FD.head
+	end
+	local k = {}
+	for i = 1, #FD.airByVeh do k[i] = FD.airByVeh[i] end
+	return k, (#k > 0 and "vehicles" or "none")
+end
+
 function M.init(E)
 	local FD = {
 		E = E, ring = {}, size = tonumber(os.getenv("MPFEVER_FINEDIAG_STEPS") or "") or 6000,
@@ -111,16 +157,14 @@ function M.step(FD)
 	local rec = { t = t }
 	-- every aircraft (by id: the same order on every game while their ids are alike)
 	local air = {}
-	local list = E.R.entitiesWith("MOVE_PATH_AIRCRAFT")
-	table.sort(list)
+	local list, howAir = aircraftList(FD)
 	for _, e in ipairs(list) do
 		local ok, s = pcall(aircraftRec, E, e)
 		air[#air + 1] = "A " .. tostring(e) .. " " .. (ok and s or ("error " .. tostring(s)))
 	end
 	rec.air = table.concat(air, E.NL)
 	-- the animals: sums every step, each one's numbers for the last FD.full steps
-	local an = E.R.entitiesWith("ANIMAL")
-	table.sort(an)
+	local an, howAn = listOf(E, "animalMoveSystem", "ANIMAL", CT.ANIMAL)
 	local sx, sy, sz, ss, stx, sty = 0, 0, 0, 0, 0, 0
 	local keepFull = FD.full > 0
 	local full = keepFull and {} or nil
@@ -157,12 +201,13 @@ function M.step(FD)
 	-- the Leawood drift of 2026-11-11 showed in the persons' digest first)
 	if FD.personsEvery > 0 and FD.head % FD.personsEvery == 0 then
 		local parts = {}
-		local function sums(ct, fields)
+		FD.personsHow = {}
+		local function sums(ct, fields, sysName)
 			local n, acc = 0, {}
 			for i = 1, #fields do acc[i] = 0 end
 			-- (by id: floating-point sums depend on their order)
-			local ents = E.R.entitiesWith(ct)
-			table.sort(ents)
+			local ents, how = listOf(E, sysName, ct, CT[ct])
+			FD.personsHow[#FD.personsHow + 1] = ct .. " " .. #ents .. " (" .. how .. ")"
 			n = #ents
 			if #fields > 0 then
 				for _, e in ipairs(ents) do
@@ -179,13 +224,13 @@ function M.step(FD)
 			parts[#parts + 1] = table.concat(s, " ")
 		end
 		sums("SIM_ENTITY_MOVING", { "expectedArrivalTime", "lineStop0", "lineStop1" })
-		sums("SIM_ENTITY_AT_VEHICLE", { "roundTripCounter", "lineStop0", "lineStop1" })
-		sums("SIM_ENTITY_AT_TERMINAL", { "arrivalTime", "lineStop0", "lineStop1" })
+		sums("SIM_ENTITY_AT_VEHICLE", { "roundTripCounter", "lineStop0", "lineStop1" }, "simEntityAtVehicleSystem")
+		sums("SIM_ENTITY_AT_TERMINAL", { "arrivalTime", "lineStop0", "lineStop1" }, "simEntityAtTerminalSystem")
 		sums("SIM_ENTITY_AT_BUILDING", { "waitingTime" })
 		sums("SIM_ENTITY_IDLE", {})
-		sums("SIM_PERSON_AT_VEHICLE", { "expectedArrivalTime", "part", "place" })
-		sums("SIM_PERSON", { "walkSpeed", "modelIdPerson" })
-		sums("SIM_CARGO", { "speed", "startTime", "pickupTime" })
+		sums("SIM_PERSON_AT_VEHICLE", { "expectedArrivalTime", "part", "place" }, "simPersonAtVehicleSystem")
+		sums("SIM_PERSON", { "walkSpeed", "modelIdPerson" }, "simPersonSystem")
+		sums("SIM_CARGO", { "speed", "startTime", "pickupTime" }, "simCargoSystem")
 		rec.persons = "P " .. table.concat(parts, " ; ")
 	end
 	-- into the ring; the animals' own numbers dropped from the steps older than FD.full
@@ -200,8 +245,9 @@ function M.step(FD)
 	local dt = os.clock() - c0
 	FD.costSum, FD.costN, FD.costMax = FD.costSum + dt, FD.costN + 1, math.max(FD.costMax, dt)
 	if os.clock() - FD.costAt > 60 then
-		E.log(string.format("fine diagnostic: %d step(s) noted in the last minute, %.1f ms a step on average, %.1f ms at most (%d aircraft, %d animals)",
-			FD.costN, FD.costSum * 1000 / math.max(1, FD.costN), FD.costMax * 1000, #list, #an))
+		E.log(string.format("fine diagnostic: %d step(s) noted in the last minute, %.1f ms a step on average, %.1f ms at most (%d aircraft found by %s, %d animals found by %s; %s)",
+			FD.costN, FD.costSum * 1000 / math.max(1, FD.costN), FD.costMax * 1000, #list, howAir, #an, howAn,
+			table.concat(FD.personsHow or {}, ", ")))
 		FD.costSum, FD.costN, FD.costMax, FD.costAt = 0, 0, 0, os.clock()
 	end
 	-- (a drift kept by the mod: every 16 steps, native_drift.txt read again)
