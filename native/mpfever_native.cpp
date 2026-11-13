@@ -1084,6 +1084,139 @@ static DWORD WINAPI WatchAllThreads(void*)
     }
 }
 
+// (0.8.7 diagnostic build, MPFEVER_FPUDIAG=1 or MPFEVER_FINEDIAG=1) The floating-point control of EVERY thread of the game, not only
+// the simulation's (the drift diagnostic says that one, 0x1f80 on both PCs of #284): the thread pools' workers compute other systems,
+// and a driver or an overlay that sets flush-to-zero, denormals-are-zero or another rounding on some threads of one PC would make
+// that PC compute other numbers. Each thread: its name, the module that started it, MXCSR (SSE) and the x87 control word, read
+// from its context (the thread suspended for that read only). At 30 s, then every 60 s, the threads whose values changed. With
+// it, the DLLs loaded in the game that are not Windows' own (overlays, drivers' hooks): once, at 30 s.
+typedef long (WINAPI* NtQitF)(HANDLE, int, void*, u32, u32*);
+typedef long (WINAPI* GetDescF)(HANDLE, wchar_t**);
+typedef void* (WINAPI* LocalFreeF)(void*);
+typedef BOOL (WINAPI* ModFromAddrF)(DWORD, const char*, HMODULE*);
+typedef DWORD (WINAPI* ModNameF)(HMODULE, char*, DWORD);
+typedef BOOL (WINAPI* EnumModsF)(HANDLE, HMODULE*, DWORD, DWORD*);
+struct FpuRow { DWORD tid; u32 mx; u16 cw; u8 seen; };
+static FpuRow g_fpuRows[512];
+static int g_fpuN = 0;
+
+static void FpuModuleOf(Buf& b, uptr addr, ModFromAddrF fromAddr, ModNameF nameOf)
+{
+    HMODULE m = 0;
+    if (addr && fromAddr && fromAddr(0x4 | 0x2, (const char*)addr, &m) && m) {
+        char p[300] = {};
+        DWORD n = nameOf ? nameOf(m, p, 299) : 0;
+        int s = 0;
+        for (DWORD i = 0; i < n; i++) if (p[i] == '\\' || p[i] == '/') s = (int)i + 1;
+        b.str(p + s).str("+").hex(addr - (uptr)m);
+    } else b.str("?").hex(addr);
+}
+
+static DWORD WINAPI FpuDiag(void*)
+{
+    Sleep(30000);
+    HMODULE k = GetModuleHandleW(L"kernel32.dll");
+    HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+    auto snap = (SnapF)GetProcAddress(k, "CreateToolhelp32Snapshot");
+    auto first = (T32F)GetProcAddress(k, "Thread32First");
+    auto next = (T32F)GetProcAddress(k, "Thread32Next");
+    auto openT = (OpenThreadF)GetProcAddress(k, "OpenThread");
+    auto susp = (SuspF)GetProcAddress(k, "SuspendThread");
+    auto res = (SuspF)GetProcAddress(k, "ResumeThread");
+    auto getc = (CtxF)GetProcAddress(k, "GetThreadContext");
+    auto pid = (PidF)GetProcAddress(k, "GetCurrentProcessId");
+    auto qit = nt ? (NtQitF)GetProcAddress(nt, "NtQueryInformationThread") : 0;
+    auto desc = (GetDescF)GetProcAddress(k, "GetThreadDescription");
+    auto lfree = (LocalFreeF)GetProcAddress(k, "LocalFree");
+    auto fromAddr = (ModFromAddrF)GetProcAddress(k, "GetModuleHandleExA");
+    auto nameOf = (ModNameF)GetProcAddress(k, "GetModuleFileNameA");
+    auto enumMods = (EnumModsF)GetProcAddress(k, "K32EnumProcessModules");
+    if (!snap || !first || !next || !openT || !susp || !res || !getc || !pid) { Buf b; b.str("fpu diagnostic: functions missing"); LogLine(b); return 0; }
+    // (the DLLs that are not Windows' own, once)
+    if (enumMods && nameOf) {
+        static HMODULE mods[1024];
+        DWORD need = 0;
+        if (enumMods(GetCurrentProcess(), mods, sizeof(mods), &need)) {
+            int nm = (int)(need / sizeof(HMODULE)); if (nm > 1024) nm = 1024;
+            int sys = 0;
+            Buf b; b.str("fpu diagnostic: DLLs in the game that are not Windows' own:");
+            for (int i = 0; i < nm; i++) {
+                char p[300] = {};
+                DWORD n = nameOf(mods[i], p, 299);
+                bool win = false;
+                for (DWORD j = 0; j + 9 < n; j++) {
+                    char c0 = p[j], c1 = p[j + 1], c2 = p[j + 2];
+                    if ((c0 == '\\') && (c1 == 'W' || c1 == 'w') && (c2 == 'I' || c2 == 'i') && (p[j + 3] == 'N' || p[j + 3] == 'n') && (p[j + 4] == 'D' || p[j + 4] == 'd') && (p[j + 8] == 'S' || p[j + 8] == 's') && p[j + 9] == '\\') { win = true; break; }
+                }
+                if (win) { sys++; continue; }
+                int s = 0;
+                for (DWORD j = 0; j < n; j++) if (p[j] == '\\' || p[j] == '/') s = (int)j + 1;
+                if (b.n > 900) { LogLine(b); b.n = 0; b.str("fpu diagnostic: (more)"); }
+                b.str(" ").str(p + s);
+            }
+            b.str(" (and ").dec(sys).str(" of Windows)");
+            LogLine(b);
+        }
+    }
+    static u8 ctxbuf[0x4D0 + 32];
+    u8* ctx = (u8*)(((uptr)ctxbuf + 15) & ~(uptr)15);
+    DWORD me = GetCurrentThreadId(), mypid = pid();
+    for (int round = 0; ; round++) {
+        HANDLE h = snap(4, 0);
+        if (h == INVALID_HANDLE_VALUE) { Sleep(60000); continue; }
+        u32 te[7] = { 28 };
+        int total = 0, changed = 0, odd = 0;
+        for (int i = 0; i < g_fpuN; i++) g_fpuRows[i].seen = 0;
+        if (first(h, te)) do {
+            if (te[3] != mypid || te[2] == me) continue;
+            HANDLE t = openT(0x0002 | 0x0008 | 0x0040, 0, te[2]);
+            if (!t) continue;
+            u32 mx = 0xFFFFFFFFu; u16 cw = 0xFFFF;
+            if (susp(t) != (DWORD)-1) {
+                for (int i = 0; i < 0x4D0; i++) ctx[i] = 0;
+                *(u32*)(ctx + 0x30) = 0x00100009u;      // (CONTEXT_CONTROL | CONTEXT_FLOATING_POINT)
+                if (getc(t, ctx)) { mx = *(u32*)(ctx + 0x34); cw = *(u16*)(ctx + 0x100); }
+                res(t);
+            }
+            total++;
+            if (mx != 0xFFFFFFFFu && ((mx & 0xFFC0u) != 0x1F80u || cw != 0x027F)) odd++;
+            int r = -1;
+            for (int i = 0; i < g_fpuN; i++) if (g_fpuRows[i].tid == te[2]) { r = i; break; }
+            bool isNew = r < 0;
+            if (isNew && g_fpuN < 512) { r = g_fpuN++; g_fpuRows[r].tid = te[2]; g_fpuRows[r].mx = 0xFFFFFFFFu; g_fpuRows[r].cw = 0xFFFF; }
+            if (r >= 0) {
+                g_fpuRows[r].seen = 1;
+                bool ch = (g_fpuRows[r].mx & 0xFFC0u) != (mx & 0xFFC0u) || g_fpuRows[r].cw != cw;
+                if (round == 0 || ch) {
+                    if (!isNew) changed++;
+                    Buf b;
+                    b.str("fpu diagnostic: thread ").dec(te[2]).str(round == 0 ? "" : (isNew ? " (new)" : " (CHANGED)"));
+                    if (desc && lfree) {
+                        wchar_t* w = 0;
+                        if (desc(t, &w) >= 0 && w) {
+                            b.str(" \"");
+                            for (int i = 0; w[i] && i < 40; i++) { char c = (char)(w[i] < 128 ? w[i] : '?'); b.s[b.n++] = c; }
+                            b.str("\"");
+                            lfree(w);
+                        }
+                    }
+                    uptr start = 0;
+                    if (qit) qit(t, 9, &start, sizeof(start), 0);
+                    b.str(" started by "); FpuModuleOf(b, start, fromAddr, nameOf);
+                    b.str(" MXCSR ").hex(mx & 0xFFC0u).str(" x87 ").hex(cw);
+                    LogLine(b);
+                }
+                g_fpuRows[r].mx = mx; g_fpuRows[r].cw = cw;
+            }
+            CloseHandle(t);
+        } while (next(h, te));
+        CloseHandle(h);
+        Buf b; b.str("fpu diagnostic: round ").dec(round).str(", ").dec(total).str(" thread(s), ").dec(odd).str(" not at the default (MXCSR 1f80, x87 27f), ").dec(changed).str(" changed since the last round");
+        if (round == 0 || changed || odd) LogLine(b);
+        Sleep(60000);
+    }
+}
+
 static void WatchAdd(u8* gs)
 {
     if (g_watch != 1 || !gs) return;
@@ -5933,6 +6066,13 @@ static DWORD WINAPI Init(void*)
     Buf b;
     b.str("mpfever_native v3 loaded, base ").hex(g_base).str(", build stamp ").hex(fh->TimeDateStamp);
     LogLine(b);
+    // (0.8.7 diagnostic build: every thread's floating-point control, see FpuDiag; MPFEVER_FPUDIAG=1 or MPFEVER_FINEDIAG=1)
+    {
+        char e1[4] = {}, e2[4] = {};
+        GetEnvironmentVariableA("MPFEVER_FPUDIAG", e1, 3);
+        GetEnvironmentVariableA("MPFEVER_FINEDIAG", e2, 3);
+        if (e1[0] == '1' || e2[0] == '1') { HANDLE ft = CreateThread(0, 0, FpuDiag, 0, 0, 0); if (ft) CloseHandle(ft); }
+    }
     { Buf t; t.str(g_scriptPoolPatched ? "game scripts: own pool, one worker" : "game scripts: pool NOT patched"); LogLine(t); }
     if (g_simPoolA || g_simPoolB) { Buf t; t.str("pool sizes forced: ").hex(g_simPoolA).str(",").hex(g_simPoolB); LogLine(t); }
     { Buf t; t.str(g_mathOther ? "mathematics: another C runtime's (MPFEVER_MATHDLL), functions " : (g_mathPatched ? "mathematics: MPFever's own, functions " : "mathematics: Windows' (not replaced), functions ")).hex(g_mathPatched); LogLine(t); }

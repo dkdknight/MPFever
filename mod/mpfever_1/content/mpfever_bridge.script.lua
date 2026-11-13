@@ -2932,6 +2932,28 @@ local function update(userParams, state, dt)
 	pcall(DET.installSkySpeed)
 	SIM.evTick = (SIM.evTick or 0) + 1
 	if SIM.evTick % 50 == 1 then pcall(DET.wrapModEvents) end
+	-- (0.8.7 diagnostic build) the fine drift diagnostic: every aircraft's moving state and the animals' digest at every step,
+	-- written with each drift kept (mpfever_finediag.lua). Only with MPFEVER_FINEDIAG=1: nothing of it is loaded otherwise
+	if SIM.fine ~= false then
+		if SIM.fine == nil then
+			SIM.fine = false
+			if os.getenv("MPFEVER_FINEDIAG") == "1" then
+				local okm, m = pcall(ug_require, "mpfever_finediag.lua")
+				if not okm then okm, m = pcall(ug_require, "mpfever_1::/mpfever_finediag.lua") end
+				if okm and type(m) == "table" then
+					SIM.fineMod = m
+					local okI, fd = pcall(m.init, { api = api, log = log, gameTime = gameTime, C = C, R = R, BS = BS, NL = NL })
+					if okI then SIM.fine = fd else log("fine diagnostic: not started: " .. tostring(fd)) end
+				else
+					log("fine diagnostic: module not loaded: " .. tostring(m))
+				end
+			end
+		end
+		if SIM.fine then
+			local okF, errF = pcall(SIM.fineMod.step, SIM.fine)
+			if not okF and not SIM.fineErr then SIM.fineErr = true; log("fine diagnostic: " .. tostring(errF)) end
+		end
+	end
 	-- (how many engine events this script receives, every one of them: see subscribeToAllEvents below)
 	-- (and how big the state the engine walks at every state:get() is, by its largest parts)
 	if SIM.evTick % 3000 == 0 then

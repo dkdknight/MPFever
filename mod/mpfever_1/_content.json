@@ -29,6 +29,7 @@
         "mpfever_feat_public.lua",
         "mpfever_modauto.lua",
         "mpfever_valuechart.lua",
+        "mpfever_finediag.lua",
         "mpfever_prerun.script.lua",
         "mpfever_asset.con.lua",
         "mpfever_asset.script.lua",
