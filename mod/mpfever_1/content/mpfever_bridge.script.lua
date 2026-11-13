@@ -19807,8 +19807,10 @@ end
 
 -- what this game has around the test points: edges (rounded end positions, template) and stops
 -- autotest: one game moves its camera around the map (does the camera change the simulation?)
+-- ((0.8.6, #150 research) MPFEVER_CAMTOUR=both: every game; with MPFEVER_CAMFIX=1 every game puts its camera at the same place
+-- once (the first spot) and leaves it there: does a camera at another place on each game change the simulation?)
 H.camtour = function(from, p)
-	if p.role ~= C.ROLE then return end
+	if p.role ~= C.ROLE and p.role ~= "both" then return end
 	local cam = api.gui and api.gui.camera
 	if not cam then log("camtour: no api.gui.camera"); return end
 	local okc, data = pcall(cam.getCameraData)
@@ -19823,6 +19825,27 @@ H.camtour = function(from, p)
 			if q then spots[#spots + 1] = q end
 		end
 	end)
+	-- (MPFEVER_CAMFIX=log: the camera only said, now and every 600 frames; MPFEVER_CAMFIX=<x>,<y>: put at that place)
+	local fix = os.getenv("MPFEVER_CAMFIX")
+	if fix == "log" then
+		local function say() pcall(function() log("camtour: camera now " .. C.dump(cam.getCameraData()):gsub("%s+", " "):sub(1, 200)) end); G.waits[#G.waits + 1] = { at = G.frames + 600, fn = say } end
+		say()
+		return
+	end
+	local fx, fy = tostring(fix or ""):match("^(%-?[%d.]+),(%-?[%d.]+)$")
+	if fx then spots = { { x = tonumber(fx), y = tonumber(fy) } }; fix = "1" end
+	if fix == "1" then
+		local q = spots[1]
+		if q then
+			local ok, err = pcall(function()
+				local dd = cam.getCameraData()
+				if dd.x ~= nil then dd.x, dd.y = q.x, q.y else dd[1], dd[2] = q.x, q.y end
+				cam.setCameraData(dd)
+			end)
+			log("camtour: camera fixed at " .. string.format("%.0f,%.0f", q.x, q.y) .. " -> " .. (ok and "ok" or tostring(err)) .. ": " .. C.dump(cam.getCameraData()):sub(1, 200))
+		end
+		return
+	end
 	local i = 0
 	local function hop()
 		i = i + 1

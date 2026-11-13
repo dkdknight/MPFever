@@ -47,6 +47,7 @@ with its cause and the test that now guards it.
 | **Deutsche Signale**'s engine clock is the same on every game (its lamp clean-up after a load); its camera is the host's only. Never as a personal mod. | 0.8.6 | DET.wrapModEvents (MPFEVER_SIGNALECLOCK), modauto M.STRICT | test_signale086.py |
 | **"industriesDigest"** is a diagnostic part: logged only, never a reason to reload, never a local measure. | 0.8.6 | K.industriesDigest, MainForm.DiagnosticParts | test_inddigest086.py |
 | A **mod is personal only when every file the game loads is the interface's**, its own root included (a mod of TF2's layout keeps its resources there, #280). | 0.8.6 | Mods.Personal (MPFEVER_MODROOTFILES) | test_modroot086.py, selftest RunModRoot086 |
+| The mod's **preRunScript changes nothing** unless a research switch asks for it (MPFEVER_NOANIMALS=1: no animal); never an error out of it. | 0.8.6 | mpfever_prerun.script.lua, mod.json preRunScript | test_noanimals086.py |
 | A **replay's cost difference is booked during a pause** (one update after it), never only after it: the games' money stays alike for the purchases of that pause (#191). | 0.7.17 | REFUND.book | test_refundpause0717.py |
 | **Trees, plants and rocks** are never replayed from the tool's copy, neither at the click (#181) nor by RESTALE (#191). | 0.7.17 | G.restaleBody | test_restaleasset0717.py |
 | A **street edit touching a construction** (station, depot) with no construction of its own is never shipped at the click. | 0.7.17 | G.preship, G.preTouchesCon | test_preshipstation0717.py |

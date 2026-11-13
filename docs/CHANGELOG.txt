@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.8.6 - (in progress)
+  - RESEARCH (#150): the mod has a preRunScript (mpfever_prerun.script.lua), which changes nothing unless a research switch
+    asks: MPFEVER_NOANIMALS=1 spawns no animal (the animals' density x 0), to tell whether the animals carry the slow drift (two
+    games at x4 on one PC parted at the same step every time, an animal put back on one game only). The autotest camtour can
+    hold both cameras still (MPFEVER_CAMTOUR=both, MPFEVER_CAMFIX=1 / log / x,y). Test: tests/test_noanimals086.py.
   - FIX (#280, Alex + Logan, a crash at the first minute): a mod of TF2's layout, its resources at its own root without a content/
     folder ("Canadian Names": names/canada_wp/...), was taken for an interface mod (personal): the host's game had it, the
     player's left it out and crashed on the first town name it looked for. The root's files now count as content/'s for the

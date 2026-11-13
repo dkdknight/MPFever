@@ -8,7 +8,7 @@
         "fileName": ""
     },
     "preRunScript": {
-        "fileName": ""
+        "fileName": "mpfever_1::/mpfever_prerun.script@preRunFn"
     },
     "revision": 1,
     "runScript": {
