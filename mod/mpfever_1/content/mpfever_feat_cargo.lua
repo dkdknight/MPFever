@@ -142,7 +142,13 @@ M.measure = function()
 	end
 	local U = api.engine.util.stock
 	pcall(function()
-		api.engine.forEachEntityWithComponent(function(ind)
+		api.engine.forEachEntityWithComponent(function(e)
+			-- (the industry's stock list entity, as the game's industries script reads it: industry.stockList)
+			local ind = e
+			pcall(function()
+				local ic = api.engine.getComponent(e, api.type.ComponentType.INDUSTRY)
+				if ic and type(ic.stockList) == "number" and ic.stockList >= 0 then ind = ic.stockList end
+			end)
 			local okIO, io = pcall(U.getInputsOutputsFromRules, ind)
 			if not okIO or type(io) ~= "table" then return end
 			for _, c in ipairs(io[1] or {}) do

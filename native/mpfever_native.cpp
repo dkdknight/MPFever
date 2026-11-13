@@ -3818,6 +3818,22 @@ static void DriftStep(void* engine)
             return;
         }
     }
+    // (0.8.6, #150) the floating-point control of the simulation's thread (MXCSR: rounding, flush-to-zero, denormals-are-zero, the
+    // exception masks; its flag bits 0-5 left out), said at the first step and whenever it changes: #274 drifted between an AMD and an
+    // Intel PC on the same Windows build, and the game's code has no rsqrt/rcp; a driver or a library that changes these on one PC
+    // would show here. MPFEVER_FPLOG=0: not said
+    {
+        static u32 lastCsr = 0xFFFFFFFFu;
+        static long fpOn = -1;
+        if (fpOn < 0) { char e[4]; fpOn = (GetEnvironmentVariableA("MPFEVER_FPLOG", e, 3) == 1 && e[0] == '0') ? 0 : 1; }
+        if (fpOn) {
+            u32 c = _mm_getcsr() & 0xFFC0u;
+            if (c != lastCsr) {
+                lastCsr = c;
+                Buf b; b.str("floating-point control of the simulation's thread: MXCSR ").hex(c).str(" at step ").dec((i64)step); LogLine(b);
+            }
+        }
+    }
     long i = g_dStepN++ & (DIAG_STEPS - 1);
     DiagStep& d = g_dSteps[i];
     d.step = g_diagStep; d.adds = g_stepAdds; d.rems = g_stepRems; d.setHash = g_stepSet; d.pad = 0;

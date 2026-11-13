@@ -66,6 +66,8 @@ it is stable enough.
   [ ] Big station edits without their last freeze
   [x] Streets and tracks bulldozed while paused, the pieces left joined again, rebuilt the same on every game (0.8.4 / 0.8.5,
       tested with the real bulldozer); a player's incomplete MPFever (native module off) told to everyone (0.8.5)
+  [x] Two players acting at the same moment kept in sync: two demolitions, a terrain edit and a build (0.8.6, reproduced
+      by the automatic tests first); a mod taken as personal that changes the game told to every player in the lobby (0.8.6)
   [ ] The last recurring desyncs: the people/towns drift (#150), reproduced on two PCs with no input (2026-11-11); since 0.8.2
       every report records where a drift begins (drift diagnostic), since 0.8.4 its very first moment even after a
       resynchronisation: next, the causes it names. Builds rebuilt otherwise on another game: #261
@@ -116,6 +118,8 @@ it is stable enough.
   [x] A shared street stays its company's when another builds a station on it; another company's station edited by a
       player stays its owner's (0.6.10)
   [x] A bankrupt company's auction sells everything at once; the company cards in the MPFever window (0.7.4)
+  [x] Stock market: a share sells at the month's price; a commodity market where each cargo's price follows the map's
+      supply and demand (game option, 0.8.6)
   [x] No more crash when joining a session of one company for everybody after a session of one company per player:
       no need to restart the game (0.7.5)
 

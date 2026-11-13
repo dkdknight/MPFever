@@ -225,7 +225,9 @@ function SDUMP.stocks(dump)
 	end)
 	pcall(function()
 		for _, ind in ipairs(R.entitiesWith("INDUSTRY")) do
-			local sl = api.engine.getComponent(ind, CT.STOCK_LIST)
+			local ic = api.engine.getComponent(ind, CT.INDUSTRY)
+			local sle = (ic and type(ic.stockList) == "number" and ic.stockList >= 0) and ic.stockList or ind
+			local sl = api.engine.getComponent(sle, CT.STOCK_LIST)
 			if sl then
 				local whole = C.dump(sl)
 				local rules = {}
@@ -687,26 +689,6 @@ K.hashCostsShown = 0
 -- The launcher asks every game for its drift rings at the first check where it differs, so they still hold the step where the
 -- games parted. "off": no native module or MPFEVER_STEPSDIGEST=0; "absent": that step not in its file (or not 50 steps in a row
 -- since the load yet). K.stepsDigestAt(at, text): text is native_steps.txt's content (read here when nil)
--- (0.8.6, #150) "industriesDigest", a diagnostic part of the checks (never a reason to reload): the production state of every
--- industry (its stock list's rules' and stocks' runtime data, the cargo it threw away), an order-free sum over the industries.
--- #274's drift began as one cargo item more on one game and showed in "stocks" and "vehicles" only later: this tells at which
--- check the industries went apart first (then the dumps' "~stocklist" lines tell which one). MPFEVER_INDDIGEST=0: not measured
-K.industriesDigest = function()
-	if os.getenv("MPFEVER_INDDIGEST") == "0" then return nil end
-	local n, sum = 0, 0
-	for _, ind in ipairs(R.entitiesWith("INDUSTRY")) do
-		local sl = api.engine.getComponent(ind, api.type.ComponentType.STOCK_LIST)
-		if sl then
-			local t = {}
-			pcall(function() t[#t + 1] = C.dump(sl.ruleDatas) end)
-			pcall(function() t[#t + 1] = C.dump(sl.stockDatas) end)
-			pcall(function() t[#t + 1] = tostring(sl.thrownAwayCargo) end)
-			sum = (sum + C.hashStr(0, table.concat(t, "|"))) % 4294967296
-			n = n + 1
-		end
-	end
-	return n .. "/" .. sum
-end
 K.stepsDigestAt = function(at, text)
 	if os.getenv("MPFEVER_STEPSDIGEST") == "0" or type(at) ~= "number" then return "off" end
 	if text == nil then
@@ -721,6 +703,31 @@ K.stepsDigestAt = function(at, text)
 		if tonumber(s) == step then return (h ~= "0") and h or "absent" end
 	end
 	return "absent"
+end
+
+-- (0.8.6, #150) "industriesDigest", a diagnostic part of the checks (never a reason to reload): the production state of every
+-- industry (its stock list's rules' and stocks' runtime data, the cargo it threw away), an order-free sum over the industries.
+-- #274's drift began as one cargo item more on one game and showed in "stocks" and "vehicles" only later: this tells at which
+-- check the industries went apart first (then the dumps' "~stocklist" lines tell which one). MPFEVER_INDDIGEST=0: not measured
+K.industriesDigest = function()
+	if os.getenv("MPFEVER_INDDIGEST") == "0" then return nil end
+	local n, sum = 0, 0
+	for _, ind in ipairs(R.entitiesWith("INDUSTRY")) do
+		-- (the stock list is the entity the industry names, as the game's industries script reads it: industry.stockList)
+		local ic = api.engine.getComponent(ind, api.type.ComponentType.INDUSTRY)
+		local sle = (ic and type(ic.stockList) == "number" and ic.stockList >= 0) and ic.stockList or ind
+		local sl = api.engine.getComponent(sle, api.type.ComponentType.STOCK_LIST)
+		if sl then
+			local t = {}
+			pcall(function() t[#t + 1] = tostring(ic and ic.level) .. "/" .. string.format("%.9g", ic and ic.upgradeProgress or 0) .. "/" .. tostring(ic and ic.closureTimeStamp) end)
+			pcall(function() t[#t + 1] = C.dump(sl.ruleDatas) end)
+			pcall(function() t[#t + 1] = C.dump(sl.stockDatas) end)
+			pcall(function() t[#t + 1] = tostring(sl.thrownAwayCargo) end)
+			sum = (sum + C.hashStr(0, table.concat(t, "|"))) % 4294967296
+			n = n + 1
+		end
+	end
+	return n .. "/" .. sum
 end
 local function simHash(terrainSig, reg, n, buildIds, at)
 	local tStart = os.clock()

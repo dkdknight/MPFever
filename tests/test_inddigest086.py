@@ -41,7 +41,8 @@ SL = { [1] = { ruleDatas = { { t = 1.25 } }, stockDatas = { { f = 0.5 } }, throw
        [2] = { ruleDatas = { { t = 2.5 } }, stockDatas = {}, thrownAwayCargo = 3 },
        [3] = nil }
 R = { entitiesWith = function(k) return ORDER end }
-api = { type = { ComponentType = { STOCK_LIST = 1 } }, engine = { getComponent = function(e, t) return SL[e] end } }
+IND = {}
+api = { type = { ComponentType = { STOCK_LIST = 1, INDUSTRY = 2 } }, engine = { getComponent = function(e, t) if t == 2 then return IND[e] end return SL[e] end } }
 C = { dump = function(v) local s = "" for k, x in pairs(v) do if type(x) == "table" then for k2, y in pairs(x) do s = s .. k2 .. "=" .. tostring(y) .. ";" end else s = s .. tostring(x) end end return s end,
   hashStr = function(h, s) local x = 7 for i = 1, #s do x = (x * 31 + s:byte(i)) % 4294967296 end return x end }
 ''' + src[a:b])
@@ -51,6 +52,11 @@ L.execute("ORDER = { 3, 2, 1 }")
 check(L.eval("K.industriesDigest()") == d1, "another order: the same digest")
 L.execute("SL[2].ruleDatas[1].t = 2.5000001")
 check(L.eval("K.industriesDigest()") != d1, "one industry's rule data otherwise: another digest")
+L.execute("SL[2].ruleDatas[1].t = 2.5; SL[12] = SL[2]; SL[2] = nil; IND[2] = { stockList = 12, level = 1, upgradeProgress = 0.25, closureTimeStamp = -1 }")
+d2 = L.eval("K.industriesDigest()")
+check(d2.startswith("2/"), "the stock list on the entity the industry names (industry.stockList)", d2)
+L.execute("IND[2].upgradeProgress = 0.2500001")
+check(L.eval("K.industriesDigest()") != d2, "the industry's upgrade progress counts too")
 L.execute('ENV.MPFEVER_INDDIGEST = "0"')
 check(L.eval("K.industriesDigest()") is None, "MPFEVER_INDDIGEST=0: not measured")
 check("pcall(function() parts.industriesDigest = K.industriesDigest() end)" in src, "simHash measures it")

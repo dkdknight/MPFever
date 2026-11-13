@@ -44,7 +44,8 @@ local function T(x, y) local t = {} for i = 1, 16 do t[i] = 0 end t[13] = x t[14
 COMP = {
   [10] = { CONSTRUCTION = { fileName = "station/rail/modular_station.con", transf = T(100, 200), stations = { 11 }, industries = {}, townBuildings = {} } },
   [20] = { CONSTRUCTION = { fileName = "industries/farm/farm.con", transf = T(-50, 75), stations = {}, industries = { 21 }, townBuildings = {} } },
-  [21] = { INDUSTRY = {}, STOCK_LIST = { thrownAwayCargo = 3, ruleDatas = { { progress = 0.25 } } } },
+  [21] = { INDUSTRY = { stockList = 22 } },
+  [22] = { STOCK_LIST = { thrownAwayCargo = 3, ruleDatas = { { progress = 0.25 } } } },
   [30] = { CONSTRUCTION = { fileName = "building/town/res_1.con", transf = T(5, 6), stations = {}, industries = {}, townBuildings = { 31 } } },
   [40] = { TRANSPORT_VEHICLE = { line = 41 } },
   [41] = { NAME = { name = "Bus 1" } },
@@ -73,7 +74,7 @@ txt = "\n".join(d)
 check("~stock station modular_station.con@100,200 s0 = 3" in txt, "a station's stock: holder kind and place, stock, items", txt)
 check("~stock industry farm.con@-50,75 s1 = 1" in txt, "a key with named fields (entity, stockId)", txt)
 check("~stock townbuilding res_1.con@5,6 s2 = 2" in txt, "a town building's stock", txt)
-check(any(l.startswith("~stocklist industry farm.con@-50,75 = #") and "thrown 3" in l and "rules" in l for l in d), "an industry's stock list: hash, thrown away cargo, rules", txt)
+check(any(l.startswith("~stocklist industry farm.con@-50,75 = #") and "thrown 3" in l and "rules" in l for l in d), "an industry's stock list (on the entity it names): hash, thrown away cargo, rules", txt)
 check("~onboard Bus 1 = 3" in txt, "the cargo on board by line", txt)
 L.execute('ENV.MPFEVER_SDUMPSTOCKS = "0"')
 check(dump() == [], "MPFEVER_SDUMPSTOCKS=0: nothing")

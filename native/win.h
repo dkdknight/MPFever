@@ -9,6 +9,8 @@ extern "C" long _InterlockedIncrement(long volatile*);
 extern "C" long _InterlockedCompareExchange(long volatile*, long, long);
 extern "C" long _InterlockedDecrement(long volatile*);
 #pragma intrinsic(_InterlockedExchange, _InterlockedIncrement, _InterlockedCompareExchange, _InterlockedDecrement)
+// (0.8.6) the SSE floating-point control and status register, read by the drift diagnostic (DriftStep)
+extern "C" unsigned int _mm_getcsr(void);
 
 typedef unsigned char u8;
 typedef unsigned short u16;

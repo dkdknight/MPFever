@@ -2,6 +2,9 @@ MPFever - Changelog
 ===================
 
 0.8.6 - (in progress)
+  - DIAGNOSTIC (#150): native.log says the floating-point control (MXCSR) of the simulation's thread at the first step and when
+    it changes (#274 drifted between an AMD and an Intel PC on the same Windows build; the game's code has no rsqrt/rcp
+    instruction). MPFEVER_FPLOG=0: not said. Test: tests/test_fplog086.py.
   - NEW game option « Commodity market » (#277, Akamari's idea; off by default, both company modes, lobby group « Trade between
     players »): every cargo the map's industries make or take and the towns ask for has a price index (100 at the opening). Once
     a game month the host reads the game's own yearly figures (what the consumers could take, what reached them, what was made)
@@ -11,7 +14,7 @@ MPFever - Changelog
     prices, the lots a month per cargo; 100 lots of a cargo at most. Its tab « Commodities » in the MPFever window. Test:
     tests/test_feat_cargo.py.
   - DIAGNOSTIC (#150, #274): "industriesDigest", a diagnostic part of the checks (logged only, never a reason to reload): the
-    production state of every industry (its stock list's runtime data), to tell at which check the industries went apart first.
+    production state of every industry (its level, its upgrade progress, its stock list's runtime data), to tell at which check the industries went apart first.
     MPFEVER_INDDIGEST=0: not measured. Test: tests/test_inddigest086.py.
   - FIX (#278, Creeper + Akamari): two players bulldozed a construction at the same step. Both builds' signatures read "one
     construction removed": the host took its own demolition for the engine's second application of the other player's replay,
