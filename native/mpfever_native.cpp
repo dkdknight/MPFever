@@ -4634,23 +4634,44 @@ static void InstallClearSame()
 // Every aircraft's entry is now made again at the start of every step, in the state that makes the step (the system's own
 // vfunc5 then vfunc4, the pair the engine runs for a change of the Aircraft component: the reservations are given back and
 // taken again as they were): the figures are those of the step's own components on every game, whatever the batches.
-// At the entry of AircraftMoveSystem::Update2 (rcx: the system, rdx: the engine, r8d: its aircraft, xmm3: the step's time);
-// its entities are 16-byte entries {entity, index of its Aircraft, index of its MovePathAircraft} at [[system+8]].
+// Around AircraftMoveSystem::Update2 (its vtable's slot 12 calls AirUpdateWrap: the system, the engine, its aircraft, the
+// step's time); its entities are 16-byte entries {entity, index of its Aircraft, index of its MovePathAircraft} at
+// [[system+8]], set by the caller for the time of the call.
 // MPFEVER_AIRCACHE=0: as before (on every game of a session: a game with it and one without drift apart).
-static u64 g_airUpdate = 0;            // AircraftMoveSystem::Update2 (address), found by its signature
-static volatile long g_airSteps = 0, g_airMade = 0, g_airOdd = 0;
-static void AirCacheRefresh(SavedRegs* r)
+//
+// The same code reads one more figure that depends on the batches: pathPos0, the aircraft's place at the START OF THE BATCH
+// (the engine copies pathPos to pathPos0, speed to speed0 and the flight figures once per batch, for the picture between two
+// batches). Update2 reads pathPos0 when an aircraft leaves the taxiway for its flight path (0xa8b1de: whether its place is
+// kept or computed again) and when a flight path is made again in the air (0x2674690, a go-around or a wait: the path's first
+// piece goes from pathPos0's point to the aircraft's). During the update each aircraft's pathPos0 is its place at the start
+// of the STEP (what a game making batches of one step has), and the batch's own value is put back after it unless the engine
+// wrote another one meanwhile: the picture between two batches is unchanged. MPFEVER_AIRPOS0=0: pathPos0 left alone.
+typedef u64 (*AirUpdateF)(u64 sys, u64 engine, i64 n, float dt);
+static AirUpdateF g_airOrig = 0;       // AircraftMoveSystem::Update2, found by its signature
+static volatile long g_airSteps = 0, g_airMade = 0, g_airOdd = 0, g_airPos0Set = 0, g_airPos0Kept = 0;
+static int g_airPos0On = 1;
+struct AirPos0 { u32 ent; i32 idx; u8 batch[12]; u8 step[12]; };
+static AirPos0 g_airPos0[512];
+static long g_airPos0N = 0;
+// the system's aircraft list and its MovePathAircraft components (as Update2 reads them); false when unreadable
+static bool AirLists(u64 sys, long n, u64* list, u64* mpa)
 {
-    u64 sys = r->rcx, engine = r->rdx;
-    long n = (long)(i32)r->r8;
+    if (!Readable((void*)sys, 0x20)) return false;
+    u64 vec = *(u64*)(sys + 8), st = *(u64*)(sys + 0x18);
+    if (!vec || !Readable((void*)vec, 8)) return false;
+    *list = *(u64*)vec;
+    if (!*list || !Readable((void*)*list, (u64)n * 16)) return false;
+    *mpa = (st && Readable((void*)st, 8)) ? *(u64*)st : 0;
+    return true;
+}
+static void AirPre(u64 sys, u64 engine, long n)
+{
+    g_airPos0N = 0;
     if (!sys || !engine || n <= 0 || n > 65536 || !Readable((void*)sys, 0x10)) return;
-    // (the system whose vfunc12 this is: its vfunc4 and vfunc5 are the ones called)
     u64 vt = *(u64*)sys;
-    if (!vt || !Readable((void*)vt, 0x68) || *(u64*)(vt + 0x60) != g_airUpdate) { _InterlockedIncrement(&g_airOdd); return; }
-    u64 vec = *(u64*)(sys + 8);
-    if (!vec || !Readable((void*)vec, 8)) { _InterlockedIncrement(&g_airOdd); return; }
-    u64 list = *(u64*)vec;
-    if (!list || !Readable((void*)list, (u64)n * 16)) { _InterlockedIncrement(&g_airOdd); return; }
+    if (!vt || !Readable((void*)vt, 0x68)) { _InterlockedIncrement(&g_airOdd); return; }
+    u64 list = 0, mpa = 0;
+    if (!AirLists(sys, n, &list, &mpa)) { _InterlockedIncrement(&g_airOdd); return; }
     typedef void (*EntityFn)(u64, u64, u32);
     EntityFn build = *(EntityFn*)(vt + 0x20), erase = *(EntityFn*)(vt + 0x28);
     // (the entities read first: nothing of the list is read while the entries are made)
@@ -4664,20 +4685,99 @@ static void AirCacheRefresh(SavedRegs* r)
     if (_InterlockedIncrement(&g_airSteps) == 1) {
         Buf b; b.str("aircraft figures: made again at every step, ").dec(n).str(" aircraft at the first one (thread ").dec((long)GetCurrentThreadId()).str(")"); LogLine(b);
     }
+    // pathPos0 (+0x74, 12 bytes, its "has a value" byte at +0x80) takes pathPos (+0x68) for the time of the update; only where
+    // it has a value (without one the engine fills every start-of-batch figure itself) and for 512 aircraft at most
+    if (!g_airPos0On || n > 512) return;
+    if (!AirLists(sys, n, &list, &mpa) || !mpa) return;
+    long k = 0;
+    for (long i = 0; i < n; i++) {
+        u32 ent = *(u32*)(list + (u64)i * 16);
+        i32 idx = *(i32*)(list + (u64)i * 16 + 8);
+        if (idx < 0) continue;
+        u8* c = (u8*)(mpa + (u64)idx * 0x238);
+        if (!Writable(c + 0x68, 0x19) || !c[0x80]) continue;
+        AirPos0& e = g_airPos0[k++];
+        e.ent = ent; e.idx = idx;
+        memcpy(e.batch, c + 0x74, 12);
+        memcpy(c + 0x74, c + 0x68, 12);
+        memcpy(e.step, c + 0x74, 12);
+    }
+    g_airPos0N = k;
+}
+static void AirPost(u64 sys, long n)
+{
+    long k = g_airPos0N;
+    g_airPos0N = 0;
+    if (k <= 0 || n <= 0) return;
+    u64 list = 0, mpa = 0;
+    if (!AirLists(sys, n, &list, &mpa) || !mpa) return;
+    long j = 0;
+    for (long i = 0; i < n && j < k; i++) {
+        const AirPos0& e = g_airPos0[j];
+        if (*(u32*)(list + (u64)i * 16) != e.ent || *(i32*)(list + (u64)i * 16 + 8) != e.idx) continue;
+        j++;
+        u8* c = (u8*)(mpa + (u64)e.idx * 0x238);
+        if (!Writable(c + 0x74, 12)) continue;
+        // (still the step's value: the batch's is put back; another one: the engine's own, at a change of path, is kept)
+        if (memcmp(c + 0x74, e.step, 12) == 0) { memcpy(c + 0x74, e.batch, 12); g_airPos0Set++; }
+        else g_airPos0Kept++;
+    }
+}
+static u64 AirUpdateWrap(u64 sys, u64 engine, i64 n, float dt)
+{
+    AirPre(sys, engine, (long)(i32)n);
+    u64 r = g_airOrig(sys, engine, n, dt);
+    AirPost(sys, (long)(i32)n);
+    return r;
 }
 static void InstallAirCache()
 {
     char v[4] = {};
     Buf b;
     if (GetEnvironmentVariableA("MPFEVER_AIRCACHE", v, 3) > 0 && v[0] == '0') { b.str("aircraft figures: kept between the changes of their components, as before 0.8.8 (MPFEVER_AIRCACHE=0)"); LogLine(b); return; }
+    char p0[4] = {};
+    g_airPos0On = (GetEnvironmentVariableA("MPFEVER_AIRPOS0", p0, 3) > 0 && p0[0] == '0') ? 0 : 1;
     // AircraftMoveSystem::Update2 on 40425: "push rbx/rsi/rdi/r12/r13/r14/r15 / mov eax,0x1260 / call __chkstk / sub rsp,rax /
-    // vmovaps [rsp+0x1250],xmm6"; the six bytes of its first four pushes are taken
+    // vmovaps [rsp+0x1250],xmm6"
     u32 at = FindSigRva("40 53 56 57 41 54 41 55 41 56 41 57 B8 60 12 00 00 E8 ?? ?? ?? ?? 48 2B E0 C5 F8 29 B4 24 50 12 00 00");
-    u8* mem = at ? AllocNear(0x100) : 0;
-    g_airUpdate = at ? g_base + at : 0;
-    bool ok = mem && Splice(mem, at, 6, AirCacheRefresh);
-    if (ok) b.str("aircraft figures: made again at every step (AircraftMoveSystem's update at ").hex(at).str("): the same on every game whatever its batches");
-    else { g_airUpdate = 0; b.str("aircraft figures: AircraftMoveSystem's update NOT found: kept between the changes of their components, as before (a slow drift between PCs stays possible)"); }
+    // its vtable: the one place outside the code that holds its address (slot 12), with the entry maker and eraser at slots 4
+    // and 5, both in the code; the slot then calls AirUpdateWrap
+    u64 target = at ? g_base + at : 0, slot = 0;
+    int slots = 0;
+    if (target) {
+        auto dos = (IMAGE_DOS_HEADER_*)g_base;
+        u8* ntp = (u8*)(g_base + dos->e_lfanew);
+        auto fh = (IMAGE_FILE_HEADER_*)(ntp + 4);
+        auto sec = (IMAGE_SECTION_HEADER_*)(ntp + 4 + sizeof(IMAGE_FILE_HEADER_) + fh->SizeOfOptionalHeader);
+        for (int i = 0; i < fh->NumberOfSections; i++) {
+            if (sec[i].Name[0] == '.' && sec[i].Name[1] == 't' && sec[i].Name[2] == 'e' && sec[i].Name[3] == 'x') continue;
+            u64 start = (g_base + sec[i].VirtualAddress + 7) & ~7ull, end = g_base + sec[i].VirtualAddress + sec[i].VirtualSize;
+            for (u64 q = start; q + 8 <= end; q += 8) {
+                // (a page that cannot be read is stepped over)
+                if ((q & 0xFFF) == 0 || q == start) { if (!Readable((void*)q, 8)) { q = (q | 0xFFF) - 7; continue; } }
+                if (*(u64*)q == target) { slots++; slot = q; }
+            }
+        }
+    }
+    bool shape = slots == 1 && Readable((void*)(slot - 0x60), 0x68);
+    if (shape) {
+        u64 f4 = *(u64*)(slot - 0x40), f5 = *(u64*)(slot - 0x38);
+        shape = f4 >= g_textStart && f4 < g_textEnd && f5 >= g_textStart && f5 < g_textEnd;
+    }
+    bool ok = false;
+    if (shape) {
+        DWORD old;
+        if (VirtualProtect((void*)slot, 8, 4 /* PAGE_READWRITE */, &old)) {
+            g_airOrig = (AirUpdateF)target;
+            *(u64*)slot = (u64)&AirUpdateWrap;
+            VirtualProtect((void*)slot, 8, old, &old);
+            ok = true;
+        }
+    }
+    if (ok) b.str("aircraft figures: made again at every step (AircraftMoveSystem's update at ").hex(at).str(", its vtable's slot at ").hex(slot - g_base)
+        .str(g_airPos0On ? "; the place at the start of the batch not read by the update" : "; the place at the start of the batch read as before, MPFEVER_AIRPOS0=0").str("): the same on every game whatever its batches");
+    else b.str("aircraft figures: AircraftMoveSystem's update ").str(!at ? "NOT found" : (slots == 1 ? "found, its vtable of another shape" : "found, its vtable's slot not (")).dec((long)slots)
+        .str(slots == 1 ? "" : " places)").str(": kept between the changes of their components, as before (a slow drift between PCs stays possible)");
     LogLine(b);
 }
 

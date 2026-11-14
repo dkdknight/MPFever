@@ -12,8 +12,11 @@ MPFever - Changelog
     with two aircraft. Every aircraft's figures are now computed again at the start of every step, with the engine's own
     functions, the same on every game. Checked in game: the aircraft fly, land and take off as before, the games in sync; the
     proof on two PCs is still to make (the drift needs hours). MPFEVER_AIRCACHE=0: as before (on every game of a session).
-    Test: tests/test_aircache088.py. Two smaller dependences on the batches remain in the aircraft's code (the switch from
-    the taxiway to the flight path, a flight path made again in the air): not changed yet.
+    Test: tests/test_aircache088.py. The same code read the aircraft's place at the start of the batch at two changes of
+    path (leaving the taxiway for the flight path, a flight path made again in the air): during the update that place is now
+    the one at the start of the step on every game, and the batch's own is put back after it (the picture between two batches
+    is unchanged). MPFEVER_AIRPOS0=0: left alone. In game (2026-11-14): 15 autotests in sync, among them Test Leawood 30 minutes
+    at x4 with the host's batches cut otherwise, and two sessions of 14 aircraft with the computer companies.
   - FIX (#296, Kasper + Eier): three builds made in the pause of a session save, turns 5, 6 and 7 from the host. Eier's own build
     (turn 7) was still held when the pause ended: its game left the pause's rule for the usual one (the builds of one step ranked
     by their players' names) and built it before Kasper's turn 6, whose data came 9 s after its announcement. The two builds
@@ -29,8 +32,9 @@ MPFever - Changelog
     its maker's game, and by the maker's company on every other game: chris's eleven edits took 2.4 M from the host's company
     on chris's game only, until the host's figures put it right 30 s later (his own money did not move, then fell at once). The
     terrain tools' command was the only tool's command reaching the engine with the savegame's company; it now gets this
-    machine's before the engine applies it. Checked in the source and by the autotest's edit named for the savegame's company
-    (MPFEVER_TERRAIN_CANON=1); the real tool in a session not tested yet. MPFEVER_TERRAINOWNER=0: as before. Test:
+    machine's before the engine applies it. Measured by the autotest's edit named for the savegame's company, as the tools' is
+    (MPFEVER_TERRAIN_CANON=1): without the fix the host corrected company 1 by +53 232 and company 3 by -53 232 at its next
+    check, with it nothing is corrected; the real tool in a session not tested yet. MPFEVER_TERRAINOWNER=0: as before. Test:
     tests/test_terrainowner088.py.
   - FIX (diagnostic): after every resynchronisation the first check said "stepsDigest" differed, and every game wrote its drift
     files again for nothing (in the reports, the first drift kept after a load was that false alarm). The native module's file
