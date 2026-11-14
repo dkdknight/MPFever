@@ -2270,23 +2270,71 @@ U.makeKit = function(builtin)
 	K.ICON_ALERT = "::/gui/menu/icons/alert.tga"
 	K.ICON_SPEED = "::/gui/game_bar/icons/playback_play.tga"
 	K.DISC = "::/gui/line_vehicle_mgmt/icons/line_surface.tga"
-	-- the game's own colours (default_colors.gres), with fallbacks when they cannot be read
+	-- (0.8.8) The Hub in the game's own style: its cards, headings, tables, bars, menu and choices are drawn with the recipes and
+	-- the theme of the game's own windows (Finances, Company: game_mechanics/finance/*.tl, game_mechanics/company/company.tl and
+	-- their .css.lua, read in base/content/gui.zip and game_mechanics.zip). The Hub has no style sheet of its own: everything is
+	-- an inline style (api.gui.StyleSheet) or a recipe whose look follows it. Only the Hub's pages change (K.hub(): this kit,
+	-- while the Hub draws a page); the small window draws as before. MPFEVER_OLDHUB=1 (read once): the Hub drawn as in 0.8.7,
+	-- nothing of the new drawing; each of the game's recipes is also asked for with a fallback to that drawing (K.base, a
+	-- widget the game's builtin module no longer has), so that a game update never breaks the window.
+	K.old = os.getenv("MPFEVER_OLDHUB") == "1"
+	K.game = not K.old
+	function K.hub() return K.game == true and U.hubDrawing == true end
+	-- (two parts of the new drawing can be left out alone, each read once: MPFEVER_HUBBASE=0, none of the game's script modules
+	-- (the headings are drawn by hand, see K.heading); MPFEVER_HUBNAV=0, the head and the menu of before in place of the tabs
+	-- and the list (see U.hubNav))
+	K.noBase = os.getenv("MPFEVER_HUBBASE") == "0"
+	K.noNav = os.getenv("MPFEVER_HUBNAV") == "0"
+	-- the icons of the Hub's buttons (each one checked in gui.zip / game_mechanics.zip; a size is always given: 36 to 96 pixels)
+	K.ICON_LOCATE = "::/gui/builtin/window/icons/symbol_locate.tga"
+	K.ICON_ACCEPT = "::/game_mechanics/subventions/icons/subsidy_acceptance.tga"
+	K.ICON_REFUSE = "::/game_mechanics/subventions/icons/subsidy_decline.tga"
+	K.ICON_BACK = "::/gui/menu/icons/back.tga"
+	K.ICON_KICK = "::/gui/builtin/window/icons/symbol_quit_arrow_right.tga"
+	K.ICON_BAN = "::/gui/builtin/window/icons/lock.tga"
+	K.ICON_SMALLER = "::/gui/builtin/window/icons/symbol_reduce_18.tga"
+	K.ICON_LARGER = "::/gui/builtin/window/icons/symbol_maximize_18.tga"
+	K.ICON_QUICK = "::/gui/builtin/window/icons/symbol_minimize_18.tga"
+	K.ICON_INFO = "::/gui/entity_window/design/symbol_info_outline.tga"
+	K.ICON_FOLD = "::/gui/entity_window/design/collapse_up.tga"
+	K.ICON_UNFOLD = "::/gui/entity_window/design/collapse_down.tga"
+	K.ICON_HAND = "::/game_mechanics/finance/icons/symbol_hand_dollar.tga"
+	-- the game's speed buttons (gui/game_bar/game_bar_widgets.tl): pause, x1, x2, x4
+	K.ICON_SPEEDS = { [0] = "::/gui/game_bar/icons/playback_pause.tga", [1] = "::/gui/game_bar/icons/playback_play.tga",
+		[2] = "::/gui/game_bar/icons/playback_play_2.tga", [4] = "::/gui/game_bar/icons/playback_play_4.tga" }
+	-- the game's card (gui/main/content_card.css.lua, "R::ContentCard !card-permanent" and "!card-outline"): a nine-patch surface
+	-- and its contour; the Finances window's cards have the padding 10 / 18 and 8 pixels between two cards, its tables 12 pixels
+	-- in a cell (game_mechanics/finance/finances.css.lua)
+	K.CARD_SURFACE, K.CARD_CONTOUR = "::/gui/entity_window/design/card_surface.tga", "::/gui/entity_window/design/card_contour.tga"
+	K.CARD_NINE = { 0, 6, 26, 32 }
+	K.PAD_CARD, K.PAD_CELL, K.SPACE = { 10, 18, 10, 18 }, { 12, 12, 12, 12 }, 8
+	-- the game's own colours (default_colors.gres), with fallbacks when they cannot be read (0.8.8: the theme's real values, as
+	-- gui/main/default_colors.gres.lua makes them: hue 210, the Base colours at saturation 0.25, the Accent ones at 0.55)
 	local FALLBACK = {
-		Ok = { 0.42, 0.82, 0.45, 1 }, Warning = { 1, 0.76, 0.25, 1 }, Error = { 1, 0.38, 0.33, 1 }, Info = { 0.45, 0.72, 1, 1 },
-		Negative = { 1, 0.38, 0.33, 1 }, NeutralLight = { 0.72, 0.74, 0.77, 1 }, NeutralLightest = { 1, 1, 1, 1 },
-		BaseDarkMedium = { 0.16, 0.18, 0.21, 1 }, AccentVeryDark = { 0.07, 0.24, 0.33, 1 },
+		Ok = { 0.298, 0.733, 0.09, 1 }, Warning = { 0.855, 0.647, 0.125, 1 }, Error = { 0.808, 0.125, 0.161, 1 }, Info = { 0.176, 0.408, 0.769, 1 },
+		Positive = { 0.541, 0.725, 0.945, 1 }, Negative = { 0.941, 0.502, 0.502, 1 },
+		NeutralMedium = { 0.502, 0.502, 0.502, 1 }, NeutralLight = { 0.702, 0.702, 0.702, 1 }, NeutralLightest = { 1, 1, 1, 1 },
+		BaseVeryDark = { 0.09, 0.105, 0.12, 1 }, BaseDark = { 0.1125, 0.13125, 0.15, 1 }, BaseDarkMedium = { 0.135, 0.1575, 0.18, 1 },
+		BaseMedium = { 0.1575, 0.18375, 0.21, 1 }, BaseLightMedium = { 0.18, 0.21, 0.24, 1 }, BaseLight = { 0.2025, 0.23625, 0.27, 1 },
+		BaseVeryLight = { 0.2625, 0.30625, 0.35, 1 },
+		AccentVeryDark = { 0.1575, 0.25375, 0.35, 1 }, AccentDark = { 0.2025, 0.32625, 0.45, 1 }, AccentMedium = { 0.2925, 0.47125, 0.65, 1 },
+		AccentLight = { 0.3825, 0.61625, 0.85, 1 }, AccentVeryLight = { 0.4275, 0.68875, 0.95, 1 },
 	}
-	local CLASS_COLOR = { success = "Ok", warning = "Warning", error = "Error", info = "Info", negative = "Negative" }
+	local CLASS_COLOR = { success = "Ok", warning = "Warning", error = "Error", info = "Info", negative = "Negative", positive = "Positive" }
 	-- (the .gres colours are plain tables { r, g, b, a }: a style wants a Vec4f; alpha replaces the colour's own)
 	local colorCache = {}
-	function K.color(name, alpha)
-		local key = name .. "/" .. tostring(alpha)
-		if colorCache[key] ~= nil then return colorCache[key] or nil end
+	local function rawColor(name)
 		local okR, raw = pcall(function()
 			local d = api.gui.genericRep.get(api.gui.genericRep.find("::/gui/main/default_colors.gres")).data
 			return d[name]
 		end)
 		if not (okR and type(raw) == "table" and tonumber(raw[1])) then raw = FALLBACK[name] end
+		return raw
+	end
+	function K.color(name, alpha)
+		local key = name .. "/" .. tostring(alpha)
+		if colorCache[key] ~= nil then return colorCache[key] or nil end
+		local raw = rawColor(name)
 		local c = nil
 		if raw then
 			local ok, v = pcall(function() return api.type.Vec4f.new(raw[1], raw[2], raw[3], alpha or raw[4] or 1) end)
@@ -2296,6 +2344,28 @@ U.makeKit = function(builtin)
 		return c
 	end
 	function K.classColor(cls) return K.color(CLASS_COLOR[cls or ""] or "NeutralLightest") end
+	-- (0.8.8) one of the game's colours as a plain { r, g, b, a } (a box's flat background, see K.style's `background`)
+	function K.rgba(name, alpha)
+		local raw = rawColor(name)
+		if not raw then return nil end
+		return { tonumber(raw[1]) or 0, tonumber(raw[2]) or 0, tonumber(raw[3]) or 0, alpha or tonumber(raw[4]) or 1 }
+	end
+	-- (0.8.8) the theme's flat backgrounds, as the Finances table has them (finances.css.lua): a table's head, its rows (one in
+	-- two lighter), this player's own row, a bar's empty part, the menu, a heading's line
+	K.TINTS = { head = { "BaseDark" }, odd = { "BaseLight" }, even = { "BaseMedium" }, mine = { "AccentDark" }, track = { "BaseVeryDark" },
+		side = { "BaseDark" }, line = { "BaseVeryLight" } }
+	function K.tint(kind)
+		local t = K.TINTS[kind]
+		return t and K.rgba(t[1], t[2]) or nil
+	end
+	-- (0.8.8) a status class as a class of money: the game writes an amount in « positive » (blue) or « negative » (red), never
+	-- in the green of a status (finances_table.tl's moneyToClass); as it was outside the Hub's new drawing
+	function K.moneyCls(cls)
+		if not K.hub() then return cls end
+		if cls == "success" then return "positive" end
+		if cls == "error" then return "negative" end
+		return cls
+	end
 	-- an inline style (meta.styleSheet, as the game's own windows use it): one property at a time, a value the interface refuses
 	-- only loses that property; nil when there is no style sheet at all
 	function K.style(t)
@@ -2310,11 +2380,47 @@ U.makeKit = function(builtin)
 			pcall(function()
 				local n = api.gui.NinePatch.new()
 				n.fileName = t.image
-				if t.nine then n.horizontal = t.nine; n.vertical = t.nine end
+				if t.nine then n.horizontal = t.nine; n.vertical = t.nineV or t.nine end
 				st.backgroundImage1 = n
 			end)
 		end
+		-- (0.8.8, the game's cards) a contour: a nine-patch image as the border, in a colour (a Vec4f); a second background layer
+		if t.border then
+			pcall(function()
+				local n = api.gui.NinePatch.new()
+				n.fileName = t.border
+				local nb = t.borderNine or t.nine
+				if nb then n.horizontal = nb; n.vertical = t.borderNineV or t.nineV or nb end
+				st.borderImage = n
+			end)
+		end
+		if t.borderColor then pcall(function() st.borderColor = t.borderColor end) end
+		if t.borderWidth then pcall(function() st.borderWidth = api.type.Vec4f.new(t.borderWidth[1], t.borderWidth[2], t.borderWidth[3], t.borderWidth[4]) end) end
+		if t.bg2 then pcall(function() st.backgroundColor2 = t.bg2 end) end
+		if t.image2 then
+			pcall(function()
+				local n = api.gui.NinePatch.new()
+				n.fileName = t.image2
+				if t.nine2 then n.horizontal = t.nine2; n.vertical = t.nine2 end
+				st.backgroundImage2 = n
+			end)
+		end
 		return st
+	end
+	-- (0.8.8) a panel in the game's theme, as a style for K.box / K.style: the card's surface in a colour and its contour, the
+	-- card's padding; st: the other fields (size...), which win. Kinds: "card" (BaseMedium, the Finances window's cards), "inner"
+	-- (a box in a card, darker), "mine" (this player's own: the accent), and the tinted ones as the game's info bubble
+	-- (content_card.css.lua, "R::Component!info-hint-comp": the surface in the status colour at alpha 0.25)
+	K.PANELS = {
+		card = { "BaseMedium", nil, "BaseVeryLight" }, inner = { "BaseDark", nil, "BaseVeryLight" }, mine = { "AccentVeryDark", nil, "AccentLight" },
+		warning = { "Warning", 0.25, "Warning", 0.5 }, error = { "Error", 0.25, "Error", 0.5 }, success = { "Ok", 0.25, "Ok", 0.5 }, info = { "Info", 0.25, "Info", 0.5 },
+	}
+	function K.panel(kind, st)
+		local p = K.PANELS[kind or "card"] or K.PANELS.card
+		local out = { image = K.CARD_SURFACE, nine = K.CARD_NINE, bg = K.color(p[1], p[2]), border = K.CARD_CONTOUR, borderColor = K.color(p[3], p[4]),
+			padding = K.PAD_CARD }
+		for k, v in pairs(st or {}) do out[k] = v end
+		return out
 	end
 	-- a text; with a width (a whole number: the interface refuses another), the game wraps it there
 	function K.text(t, class, cls, width)
@@ -2350,9 +2456,9 @@ U.makeKit = function(builtin)
 			return K.style { size = { size, size }, image = K.DISC, bg = K.color(colorName) }
 		end) } }
 	end
-	-- (some of the game's icons are large pictures: always a fixed size)
-	function K.icon(path, size)
-		return builtin.ImageView { path = path, meta = { styleSheet = K.style { size = { size, size } } } }
+	-- (some of the game's icons are large pictures: always a fixed size; h: its height when it is not a square)
+	function K.icon(path, size, h)
+		return builtin.ImageView { path = path, meta = { styleSheet = K.style { size = { size, h or size } } } }
 	end
 	function K.row(children) return builtin.BoxLayout { orientation = K.H, children = children } end
 	function K.col(children) return builtin.BoxLayout { orientation = K.V, children = children } end
@@ -2366,20 +2472,123 @@ U.makeKit = function(builtin)
 	function K.gap(w, h)
 		return builtin.Component { meta = { styleSheet = cached("gap/" .. w .. "x" .. h, function() return K.style { size = { w, h } } end) } }
 	end
+	-- (0.8.8) one of the game's own script modules (gui/main/content_card.tl...), asked once, by the very path the game's own
+	-- files ask it with (the game keeps one copy of a module per path: a second copy would register its recipes twice): nil
+	-- when it cannot be had (a game update moved or changed it; the tests have no ug_require), and its caller then draws by
+	-- hand. names: the fields it must have to be of any use
+	local baseCache = {}
+	function K.base(path, names)
+		if K.noBase then return nil end
+		if baseCache[path] == nil then
+			local ok, m = pcall(function() return ug_require(path) end)
+			local good = ok and type(m) == "table"
+			if good then for _, k in ipairs(names or {}) do if m[k] == nil then good = false end end end
+			baseCache[path] = good and m or false
+			if not good then pcall(log, "hub: " .. path .. " not usable (" .. tostring(ok and "a field is missing" or m) .. "): drawn by hand") end
+		end
+		return baseCache[path] or nil
+	end
+	-- (0.8.8) a heading in the game's style, w wide: the game's own ContentCard{ title } (gui/main/content_card.tl: the title in
+	-- the headline font and its thin line, as the Finances window puts one above each of its cards, game_mechanics/finance/
+	-- finances_table.tl; its rules are scoped to the recipe itself, gui/main/content_card.css.lua, so its look follows it here;
+	-- with a title alone it never reads the game context the Hub has not), in a box of the width. When the module cannot be had:
+	-- the title in the headline font and a thin line under it, drawn by hand.
+	function K.heading(title, w)
+		w = math.max(40, math.floor(w or K.TEXT_W))
+		local cc = K.base("::/gui/main/content_card.tl", { "ContentCard" })
+		if cc then
+			local ok, n = pcall(function() return cc.ContentCard { title = tostring(title or "") } end)
+			if ok and n ~= nil then return K.box({ n }, { size = { w, -1 } }) end
+		end
+		return K.col { K.text(title, "font-scale-headline", nil, w), K.gap(1, 3), K.rect(w, 1, K.tint("line")) }
+	end
 	-- a section's title: an icon and the title, on a row of their own
 	function K.section(path, title)
+		-- (0.8.8, the Hub: the game's heading, as wide as the page's cards; the game's headings have no icon)
+		if K.hub() then return K.heading(title, K.TEXT_W + 40) end
 		return K.row { K.icon(path, 22), K.gap(8, 1), K.text(title, "font-scale-title-4", nil, K.TEXT_W - 30) }
 	end
 	-- a card: a light background around a company, a request... (its texts take K.CARD_TEXT_W)
 	function K.card(children)
+		-- (0.8.8, the Hub: the game's card, see K.panel; the Hub gives K.CARD_TEXT_W the room its padding leaves)
+		if K.hub() then
+			return builtin.Component { meta = { styleSheet = K.style(K.panel("card", { size = { K.CARD_W, -1 } })) },
+				layout = builtin.BoxLayout { orientation = K.V, children = children } }
+		end
 		return builtin.Component {
 			meta = { styleSheet = K.style { size = { K.CARD_W, -1 }, padding = { 6, 10, 6, 10 }, background = { 1, 1, 1, 0.06 } } },
 			layout = builtin.BoxLayout { orientation = K.V, children = children },
 		}
 	end
-	function K.btn(label, tip, fn, primary, enabled)
+	-- (0.8.8) icon: an icon before the text, in the Hub's new drawing only, as the game's buttons have (gui/main/
+	-- button_react_util.tl's makeIconTextButton: a horizontal layout of the image and the text; the game's own rule
+	-- "Button::Layout > BoxLayout" puts 4 pixels between them). K.IW: what the icon adds to the button's width
+	K.IW = 22
+	function K.btn(label, tip, fn, primary, enabled, icon)
+		local content
+		if icon and K.hub() then content = builtin.BoxLayout { orientation = K.H, children = { K.icon(icon, 18), K.text(label) } }
+		else content = K.text(label) end
 		return builtin.Button { meta = { class = primary and "primary" or "secondary", tooltip = tip, enabled = enabled ~= false },
-			content = K.text(label), onClick = fn }
+			content = content, onClick = fn }
+	end
+	-- (0.8.8) a button of an icon alone, its text as the tooltip (button_react_util.tl's makeIconButton: the locate button of the
+	-- game's subsidies, game_mechanics/subventions/subventions_gui.tl)
+	function K.ibtn(icon, tip, fn, primary, enabled, size, h)
+		return builtin.Button { meta = { class = primary and "primary" or "secondary", tooltip = tip, enabled = enabled ~= false },
+			content = K.icon(icon, size or 18, h), onClick = fn }
+	end
+	-- (0.8.8) « Show » on the map: in the Hub's new drawing the game's locate button (an icon, the text as its tooltip), never
+	-- wider than the text button it replaces
+	function K.locate(label, tip, fn)
+		if K.hub() then return K.ibtn(K.ICON_LOCATE, tip or label, fn) end
+		return K.btn(label, tip, fn)
+	end
+	-- (0.8.8) what an icon adds to a row's buttons (n of them) in the Hub's new drawing, 0 otherwise: the rows that give their
+	-- text a fixed width take it off
+	function K.iw(n) return K.hub() and (n or 1) * K.IW or 0 end
+	-- (0.8.8) One choice among several, as the game draws it: builtin.ToggleButtonGroup (gui/main/builtin.lua; the game bar's
+	-- speed buttons, gui/game_bar/game_bar_widgets.tl, and the construction parameters, gui/main/script_param_util.tl), in place of
+	-- a row of buttons with the chosen one in primary. items: { { label = "..." or icon = path, tip = "..." }... }; selected: the
+	-- chosen one's place (nil: none, the group then allows none, as the game bar does for a speed that is not one of its
+	-- buttons); onPick(place) at a click, on the chosen one too (the callers leave out what changes nothing, as their buttons
+	-- did); key: a name of its own on the page; perRow: buttons per row (a group a row: nothing goes out of the page). The
+	-- chosen button is always the one given here: a choice shows once the session has it, as the primary button did.
+	-- A group of another number of buttons is another node (its key): the game's recipe makes a hook per button.
+	-- Returns nil, having made nothing, outside the Hub's new drawing or when the game no longer has the widget: the caller then
+	-- draws its buttons as before.
+	function K.choice(items, selected, onPick, key, perRow)
+		if not K.hub() then return nil end
+		local TBG = nil
+		pcall(function() TBG = builtin.ToggleButtonGroup end)
+		if not TBG then return nil end
+		local n = #items
+		perRow = math.max(1, math.floor(tonumber(perRow) or n))
+		local rows = {}
+		local first = 1
+		while first <= n do
+			local last = math.min(n, first + perRow - 1)
+			local at = first
+			local buttons = {}
+			for j = first, last do
+				local it = items[j]
+				buttons[#buttons + 1] = { content = it.icon and K.icon(it.icon, 24) or K.text(it.label), meta = { tooltip = it.tip } }
+			end
+			local sel = (selected and selected >= first and selected <= last) and (selected - first + 1) or -1
+			if #rows > 0 then rows[#rows + 1] = K.gap(1, 4) end
+			rows[#rows + 1] = TBG {
+				meta = { localKey = "mpfever-choice-" .. tostring(key) .. "-" .. at .. "-" .. #buttons },
+				buttons = buttons,
+				selected = sel,
+				deselectAllowed = sel == -1,
+				onValueChange = function(index)
+					index = tonumber(index)
+					if index and index >= 1 and index <= #buttons then onPick(at + index - 1) end
+				end,
+			}
+			first = last + 1
+		end
+		if #rows == 1 then return rows[1] end
+		return K.col(rows)
 	end
 	-- (0.6, the Hub) a box: a component with its own inline style (size, padding, background { r, g, b, a }) around a vertical
 	-- (default) or horizontal layout, as the lobby's box() draws its panels
@@ -2418,7 +2627,7 @@ U.loadPrefs = function()
 		end
 	end
 	read(C.DIR .. C.BS .. "ui_prefs.txt", { open = true, tab = true, compact = true, pinned = true, hubpage = true, hubsize = true })
-	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true, vdots = true, oldmenus = true, hubk = true })
+	read(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", { autoopen = true, aichat = true, dots = true, vdots = true, oldmenus = true, hubk = true, hubu = true })
 	U.prefs = p
 	U.tab = U.tab or p.tab or "session"
 	U.compact = p.compact == "1"
@@ -2439,7 +2648,7 @@ U.saveGlobalPrefs = function()
 	local f = C.IO.open(C.DIR .. C.BS .. ".." .. C.BS .. "ui_prefs.txt", "wb")
 	if f then f:write("autoopen=" .. tostring(p.autoopen or "1") .. C.NL .. "aichat=" .. tostring(p.aichat or "1") .. C.NL .. "dots=" .. tostring(p.dots or "1") .. C.NL
 		.. (p.vdots ~= nil and ("vdots=" .. tostring(p.vdots) .. C.NL) or "") .. (p.oldmenus == "1" and ("oldmenus=1" .. C.NL) or "")
-		.. (p.hubk ~= nil and ("hubk=" .. tostring(p.hubk) .. C.NL) or "")); f:close() end
+		.. (p.hubk ~= nil and ("hubk=" .. tostring(p.hubk) .. C.NL) or "") .. (p.hubu ~= nil and ("hubu=" .. tostring(p.hubu) .. C.NL) or "")); f:close() end
 end
 U.saveAutoOpen = function(on)
 	local p = U.loadPrefs()
@@ -2607,6 +2816,23 @@ end
 -- cannot be resized with the mouse (the game's windows take their content's size): three sizes, chosen with its - and + buttons
 -- and kept for the session. MPFEVER_HUB=0: no Hub, the small window with every tab as before.
 U.hubOn = function() return U.newWindow ~= false and not U.hubOff end
+-- (0.8.8) The Hub in the game's own style (see U.makeKit: its cards, headings, bars, menu and choices as the game's Finances and
+-- Company windows draw theirs). MPFEVER_OLDHUB=1 (read once): the Hub drawn as in 0.8.7.
+U.oldHub = os.getenv("MPFEVER_OLDHUB") == "1"
+-- (0.8.8) a page's icon in the Hub's menu, each one of the game's own small icons (checked in gui.zip / game_mechanics.zip; drawn
+-- at 24 pixels); a page without one (a game option of a later version) gets the settings' gear
+U.HUB_ICON = {
+	session = "::/gui/statistics/icons/symbol_person_multiple.tga", chat = "mpfever_1::/mpfever_chat.tga",
+	game = "::/gui/menu/icons/configure.tga", f_public = "::/gui/menu/icons/mod_management/mod-public.tga",
+	settings = "::/gui/menu/icons/settings.tga", company = "::/gui/main/icons/headquarter.tga",
+	auction = "::/game_mechanics/finance/icons/symbol_hand_dollar.tga", rules = "::/game_mechanics/finance/icons/relation_street_track.tga",
+	f_team = "::/gui/menu/icons/profile.tga", f_trade = "::/gui/entity_window/icons/symbol_shopping_cart.tga",
+	f_stock = "::/game_mechanics/finance/icons/symbol_chart_arrow_up.tga", f_stats = "::/gui/menu/icons/symbol_crown_laurels.tga",
+	f_market = "::/gui/radial_menu/icons/symbol_bars_arrow_down_48.tga", f_tenders = "::/game_mechanics/subventions/icons/radial_menu_subventions.tga",
+	f_territory = "::/gui/menu/icons/map_town.tga", f_journal = "::/gui/game_bar/icons/notifications.tga",
+	ai = "::/gui/game_bar/icons/building_industry_gear_30.tga",
+}
+U.hubIcon = function(id) return U.HUB_ICON[id] or "::/gui/menu/icons/settings.tga" end
 U.HUB_GROUPS = {
 	{ key = "game", pages = { "session", "chat", "game", "f_public", "settings" } },
 	{ key = "company", pages = { "company", "auction", "rules", "f_team", "f_trade", "f_stock" } },
@@ -2665,6 +2891,14 @@ U.hubGroupOf = function(st, page)
 	for _, g in ipairs(U.hubMenu(st)) do for _, id in ipairs(g.pages) do if id == page then return g.title end end end
 	return ""
 end
+-- (0.8.8) the Hub's window title: the page's name, as the game's windows have theirs in their title bar and no head in their
+-- content (the Company and Finances windows); MPFEVER_OLDHUB=1: « MPFever Hub », the page's name in the content as before
+U.hubTitle = function(st)
+	if U.oldHub then return "MPFever Hub" end
+	local ok, label = pcall(function() return U.hubLabel(U.hubValid(U.hubPage, st)) end)
+	if not (ok and type(label) == "string" and label ~= "") then return "MPFever Hub" end
+	return "MPFever – " .. label
+end
 U.hubViewKey = function()
 	return tostring(U.hubPage) .. "|" .. tostring(U.winVersion or 0) .. "|" .. tostring(U.ecoVersion or 0) .. "|" .. tostring(U.chatUnread or 0)
 		.. "|" .. tostring(U.hubPage == "ai" and U.aiJVersion or 0) .. "|" .. tostring(U.hubSize or 2)
@@ -2688,9 +2922,39 @@ U.hubScreen = function()
 		if w then how = "3D view" end
 	end
 	w, h = w or 1920, h or 1080
+	-- (0.8.8) The 3D view's size is in the screen's pixels, the interface's sizes are in its own units: on a 4K screen the game
+	-- draws its interface twice as large, and the Hub, measured from 3840 x 2054, was 2572 units wide on a screen of 1920: it
+	-- covered the whole screen, its frame out of sight and its third column cut ("hub: 1 x 1 of the screen", the user's PC,
+	-- 2026-11-14). The pixels of one unit are measured from the Hub itself once it is drawn (U.hubCentre), kept for that screen
+	-- (hubu in the ui_prefs.txt kept across launches); until then: 2 on a screen more than 1500 pixels high, else 1.
+	-- MPFEVER_HUBUNIT=0: the pixels taken for units, as before
+	U.hubPx = { w, h }
+	local unit = 1
+	if how == "3D view" and os.getenv("MPFEVER_HUBUNIT") ~= "0" then
+		unit = U.hubUnitOf(w, h, (U.prefs or U.loadPrefs()).hubu)
+		w, h = w / unit, h / unit
+	end
+	U.hubUnitNow = unit
 	U.hubScreenWH = { w, h }
-	log("hub: screen " .. math.floor(w) .. " x " .. math.floor(h) .. " (" .. how .. ")")
+	log("hub: screen " .. math.floor(w) .. " x " .. math.floor(h) .. " (" .. how .. (unit ~= 1 and string.format(", %.3g pixels a unit", unit) or "") .. ")")
 	return w, h
+end
+-- (pure) the pixels of one interface unit for a screen of w x h pixels: the one measured for that screen (kept: "w,h,unit"),
+-- else 2 above 1500 pixels of height, else 1
+U.hubUnitOf = function(w, h, kept)
+	local kw, kh, ku = tostring(kept or ""):match("^(%d+),(%d+),([%d%.]+)$")
+	ku = tonumber(ku)
+	if ku and tonumber(kw) == math.floor(w) and tonumber(kh) == math.floor(h) and ku >= 0.5 and ku <= 4 then return ku end
+	return h > 1500 and 2 or 1
+end
+-- (pure) what the Hub's measured size says of the unit: fw, fh = the parts of the screen it takes, W, H = its size in units,
+-- pw, ph = the screen in pixels, unit = the unit it was drawn with. Returns the unit to keep and whether the Hub must be drawn
+-- again: a Hub that takes the whole width or height is cut by the screen (the unit is larger than thought: half as many units
+-- next time); else the unit is its pixels by its units, drawn again when it differs by more than 8 %.
+U.hubUnitFrom = function(fw, fh, W, H, pw, ph, unit)
+	if fw >= 0.97 or fh >= 0.97 then return math.min(4, unit * 1.5), true end
+	local m = math.max(0.5, math.min(4, fw * pw / W))
+	return m, math.abs(m - unit) / unit > 0.08
 end
 -- the Hub's measures from the screen and its size (1 small, 2 about two thirds of the screen, 3 large): the window, the menu, the
 -- page (its scroll area), the page's content and its texts (a card takes the content's width, its texts the text width)
@@ -2703,7 +2967,8 @@ U.hubMeasures = function()
 	local side = W >= 1300 and 250 or 220
 	local pageW = W - side - 14
 	local inner = pageW - 22
-	return { W = W, H = H, side = side, bodyH = H - 70, pageW = pageW, inner = inner, text = inner - 24 }
+	-- (0.8.8: the game's cards have 18 pixels of padding on each side, the Hub's had 12; MPFEVER_OLDHUB=1: as before)
+	return { W = W, H = H, side = side, bodyH = H - 70, pageW = pageW, inner = inner, text = inner - (U.oldHub and 24 or 40) }
 end
 
 -- the Hub, on a page (nil: the one it showed last), in the game's window container (wapi: another one, when the game's own
@@ -2761,9 +3026,28 @@ U.hubCentre = function()
 	end
 	local m = U.hubMeasures()
 	local sw, sh = U.hubScreen()
+	local p = U.loadPrefs()
+	-- (0.8.8: the pixels of one unit, from the Hub's own size, see U.hubScreen; a Hub cut by the screen, or drawn with a unit
+	-- that is not the screen's, is drawn again once with the unit found, at most 3 times for an opening)
+	if U.hubPx and U.hubUnitNow and os.getenv("MPFEVER_HUBUNIT") ~= "0" then
+		local unit, again = U.hubUnitFrom(hw / cw, hh / ch, m.W, m.H, U.hubPx[1], U.hubPx[2], U.hubUnitNow)
+		local kept = string.format("%d,%d,%.4g", math.floor(U.hubPx[1]), math.floor(U.hubPx[2]), unit)
+		if p.hubu ~= kept then p.hubu = kept; pcall(U.saveGlobalPrefs) end
+		if again and (U.hubUnitTries or 0) < 3 then
+			U.hubUnitTries = (U.hubUnitTries or 0) + 1
+			log(string.format("hub: %.3g x %.3g of the screen with %.3g pixels a unit: drawn again with %.3g", hw / cw, hh / ch, U.hubUnitNow, unit))
+			-- (its content is drawn again with the screen measured again, and its size read again a few frames later; never
+			-- closed and opened for it: the game keeps a window's place by its id)
+			p.hubk = nil
+			U.hubScreenWH = nil
+			U.hubCenterDue = 6
+			pcall(U.winChanged)
+			return
+		end
+		U.hubUnitTries = 0
+	end
 	-- (the part of the screen the Hub takes for each unit of its measures: its frame and title included)
 	local rx, ry = (hw / cw) / m.W, (hh / ch) / m.H
-	local p = U.loadPrefs()
 	local key = string.format("%d,%d", math.floor(sw), math.floor(sh))
 	local old = p.hubk
 	p.hubk = string.format("%s,%.8g,%.8g", key, rx, ry)
@@ -2777,7 +3061,14 @@ U.hubAt = function()
 	local sw, sh = U.hubScreen()
 	local w, h, rx, ry = tostring(p.hubk or ""):match("^(%d+),(%d+),([%d%.eE%-]+),([%d%.eE%-]+)$")
 	rx, ry = tonumber(rx), tonumber(ry)
-	if not (rx and ry) or tonumber(w) ~= math.floor(sw) or tonumber(h) ~= math.floor(sh) then return 0.5, 0.45 end
+	if not (rx and ry) or tonumber(w) ~= math.floor(sw) or tonumber(h) ~= math.floor(sh) then
+		-- (0.8.8) nothing measured for this screen yet: centred from its measures, the screen being in the interface's units
+		-- (U.hubScreen), its title 40 units more; before, its top left corner was put near the middle of the screen (0.5, 0.45) and
+		-- the first Hub of a screen ran off it. MPFEVER_HUBFIRSTAT=0: 0.5, 0.45 as before
+		if os.getenv("MPFEVER_HUBFIRSTAT") == "0" then return 0.5, 0.45 end
+		local m0 = U.hubMeasures()
+		return math.max(0, (1 - m0.W / sw) / 2), math.max(0, (1 - (m0.H + 40) / sh) / 2)
+	end
 	local m = U.hubMeasures()
 	return math.max(0, (1 - rx * m.W) / 2), math.max(0, (1 - ry * m.H) / 2)
 end
@@ -3025,9 +3316,9 @@ U.loanCard = function(K, c, eco)
 		local myTurn = (offer.turn == "lender" and offer.lender == me) or (offer.turn == "borrower" and offer.borrower == me)
 		if myTurn then
 			card[#card + 1] = K.row {
-				K.btn(T("Accepter", "Accept"), nil, function() U.loanSend("co_loan_answer", { id = offer.id, accept = true }) end, true),
+				K.btn(T("Accepter", "Accept"), nil, function() U.loanSend("co_loan_answer", { id = offer.id, accept = true }) end, true, nil, K.ICON_ACCEPT),
 				K.gap(8, 1),
-				K.btn(T("Refuser", "Refuse"), nil, function() U.loanSend("co_loan_answer", { id = offer.id, accept = false }) end),
+				K.btn(T("Refuser", "Refuse"), nil, function() U.loanSend("co_loan_answer", { id = offer.id, accept = false }) end, false, nil, K.ICON_REFUSE),
 			}
 			card[#card + 1] = K.gap(1, 6)
 			card[#card + 1] = K.muted(T("Ou proposez d'autres conditions :", "Or offer other terms:"), K.CARD_TEXT_W)
@@ -3056,7 +3347,7 @@ U.loanCard = function(K, c, eco)
 		if l.borrower == me and l.lender == c.id then
 			card[#card + 1] = K.text(C.Tf("Vous lui devez encore %s (%s par mois).", "You still owe it %s (%s a month).", money(l.rest), money(l.monthly)), nil, "warning", K.CARD_TEXT_W)
 		elseif l.lender == me and l.borrower == c.id then
-			card[#card + 1] = K.text(C.Tf("Elle vous doit encore %s (%s par mois).", "It still owes you %s (%s a month).", money(l.rest), money(l.monthly)), nil, "success", K.CARD_TEXT_W)
+			card[#card + 1] = K.text(C.Tf("Elle vous doit encore %s (%s par mois).", "It still owes you %s (%s a month).", money(l.rest), money(l.monthly)), nil, K.moneyCls("success"), K.CARD_TEXT_W)
 		end
 	end
 	card[#card + 1] = K.muted(T("Seul le chef d'une entreprise peut demander ou accepter un prêt.", "Only a company's chief can ask for or accept a loan."), K.CARD_TEXT_W)
@@ -3090,7 +3381,7 @@ U.resyncRows = function(K, st, rows)
 			U.resyncAskedAt = os.clock()
 			U.winChanged()
 		end
-	end, false, enabled) }
+	end, false, enabled, K.ICON_SYNC) }
 	rows[#rows + 1] = K.muted(note, W)
 end
 
@@ -3121,12 +3412,25 @@ U.TABS.session = function(K, st, ctx)
 		rows[#rows + 1] = K.gap(1, 8)
 		rows[#rows + 1] = K.section(K.ICON_SPEED, T("Vitesse", "Speed"))
 		local cur = tonumber(st.speed)
-		local r = {}
-		for i, v in ipairs({ 0, 1, 2, 4 }) do
-			if i > 1 then r[#r + 1] = K.gap(6, 1) end
-			r[#r + 1] = K.btn(v == 0 and "II" or ("x" .. v), v == 0 and T("Pause", "Pause") or nil, function() U.setSpeed(v) end, cur == v)
+		-- (0.8.8, the Hub's new drawing: the game bar's own speed buttons, a group of toggle buttons with its playback icons
+		-- (gui/game_bar/game_bar_widgets.tl), see K.choice; a click always asks, on the speed shown too, as the buttons did)
+		local speeds = { 0, 1, 2, 4 }
+		local items, sel = {}, nil
+		for i, v in ipairs(speeds) do
+			items[i] = { icon = (K.ICON_SPEEDS or {})[v], label = v == 0 and "II" or ("x" .. v), tip = v == 0 and T("Pause", "Pause") or ("x" .. v) }
+			if cur == v then sel = i end
 		end
-		rows[#rows + 1] = K.row(r)
+		local group = K.choice and K.choice(items, sel, function(i) if speeds[i] ~= nil then U.setSpeed(speeds[i]) end end, "speed")
+		if group ~= nil then
+			rows[#rows + 1] = K.row { group }
+		else
+			local r = {}
+			for i, v in ipairs(speeds) do
+				if i > 1 then r[#r + 1] = K.gap(6, 1) end
+				r[#r + 1] = K.btn(v == 0 and "II" or ("x" .. v), v == 0 and T("Pause", "Pause") or nil, function() U.setSpeed(v) end, cur == v)
+			end
+			rows[#rows + 1] = K.row(r)
+		end
 	end
 	rows[#rows + 1] = K.gap(1, 8)
 	rows[#rows + 1] = K.section(K.ICON_PLAYERS, T("Joueurs", "Players") .. "  (" .. playerCount(st) .. ")")
@@ -3138,9 +3442,9 @@ U.TABS.session = function(K, st, ctx)
 			local line, cls = playerLine(pl, st.me)
 			if kick and pl.role ~= "host" and pl.state ~= "left" then
 				local who = pl.name
-				rows[#rows + 1] = K.row { K.icon(K.ICON_PERSON, 20), K.gap(6, 1), K.text(line, nil, cls, W - 206),
-					K.btn(T("Exclure", "Kick"), nil, function() U.menuRequest("kick", who) end), K.gap(6, 1),
-					K.btn(T("Bannir", "Ban"), nil, function() U.menuRequest("ban", who) end) }
+				rows[#rows + 1] = K.row { K.icon(K.ICON_PERSON, 20), K.gap(6, 1), K.text(line, nil, cls, W - 206 - K.iw(2)),
+					K.btn(T("Exclure", "Kick"), nil, function() U.menuRequest("kick", who) end, false, nil, K.ICON_KICK), K.gap(6, 1),
+					K.btn(T("Bannir", "Ban"), nil, function() U.menuRequest("ban", who) end, false, nil, K.ICON_BAN) }
 			else
 				rows[#rows + 1] = K.row { K.icon(K.ICON_PERSON, 20), K.gap(6, 1), K.text(line, nil, cls, W - 26) }
 			end
@@ -3151,8 +3455,8 @@ U.TABS.session = function(K, st, ctx)
 			local id = who
 			rows[#rows + 1] = K.gap(1, 4)
 			rows[#rows + 1] = K.text(C.Tf("%s veut rejoindre la partie", "%s wants to join the game", (id:gsub("#%d+$", ""))), nil, "warning", W)
-			rows[#rows + 1] = K.row { K.btn(T("Accepter", "Accept"), nil, function() U.menuRequest("admit", id .. " 1") end, true), K.gap(6, 1),
-				K.btn(T("Refuser", "Refuse"), nil, function() U.menuRequest("admit", id .. " 0") end) }
+			rows[#rows + 1] = K.row { K.btn(T("Accepter", "Accept"), nil, function() U.menuRequest("admit", id .. " 1") end, true, nil, K.ICON_ACCEPT), K.gap(6, 1),
+				K.btn(T("Refuser", "Refuse"), nil, function() U.menuRequest("admit", id .. " 0") end, false, nil, K.ICON_REFUSE) }
 		end
 	end
 	if st and st.invite == "1" and U.isHost(st) then
@@ -3174,7 +3478,7 @@ U.TABS.session = function(K, st, ctx)
 			r[#r + 1] = K.btn(T("Voir le dernier", "Show the last"), nil, function()
 				local x = U.lastPing
 				pcall(function() api.gui.camera.focusPosition(api.type.Vec3f.new(x.x, x.y, x.z or 0), 400) end)
-			end)
+			end, false, nil, K.ICON_LOCATE)
 		end
 		rows[#rows + 1] = K.row(r)
 		rows[#rows + 1] = K.muted((U.pingArmedAt and os.clock() - U.pingArmedAt < 15) and T("Cliquez sur la carte pour placer le signal (15 s).", "Click on the map to place the signal (15 s).")
@@ -3397,8 +3701,8 @@ U.TABS.company = function(K, st, ctx)
 			if r.to == U.myCo then
 				rows[#rows + 1] = K.card {
 					K.text(C.Tf("%s demande à rejoindre votre entreprise.", "%s asks to join your company.", r.name ~= "" and r.name or r.key), "font-scale-title-4", "warning", K.CARD_TEXT_W),
-					K.row { K.btn(T("Accepter", "Accept"), nil, function() U.coSend("co_join_answer", { key = r.key, accept = true }) end, true), K.gap(8, 1),
-						K.btn(T("Refuser", "Refuse"), nil, function() U.coSend("co_join_answer", { key = r.key, accept = false }) end) },
+					K.row { K.btn(T("Accepter", "Accept"), nil, function() U.coSend("co_join_answer", { key = r.key, accept = true }) end, true, nil, K.ICON_ACCEPT), K.gap(8, 1),
+						K.btn(T("Refuser", "Refuse"), nil, function() U.coSend("co_join_answer", { key = r.key, accept = false }) end, false, nil, K.ICON_REFUSE) },
 				}
 				rows[#rows + 1] = K.gap(1, 6)
 			end
@@ -3409,8 +3713,8 @@ U.TABS.company = function(K, st, ctx)
 				for _, c in ipairs(list) do if c.id == o.from then from = label(c) end end
 				rows[#rows + 1] = K.card {
 					K.text(C.Tf("%s propose de fusionner avec la vôtre : ses biens, son argent et ses joueurs vous rejoignent.", "%s offers to merge into yours: its assets, money and players join you.", from), "font-scale-title-4", "warning", K.CARD_TEXT_W),
-					K.row { K.btn(T("Accepter", "Accept"), nil, function() U.coSend("co_merge_answer", { from = o.from, accept = true }) end, true), K.gap(8, 1),
-						K.btn(T("Refuser", "Refuse"), nil, function() U.coSend("co_merge_answer", { from = o.from, accept = false }) end) },
+					K.row { K.btn(T("Accepter", "Accept"), nil, function() U.coSend("co_merge_answer", { from = o.from, accept = true }) end, true, nil, K.ICON_ACCEPT), K.gap(8, 1),
+						K.btn(T("Refuser", "Refuse"), nil, function() U.coSend("co_merge_answer", { from = o.from, accept = false }) end, false, nil, K.ICON_REFUSE) },
 				}
 				rows[#rows + 1] = K.gap(1, 6)
 			end
@@ -3423,7 +3727,10 @@ U.TABS.company = function(K, st, ctx)
 		local c = open
 		local isMine = c.id == U.myCo
 		local s = U.coStats(c.ent)
-		rows[#rows + 1] = K.row { K.btn(T("← Toutes les entreprises", "← All the companies"), nil, function() U.coDetail = nil; U.winChanged() end) }
+		-- (0.8.8, the Hub: the game's back icon instead of the text's arrow)
+		local backText = T("← Toutes les entreprises", "← All the companies")
+		if K.hub() then backText = (backText:gsub("^" .. string.char(226, 134, 144) .. "%s*", "")) end
+		rows[#rows + 1] = K.row { K.btn(backText, nil, function() U.coDetail = nil; U.winChanged() end, false, nil, K.ICON_BACK) }
 		rows[#rows + 1] = K.gap(1, 8)
 		rows[#rows + 1] = K.row { U.swatch(K, c.id, 26), K.gap(10, 1), K.text(label(c) .. (isMine and T("  (votre entreprise)", "  (your company)") or ""), "font-scale-title-2", isMine and "success" or nil, W - 40) }
 		rows[#rows + 1] = K.gap(1, 6)
@@ -3466,7 +3773,7 @@ U.TABS.company = function(K, st, ctx)
 				pcall(function() nv = #api.engine.system.transportVehicleSystem.getLineVehicles(l) end)
 				local line = l
 				lcard[#lcard + 1] = K.row { K.text(name, nil, nil, K.CARD_TEXT_W - 220), K.gap(6, 1), K.muted(C.Tf("%s véhicule(s)", "%s vehicle(s)", nv), 120), K.gap(6, 1),
-					K.btn(T("Voir", "Show"), T("Amener la caméra sur sa première gare", "Take the camera to its first station"), function() U.focusLine(line) end) }
+					K.locate(T("Voir", "Show"), T("Amener la caméra sur sa première gare", "Take the camera to its first station"), function() U.focusLine(line) end) }
 			end
 		else
 			lcard[#lcard + 1] = K.muted(T("Aucune ligne pour l'instant.", "No line yet."), K.CARD_TEXT_W)
@@ -3542,7 +3849,7 @@ U.TABS.company = function(K, st, ctx)
 						if i > 30 then ocard[#ocard + 1] = K.muted(C.Tf("… et %s autres lignes", "… and %s more lines", #orows - 30), K.CARD_TEXT_W); break end
 						local sg = o.sg
 						ocard[#ocard + 1] = K.row { K.text(C.Tf("%s : %s (%s, %s véhicule(s))", "%s: %s (%s, %s vehicle(s))", o.sgName, o.lineName, o.co, o.nv), nil, nil, K.CARD_TEXT_W - 80), K.gap(6, 1),
-							K.btn(T("Voir", "Show"), T("Amener la caméra sur la gare", "Take the camera to the station"), function() U.focusStationGroup(sg) end) }
+							K.locate(T("Voir", "Show"), T("Amener la caméra sur la gare", "Take the camera to the station"), function() U.focusStationGroup(sg) end) }
 					end
 				end
 				rows[#rows + 1] = K.gap(1, 10)
@@ -3586,12 +3893,24 @@ U.TABS.company = function(K, st, ctx)
 		return rows
 	end
 	-- the grid of cards: the sort, then this company first and the others
-	rows[#rows + 1] = K.row {
-		K.text(C.Tf("%s entreprise(s)", "%s company(ies)", #list), "font-scale-title-4", nil, 240), K.gap(12, 1), K.muted(T("Trier par :", "Sort by:"), 90),
-		K.btn(T("Argent", "Money"), nil, function() U.coSort = "money"; U.winChanged() end, U.coSort == "money"), K.gap(4, 1),
-		K.btn(T("Rang", "Rank"), nil, function() U.coSort = "value"; U.winChanged() end, U.coSort == "value"), K.gap(4, 1),
-		K.btn(T("Lignes", "Lines"), nil, function() U.coSort = "lines"; U.winChanged() end, U.coSort == "lines"),
-	}
+	-- (0.8.8, the Hub's new drawing: the sort as the game's group of toggle buttons, see K.choice; else its three buttons)
+	local sorts = { "money", "value", "lines" }
+	local sortSel = nil
+	for i, s in ipairs(sorts) do if U.coSort == s then sortSel = i end end
+	local sortGroup = K.choice and K.choice({ { label = T("Argent", "Money") }, { label = T("Rang", "Rank") }, { label = T("Lignes", "Lines") } }, sortSel, function(i)
+		if sorts[i] then U.coSort = sorts[i]; U.winChanged() end
+	end, "cosort")
+	if sortGroup ~= nil then
+		rows[#rows + 1] = K.row {
+			K.text(C.Tf("%s entreprise(s)", "%s company(ies)", #list), "font-scale-title-4", nil, 240), K.gap(12, 1), K.muted(T("Trier par :", "Sort by:"), 90), sortGroup }
+	else
+		rows[#rows + 1] = K.row {
+			K.text(C.Tf("%s entreprise(s)", "%s company(ies)", #list), "font-scale-title-4", nil, 240), K.gap(12, 1), K.muted(T("Trier par :", "Sort by:"), 90),
+			K.btn(T("Argent", "Money"), nil, function() U.coSort = "money"; U.winChanged() end, U.coSort == "money"), K.gap(4, 1),
+			K.btn(T("Rang", "Rank"), nil, function() U.coSort = "value"; U.winChanged() end, U.coSort == "value"), K.gap(4, 1),
+			K.btn(T("Lignes", "Lines"), nil, function() U.coSort = "lines"; U.winChanged() end, U.coSort == "lines"),
+		}
+	end
 	rows[#rows + 1] = K.gap(1, 8)
 	local sorted = {}
 	for _, c in ipairs(list) do sorted[#sorted + 1] = c end
@@ -3634,7 +3953,9 @@ U.TABS.company = function(K, st, ctx)
 		body[#body + 1] = K.row { K.btn(isMine and T("Ma fiche", "My sheet") or T("Ouvrir la fiche", "Open the sheet"), T("Ses chiffres, ses lignes, ses joueurs, ses règles et les actions", "Its figures, lines, players, rules and actions"),
 			function() U.coDetail = id; U.winChanged() end, isMine) }
 		if #rowItems > 0 then rowItems[#rowItems + 1] = K.gap(10, 1) end
-		rowItems[#rowItems + 1] = K.box(body, { size = { cw, -1 }, padding = { 8, 10, 8, 10 }, background = isMine and { 0.25, 0.55, 0.85, 0.16 } or { 1, 1, 1, 0.06 } })
+		-- (0.8.8, the Hub: the game's card, this player's own in the accent with a light contour; the same padding, see K.panel)
+		if K.hub() then rowItems[#rowItems + 1] = K.box(body, K.panel(isMine and "mine" or "card", { size = { cw, -1 }, padding = { 8, 10, 8, 10 } }))
+		else rowItems[#rowItems + 1] = K.box(body, { size = { cw, -1 }, padding = { 8, 10, 8, 10 }, background = isMine and { 0.25, 0.55, 0.85, 0.16 } or { 1, 1, 1, 0.06 } }) end
 		if #rowItems >= cols * 2 - 1 then flush() end
 	end
 	flush()
@@ -3884,8 +4205,15 @@ end
 -- a depot), its reserve, its best bid and who holds it, the bids this company can make (never more than it has left once its
 -- other best bids are counted), "Show" on the map. The auction of 0.7.3 (one lot after the other) shows here too. With
 -- MPFEVER_AUCTIONTEST=1 the host can make a company bankrupt to try it out.
-U.AU_ICON = { line = "::/gui/context_helper/icons/window_line.tga", station = "::/gui/context_helper/icons/window_station_group.tga",
-	depot = "::/gui/context_helper/icons/window_depot.tga", company = "::/gui/context_helper/icons/menu_headquarter.tga" }
+-- (0.8.8: the game's small icons. The files of gui/context_helper/icons used before are the 800 x 200 banners of the game's help
+-- window: drawn in a 20 pixel square they were a grey smear, and a warehouse had none. MPFEVER_OLDHUB=1: those of before)
+U.AU_ICON = { line = "::/gui/game_bar/icons/statistics_line_26.tga", station = "::/gui/game_bar/icons/statistics_station_26.tga",
+	depot = "::/gui/game_bar/icons/statistics_depot_26.tga", company = "::/gui/main/icons/headquarter.tga",
+	warehouse = "::/gui/entity_window/icons/symbol_cargo.tga" }
+if U.oldHub then
+	U.AU_ICON = { line = "::/gui/context_helper/icons/window_line.tga", station = "::/gui/context_helper/icons/window_station_group.tga",
+		depot = "::/gui/context_helper/icons/window_depot.tga", company = "::/gui/context_helper/icons/menu_headquarter.tga" }
+end
 U.auOpen = {}
 U.auTime = function(s)
 	s = math.max(0, math.floor(s or 0))
@@ -4024,7 +4352,7 @@ U.TABS.auction = function(K, st, ctx)
 					K.row { K.icon(U.AU_ICON[lot.kind] or K.ICON_MONEY, 20), K.gap(8, 1), K.text(U.auLotTitle(lot), "font-scale-title-4", nil, CW - 260), K.gap(8, 1),
 						K.muted(U.auLotSub(lot), 220) },
 					K.row { K.muted(C.Tf("Mise à prix %s", "Reserve %s", money(lot.reserve)), 220), K.gap(8, 1),
-						lot.best > 0 and K.text(C.Tf("Meilleure offre : %s (%s)", "Best bid: %s (%s)", money(lot.best), mineBest and T("vous", "you") or coLabel(lot.bidder)), nil, mineBest and "success" or nil, CW - 240)
+						lot.best > 0 and K.text(C.Tf("Meilleure offre : %s (%s)", "Best bid: %s (%s)", money(lot.best), mineBest and T("vous", "you") or coLabel(lot.bidder)), nil, mineBest and K.moneyCls("success") or nil, CW - 240)
 							or K.muted(T("Aucune offre pour l'instant", "No bid yet"), CW - 240) },
 				}
 				local acts = {}
@@ -4046,7 +4374,7 @@ U.TABS.auction = function(K, st, ctx)
 					function() U.auOpen[idx] = not U.auOpen[idx]; U.winChanged() end)
 				if det and det.focus and det.focus >= 0 then
 					acts[#acts + 1] = K.gap(6, 1)
-					acts[#acts + 1] = K.btn(T("Voir", "Show"), T("Amener la caméra sur place", "Take the camera there"), function() pcall(function() api.gui.camera.focusEntity(det.focus) end) end)
+					acts[#acts + 1] = K.locate(T("Voir", "Show"), T("Amener la caméra sur place", "Take the camera there"), function() pcall(function() api.gui.camera.focusEntity(det.focus) end) end)
 				end
 				card[#card + 1] = K.gap(1, 4)
 				card[#card + 1] = K.row(acts)
@@ -4088,12 +4416,27 @@ U.ruleBlock = function(K, rows, b)
 	end
 	rows[#rows + 1] = K.gap(1, 12)
 	rows[#rows + 1] = K.section(b.icon, b.title)
-	local r = {}
-	for i, rule in ipairs(b.rules or { "private", "open", "toll" }) do
-		if i > 1 then r[#r + 1] = K.gap(6, 1) end
-		r[#r + 1] = K.btn(b.labels[rule], b.texts[rule], function() if rule ~= shown then pick(rule, amount) end end, rule == shown)
+	-- (0.8.8, the Hub's new drawing: the game's group of toggle buttons, see K.choice; else the buttons, the chosen one in primary)
+	local ruleList = b.rules or { "private", "open", "toll" }
+	local items, sel = {}, nil
+	for i, rule in ipairs(ruleList) do
+		items[i] = { label = b.labels[rule], tip = b.texts[rule] }
+		if rule == shown then sel = i end
 	end
-	rows[#rows + 1] = K.row(r)
+	local group = K.choice and K.choice(items, sel, function(i)
+		local rule = ruleList[i]
+		if rule and rule ~= shown then pick(rule, amount) end
+	end, "rule-" .. tostring(b.kind))
+	if group ~= nil then
+		rows[#rows + 1] = K.row { group }
+	else
+		local r = {}
+		for i, rule in ipairs(ruleList) do
+			if i > 1 then r[#r + 1] = K.gap(6, 1) end
+			r[#r + 1] = K.btn(b.labels[rule], b.texts[rule], function() if rule ~= shown then pick(rule, amount) end end, rule == shown)
+		end
+		rows[#rows + 1] = K.row(r)
+	end
 	if shown == "toll" then
 		local items, listed = {}, false
 		local amounts = {}
@@ -4128,7 +4471,11 @@ U.hubTable = function(K, lines, widths, opts)
 	local n = 0
 	for _, line in ipairs(lines or {}) do n = math.max(n, #line) end
 	n = math.max(1, n)
-	local inner = (tonumber(opts.width) or K.TEXT_W) - 16
+	-- (0.8.8, the Hub: the game's table, as u.table: 12 pixels around a cell, the Finances table's colours)
+	local game = K.hub ~= nil and K.hub()
+	local padH, padV, gut = game and 12 or 8, game and 12 or 4, game and 12 or 8
+	local TINT = game and K.tint or function(k) return U.HUB_TINT[k] end
+	local inner = (tonumber(opts.width) or K.TEXT_W) - 2 * padH
 	local ws, sum = {}, 0
 	for j = 1, n do ws[j] = math.max(16, tonumber(widths and widths[j]) or math.floor(inner / n)); sum = sum + ws[j] end
 	local k, used = inner / math.max(1, sum), 0
@@ -4147,20 +4494,20 @@ U.hubTable = function(K, lines, widths, opts)
 			if type(cell) == "table" and cell.node ~= nil then
 				node = cell.node
 			elseif type(cell) == "table" and cell.text ~= nil then
-				node = K.colored(tostring(cell.text), K.classColor(cell.cls), ws[j] - 8)
+				node = K.colored(tostring(cell.text), K.classColor(cell.cls), ws[j] - gut)
 			elseif head then
-				node = K.colored(tostring(cell or ""), K.color("NeutralLight"), ws[j] - 8)
+				node = K.colored(tostring(cell or ""), K.color("NeutralLight"), ws[j] - gut)
 			else
-				node = K.text(tostring(cell or ""), nil, nil, ws[j] - 8)
+				node = K.text(tostring(cell or ""), nil, nil, ws[j] - gut)
 			end
 			cells[#cells + 1] = K.box({ node }, { size = { ws[j], -1 } }, K.H)
 		end
-		local bg = head and U.HUB_TINT.head or ((i % 2 == 0) and U.HUB_TINT.odd or U.HUB_TINT.even)
+		local bg = head and TINT("head") or ((i % 2 == 0) and TINT("odd") or TINT("even"))
 		if not head and type(opts.highlight) == "function" then
 			local okH, hi = pcall(opts.highlight, opts.header ~= false and i - 1 or i)
-			if okH and hi then bg = U.HUB_TINT.mine end
+			if okH and hi then bg = TINT("mine") end
 		end
-		out[#out + 1] = K.box(cells, { size = { inner + 16, -1 }, padding = { 4, 8, 4, 8 }, background = bg }, K.H)
+		out[#out + 1] = K.box(cells, { size = { inner + 2 * padH, -1 }, padding = { padV, padH, padV, padH }, background = bg }, K.H)
 	end
 	return K.col(out)
 end
@@ -4172,10 +4519,21 @@ U.helpCard = function(K, rows, key, paragraphs)
 	local W = K.TEXT_W
 	local folded = U.helpFolded[key] == true
 	rows[#rows + 1] = K.gap(1, 14)
-	local head = K.row { K.icon(K.ICON_ALERT, 22), K.gap(8, 1), K.text(T("Comment ça marche ?", "How does it work?"), "font-scale-title-4", nil, W - 150),
-		K.btn(folded and T("Afficher", "Show") or T("Masquer", "Hide"), nil, function() U.helpFolded[key] = not folded; U.winChanged() end) }
 	-- (the Hub: a title of its own, its paragraphs in its card, see U.hubCards; the small window: a box of its own)
 	local inHub = U.hubDrawing == true and type(U.hubMarks) == "table"
+	local head
+	if inHub and K.hub ~= nil and K.hub() then
+		-- (0.8.8, the Hub's new drawing: the game's information bubble (gui/main/content_card.tl's makeInfoHint: its outlined « i »
+		-- and the card in the Info colour at alpha 0.25, here at the page's width: the game's own is 380 pixels wide), folded with
+		-- the arrow of the game's collapsible cards (collapse_up / collapse_down), the word as its tooltip)
+		head = K.row { K.icon(K.ICON_INFO, 20), K.gap(8, 1), K.text(T("Comment ça marche ?", "How does it work?"), "font-scale-headline", nil, W - 80),
+			K.ibtn(folded and K.ICON_UNFOLD or K.ICON_FOLD, folded and T("Afficher", "Show") or T("Masquer", "Hide"), function() U.helpFolded[key] = not folded; U.winChanged() end, false, true, 17, 12) }
+		U.hubMarks.tints = U.hubMarks.tints or {}
+		U.hubMarks.tints[head] = "info"
+	else
+		head = K.row { K.icon(K.ICON_ALERT, 22), K.gap(8, 1), K.text(T("Comment ça marche ?", "How does it work?"), "font-scale-title-4", nil, W - 150),
+			K.btn(folded and T("Afficher", "Show") or T("Masquer", "Hide"), nil, function() U.helpFolded[key] = not folded; U.winChanged() end) }
+	end
 	if inHub then U.hubMarks[head] = "title" end
 	rows[#rows + 1] = head
 	if folded then return end
@@ -4216,7 +4574,7 @@ U.TABS.ai = function(K, st, ctx)
 					n = n + 1
 					if n > 12 then break end
 					local r = { K.text(U.aiText(x), nil, nil, CW - 80) }
-					if x.x and x.y then r[#r + 1] = K.gap(6, 1); r[#r + 1] = K.btn(T("Voir", "Show"), nil, function() U.aiFocus(x) end) end
+					if x.x and x.y then r[#r + 1] = K.gap(6, 1); r[#r + 1] = K.locate(T("Voir", "Show"), nil, function() U.aiFocus(x) end) end
 					card[#card + 1] = K.row(r)
 				end
 			end
@@ -4361,8 +4719,8 @@ U.TABS.rules = function(K, st, ctx)
 		rows[#rows + 1] = K.section(K.ICON_MONEY, T("Gains et frais", "Earnings and fees"))
 		rows[#rows + 1] = U.hubTable(K, {
 			{ "", T("Reçu", "Received"), T("Payé", "Paid") },
-			{ T("Gares et arrêts partagés", "Shared stations and stops"), { text = money(fe.si), cls = (fe.si or 0) > 0 and "success" or nil }, { text = money(fe.se), cls = (fe.se or 0) > 0 and "error" or nil } },
-			{ T("Péages (voies et dépôts)", "Tolls (tracks and depots)"), { text = money(fe.ti), cls = (fe.ti or 0) > 0 and "success" or nil }, { text = money(fe.te), cls = (fe.te or 0) > 0 and "error" or nil } },
+			{ T("Gares et arrêts partagés", "Shared stations and stops"), { text = money(fe.si), cls = (fe.si or 0) > 0 and K.moneyCls("success") or nil }, { text = money(fe.se), cls = (fe.se or 0) > 0 and K.moneyCls("error") or nil } },
+			{ T("Péages (voies et dépôts)", "Tolls (tracks and depots)"), { text = money(fe.ti), cls = (fe.ti or 0) > 0 and K.moneyCls("success") or nil }, { text = money(fe.te), cls = (fe.te or 0) > 0 and K.moneyCls("error") or nil } },
 		}, { 46, 27, 27 })
 		-- (by company: what this one paid to it and what it paid to this one, every kind together)
 		local paidTo, gotFrom = U.paidBy(eco, my), {}
@@ -4378,8 +4736,8 @@ U.TABS.rules = function(K, st, ctx)
 			for _, id in ipairs(ids) do
 				local t = paidTo[id] or { s = 0, t = 0, d = 0 }
 				local out = (t.s or 0) + (t.t or 0) + (t.d or 0)
-				lines[#lines + 1] = { U.aiCoName(id), { text = money(gotFrom[id] or 0), cls = (gotFrom[id] or 0) > 0 and "success" or nil },
-					{ text = money(out), cls = out > 0 and "error" or nil }, money(t.s or 0) .. " / " .. money(t.t or 0) .. " / " .. money(t.d or 0) }
+				lines[#lines + 1] = { U.aiCoName(id), { text = money(gotFrom[id] or 0), cls = (gotFrom[id] or 0) > 0 and K.moneyCls("success") or nil },
+					{ text = money(out), cls = out > 0 and K.moneyCls("error") or nil }, money(t.s or 0) .. " / " .. money(t.t or 0) .. " / " .. money(t.d or 0) }
 			end
 			rows[#rows + 1] = K.gap(1, 6)
 			rows[#rows + 1] = U.hubTable(K, lines, { 28, 20, 20, 32 })
@@ -4602,6 +4960,8 @@ U.featOff = os.getenv("MPFEVER_FEAT") == "0"
 U.hubOff = os.getenv("MPFEVER_HUB") == "0"
 -- (0.6, the Hub) the backgrounds of its boxes: a card, a table's head and its rows (one in two a little lighter), this player's own
 -- row, the tinted cards (a warning, an error, a success, an information), a bar's empty part, the menu
+-- (0.8.8: the Hub's drawing of before, kept for MPFEVER_OLDHUB=1 and for what is drawn when the game no longer has one of its
+-- widgets; the Hub's new drawing takes the game's theme from the kit: K.panel, K.tint)
 U.HUB_TINT = {
 	card = { 1, 1, 1, 0.06 }, head = { 1, 1, 1, 0.11 }, odd = { 1, 1, 1, 0.05 }, even = { 1, 1, 1, 0.015 }, mine = { 0.25, 0.55, 0.9, 0.24 },
 	warning = { 0.6, 0.45, 0.1, 0.25 }, error = { 0.6, 0.1, 0.1, 0.35 }, success = { 0.15, 0.5, 0.2, 0.25 }, info = { 0.1, 0.3, 0.5, 0.3 },
@@ -4613,7 +4973,11 @@ U.featLen = function(s)
 	for _ in tostring(s or ""):gmatch("[^" .. string.char(128) .. "-" .. string.char(191) .. "]") do n = n + 1 end
 	return n
 end
-U.HUB_COLORS = { success = { 0.42, 0.82, 0.45 }, warning = { 1, 0.76, 0.25 }, error = { 1, 0.38, 0.33 }, info = { 0.45, 0.72, 1 } }
+-- (0.8.8) a bar's or a swatch's status colours: the game's own (default_colors.gres: Ok #4CBB17, Warning #DAA520, Error #CE2029,
+-- Info #2D68C4); MPFEVER_OLDHUB=1: the Hub's own of before
+U.HUB_COLORS_OLD = { success = { 0.42, 0.82, 0.45 }, warning = { 1, 0.76, 0.25 }, error = { 1, 0.38, 0.33 }, info = { 0.45, 0.72, 1 } }
+U.HUB_COLORS_GAME = { success = { 0.298, 0.733, 0.09 }, warning = { 0.855, 0.647, 0.125 }, error = { 0.808, 0.125, 0.161 }, info = { 0.176, 0.408, 0.769 } }
+U.HUB_COLORS = U.oldHub and U.HUB_COLORS_OLD or U.HUB_COLORS_GAME
 -- a colour as a box's background { r, g, b, a }: { r, g, b[, a] } in 0..1, a class name ("success", "warning", "error", "info"),
 -- or a company's number (its colour in the companies' palette); grey otherwise
 U.hubRgba = function(c)
@@ -4636,6 +5000,9 @@ end
 -- "card": K.card, u.card) keeps its title as a heading without a card around it, and the gaps (marked "gap") at the end of a
 -- group go after its card (the room between two cards: none of the page's nodes is left out, the game's react made each one in
 -- its tree). w: the cards' width (the page's content). Plain list in, list out.
+-- (0.8.8, the Hub's new drawing) The game's own way, as its Finances window (game_mechanics/finance/finances_table.tl: a heading,
+-- then its card under it): a title stays above its card, which holds the group's rows only, 4 pixels under the title and 8
+-- between two cards; the card is the game's (K.panel), tinted when its title asks for it (marks.tints[title], see U.helpCard).
 U.hubCards = function(K, rows, marks, w)
 	local lead, groups, cur = {}, {}, nil
 	for _, n in ipairs(rows or {}) do
@@ -4652,7 +5019,12 @@ U.hubCards = function(K, rows, marks, w)
 		while #list > 0 and marks[list[#list]] == "gap" do table.insert(t, 1, table.remove(list)) end
 		return t
 	end
-	local function box(children) return K.box(children, { size = { w, -1 }, padding = { 10, 12, 10, 12 }, background = U.HUB_TINT.card }) end
+	-- (0.8.8: the game's card, see K.panel; a kit without it, or MPFEVER_OLDHUB=1: the flat box of before)
+	local game = K.game == true and K.panel ~= nil
+	local function box(children)
+		if game then return K.box(children, K.panel("card", { size = { w, -1 } })) end
+		return K.box(children, { size = { w, -1 }, padding = { 10, 12, 10, 12 }, background = U.HUB_TINT.card })
+	end
 	local function holdsCard(list) for _, n in ipairs(list) do if marks[n] == "card" then return true end end return false end
 	local out = {}
 	local function add(list) for _, n in ipairs(list) do out[#out + 1] = n end end
@@ -4666,8 +5038,18 @@ U.hubCards = function(K, rows, marks, w)
 	add(leadTail)
 	for _, g in ipairs(groups) do
 		local after = tail(g.items)
-		if #out > 0 and marks[out[#out]] ~= "gap" then out[#out + 1] = K.gap(1, 12) end
-		if holdsCard(g.items) then
+		-- (0.8.8: 8 pixels between two cards, as in the game's Finances window)
+		if #out > 0 and marks[out[#out]] ~= "gap" then out[#out + 1] = K.gap(1, game and K.SPACE or 12) end
+		if game then
+			-- (0.8.8) the game's way (Finances: a heading, then its card under it): the title stays above its card, which holds
+			-- the rows only; a card tinted for its title (marks.tints: « How does it work? » in the info bubble's colour)
+			out[#out + 1] = g.title
+			if #g.items > 0 then
+				out[#out + 1] = K.gap(1, 4)
+				if holdsCard(g.items) then add(g.items)
+				else out[#out + 1] = K.box(g.items, K.panel(type(marks.tints) == "table" and marks.tints[g.title] or "card", { size = { w, -1 } })) end
+			end
+		elseif holdsCard(g.items) then
 			out[#out + 1] = g.title
 			out[#out + 1] = K.gap(1, 6)
 			add(g.items)
@@ -4761,22 +5143,46 @@ U.featGameRows = function(K, st, rows)
 		local on = F.on(map, id)
 		rows[#rows + 1] = K.gap(1, 8)
 		rows[#rows + 1] = K.text(F.text(e.opt.title or id, T), nil, nil, W)
-		rows[#rows + 1] = K.row { K.btn(T("Activée", "On"), nil, function() if not on then U.featAsk(id, 1) end end, on),
-			K.gap(4, 1), K.btn(T("Désactivée", "Off"), nil, function() if on then U.featAsk(id, 0) end end, not on) }
+		-- (0.8.8, the Hub's new drawing: On / Off and a parameter's values as the game's groups of toggle buttons, see K.choice; any
+		-- other kit, the small window, MPFEVER_OLDHUB=1: the buttons of before, the chosen one in primary)
+		local onOff = K.choice and K.choice({ { label = T("Activée", "On") }, { label = T("Désactivée", "Off") } }, on and 1 or 2, function(i)
+			if i == 1 and not on then U.featAsk(id, 1) elseif i == 2 and on then U.featAsk(id, 0) end
+		end, "opt-" .. tostring(id))
+		if onOff ~= nil then
+			rows[#rows + 1] = K.row { onOff }
+		else
+			rows[#rows + 1] = K.row { K.btn(T("Activée", "On"), nil, function() if not on then U.featAsk(id, 1) end end, on),
+				K.gap(4, 1), K.btn(T("Désactivée", "Off"), nil, function() if on then U.featAsk(id, 0) end end, not on) }
+		end
 		if e.opt.desc then rows[#rows + 1] = K.muted(F.text(e.opt.desc, T), W) end
 		if on then
 			for _, p in ipairs(e.params) do
 				local cur = tostring(F.param(map, id, p.id))
 				rows[#rows + 1] = K.text("   " .. F.text(p.label or p.id, T), nil, nil, W)
-				-- (rows of six buttons at most: nothing may go out of the window)
-				local line = {}
-				for _, v in ipairs(p.values) do
-					local pick = tostring(v)
-					if #line >= 12 then rows[#rows + 1] = K.row(line); line = {} end
-					line[#line + 1] = K.btn(F.showValue(p, v, T), nil, function() if pick ~= cur then U.featAsk(id .. "." .. p.id, pick) end end, pick == cur)
-					line[#line + 1] = K.gap(4, 1)
+				local items, sel = {}, nil
+				if K.choice then
+					for i, v in ipairs(p.values) do
+						items[i] = { label = F.showValue(p, v, T) }
+						if tostring(v) == cur then sel = i end
+					end
 				end
-				if #line > 0 then rows[#rows + 1] = K.row(line) end
+				-- (rows of six buttons at most: nothing may go out of the window)
+				local values = K.choice and K.choice(items, sel, function(i)
+					local v = p.values[i]
+					if v ~= nil and tostring(v) ~= cur then U.featAsk(id .. "." .. p.id, tostring(v)) end
+				end, "opt-" .. tostring(id) .. "-" .. tostring(p.id), 6)
+				if values ~= nil then
+					rows[#rows + 1] = K.row { values }
+				else
+					local line = {}
+					for _, v in ipairs(p.values) do
+						local pick = tostring(v)
+						if #line >= 12 then rows[#rows + 1] = K.row(line); line = {} end
+						line[#line + 1] = K.btn(F.showValue(p, v, T), nil, function() if pick ~= cur then U.featAsk(id .. "." .. p.id, pick) end end, pick == cur)
+						line[#line + 1] = K.gap(4, 1)
+					end
+					if #line > 0 then rows[#rows + 1] = K.row(line) end
+				end
 			end
 		end
 	end
@@ -4821,13 +5227,16 @@ U.featU = function(K, st, M)
 	-- tests' kits) every helper draws what it drew before 0.6's Hub, and the new ones fall back to plain rows.
 	local rich = U.hubDrawing == true and K.box ~= nil
 	u.rich = rich
+	-- (0.8.8) the Hub's new drawing, in the game's own style (see U.makeKit; never with another kit or MPFEVER_OLDHUB=1)
+	local game = rich and K.game == true and K.panel ~= nil
 	-- (the nodes the page's cards are made from, see U.hubCards: the Hub's own table while it draws, else this page's)
 	local marks = (rich and U.hubMarks) or {}
 	u.marks = marks
 	u.add = function(node) if node ~= nil then rows[#rows + 1] = node end return node end
 	u.title = function(t)
 		if not rich then return K.section(K.ICON_SETTINGS, tostring(t)) end
-		local n = K.text(tostring(t), "font-scale-title-4", nil, W)
+		-- (0.8.8: the game's heading, as wide as the page's cards, see K.heading; before: a bold text)
+		local n = game and K.heading(tostring(t), W + 40) or K.text(tostring(t), "font-scale-title-4", nil, W)
 		marks[n] = "title"
 		return n
 	end
@@ -4890,13 +5299,17 @@ U.featU = function(K, st, M)
 				head[#head + 1] = K.gap(8, 1)
 				tw = tw - 22
 			end
-			head[#head + 1] = K.text(tostring(title or ""), "font-scale-title-4", nil, math.max(40, tw))
+			-- (0.8.8: a card's title in the game's headline font, as its ContentCard writes it)
+			head[#head + 1] = K.text(tostring(title or ""), game and "font-scale-headline" or "font-scale-title-4", nil, math.max(40, tw))
 			for _, n in ipairs(opts.right or {}) do head[#head + 1] = u.resolve(n) end
 			list[#list + 1] = K.row(head)
 			list[#list + 1] = K.gap(1, 6)
 		end
 		for _, c in ipairs(children or {}) do list[#list + 1] = u.resolve(c) end
-		local n = K.box(list, { size = { W + 24, -1 }, padding = { 10, 12, 10, 12 }, background = U.HUB_TINT[opts.tint or "card"] or U.HUB_TINT.card })
+		local n
+		-- (0.8.8: the game's card, tinted as its info bubble is, see K.panel; the page's texts are 40 narrower than its cards)
+		if game then n = K.box(list, K.panel(opts.tint or "card", { size = { W + 40, -1 } }))
+		else n = K.box(list, { size = { W + 24, -1 }, padding = { 10, 12, 10, 12 }, background = U.HUB_TINT[opts.tint or "card"] or U.HUB_TINT.card }) end
 		marks[n] = "card"
 		return n
 	end
@@ -4916,12 +5329,30 @@ U.featU = function(K, st, M)
 		local bw = tonumber(opts.width) or (W - leadW - labelW - (opts.lead and 10 or 0) - (label and 10 or 0))
 		bw = math.max(40, math.floor(bw))
 		local h = tonumber(opts.height) or 14
-		local fill = math.floor(bw * f + 0.5)
-		local track = K.box(fill >= 1 and { K.rect(fill, h, U.hubRgba(colour)) } or {}, { size = { bw, h }, background = U.HUB_TINT.track }, K.H)
-		-- (the bar a little lower: in the middle of the texts' line)
+		-- (0.8.8) the game's own progress bar (builtin.ProgressBar, as its loans and subsidies show theirs: game_mechanics/finance/
+		-- finances_loan_gui.tl; the game's rule gives it its rounded track on BaseVeryDark and its height of 20, the fill takes the
+		-- style's colour). The lead and the label stay texts beside it, at the same widths. A game without that widget, or an
+		-- error making it: the two rectangles of before.
+		local bar = nil
+		if game then
+			local okP, pb = pcall(function()
+				local PB = K.builtin.ProgressBar
+				if not PB then return nil end
+				local c = U.hubRgba(colour)
+				return PB { meta = { class = "font-scale-annotation",
+					styleSheet = K.style { size = { bw, math.max(20, h) }, color = api.type.Vec4f.new(c[1], c[2], c[3], c[4] or 1) } }, value = f }
+			end)
+			if okP and pb ~= nil then bar = pb end
+		end
+		if bar == nil then
+			local fill = math.floor(bw * f + 0.5)
+			local track = K.box(fill >= 1 and { K.rect(fill, h, U.hubRgba(colour)) } or {}, { size = { bw, h }, background = U.HUB_TINT.track }, K.H)
+			-- (the bar a little lower: in the middle of the texts' line)
+			bar = K.box({ K.gap(1, 4), track })
+		end
 		local cells = {}
 		if opts.lead then cells[#cells + 1] = K.text(tostring(opts.lead), nil, opts.leadCls, leadW); cells[#cells + 1] = K.gap(10, 1) end
-		cells[#cells + 1] = K.box({ K.gap(1, 4), track })
+		cells[#cells + 1] = bar
 		if label then cells[#cells + 1] = K.gap(10, 1); cells[#cells + 1] = K.text(tostring(label), nil, opts.labelCls, labelW) end
 		return K.row(cells)
 	end
@@ -4931,6 +5362,11 @@ U.featU = function(K, st, M)
 		opts = type(opts) == "table" and opts or {}
 		if not rich then return K.text(tostring(label) .. T(" : ", ": ") .. tostring(value), nil, cls, W) end
 		local w = tonumber(opts.width) or 180
+		-- (0.8.8: a darker box with the card's contour, as the game's cards hold theirs; the same padding: the widths are kept)
+		if game then
+			return K.box({ K.muted(tostring(label), w - 20), K.text(tostring(value), "font-scale-title-3", cls, w - 20) },
+				K.panel(opts.tint or "inner", { size = { w, -1 }, padding = { 6, 10, 6, 10 } }))
+		end
 		return K.box({ K.muted(tostring(label), w - 20), K.text(tostring(value), "font-scale-title-3", cls, w - 20) },
 			{ size = { w, -1 }, padding = { 6, 10, 6, 10 }, background = U.HUB_TINT[opts.tint or "card"] or U.HUB_TINT.card })
 	end
@@ -4941,7 +5377,8 @@ U.featU = function(K, st, M)
 			return K.col(out)
 		end
 		local w = tonumber(width) or 180
-		local per = math.max(1, math.floor((W + 24 + 10) / (w + 10)))
+		-- (0.8.8: a row of boxes never wider than the page's texts, the room in one of the game's cards)
+		local per = math.max(1, math.floor((W + (game and 0 or 24) + 10) / (w + 10)))
 		local line = {}
 		for _, s in ipairs(list or {}) do
 			if #line > 0 then line[#line + 1] = K.gap(10, 1) end
@@ -5024,7 +5461,11 @@ U.featU = function(K, st, M)
 		local n = 0
 		for _, line in ipairs(lines or {}) do n = math.max(n, #line) end
 		n = math.max(1, n)
-		local inner = (tonumber(opts.width) or W) - 16
+		-- (0.8.8: the game's table, game_mechanics/finance/finances.css.lua: 12 pixels around a cell, the head on BaseDark, the
+		-- rows BaseLight / BaseMedium, this player's row in the accent; before: 4 / 8 pixels and white veils)
+		local padH, padV, gut = game and 12 or 8, game and 12 or 4, game and 12 or 8
+		local TINT = game and K.tint or function(k) return U.HUB_TINT[k] end
+		local inner = (tonumber(opts.width) or W) - 2 * padH
 		local ws, sum = {}, 0
 		for j = 1, n do
 			ws[j] = math.max(16, tonumber(widths and widths[j]) or math.floor(inner / n))
@@ -5046,20 +5487,20 @@ U.featU = function(K, st, M)
 				if cell == nil then cell = "" end
 				-- (each text in a box of its column's width: the game sizes a lone text to its letters, and the columns ran together)
 				if deferred[cell] then
-					cells[#cells + 1] = K.box({ u.resolve(cell, ws[j] - 8) }, { size = { ws[j], -1 } }, K.H)
+					cells[#cells + 1] = K.box({ u.resolve(cell, ws[j] - gut) }, { size = { ws[j], -1 } }, K.H)
 				elseif type(cell) == "string" or (type(cell) == "number" and not (made[cell] or nodes[cell])) then
-					local t = head and K.colored(tostring(cell), K.color("NeutralLight"), ws[j] - 8) or K.text(tostring(cell), nil, nil, ws[j] - 8)
+					local t = head and K.colored(tostring(cell), K.color("NeutralLight"), ws[j] - gut) or K.text(tostring(cell), nil, nil, ws[j] - gut)
 					cells[#cells + 1] = K.box({ t }, { size = { ws[j], -1 } }, K.H)
 				else
 					cells[#cells + 1] = K.box({ cell }, { size = { ws[j], -1 } }, K.H)
 				end
 			end
-			local bg = head and U.HUB_TINT.head or ((i % 2 == (header and 0 or 1)) and U.HUB_TINT.odd or U.HUB_TINT.even)
+			local bg = head and TINT("head") or ((i % 2 == (header and 0 or 1)) and TINT("odd") or TINT("even"))
 			if not head and type(opts.highlight) == "function" then
 				local okH, hi = pcall(opts.highlight, header and i - 1 or i, line)
-				if okH and hi then bg = U.HUB_TINT.mine end
+				if okH and hi then bg = TINT("mine") end
 			end
-			out[#out + 1] = K.box(cells, { size = { inner + 16, -1 }, padding = { 4, 8, 4, 8 }, background = bg }, K.H)
+			out[#out + 1] = K.box(cells, { size = { inner + 2 * padH, -1 }, padding = { padV, padH, padV, padH }, background = bg }, K.H)
 		end
 		return K.col(out)
 	end
@@ -5294,12 +5735,120 @@ U.hubPageRows = function(K, st, chat, ctx, page)
 	return U.TABS[page](K, st, ctx)
 end
 U.HUB_KIT_KEYS = { "WIN_W", "BODY_H", "INNER_W", "TEXT_W", "CARD_W", "CARD_TEXT_W", "section", "gap", "card" }
-U.hubContent = function(K, st, chat, ctx)
+-- (0.8.8) The Hub's navigation in the game's own way, as its Company window has it (game_mechanics/company/company.tl): the three
+-- groups are North tabs (builtin.TabWidget, with empty items as the entity windows' tab strip and this mod's small window:
+-- class "no-content", gui/entity_window/make_entity_window.tl), the group's pages a builtin.List on the left, each entry an icon
+-- and its name in the headline font (the list's own global rules show the entry under the mouse and the one chosen,
+-- gui/main/builtin.css.lua "List::Item!checked"); the page's name is in the window's title (U.hubTitle), and the session's state,
+-- the size buttons and « Quick view » are icons at the right of the tabs. Returns the tabs' row and the list, or nil when the
+-- game no longer has those widgets: the head and the menu of before are drawn then (U.hubHeadOld, U.hubSideOld), as with
+-- MPFEVER_OLDHUB=1.
+U.hubGroupOfPage = function(menu, page)
+	for _, g in ipairs(menu) do for _, id in ipairs(g.pages) do if id == page then return g end end end
+	return menu[1]
+end
+-- a group's tab: the page it showed last in this session, else its first one
+U.setHubGroup = function(key, menu)
+	for _, g in ipairs(menu or {}) do
+		if g.key == key then
+			local want, page = U.hubLastIn and U.hubLastIn[key], g.pages[1]
+			for _, id in ipairs(g.pages) do if id == want then page = id end end
+			if page then U.setHubPage(page) end
+			return
+		end
+	end
+end
+U.hubNav = function(K, st, m, menu, page)
 	local builtin = K.builtin
-	local m = U.hubMeasures()
-	local page = U.hubValid(U.hubPage, st)
-	local menu = U.hubMenu(st)
-	-- the menu: the groups' titles and a button per page (the page shown: the primary one)
+	local TabWidget, TabChild, List, north, pol
+	local okW = pcall(function()
+		TabWidget, TabChild, List = builtin.TabWidget, builtin.TabWidgetChild, builtin.List
+		north, pol = builtin.type.TabOrientation.North, builtin.type.ScrollBarPolicy
+	end)
+	local cur = U.hubGroupOfPage(menu, page)
+	if not (okW and TabWidget and TabChild and List and north ~= nil and pol and cur) then
+		if not U.hubNavMissing then U.hubNavMissing = true; log("hub: the game's tabs or list cannot be had: the menu of before") end
+		return nil
+	end
+	U.hubLastIn = U.hubLastIn or {}
+	U.hubLastIn[cur.key] = page
+	-- the groups (MPFEVER_WINTABS=buttons: a row of buttons, as the small window's tab strip then)
+	local strip
+	if os.getenv("MPFEVER_WINTABS") == "buttons" then
+		local r = {}
+		for i, g in ipairs(menu) do
+			local key = g.key
+			if i > 1 then r[#r + 1] = K.gap(4, 1) end
+			r[#r + 1] = K.btn(g.title, nil, function() if key ~= cur.key then U.setHubGroup(key, menu) end end, key == cur.key)
+		end
+		strip = K.row(r)
+	else
+		local tabs = {}
+		for _, g in ipairs(menu) do
+			tabs[#tabs + 1] = TabChild {
+				localKey = "mpfever-hub-group-" .. g.key,
+				value = g.key,
+				indicator = builtin.TextView { meta = { class = "font-scale-tab-widget-indicator" }, text = g.title },
+				item = builtin.Component {},
+			}
+		end
+		strip = TabWidget {
+			meta = { class = "no-content", disableFocusableRecursive = true },
+			orientation = north,
+			deselectAllowed = false,
+			value = cur.key,
+			onValueChange = function(v) if v ~= nil and tostring(v) ~= cur.key then U.setHubGroup(tostring(v), menu) end end,
+			tabs = tabs,
+		}
+	end
+	-- at the right of the tabs: the session's state (its dot and its text), smaller, larger, the quick view (the icons of the game's
+	-- window buttons, gui/builtin/window/icons; the texts of the buttons of before are their tooltips)
+	local sync, syncCls = syncLine(st)
+	local syncW = math.max(120, math.min(300, m.W - 640))
+	local rightW = syncW + 150
+	local head = K.row {
+		K.box({ strip }, { size = { m.W - rightW, -1 } }),
+		K.col { K.gap(1, 3), K.row {
+			K.col { K.gap(1, 11), K.dot(syncCls, 12) }, K.gap(6, 1), K.col { K.gap(1, 6), K.text(sync, nil, syncCls, syncW) }, K.gap(8, 1),
+			K.ibtn(K.ICON_SMALLER, T("Plus petit", "Smaller"), function() U.setHubSize(-1) end, false, (U.hubSize or 2) > 1),
+			K.gap(4, 1),
+			K.ibtn(K.ICON_LARGER, T("Plus grand", "Larger"), function() U.setHubSize(1) end, false, (U.hubSize or 2) < #U.HUB_SCALES),
+			K.gap(4, 1),
+			K.ibtn(K.ICON_QUICK, T("Vue rapide", "Quick view") .. "  ·  " .. T("La petite fenêtre : la session et la discussion", "The small window: the session and the chat"),
+				function() U.openWindow(nil) end),
+		} },
+	}
+	-- the group's pages: the list, in a darker panel with the card's contour
+	local pages, entries, sel = cur.pages, {}, 1
+	local tw = math.max(60, m.side - 60)
+	for i, id in ipairs(pages) do
+		local on = id == page
+		if on then sel = i end
+		local label = U.hubLabel(id)
+		entries[#entries + 1] = builtin.Component {
+			meta = { styleSheet = K.style { size = { m.side - 4, -1 }, padding = { 8, 6, 8, 12 } } },
+			-- (the chosen page's name in the accent, as the Company window's list writes its chosen rank: company.css.lua)
+			layout = K.row { K.icon(U.hubIcon(id), 24), K.gap(8, 1),
+				on and K.colored(label, K.color("AccentVeryLight"), tw, "font-scale-headline") or K.text(label, "font-scale-headline", nil, tw) },
+		}
+	end
+	local list = List {
+		meta = { localKey = "mpfever-hub-list-" .. cur.key, styleSheet = K.style { size = { m.side - 4, m.bodyH - 12 } } },
+		children = entries,
+		-- (the list counts from 1, as company.tl's and map_editor.tl's do)
+		selectionIndex = sel,
+		onSelect = function(index)
+			local id = pages[tonumber(index) or 0]
+			if id and id ~= page then U.setHubPage(id) end
+		end,
+		verticalScrollBarPolicy = pol.AsNeeded,
+		horizontalScrollBarPolicy = pol.AlwaysOff,
+	}
+	return head, K.box({ list }, K.panel("inner", { size = { m.side, m.bodyH }, padding = { 6, 2, 6, 2 } }))
+end
+-- the menu of before 0.8.8: the groups' titles and a button per page (the page shown: the primary one)
+U.hubSideOld = function(K, m, menu, page)
+	local builtin = K.builtin
 	local side = {}
 	for gi, g in ipairs(menu) do
 		if gi > 1 then side[#side + 1] = K.gap(1, 14) end
@@ -5311,12 +5860,46 @@ U.hubContent = function(K, st, chat, ctx)
 			side[#side + 1] = K.gap(1, 3)
 		end
 	end
-	local sideBox = builtin.ScrollArea {
+	return builtin.ScrollArea {
 		meta = { localKey = "mpfever-hub-menu", styleSheet = K.style { size = { m.side, m.bodyH } } },
 		content = K.box(side, { size = { m.side - 6, -1 }, padding = { 10, 8, 10, 8 }, background = U.HUB_TINT.side }),
 		horizontalPolicy = builtin.type.ScrollBarPolicy.AlwaysOff,
 		verticalPolicy = builtin.type.ScrollBarPolicy.AsNeeded,
 	}
+end
+-- the head of before 0.8.8: the page's name and its group, the session's state, the size, the quick view
+U.hubHeadOld = function(K, st, m, page)
+	local sync, syncCls = syncLine(st)
+	local headW = m.W - 330
+	return K.row {
+		K.box({
+			K.text(U.hubLabel(page), "font-scale-title-2", nil, headW),
+			K.row { K.muted(U.hubGroupOf(st, page) .. "   ·   ", nil), K.dot(syncCls, 12), K.gap(6, 1), K.text(sync, nil, syncCls, math.max(80, headW - 220)) },
+		}, { size = { headW, -1 } }),
+		K.gap(12, 1),
+		K.btn("  -  ", T("Plus petit", "Smaller"), function() U.setHubSize(-1) end, false, (U.hubSize or 2) > 1),
+		K.gap(4, 1),
+		K.btn("  +  ", T("Plus grand", "Larger"), function() U.setHubSize(1) end, false, (U.hubSize or 2) < #U.HUB_SCALES),
+		K.gap(12, 1),
+		K.btn(T("Vue rapide", "Quick view"), T("La petite fenêtre : la session et la discussion", "The small window: the session and the chat"), function() U.openWindow(nil) end),
+	}
+end
+U.hubContent = function(K, st, chat, ctx)
+	local builtin = K.builtin
+	local m = U.hubMeasures()
+	local page = U.hubValid(U.hubPage, st)
+	local menu = U.hubMenu(st)
+	-- (0.8.8) the Hub's new drawing: this kit's, never with MPFEVER_OLDHUB=1
+	local game = K.game == true and K.panel ~= nil
+	-- the tabs and the list (0.8.8), else the head and the menu of before
+	local head, sideBox = nil, nil
+	if game and not K.noNav then
+		local okN, h, s = pcall(U.hubNav, K, st, m, menu, page)
+		if okN and h ~= nil and s ~= nil then head, sideBox = h, s
+		elseif not okN and U.hubNavFailed ~= tostring(h) then U.hubNavFailed = tostring(h); log("hub: its tabs and list not drawn: " .. tostring(h)) end
+	end
+	local nav = head ~= nil
+	if not nav then sideBox = U.hubSideOld(K, m, menu, page) end
 	-- the page, drawn in the Hub's measures: the kit's widths and its section, gap and card swapped while it draws (the titles,
 	-- the gaps and the cards marked for U.hubCards), the chat's lines as many as the page's height takes
 	local marks = {}
@@ -5324,8 +5907,14 @@ U.hubContent = function(K, st, chat, ctx)
 	for _, k in ipairs(U.HUB_KIT_KEYS) do saved[k] = K[k] end
 	local sec, gap, card = K.section, K.gap, K.card
 	K.WIN_W, K.BODY_H, K.INNER_W, K.TEXT_W, K.CARD_W, K.CARD_TEXT_W = m.pageW, m.bodyH, m.inner, m.text, m.text, m.text - 24
+	-- (0.8.8: the game's cards take the page's width, as the cards of U.hubCards, and leave their texts the page's text width)
+	if K.game then K.CARD_W, K.CARD_TEXT_W = m.inner, m.text end
 	K.section = function(...) local n = sec(...); marks[n] = "title"; return n end
-	K.gap = function(...) local n = gap(...); marks[n] = "gap"; return n end
+	-- (0.8.8: never more than the game's 8 pixels between two rows or two cards; the pages asked for 10 to 14)
+	K.gap = function(w, h)
+		if K.game and w == 1 and (tonumber(h) or 0) > K.SPACE then h = K.SPACE end
+		local n = gap(w, h); marks[n] = "gap"; return n
+	end
 	K.card = function(...) local n = card(...); marks[n] = "card"; return n end
 	local chatLines = U.CHAT_LINES
 	U.CHAT_LINES = math.max(chatLines or 16, math.floor((m.bodyH - 150) / 26))
@@ -5348,32 +5937,31 @@ U.hubContent = function(K, st, chat, ctx)
 	if page == "chat" then
 		-- (no fixed height: the game gave the height left to the last row, the field and its « Send » button, which went to the
 		-- middle of the right edge; the menu beside it keeps the Hub's height)
-		body = builtin.Component { meta = { localKey = "mpfever-hub-chat", styleSheet = K.style { size = { m.pageW, -1 } } }, layout = K.col(rows) }
+		-- (0.8.8: its lines in one of the game's cards, as wide as the other pages' cards)
+		body = builtin.Component { meta = { localKey = "mpfever-hub-chat", styleSheet = K.style { size = { m.pageW, -1 } } },
+			layout = K.col(game and { K.box(rows, K.panel("card", { size = { m.inner, -1 } })) } or rows) }
 	else
 		local okC, carded = pcall(U.hubCards, K, rows, marks, m.inner)
 		if okC then rows = carded else log("hub: the " .. page .. " page's cards: " .. tostring(carded)) end
+		-- (0.8.8: the room of the scroll bar always kept, as the game's own windows do (finances_table.tl): the page's content
+		-- never jumps sideways when it grows; a game without that policy: as before)
+		local pol = builtin.type.ScrollBarPolicy
+		local reserve = nil
+		if game then pcall(function() reserve = pol.AsNeededButAlwaysReserveSpace end) end
 		body = builtin.ScrollArea {
 			meta = { localKey = "mpfever-hub-page-" .. page, styleSheet = K.style { size = { m.pageW, m.bodyH } } },
 			content = builtin.Component { meta = { styleSheet = K.style { size = { m.inner, -1 } } }, layout = K.col(rows) },
-			horizontalPolicy = builtin.type.ScrollBarPolicy.AlwaysOff,
-			verticalPolicy = builtin.type.ScrollBarPolicy.AsNeeded,
+			horizontalPolicy = pol.AlwaysOff,
+			verticalPolicy = reserve or pol.AsNeeded,
 		}
 	end
+	-- (0.8.8) the tabs, then the list and the page, 8 pixels apart as the game's cards
+	if nav then
+		return builtin.Component { meta = { styleSheet = K.style { size = { m.W, -1 } } },
+			layout = K.col { head, K.gap(1, K.SPACE), K.row { sideBox, K.gap(K.SPACE, 1), body } } }
+	end
 	-- the head: the page's name and its group, the session's state, the size, the quick view
-	local sync, syncCls = syncLine(st)
-	local headW = m.W - 330
-	local head = K.row {
-		K.box({
-			K.text(U.hubLabel(page), "font-scale-title-2", nil, headW),
-			K.row { K.muted(U.hubGroupOf(st, page) .. "   ·   ", nil), K.dot(syncCls, 12), K.gap(6, 1), K.text(sync, nil, syncCls, math.max(80, headW - 220)) },
-		}, { size = { headW, -1 } }),
-		K.gap(12, 1),
-		K.btn("  -  ", T("Plus petit", "Smaller"), function() U.setHubSize(-1) end, false, (U.hubSize or 2) > 1),
-		K.gap(4, 1),
-		K.btn("  +  ", T("Plus grand", "Larger"), function() U.setHubSize(1) end, false, (U.hubSize or 2) < #U.HUB_SCALES),
-		K.gap(12, 1),
-		K.btn(T("Vue rapide", "Quick view"), T("La petite fenêtre : la session et la discussion", "The small window: the session and the chat"), function() U.openWindow(nil) end),
-	}
+	head = U.hubHeadOld(K, st, m, page)
 	return builtin.Component { meta = { styleSheet = K.style { size = { m.W, -1 } } },
 		layout = K.col { head, K.gap(1, 10), K.row { sideBox, K.gap(14, 1), body } } }
 end
@@ -5436,6 +6024,9 @@ end
 -- (0.6) the Hub's window: the same hooks as the small window's (its own states: what is typed in its chat and its gift's amount)
 U.installHub = function(react, builtin)
 	local K = U.kit
+	-- (0.8.8) the game's heading module asked for here, once, outside any drawing (see K.heading: a module that registers its
+	-- recipes is not to be loaded for the first time in the middle of a window's drawing)
+	if K and K.game and K.base then pcall(K.base, "::/gui/main/content_card.tl", { "ContentCard" }) end
 	U.HubWindow = react.RegisterWrapperRecipe("MPFeverHubWindow", builtin.Window, function(wp)
 		local st = useStatus(react)
 		local chat = useChat(react)
@@ -5479,7 +6070,9 @@ U.installHub = function(react, builtin)
 				layout = K.col { K.text(T("La fenêtre n'a pas pu être affichée (voir ui_mod.log).", "The window could not be drawn (see ui_mod.log)."), nil, "error", 860) } }
 		end
 		return builtin.Window {
-			title = "MPFever Hub",
+			-- (0.8.8: the page's name in the title, see U.hubTitle; the id never changes: a shown window whose id changes is a
+			-- fatal assertion of the game)
+			title = U.hubTitle(st),
 			id = "window.mpfever.hub",
 			initialX = atX,
 			initialY = atY,

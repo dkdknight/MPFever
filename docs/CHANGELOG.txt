@@ -2,6 +2,21 @@ MPFever - Changelog
 ===================
 
 0.8.8 - 2026-11-14 (in progress)
+  - UI: the MPFever Hub redrawn with the game's own windows as its model (the user's request). Its groups are tabs at the top
+    (Game, My company, Competition), the group's pages a list with icons at the left, the page's name in the window's title,
+    as the game's Company window; the headings are the game's (their line), the cards have the game's rounded surface and
+    outline, the tables, bars and status colours are the theme's, the choices are the game's toggle buttons (On / Off, the
+    speed with the game's play icons, the sharing rules), the buttons to view, accept, refuse, kick and ban carry the game's
+    icons, and the auction's and the company sheet's wrong pictures (help banners squeezed into icons) are the right icons.
+    Every button and page does what it did; only the drawing changes. Each game recipe is loaded with a fallback to the
+    drawing of before. MPFEVER_OLDHUB=1: the Hub of 0.8.7; MPFEVER_HUBNAV=0: the old head and menu; MPFEVER_HUBBASE=0: the
+    headings drawn by hand. Tests: tests/test_hub.py (257 checks), captures in release/hub-0.8.8.
+  - FIX (the Hub on a 4K screen): the Hub took the screen's pixels for the interface's units. On a screen where the game draws
+    its interface twice as large (3840 x 2054) it was 2572 units wide on a screen of 1920: it covered the whole screen, its
+    frame out of sight and its third column cut. The pixels of one unit are now measured from the Hub itself (2 at first above
+    1500 pixels of height) and kept for that screen; the Hub is two thirds of the screen there too. Its first opening on a
+    screen is centred from its measures (its corner was put near the middle of the screen). MPFEVER_HUBUNIT=0,
+    MPFEVER_HUBFIRSTAT=0: as before. Tests: tests/test_hub.py, tests/test_hubcenter075.py.
   - FIX (#150, the slow drift between different PCs with nobody building; #255 #274 #284 and the two-PC tests): its first
     difference was always an aircraft, and its cause is found. Measured with the fine diagnostic on two PCs (an aircraft's thrust
     parting while it taxied, 600 s of game time before the people differed), then read in the game's code: the game keeps each
