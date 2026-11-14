@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.8.9 - (in progress)
+
 0.8.8 - 2026-11-14: the slow drift between two PCs found and fixed, builds of a pause in one order, the Hub in the game's style
   - UI: the MPFever Hub redrawn with the game's own windows as its model (the user's request). Its groups are tabs at the top
     (Game, My company, Competition), the group's pages a list with icons at the left, the page's name in the window's title,

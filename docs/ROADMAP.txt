@@ -73,9 +73,16 @@ it is stable enough.
   [x] The game's « Company value » chart shows each player's own company (0.8.6)
   [x] A new farm (an industry with fields) built by a player gets the same fields on every game (0.8.7, #279: the
       game filled a farm's fields at random each time it built one; the other games now get the builder's fields)
-  [ ] The last recurring desyncs: the people/towns drift between PCs (#150), reproduced on two PCs with no input (2026-11-11); since 0.8.2
-      every report records where a drift begins (drift diagnostic), since 0.8.4 its very first moment even after a
-      resynchronisation: next, the causes it names. Builds rebuilt otherwise on another game: #261
+  [x] The slow drift between two different PCs with nobody building (#150): its cause found on two PCs with a special
+      diagnostic build and fixed (0.8.8: the game kept each aircraft's top thrust aside and worked it out again at moments
+      that depended on the PC; now at every step, the same everywhere); to confirm in long sessions between two PCs
+  [x] Builds made in a pause, or just as it begins or ends, in one order on every game (0.8.8, #296 #297); the terrain
+      tools paid by their player's company on every game (0.8.8, #298)
+  [x] The MPFever Hub redrawn in the game's own style (tabs, list of pages, cards, toggle buttons, icons) and at the right
+      size on a 4K screen (0.8.8)
+  [ ] The last recurring desyncs: builds rebuilt otherwise on another game (#261: stops and stations whose ground is
+      aligned differently); the drift's other causes, if the reports of 0.8.8 still show some (#150)
+  [ ] No stand of several seconds when a player places a stop or a signal while another one builds
 
 1.0 - Stable and complete
   [ ] Sessions of several hours between different PCs without a recurring resynchronisation or crash, one company for
@@ -151,7 +158,10 @@ it is stable enough.
   [x] Computer companies on a dedicated server; they renew their vehicles (0.7.0)
   [x] They use the other companies' stops (open, or a toll their level finds worth paying) instead of building their
       own beside them, and sell the stops they no longer use (0.7.5)
-  [ ] Passenger trains between two towns (written in 0.7.5, off until their track planning is faster)
+  [x] An area by level: Easy 3 towns close to one another, Normal 6, Hard the whole map; companies that start together
+      take different home towns; the railway they can pay first (0.8.8)
+  [ ] Passenger trains between two towns (a game option since 0.8.8, off by default: on many maps their tracks still
+      find no way; the track planner is next)
   [ ] Signals, electric trains and warehouses
   [ ] Ships and planes
 
