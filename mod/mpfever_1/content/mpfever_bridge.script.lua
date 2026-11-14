@@ -7715,8 +7715,23 @@ G.stopAlignProbe = function(a, plan, sp, mkCtx)
 		if not okd or not pd then say(label .. ": no proposal data (" .. shortErr(pd) .. ")") return end
 		local al, ar, an = 0, 0, 0
 		local okI, t = pcall(function() return api.engine.util.town.getTerrainAlignmentImpact(pd) end)
+		local where = {}
 		if okI and type(t) == "table" then
-			for _, v in pairs(t) do al = al + (tonumber(v[1]) or 0); ar = ar + (tonumber(v[2]) or 0); an = an + 1 end
+			for k, v in pairs(t) do
+				al = al + (tonumber(v[1]) or 0); ar = ar + (tonumber(v[2]) or 0); an = an + 1
+				-- (0.8.9 research, #261: whose numbers they are: the engine gives them by town, not by segment or node)
+				local a1, r1 = tonumber(v[1]) or 0, tonumber(v[2]) or 0
+				if (a1 ~= 0 or r1 ~= 0) and #where < 12 then
+					local kind = "?"
+					pcall(function()
+						if api.engine.getComponent(k, api.type.ComponentType.TOWN) then kind = "town"
+						elseif api.engine.getComponent(k, api.type.ComponentType.BASE_NODE) then kind = "node"
+						elseif api.engine.getComponent(k, api.type.ComponentType.BASE_EDGE) then kind = "edge"
+						elseif api.engine.getComponent(k, api.type.ComponentType.CONSTRUCTION) then kind = "construction" end
+					end)
+					where[#where + 1] = tostring(k) .. ":" .. kind .. string.format("=%.3f/%.3f", a1, r1)
+				end
+			end
 		end
 		local pa, pr, costs, crit = "?", "?", "?", "?"
 		pcall(function() pa = tostring(#pd.parallelProposal.toAdd) end)
@@ -7724,7 +7739,7 @@ G.stopAlignProbe = function(a, plan, sp, mkCtx)
 		pcall(function() costs = tostring(pd.costs) end)
 		pcall(function() crit = tostring(pd.errorState.critical) end)
 		say(label .. ": terrain alignment " .. (okI and string.format("%.3f/%.3f/%d", al, ar, an) or ("unreadable (" .. shortErr(t) .. ")"))
-			.. ", parallel strips +" .. pa .. " -" .. pr .. ", costs " .. costs .. ", critical " .. crit)
+			.. ", parallel strips +" .. pa .. " -" .. pr .. ", costs " .. costs .. ", critical " .. crit .. (#where > 0 and (" | moved at " .. table.concat(where, " ")) or ""))
 		if not membersShown then
 			membersShown = true
 			pcall(function() say("proposal data members: " .. table.concat(C.members(pd) or {}, ",")) end)
