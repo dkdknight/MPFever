@@ -245,6 +245,78 @@ local function townsBySize(E)
 	return list
 end
 
+-- (0.8.8, the user's rule) A computer company's AREA, by its level: Easy works in 3 towns close to one another, Normal in 6, Hard
+-- on the whole map. The area is the company's home town and the towns nearest to it; the home town is the town of its oldest
+-- station (the smallest id: the same after a reload), or, while it has none, the town it would take first. Its bus lines, its
+-- passenger railway and its freight stay there: an industry belongs to the area when the town nearest to it does. What it
+-- already runs elsewhere (a game started before 0.8.8, a level changed since) is kept and managed as before; only new
+-- projects look at the area. MPFEVER_AIAREA=0: the whole map for every level, as before.
+M.AREA = { easy = 3, normal = 6 }
+-- (pure) the n towns of the area: home first, then the nearest ones (the distance between centres, ties by id); pts: { e, pos }
+function M.areaPick(pts, home, n)
+	local hp = nil
+	for _, t in ipairs(pts) do if t.e == home then hp = t.pos end end
+	if not hp then return nil end
+	local list = {}
+	for _, t in ipairs(pts) do list[#list + 1] = { e = t.e, d = (t.e == home) and -1 or dist(t.pos, hp) } end
+	table.sort(list, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.e < b.e end)
+	local set, order = {}, {}
+	for i = 1, math.min(n, #list) do set[list[i].e] = true; order[i] = list[i].e end
+	return set, order
+end
+-- (pure) the town nearest to a place among pts
+function M.areaTownOf(pts, p)
+	local best, bd = nil, math.huge
+	for _, t in ipairs(pts) do
+		local d = dist(t.pos, p)
+		if d < bd or (d == bd and best and t.e < best) then best, bd = t.e, d end
+	end
+	return best
+end
+-- the company's area: nil for the whole map (Hard, the switch, or no town read), else { towns = set, order, pts, home }
+local function areaOf(E, ent, first)
+	local n = M.AREA[LV.name]
+	if not n or os.getenv("MPFEVER_AIAREA") == "0" then return nil end
+	local api, A = E.api, E.G.AI
+	if A.area and A.area.towns and A.area.n == n and A.area.ent == ent and E.G.frames - A.area.frame < 3600 then return A.area end
+	local pts = {}
+	for _, t in ipairs(townsBySize(E)) do
+		local c = centre(E, t.e, api.type.enum.LandUseType.RESIDENTIAL)
+		if c then pts[#pts + 1] = { e = t.e, pos = c } end
+	end
+	-- its home: the town of its oldest station; kept once known (A.areaHome), found again from its stations after a reload
+	local home = A.areaHome
+	if not home and ent then
+		local oldest = nil
+		for _, t in ipairs(pts) do
+			pcall(function()
+				for _, s in ipairs(api.engine.system.stationSystem.getStations(t.e)) do
+					if ownerOf(E, s) == ent and (oldest == nil or s < oldest) then oldest, home = s, t.e end
+				end
+			end)
+		end
+	end
+	home = home or first
+	local set, order = nil, nil
+	if home then set, order = M.areaPick(pts, home, n) end
+	if set and A.areaHome ~= home then
+		A.areaHome = home
+		-- (the industries read before the area was known are read again with it)
+		A.indCache = nil
+		local names = {}
+		for i, e in ipairs(order) do names[i] = townName(E, e) end
+		L(E, "area (" .. LV.name .. ", " .. n .. " towns): " .. table.concat(names, ", ") .. "; its new lines, stations and freight stay there")
+	end
+	A.area = { n = n, ent = ent, frame = E.G.frames, towns = set, order = order, pts = pts, home = home }
+	return set and A.area or nil
+end
+-- whether a place is in the company's area (the town nearest to it is one of the area's); no area: everywhere
+local function inArea(ar, p)
+	if not ar or not p then return true end
+	local t = M.areaTownOf(ar.pts, p)
+	return t == nil or ar.towns[t] == true
+end
+
 -- towns for the company's own lines: the biggest first, the ones the other companies already serve put back (a town crossed by a
 -- player's line of 15 stops left the company's new line a few passengers only; and the players keep their towns, PvE)
 local function townsForLines(E, ent)
@@ -280,6 +352,13 @@ local function townsForLines(E, ent)
 		t.score = t.size / (1 + others / (LV.compete and 12 or 3))
 	end
 	table.sort(list, function(a, b) if a.score ~= b.score then return a.score > b.score end return a.e < b.e end)
+	-- (0.8.8: the towns of its area only, see areaOf; while it has no station, its home is the first town of this list)
+	local ar = areaOf(E, ent, list[1] and list[1].e)
+	if ar then
+		local keep = {}
+		for _, t in ipairs(list) do if ar.towns[t.e] then keep[#keep + 1] = t end end
+		list = keep
+	end
 	return list
 end
 
@@ -2637,6 +2716,8 @@ local function industries(E)
 				end
 			end)
 			it.road = roadTerminals(E, con)
+			-- (0.8.8: outside the company's area, see areaOf: no new route from or to it; A.areaNow: the area as this step read it)
+			it.out = not inArea(A.areaNow, it.pos) or nil
 			-- (else a station of one of its parts, as the game's own path finding of the missions looks for it)
 			for k = 1, #con.subconstructions do
 				if it.road then break end
@@ -2945,7 +3026,7 @@ local function bestFreight(E, co, lines, mode)
 	local cut = A.roadChecked or {}
 	local cands = {}
 	for _, p in ipairs(inds) do
-		if not others[p.road.group] then
+		if not others[p.road.group] and not p.out then
 			for _, c in ipairs(p.outputs) do
 				-- (only a producer that makes that cargo now, or a primary one, see producedOf)
 				local prod = producedOf(E, p, c)
@@ -2954,7 +3035,7 @@ local function bestFreight(E, co, lines, mode)
 				for _, q in ipairs(prod and inds or {}) do
 					RL.yield()
 					-- (an industry found cut off from the streets is left out until a street reaches it, see roadProject)
-					if q.e ~= p.e and not others[q.road.group] and cut[p.e] ~= false and cut[q.e] ~= false and takes(E, q, c) then
+					if q.e ~= p.e and not q.out and not others[q.road.group] and cut[p.e] ~= false and cut[q.e] ~= false and takes(E, q, c) then
 						local d = dist(p.pos, q.pos)
 						local key = p.e .. ">" .. q.e .. ":" .. c
 						if d > FREIGHT_MIN and d < LV.freightMax and A.freightTried[key] ~= false and not (A.freightDone or {})[key] and not mine[p.e .. ":" .. c] then
@@ -3125,7 +3206,8 @@ local function bestTownFreight(E, co, lines, mode)
 	local terr = territoryCheck(E)
 	for _, t in ipairs(townsBySize(E)) do
 		RL.yield()
-		if t.size >= 300 then
+		-- (0.8.8: a town of the company's area, from an industry of it, see areaOf)
+		if t.size >= 300 and (not A.areaNow or A.areaNow.towns[t.e]) then
 			for _, w in ipairs(townWants(E, t.e)) do
 				local p = centre(E, t.e, api.type.enum.LandUseType[w.use])
 				if p and catch then p = townDropPoint(E, t.e, w.cargo) end
@@ -3133,7 +3215,7 @@ local function bestTownFreight(E, co, lines, mode)
 				if p then
 					for _, ind in ipairs(inds) do
 						RL.yield()
-						if not others[ind.road.group] and (A.roadChecked or {})[ind.e] ~= false
+						if not ind.out and not others[ind.road.group] and (A.roadChecked or {})[ind.e] ~= false
 							and (not fed or (fed[ind.e] and not (A.ltFailed or {})[ind.e .. ">town" .. t.e .. ":" .. w.cargo])) then
 							for _, c in ipairs(ind.outputs) do
 								if c == w.cargo and producedOf(E, ind, c) and not mine[ind.e .. ":" .. c] then
@@ -4042,13 +4124,13 @@ function RL.route(E, co, lines, stations)
 		for _, s in ipairs(stations or {}) do if dist(s.pos, a.pos) < 500 then near = true end end
 		-- (0.6.4: a producer its trucks serve too: a railway is where its trucks made it grow; RL.MINPROD a year at least, what it
 		-- makes now: a clay pit of 110 a year left a train standing for weeks and its line losing money)
-		if not near and not others[a.road.group] and not ((E.G.AI.railTried or {})[a.e]) then
+		if not near and not a.out and not others[a.road.group] and not ((E.G.AI.railTried or {})[a.e]) then
 			for _, c in ipairs(a.outputs) do
 				local made = 0
 				pcall(function() made = E.api.engine.util.stock.getCargoProducedPerYear(a.stockList, c) or 0 end)
 				if made >= RL.MINPROD then
 					for _, b in ipairs(inds) do
-						if b.e ~= a.e and not others[b.road.group] and takes(E, b, c) then
+						if b.e ~= a.e and not b.out and not others[b.road.group] and takes(E, b, c) then
 							local d = dist(a.pos, b.pos)
 							if d >= RL.MIN and d <= RL.MAX then
 								local score = made * d
@@ -5207,7 +5289,8 @@ function RP.on()
 	if not RL.on() then return false end
 	if v == "1" then return true end
 	if v == "hard" then return LV.name == "hard" end
-	return false
+	-- (0.8.8: the lobby's game option « Computer companies' passenger trains », told by the bridge, see M.trains; =0: never)
+	return v ~= "0" and M.trainsOn == true
 end
 
 -- whether a modular station's parameters hold a passenger platform (slots 7400000 to 7499999, see RP.stationParams)
@@ -5266,9 +5349,11 @@ function RP.towns(E)
 	local api = E.api
 	local out = {}
 	local terr = territoryCheck(E)
+	-- (0.8.8: the towns of the company's area, see areaOf)
+	local ar = E.G.AI and E.G.AI.areaNow
 	for _, t in ipairs(townsBySize(E)) do
 		if #out >= RP.TOWNS then break end
-		if t.size >= RP.POP then
+		if t.size >= RP.POP and (not ar or ar.towns[t.e]) then
 			local c = centre(E, t.e, api.type.enum.LandUseType.RESIDENTIAL)
 			if c and not (terr and terr(c.x, c.y)) then out[#out + 1] = { e = t.e, town = true, pos = { x = c.x, y = c.y, z = c.z or 0 }, size = t.size } end
 		end
@@ -5717,6 +5802,14 @@ local function step(E)
 	ph(E, "money")
 	local stops = myStops(E, co.ent)
 	ph(E, "myStops")
+	-- (0.8.8) the company's area as this step reads it, nil for the whole map (see areaOf). While it has no station its home is
+	-- the town it would take first: townsForLines names it
+	A.areaNow = areaOf(E, co.ent)
+	if not A.areaNow and M.AREA[LV.name] and os.getenv("MPFEVER_AIAREA") ~= "0" then
+		townsForLines(E, co.ent)
+		A.areaNow = areaOf(E, co.ent)
+	end
+	ph(E, "area")
 	local depots = myDepots(E, co.ent)
 	ph(E, "myDepots")
 	local lines = myLines(E, co.ent)
@@ -6098,7 +6191,7 @@ local function step(E)
 end
 
 -- (for the dev probes)
-M.f = { isLeft = isLeft, leave = leave, aiCompany = aiCompany, myStops = myStops, myDepots = myDepots, myLines = myLines, myVehicles = myVehicles, bestBus = bestBus,
+M.f = { townsForLines = townsForLines, areaOf = areaOf, inArea = inArea, isLeft = isLeft, leave = leave, aiCompany = aiCompany, myStops = myStops, myDepots = myDepots, myLines = myLines, myVehicles = myVehicles, bestBus = bestBus,
 	act = act, build = build, buildStop = buildStop, createLine = createLine, buyBus = buyBus, join = join, context = context,
 	findDepotPlace = findDepotPlace, townsBySize = townsBySize, currentYear = currentYear, garagePlaces = garagePlaces,
 	buildGarage = buildGarage, garagesNear = garagesNear, garageCapture = garageCapture, industries = industries, roadTerminals = roadTerminals,
@@ -6127,7 +6220,10 @@ function M.slicing(on) RL.sliceOn = on == true; RL.sliceAt = os.clock() end
 -- (the slices only for the plans that need them: the passenger railway, off by default (MPFEVER_AIPAXRAIL). Without it the step
 -- runs in one go as in 0.8.6: in the coroutine, the game's debugPrint took 200 ms a line, see C.fileLogger; test n13pf0 of
 -- 2026-11-13, the step in one go: the longest frame 33 to 60 ms. MPFEVER_AISLICE=1: always, =0: never)
-function M.slicingWanted() local v = os.getenv("MPFEVER_AIPAXRAIL"); return v == "1" or v == "hard" end
+function M.slicingWanted() local v = os.getenv("MPFEVER_AIPAXRAIL"); return v == "1" or v == "hard" or (v ~= "0" and M.trainsOn == true) end
+-- (0.8.8) the session's game option « Computer companies' passenger trains » (mpfever_feat_ai.lua, "aitrains"), told by the host's
+-- bridge before each step; MPFEVER_AIPAXRAIL (tests) decides over it, see RP.on
+function M.trains(on) M.trainsOn = on == true end
 
 function M.tick(E, st)
 	local G, C = E.G, E.C

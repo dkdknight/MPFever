@@ -152,12 +152,12 @@ OPTS = 'journal=1;goal=1;handicap=1;handicap." .. enc("bob") .. "=150;stock=0'
 run(f'page("separate", "{OPTS}", true)')
 check(run("return PAGEMODE") is True, "the page is on by default (MPFEVER_LOBBYOPTSPAGE unset)")
 got = run("return groups()")
-check(got == "Co-op=journal,builtby,playerview,perms,plans | Competition=goal,stats,yearly,market,territory,handicap,tenders"
+check(got == "Co-op=journal,builtby,playerview,perms,plans | Competition=goal,stats,yearly,market,territory,handicap,tenders,aitrains"
       " | Trade between players=sales,contracts,stock,cargo | Public game=public,join_bans,join_approve,join_steamfriends",
       "the four groups, their cards in order", got)
 check(run('local n = 0 for _, g in ipairs(G) do n = n + #g.cards end return n == #F.offered("separate")') is True,
       "one card per option the mode offers")
-check(run("return rows()") == "3,2 | 3,3,1 | 3,1 | 3,1", "three columns on the lobby's width (0.8.6: the commodity market in the trade group)", run("return rows()"))
+check(run("return rows()") == "3,2 | 3,3,2 | 3,1 | 3,1", "three columns on the lobby's width (0.8.6: the commodity market in the trade group)", run("return rows()"))
 check(run('return #CARD.journal.buttons >= 2 and btn("journal", "On").primary and not btn("journal", "Off").primary') is True,
       "a card on: its On button lit")
 check(run('return btn("stock", "Off").primary and not btn("stock", "On").primary and btn("builtby", "Off").primary') is True,
@@ -189,9 +189,9 @@ check(run('return has("goal", label("goal", "wins"))') is True, "the tenders won
 
 print("columns")
 run(f'page("separate", "", true, 1000)')
-check(run("return rows()") == "2,2,1 | 2,2,2,1 | 2,2 | 2,2", "two on a narrower page", run("return rows()"))
+check(run("return rows()") == "2,2,1 | 2,2,2,2 | 2,2 | 2,2", "two on a narrower page", run("return rows()"))
 run(f'page("separate", "", true, 500)')
-check(run("return rows()") == "1,1,1,1,1 | 1,1,1,1,1,1,1 | 1,1,1,1 | 1,1,1,1", "one on a narrow one", run("return rows()"))
+check(run("return rows()") == "1,1,1,1,1 | 1,1,1,1,1,1,1,1 | 1,1,1,1 | 1,1,1,1", "one on a narrow one", run("return rows()"))
 
 print("the co-op")
 run('page("shared", "journal=1;goal=1;stock=1", true)')

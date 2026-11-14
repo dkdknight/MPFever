@@ -16,7 +16,7 @@
 local F = {}
 
 -- The feature modules, one line each (mpfever_feat_<id>.lua; a module whose file is not there yet is skipped without a word)
-F.MODULES = { "journal", "stats", "market", "territory", "tenders", "perms", "trade", "stock", "cargo", "public" }
+F.MODULES = { "journal", "stats", "market", "territory", "tenders", "perms", "trade", "stock", "cargo", "ai", "public" }
 
 -- the options string at most (characters, entries): MPFever.exe caps it the same way (launcher/MainForm.cs, FeatOpts)
 F.MAX_TEXT = 1000

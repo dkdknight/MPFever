@@ -699,6 +699,16 @@ K.stepsDigestAt = function(at, text)
 	end
 	local step = math.floor(at / STEP) - 20
 	step = step - step % 10
+	-- (0.8.8) Not a step from before this game was loaded. The native module's file still held the lines of the game before until
+	-- the first step after the load, and a resynchronisation's games stand still for seconds after their load: the first check
+	-- read the hash of a step of the drift just repaired, every game dumped its rings for nothing, and the report's first drift
+	-- was that false alarm (the session of 2026-11-14: check 420, 1380440891 here and 3824206710 there, 12 s after the load).
+	-- This script's state is made anew at every load: the first check's time is at or after the load, and a window is taken only
+	-- when its 50 steps come after it. MPFEVER_STEPSFLOOR=0: as before
+	if os.getenv("MPFEVER_STEPSFLOOR") ~= "0" then
+		K.stepsFloor = K.stepsFloor or math.floor(at / STEP)
+		if step - 50 < K.stepsFloor then return "absent" end
+	end
 	for s, h in tostring(text):gmatch("(%d+) (%d+)") do
 		if tonumber(s) == step then return (h ~= "0") and h or "absent" end
 	end
@@ -13240,6 +13250,11 @@ H.terrain = function(from, p)
 			prop.terrain.baseHeightMod = api.type.GridVec2f.new(pt.x0, pt.y0, pt.w, pt.h, zero and api.type.Vec2f.new(0, 0) or api.type.Vec2f.new((pt.h0 or 0) + 3, pt.h0 or 0))
 			local ctx = api.type.Context.new()
 			ctx.player = api.engine.util.getPlayer()
+			-- (MPFEVER_TERRAIN_CANON=1, #298: named for the savegame's company, as the terrain tools' own command is)
+			if os.getenv("MPFEVER_TERRAIN_CANON") == "1" and G.co and G.co.canon then
+				ctx.player = G.co.canon
+				log("AUTOTEST terrain edit " .. i .. ": its command names the savegame's company " .. tostring(G.co.canon) .. " (this game plays " .. tostring(G.myEnt) .. ")")
+			end
 			log("AUTOTEST terrain edit " .. i .. "/" .. burst .. ": " .. pt.w .. "x" .. pt.h .. " at " .. pt.x0 .. "," .. pt.y0 .. ": height " .. tostring(pt.h0) .. ", sum " .. pt.sum0)
 			O.sendCommand(api.cmd.makeWorldBuildProposalCmd(prop, ctx, false, true), function(res, success)
 				local line = "terrain edit " .. i .. ": " .. (success and "built" or "refused")
@@ -21996,6 +22011,12 @@ G.aiEnv = function()
 	end
 	return env
 end
+-- (0.8.8) whether the session's options (their text, "id=1;id.param=v;...") allow the computer companies' passenger trains
+G.aiTrainsWanted = function(opts)
+	local F = C.feat and C.feat()
+	if not (F and F.parse and F.on) then return false end
+	return F.on(F.parse(opts or ""), "aitrains") == true
+end
 G.aiStep = function(st)
 	local dev = os.getenv("MPFEVER_AIDEV")
 	local function loadFile(path)
@@ -22035,6 +22056,19 @@ G.aiStep = function(st)
 		local c0 = os.clock()
 		-- (test MPFEVER_AIPROF=1: the step's phases and calls timed, see mpfever_ai.lua's ph and G.aiEnv, logged every minute)
 		if os.getenv("MPFEVER_AIPROF") == "1" then G.aiProf = G.aiProf or {}; G.aiProfMax = G.aiProfMax or {} end
+		-- (0.8.8) the session's game option « Computer companies' passenger trains » (mpfever_feat_ai.lua, "aitrains"; off by
+		-- default): told to the module, which then plans in slices (M.slicingWanted). Read from the session's options once a
+		-- second and whenever their text changes
+		if G.aiMod.trains and (G.aiTrainsOpts ~= (G.featOpts or "") or G.frames - (G.aiTrainsAt or -1000) > 60) then
+			G.aiTrainsOpts, G.aiTrainsAt = G.featOpts or "", G.frames
+			local okT, on = pcall(G.aiTrainsWanted, G.aiTrainsOpts)
+			on = okT and on == true
+			if on ~= G.aiTrainsOn then
+				G.aiTrainsOn = on
+				log("AI: passenger trains " .. (on and "allowed (the session's game option)" or "not allowed (the game option is off)"))
+			end
+			pcall(G.aiMod.trains, on)
+		end
 		-- (0.8.7) the step in a coroutine: a long plan (a passenger railway between two towns) works in slices of a few ms and
 		-- goes on at the next frame instead of holding the game (mpfever_ai.lua, RL.inTime); a step under way is resumed before
 		-- any new one. Only while a plan needs it (M.slicingWanted: the passenger railway, off by default); else in one go, as in

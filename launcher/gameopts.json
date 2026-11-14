@@ -841,6 +841,20 @@
   },
   {
    "desc": [
+    "Les entreprises dirigées par l'ordinateur peuvent relier par le rail les villes de leur zone (une gare dans chaque ville, la voie, un dépôt, des trains), en plus de leurs bus, de leurs camions et de leurs trains de marchandises. Expérimental : une gare et sa voie coûtent cher, elles n'en construisent que lorsqu'elles en ont les moyens.",
+    "The companies run by the computer may link the towns of their area by rail (a station in each town, the track, a depot, trains), besides their buses, trucks and freight trains. Experimental: a station and its track are dear, they only build one when they can afford it."
+   ],
+   "id": "aitrains",
+   "modes": "separate",
+   "module": "ai",
+   "params": {},
+   "title": [
+    "Trains de voyageurs des entreprises ordinateur",
+    "Computer companies' passenger trains"
+   ]
+  },
+  {
+   "desc": [
     "Le salon apparaît dans la liste publique des parties, avec votre identifiant Steam : n'importe quel joueur de la même version peut le rejoindre par Steam, sans port à ouvrir.",
     "The lobby shows in the public list of games, with your Steam id: any player with the same version can join it through Steam, with no port to open."
    ],

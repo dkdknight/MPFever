@@ -2642,6 +2642,36 @@ namespace MPFever
             return n;
         }
 
+        /// <summary>(0.8.8, #294) Whether the game can find MPFever's mod once started: this MPFever has its mod folder beside it
+        /// (it is installed at every start), or a copy is already in one of the folders given (the game's mods\release, each Steam
+        /// account's local\mods). MPFever.exe started alone (out of the archive, or its files taken away by an antivirus) has
+        /// neither: the game, started with "--script mpfever_1::/mpfever_auto.lua", stopped at once ("File not found (unknown mod)").</summary>
+        public static bool ModReachable(string modSource, IEnumerable<string> modsDirs)
+        {
+            if (!string.IsNullOrEmpty(modSource)) return true;
+            foreach (var d in modsDirs ?? new string[0])
+            {
+                try { if (!string.IsNullOrEmpty(d) && File.Exists(Path.Combine(d, "mpfever_1", "mod.json"))) return true; } catch { }
+            }
+            return false;
+        }
+
+        /// <summary>The folders the game looks for MPFever's mod in: the game's mods\release, each Steam account's local\mods.</summary>
+        public static List<string> ModsDirs(string gameDir)
+        {
+            var r = new List<string>();
+            try { if (!string.IsNullOrEmpty(gameDir)) r.Add(Path.Combine(gameDir, "mods", "release")); } catch { }
+            try
+            {
+                var steam = SteamPath();
+                var userdata = steam == null ? null : Path.Combine(steam, "userdata");
+                if (userdata != null && Directory.Exists(userdata))
+                    foreach (var u in Directory.GetDirectories(userdata)) r.Add(Path.Combine(u, AppId, "local", "mods"));
+            }
+            catch { }
+            return r;
+        }
+
         static string NoInstallText() => L.T("Le mod n'a pu être installé nulle part : lancez une fois Transport Fever 3 depuis Steam (jusqu'au menu principal), fermez-le, puis relancez MPFever.",
             "The mod could not be installed anywhere: start Transport Fever 3 once from Steam (up to its main menu), close it, then start MPFever again.");
 

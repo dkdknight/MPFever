@@ -25415,6 +25415,58 @@
       "ko": "화물별 월간 로트 수",
       "zh-CN": "每种货物每月批数",
       "zh-TW": "每種貨物每月批數"
+    },
+    "Some of MPFever's files are missing (the « mod » folder beside MPFever.exe): the game would not find MPFever and would close at once. Extract the whole MPFever archive into a new folder, check that your antivirus removed nothing (winhttp.dll), then start MPFever.exe from that folder.": {
+      "de": "Einige Dateien von MPFever fehlen (der Ordner « mod » neben MPFever.exe): Das Spiel würde MPFever nicht finden und sich sofort schließen. Entpacke das gesamte MPFever-Archiv in einen neuen Ordner, prüfe, dass dein Virenschutz nichts entfernt hat (winhttp.dll), und starte dann MPFever.exe aus diesem Ordner.",
+      "es": "Faltan archivos de MPFever (la carpeta « mod » junto a MPFever.exe): el juego no encontraría MPFever y se cerraría enseguida. Extrae todo el archivo de MPFever en una carpeta nueva, comprueba que tu antivirus no haya quitado nada (winhttp.dll) y luego inicia MPFever.exe desde esa carpeta.",
+      "it": "Mancano alcuni file di MPFever (la cartella « mod » accanto a MPFever.exe): il gioco non troverebbe MPFever e si chiuderebbe subito. Estrai l'intero archivio di MPFever in una nuova cartella, controlla che l'antivirus non abbia rimosso nulla (winhttp.dll), poi avvia MPFever.exe da quella cartella.",
+      "nl": "Er ontbreken bestanden van MPFever (de map « mod » naast MPFever.exe): het spel zou MPFever niet vinden en meteen sluiten. Pak het hele MPFever-archief uit in een nieuwe map, controleer of je antivirus niets heeft verwijderd (winhttp.dll) en start daarna MPFever.exe vanuit die map.",
+      "pl": "Brakuje części plików MPFever (folderu « mod » obok MPFever.exe): gra nie znalazłaby MPFever i od razu by się zamknęła. Wypakuj całe archiwum MPFever do nowego folderu, sprawdź, czy antywirus niczego nie usunął (winhttp.dll), a potem uruchom MPFever.exe z tego folderu.",
+      "pt-BR": "Faltam arquivos do MPFever (a pasta « mod » ao lado de MPFever.exe): o jogo não encontraria o MPFever e fecharia na hora. Extraia todo o arquivo do MPFever em uma pasta nova, verifique se o antivírus não removeu nada (winhttp.dll) e depois inicie MPFever.exe a partir dessa pasta.",
+      "ru": "Не хватает файлов MPFever (папки « mod » рядом с MPFever.exe): игра не нашла бы MPFever и сразу закрылась бы. Распакуйте весь архив MPFever в новую папку, проверьте, что антивирус ничего не удалил (winhttp.dll), затем запустите MPFever.exe из этой папки.",
+      "ja": "MPFever のファイルが足りません（MPFever.exe の隣の « mod » フォルダー）。このままではゲームが MPFever を見つけられず、すぐに終了します。MPFever のアーカイブ全体を新しいフォルダーに展開し、ウイルス対策ソフトが何も削除していないこと（winhttp.dll）を確認してから、そのフォルダーの MPFever.exe を起動してください。",
+      "ko": "MPFever 파일 일부가 없습니다(MPFever.exe 옆의 « mod » 폴더). 이대로는 게임이 MPFever를 찾지 못하고 바로 종료됩니다. MPFever 압축 파일 전체를 새 폴더에 풀고, 백신 프로그램이 아무것도 지우지 않았는지(winhttp.dll) 확인한 다음 그 폴더에서 MPFever.exe를 실행하세요.",
+      "zh-CN": "MPFever 的部分文件缺失（MPFever.exe 旁边的 « mod » 文件夹）：游戏将找不到 MPFever 并立即关闭。请将整个 MPFever 压缩包解压到一个新文件夹，确认杀毒软件没有删除任何文件（winhttp.dll），然后从该文件夹启动 MPFever.exe。",
+      "zh-TW": "MPFever 的部分檔案遺失（MPFever.exe 旁邊的 « mod » 資料夾）：遊戲將找不到 MPFever 並立即關閉。請將整個 MPFever 壓縮檔解壓縮到新的資料夾，確認防毒軟體沒有刪除任何檔案（winhttp.dll），然後從該資料夾啟動 MPFever.exe。"
+    },
+    "Their area. Easy: 3 towns close to one another (its home town and its two nearest neighbours). Normal: 6 towns. Hard: the whole map. Its bus lines, its trains and its freight stay in that area.": {
+      "de": "Ihr Gebiet. Leicht: 3 nahe beieinander liegende Städte (ihre Heimatstadt und ihre zwei nächsten Nachbarn). Normal: 6 Städte. Schwer: die ganze Karte. Ihre Buslinien, ihre Züge und ihre Fracht bleiben in diesem Gebiet.",
+      "es": "Su zona. Fácil: 3 ciudades cercanas entre sí (su ciudad de origen y sus dos vecinas más próximas). Normal: 6 ciudades. Difícil: todo el mapa. Sus líneas de autobús, sus trenes y sus mercancías se quedan en esa zona.",
+      "it": "La loro zona. Facile: 3 città vicine tra loro (la città di partenza e le due più vicine). Normale: 6 città. Difficile: tutta la mappa. Le sue linee di autobus, i suoi treni e le sue merci restano in quella zona.",
+      "nl": "Hun gebied. Makkelijk: 3 steden dicht bij elkaar (de thuisstad en de twee dichtstbijzijnde buren). Normaal: 6 steden. Moeilijk: de hele kaart. Zijn buslijnen, zijn treinen en zijn vracht blijven in dat gebied.",
+      "pl": "Ich obszar. Łatwy: 3 miasta blisko siebie (miasto startowe i jego dwaj najbliżsi sąsiedzi). Normalny: 6 miast. Trudny: cała mapa. Jej linie autobusowe, pociągi i towary pozostają na tym obszarze.",
+      "pt-BR": "A área delas. Fácil: 3 cidades próximas umas das outras (a cidade de origem e suas duas vizinhas mais próximas). Normal: 6 cidades. Difícil: o mapa inteiro. Suas linhas de ônibus, seus trens e sua carga ficam nessa área.",
+      "ru": "Их зона. Лёгкий: 3 города рядом друг с другом (родной город и два ближайших соседа). Нормальный: 6 городов. Сложный: вся карта. Её автобусные линии, поезда и грузы остаются в этой зоне.",
+      "ja": "活動エリア。イージー：互いに近い 3 つの町（本拠地の町と最も近い 2 つの町）。ノーマル：6 つの町。ハード：マップ全体。バス路線、列車、貨物輸送はこのエリア内に留まります。",
+      "ko": "활동 구역. 쉬움: 서로 가까운 도시 3곳(본거지 도시와 가장 가까운 이웃 2곳). 보통: 도시 6곳. 어려움: 지도 전체. 버스 노선, 열차, 화물은 이 구역 안에 머뭅니다.",
+      "zh-CN": "它们的活动区域。简单：3 座彼此相邻的城镇（其起始城镇和最近的两座邻镇）。普通：6 座城镇。困难：整张地图。它的公交线路、列车和货运都留在该区域内。",
+      "zh-TW": "它們的活動區域。簡單：3 座彼此相鄰的城鎮（其起始城鎮和最近的兩座鄰鎮）。普通：6 座城鎮。困難：整張地圖。它的公車路線、列車和貨運都留在該區域內。"
+    },
+    "Computer companies' passenger trains": {
+      "de": "Personenzüge der Computerfirmen",
+      "es": "Trenes de pasajeros de las empresas del ordenador",
+      "it": "Treni passeggeri delle compagnie del computer",
+      "nl": "Reizigerstreinen van de computerbedrijven",
+      "pl": "Pociągi pasażerskie firm komputera",
+      "pt-BR": "Trens de passageiros das empresas do computador",
+      "ru": "Пассажирские поезда компаний компьютера",
+      "ja": "コンピューター会社の旅客列車",
+      "ko": "컴퓨터 회사의 여객 열차",
+      "zh-CN": "电脑公司的客运列车",
+      "zh-TW": "電腦公司的客運列車"
+    },
+    "The companies run by the computer may link the towns of their area by rail (a station in each town, the track, a depot, trains), besides their buses, trucks and freight trains. Experimental: a station and its track are dear, they only build one when they can afford it.": {
+      "de": "Die vom Computer geführten Firmen dürfen die Städte ihres Gebiets per Schiene verbinden (ein Bahnhof in jeder Stadt, das Gleis, ein Depot, Züge), zusätzlich zu ihren Bussen, Lkw und Güterzügen. Experimentell: Ein Bahnhof und sein Gleis sind teuer, sie bauen nur, wenn sie es sich leisten können.",
+      "es": "Las empresas dirigidas por el ordenador pueden unir por ferrocarril las ciudades de su zona (una estación en cada ciudad, la vía, un depósito, trenes), además de sus autobuses, camiones y trenes de mercancías. Experimental: una estación y su vía son caras, solo construyen una cuando pueden permitírsela.",
+      "it": "Le compagnie gestite dal computer possono collegare su rotaia le città della loro zona (una stazione in ogni città, il binario, un deposito, treni), oltre ai loro autobus, camion e treni merci. Sperimentale: una stazione e il suo binario costano molto, ne costruiscono una solo quando possono permetterselo.",
+      "nl": "De door de computer geleide bedrijven mogen de steden van hun gebied per spoor verbinden (een station in elke stad, het spoor, een depot, treinen), naast hun bussen, vrachtwagens en goederentreinen. Experimenteel: een station en zijn spoor zijn duur, ze bouwen er alleen een als ze het kunnen betalen.",
+      "pl": "Firmy prowadzone przez komputer mogą łączyć koleją miasta swojego obszaru (stacja w każdym mieście, tor, zajezdnia, pociągi), obok swoich autobusów, ciężarówek i pociągów towarowych. Eksperymentalne: stacja i jej tor są drogie, budują je tylko wtedy, gdy je na to stać.",
+      "pt-BR": "As empresas dirigidas pelo computador podem ligar por trilhos as cidades da sua área (uma estação em cada cidade, a via, um depósito, trens), além dos seus ônibus, caminhões e trens de carga. Experimental: uma estação e sua via são caras, elas só constroem uma quando podem pagar.",
+      "ru": "Компании под управлением компьютера могут соединять города своей зоны железной дорогой (станция в каждом городе, путь, депо, поезда) в дополнение к автобусам, грузовикам и грузовым поездам. Экспериментально: станция и путь стоят дорого, они строят их, только когда могут себе это позволить.",
+      "ja": "コンピューターが運営する会社は、バス・トラック・貨物列車に加えて、自分のエリアの町どうしを鉄道で結べます（各町に駅、線路、車庫、列車）。実験的機能：駅と線路は高価なので、資金に余裕があるときだけ建設します。",
+      "ko": "컴퓨터가 운영하는 회사는 버스, 트럭, 화물 열차 외에도 자기 구역의 도시들을 철도로 연결할 수 있습니다(도시마다 역, 선로, 차량기지, 열차). 실험적 기능: 역과 선로는 비싸므로 여유가 있을 때만 건설합니다.",
+      "zh-CN": "由电脑经营的公司除了公交车、卡车和货运列车外，还可以用铁路连接其区域内的城镇（每个城镇一座车站、轨道、一座车库、列车）。实验性功能：车站和轨道很贵，只有在资金足够时才会建造。",
+      "zh-TW": "由電腦經營的公司除了公車、卡車和貨運列車外，還可以用鐵路連接其區域內的城鎮（每個城鎮一座車站、軌道、一座機廠、列車）。實驗性功能：車站和軌道很貴，只有在資金足夠時才會建造。"
     }
   }
 }

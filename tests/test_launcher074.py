@@ -30,7 +30,7 @@ def check(cond, name):
 
 
 fin = main[main.index("void InitFinish()"):main.index("/// <summary>(0.6.5, #111) MPFever.exe copied alone")]
-check("if (LaunchAtStart(AutoLaunchSetting(), JoinAtStart != null, Program.Args)) { ShowLaunchControls(); StartMenuMode(); return; }" in fin
+check("if (!modMissing && LaunchAtStart(AutoLaunchSetting(), JoinAtStart != null, Program.Args)) { ShowLaunchControls(); StartMenuMode(); return; }" in fin
       and "waitingLaunch = true;" in fin, "L1. the game starts at once only when asked, else it waits for the player's click")
 check('internal static bool AutoLaunchSetting() => LoadSettings().TryGetValue("autolaunch", out var v) && v == "1";' in main,
       "L1. the box is off until ticked (autolaunch=1)")

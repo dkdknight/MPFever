@@ -1564,6 +1564,24 @@ static void TerrainCapture(u8* pay)
         return;
     }
     TUnlock();
+    // (0.8.8, #298) One company per player: the terrain tools' command is the only tool's command that reaches the engine with the
+    // savegame's company as its context player (+0x36c): the other tools' builds are held at CommandList::Add and get this
+    // machine's company there (OwnerFix), the terrain tools cannot be held (see UI_SITES). The edit was paid by the savegame's
+    // company on its maker's game and by the maker's company on every other game (their replay names it): chris's eleven edits of
+    // 2026-11-14 01:34 took 2.4 M from company 1 on chris's game only, until the host's figures put it right 30 s later, and a
+    // purchase of company 1 in between would have been refused there alone. An edit made here (not a replay: those are told
+    // apart just above) whose context player is the savegame's company gets this machine's, before the engine applies it.
+    // MPFEVER_TERRAINOWNER=0: as before.
+    {
+        static int on = -1;
+        if (on < 0) { char v[4] = {}; on = (GetEnvironmentVariableA("MPFEVER_TERRAINOWNER", v, 3) > 0 && v[0] == '0') ? 0 : 1; }
+        long canon = g_canon, local = g_localPlayer;
+        if (on && canon && local && canon != local && *(u32*)(pay + 0x36c) == (u32)canon) {
+            *(u32*)(pay + 0x36c) = (u32)local;
+            static long shown = 0;
+            if (shown++ < 20) { Buf b; b.str("terrain: this machine's edit paid by its company ").dec(local).str(" (the command named the savegame's, ").dec(canon).str(")"); LogLine(b); }
+        }
+    }
     long id = _InterlockedIncrement(&g_tSeq);
     u64 rawN = 32 + hg->bytes;
     u8* raw = (u8*)HeapAlloc(GetProcessHeap(), 0, rawN);
@@ -3950,11 +3968,24 @@ static void StepsWindow(u32 made)
     g_win[i].hash = got == 50 ? (h ? h : 1) : 0;
     _InterlockedIncrement(&g_winN);
 }
+static bool DriftLoadReset();
 static DWORD WINAPI StepsWriter(void*)
 {
     long last = -1;
+    long loadsW = -1;
     for (;;) {
         Sleep(250);
+        // (0.8.8) a game loaded: the file's lines are those of the game before, and the rings only start again at the first step
+        // after the load (DriftStep). A resynchronisation's games stand still for seconds after their load, and the first check
+        // read the hash of a step from before it: "stepsDigest" differed after every resynchronisation (the drift it had just
+        // repaired), and every game dumped its rings for nothing. The file is emptied as soon as the load is counted.
+        // MPFEVER_DRIFTLOADRESET=0: as before
+        long loads = g_ctlLoads;
+        if (loads != loadsW) {
+            bool first = loadsW < 0;
+            loadsW = loads;
+            if (!first && DriftLoadReset()) { WriteSessionFile("native_steps.txt", "", 0); last = g_winN; }
+        }
         long n = g_winN;
         if (n == last) continue;
         last = n;
@@ -4580,6 +4611,73 @@ static void InstallClearSame()
     g_clearSame = ok ? 1 : 0;
     if (ok) b.str("account changes: the same on every game (every company emptied in one order, this machine's figures put back), ClearPositions at ").hex((u64)f - g_base);
     else b.str("account changes: ClearPositions ").str(f ? (shape ? "not spliced" : "of another shape") : "not found").str(": this machine's company kept out of the clear, as before");
+    LogLine(b);
+}
+
+// ---------------------------------------------------------------- the aircraft's cached figures (0.8.8, #150)
+// The slow drift between different PCs with nobody building (#150, #255, #274, #284, the two-PC tests of 2026-11-11 and
+// 2026-11-14 on "Test Leawood"): its first difference was always an aircraft. Measured on 2026-11-14 with the fine diagnostic,
+// then read in the game's code:
+//   - AircraftMoveSystem keeps, for each aircraft, figures it computes once (its mass with its load, its highest thrust, its top
+//     speed): the entity2data entry made by the system's vfunc4 (0xa87730 on 40425). The highest thrust and the top speed fall
+//     with the vehicle's maintenance state, by steps of a fifth (0x269bd40);
+//   - that entry is made again only when the aircraft's Aircraft or MovePathAircraft component is said changed (vfunc8 erases it,
+//     vfunc9 makes it), never when its maintenance state or its load changes;
+//   - the engine keeps two world states and makes each batch of steps on the other one. A change of the Aircraft component (its
+//     reservation moves on at every segment of the taxiway) makes the entry again at that step in the state that simulates, and
+//     in the other state only when the batch is copied to it, from that state's own older figures (the change records are
+//     replayed before the components are copied). The two states can hold another highest thrust for the same aircraft, one
+//     maintenance step apart (0.95 and 0.90 of the model's, aircraft 279989 of the test), and a step's thrust depends on which
+//     state makes it, that is on how the steps are cut into batches;
+//   - the batches differ between two PCs: a game held by its stop points behind a slower one makes batches of one step where the
+//     other makes four. The aircraft's speed parts by a few 1e-5 m/s, then its place, the animals near it, the ids, the people.
+// Every aircraft's entry is now made again at the start of every step, in the state that makes the step (the system's own
+// vfunc5 then vfunc4, the pair the engine runs for a change of the Aircraft component: the reservations are given back and
+// taken again as they were): the figures are those of the step's own components on every game, whatever the batches.
+// At the entry of AircraftMoveSystem::Update2 (rcx: the system, rdx: the engine, r8d: its aircraft, xmm3: the step's time);
+// its entities are 16-byte entries {entity, index of its Aircraft, index of its MovePathAircraft} at [[system+8]].
+// MPFEVER_AIRCACHE=0: as before (on every game of a session: a game with it and one without drift apart).
+static u64 g_airUpdate = 0;            // AircraftMoveSystem::Update2 (address), found by its signature
+static volatile long g_airSteps = 0, g_airMade = 0, g_airOdd = 0;
+static void AirCacheRefresh(SavedRegs* r)
+{
+    u64 sys = r->rcx, engine = r->rdx;
+    long n = (long)(i32)r->r8;
+    if (!sys || !engine || n <= 0 || n > 65536 || !Readable((void*)sys, 0x10)) return;
+    // (the system whose vfunc12 this is: its vfunc4 and vfunc5 are the ones called)
+    u64 vt = *(u64*)sys;
+    if (!vt || !Readable((void*)vt, 0x68) || *(u64*)(vt + 0x60) != g_airUpdate) { _InterlockedIncrement(&g_airOdd); return; }
+    u64 vec = *(u64*)(sys + 8);
+    if (!vec || !Readable((void*)vec, 8)) { _InterlockedIncrement(&g_airOdd); return; }
+    u64 list = *(u64*)vec;
+    if (!list || !Readable((void*)list, (u64)n * 16)) { _InterlockedIncrement(&g_airOdd); return; }
+    typedef void (*EntityFn)(u64, u64, u32);
+    EntityFn build = *(EntityFn*)(vt + 0x20), erase = *(EntityFn*)(vt + 0x28);
+    // (the entities read first: nothing of the list is read while the entries are made)
+    u32 small[256];
+    u32* ids = n <= 256 ? small : (u32*)HeapAlloc(GetProcessHeap(), 0, (u64)n * 4);
+    if (!ids) return;
+    for (long i = 0; i < n; i++) ids[i] = *(u32*)(list + (u64)i * 16);
+    for (long i = 0; i < n; i++) { erase(sys, engine, ids[i]); build(sys, engine, ids[i]); }
+    if (ids != small) HeapFree(GetProcessHeap(), 0, ids);
+    g_airMade += n;      // (the simulation's thread only)
+    if (_InterlockedIncrement(&g_airSteps) == 1) {
+        Buf b; b.str("aircraft figures: made again at every step, ").dec(n).str(" aircraft at the first one (thread ").dec((long)GetCurrentThreadId()).str(")"); LogLine(b);
+    }
+}
+static void InstallAirCache()
+{
+    char v[4] = {};
+    Buf b;
+    if (GetEnvironmentVariableA("MPFEVER_AIRCACHE", v, 3) > 0 && v[0] == '0') { b.str("aircraft figures: kept between the changes of their components, as before 0.8.8 (MPFEVER_AIRCACHE=0)"); LogLine(b); return; }
+    // AircraftMoveSystem::Update2 on 40425: "push rbx/rsi/rdi/r12/r13/r14/r15 / mov eax,0x1260 / call __chkstk / sub rsp,rax /
+    // vmovaps [rsp+0x1250],xmm6"; the six bytes of its first four pushes are taken
+    u32 at = FindSigRva("40 53 56 57 41 54 41 55 41 56 41 57 B8 60 12 00 00 E8 ?? ?? ?? ?? 48 2B E0 C5 F8 29 B4 24 50 12 00 00");
+    u8* mem = at ? AllocNear(0x100) : 0;
+    g_airUpdate = at ? g_base + at : 0;
+    bool ok = mem && Splice(mem, at, 6, AirCacheRefresh);
+    if (ok) b.str("aircraft figures: made again at every step (AircraftMoveSystem's update at ").hex(at).str("): the same on every game whatever its batches");
+    else { g_airUpdate = 0; b.str("aircraft figures: AircraftMoveSystem's update NOT found: kept between the changes of their components, as before (a slow drift between PCs stays possible)"); }
     LogLine(b);
 }
 
@@ -6111,6 +6209,7 @@ static DWORD WINAPI Init(void*)
     InstallFreshIds();
     PatchSaveCleanup();
     InstallNoGameAutosave();
+    InstallAirCache();
     InstallModuleBuilderGuard();
     if (g_layout) InstallToolCompany();
     if (g_layout) InstallHudShare();

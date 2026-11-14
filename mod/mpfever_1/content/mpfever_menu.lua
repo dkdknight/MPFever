@@ -685,6 +685,7 @@ local function setup()
 		territory = "::/gui/menu/icons/map_town.tga",
 		handicap = "::/gui/menu/icons/earnings.tga",
 		tenders = "::/gui/game_bar/icons/notifications.tga",
+		aitrains = "::/gui/game_bar/icons/vehicle_train_30.tga",
 		sales = "::/gui/entity_window/icons/symbol_shopping_cart.tga",
 		contracts = "::/gui/entity_window/icons/symbol_cargo.tga",
 		stock = "::/gui/radial_menu/icons/symbol_coin_stack_48.tga",
@@ -814,7 +815,7 @@ local function setup()
 		local cardW = math.floor((w - 60 - (cols - 1) * GAP) / cols)
 		local groups = {
 			{ title = T("Coopération", "Co-op"), ids = { "journal", "builtby", "playerview", "perms", "plans" } },
-			{ title = T("Compétition", "Competition"), ids = { "goal", "stats", "yearly", "market", "territory", "handicap", "tenders" } },
+			{ title = T("Compétition", "Competition"), ids = { "goal", "stats", "yearly", "market", "territory", "handicap", "tenders", "aitrains" } },
 			{ title = T("Économie entre joueurs", "Trade between players"), ids = { "sales", "contracts", "stock", "cargo" } },
 			{ title = T("Partie publique", "Public game"), ids = { "public" }, prefix = "join_" },
 			{ title = T("Autres", "Other"), ids = {} },
@@ -1129,6 +1130,8 @@ local function setup()
 				-- (0.7.5) what each level does differently (see mpfever_ai.lua's LEVELS and SH)
 				gap(1, 4),
 				text(T("Les niveaux. Facile : grandit lentement, garde une grosse réserve, ne prend que les arrêts gratuits des autres entreprises et évite les villes où leurs arrêts lui sont fermés. Normal : grandit plus vite, paie un péage jusqu'à 150 par arrêt et n'entre dans une ville aux arrêts fermés que s'il ne lui reste aucune autre ville. Difficile : grandit vite, transporte plus de marchandises, dispute aux joueurs leurs villes et leurs industries, paie un péage jusqu'à 400 et pose ses propres arrêts là où ceux des autres lui sont fermés.", "The levels. Easy: grows slowly, keeps a large reserve, only takes the other companies' free stops and stays out of towns where their stops are closed to it. Normal: grows faster, pays a toll of up to 150 a stop and goes into a town with closed stops only when no other town is left. Hard: grows fast, carries more freight, competes for the players' towns and industries, pays a toll of up to 400 and builds its own stops where the others' are closed to it."), "font-scale-body", w),
+				-- (0.8.8: where a computer company works, by its level, see mpfever_ai.lua M.AREA)
+				text(T("Leur zone. Facile : 3 villes proches les unes des autres (sa ville de départ et ses deux plus proches voisines). Normal : 6 villes. Difficile : toute la carte. Ses lignes de bus, ses trains et son fret restent dans cette zone.", "Their area. Easy: 3 towns close to one another (its home town and its two nearest neighbours). Normal: 6 towns. Hard: the whole map. Its bus lines, its trains and its freight stay in that area."), "font-scale-body", w),
 			}
 			local iw = w - 16
 			for i, a in ipairs(c.ais) do
@@ -1634,6 +1637,7 @@ local function setup()
 				below[#below + 1] = box(H, head, nil, { size = { w, -1 } })
 				below[#below + 1] = text(T("Gérées par le jeu de l'hôte : bus, camions de marchandises et livraisons des villes. Plus le niveau est élevé, plus elles grandissent vite.", "Run by the host's game: buses, freight trucks and deliveries to the towns. The higher the level, the faster they grow."), "font-scale-body", w)
 				below[#below + 1] = text(T("Les niveaux. Facile : grandit lentement, garde une grosse réserve, ne prend que les arrêts gratuits des autres entreprises et évite les villes où leurs arrêts lui sont fermés. Normal : grandit plus vite, paie un péage jusqu'à 150 par arrêt et n'entre dans une ville aux arrêts fermés que s'il ne lui reste aucune autre ville. Difficile : grandit vite, transporte plus de marchandises, dispute aux joueurs leurs villes et leurs industries, paie un péage jusqu'à 400 et pose ses propres arrêts là où ceux des autres lui sont fermés.", "The levels. Easy: grows slowly, keeps a large reserve, only takes the other companies' free stops and stays out of towns where their stops are closed to it. Normal: grows faster, pays a toll of up to 150 a stop and goes into a town with closed stops only when no other town is left. Hard: grows fast, carries more freight, competes for the players' towns and industries, pays a toll of up to 400 and builds its own stops where the others' are closed to it."), "font-scale-body", w)
+				below[#below + 1] = text(T("Leur zone. Facile : 3 villes proches les unes des autres (sa ville de départ et ses deux plus proches voisines). Normal : 6 villes. Difficile : toute la carte. Ses lignes de bus, ses trains et son fret restent dans cette zone.", "Their area. Easy: 3 towns close to one another (its home town and its two nearest neighbours). Normal: 6 towns. Hard: the whole map. Its bus lines, its trains and its freight stay in that area."), "font-scale-body", w)
 				below[#below + 1] = gap(1, 6)
 				-- its level (0.5.13): how fast it grows and how hard it competes
 				local LEVELS = { T("Facile", "Easy"), T("Normal", "Normal"), T("Difficile", "Hard") }

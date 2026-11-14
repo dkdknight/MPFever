@@ -86,6 +86,7 @@ namespace MPFever
             ok &= RunPlatforms0718();
             ok &= RunOldCopy081();
             ok &= RunLuaGate081();
+            ok &= RunModStop088();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -236,6 +237,36 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
         }
 
         /// <summary>(0.7.17, #192 #196) A Steam account that never started the game: its "local" folder is made for the mod.</summary>
+        /// <summary>(0.8.8, #294) The game is not started when it could not find MPFever's mod (GameInstall.ModReachable).</summary>
+        static bool RunModStop088()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.8.8 mod stop: " + what); ok &= c; }
+            var root = Path.Combine(Path.GetTempPath(), "mpfever-selftest-ms-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var rel = Path.Combine(root, "game", "mods", "release");
+                var loc = Path.Combine(root, "userdata", "111", GameInstall.AppId, "local", "mods");
+                Directory.CreateDirectory(rel);
+                Directory.CreateDirectory(loc);
+                var dirs = new[] { rel, loc, null, "" };
+                C(!GameInstall.ModReachable(null, dirs), "no mod folder beside MPFever.exe, no copy in the game: the game would not find it");
+                C(!GameInstall.ModReachable("", null), "  no folder at all: the same");
+                C(GameInstall.ModReachable(Path.Combine(root, "mod", "mpfever_1"), dirs), "the mod folder beside MPFever.exe: started (it is installed at every start)");
+                Directory.CreateDirectory(Path.Combine(loc, "mpfever_1"));
+                C(!GameInstall.ModReachable(null, dirs), "an empty mpfever_1 folder in the game: not a mod");
+                File.WriteAllText(Path.Combine(loc, "mpfever_1", "mod.json"), "{}");
+                C(GameInstall.ModReachable(null, dirs), "a copy of the mod in an account's local\\mods: started, as before");
+                File.Delete(Path.Combine(loc, "mpfever_1", "mod.json"));
+                Directory.CreateDirectory(Path.Combine(rel, "mpfever_1"));
+                File.WriteAllText(Path.Combine(rel, "mpfever_1", "mod.json"), "{}");
+                C(GameInstall.ModReachable(null, dirs), "a copy in the game's mods\\release: started, as before");
+            }
+            catch (Exception e) { C(false, e.Message); }
+            finally { try { Directory.Delete(root, true); } catch { } }
+            return ok;
+        }
+
         static bool RunInstall0717()
         {
             bool ok = true;

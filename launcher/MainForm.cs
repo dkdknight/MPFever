@@ -117,7 +117,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.8.7";
+        public const string Version = "0.8.8";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -1233,9 +1233,27 @@ namespace MPFever
             pauseBtn.Visible = x1Btn.Visible = x2Btn.Visible = x4Btn.Visible = speed;
         }
 
+        /// <summary>(0.8.8, #294) MPFever.exe started without its files (no mod folder beside it, no copy of the mod in the game):
+        /// the game started all the same and closed at once, with nothing said ("File not found (unknown mod)
+        /// 'mpfever_1::/mpfever_auto.lua'", a crash report). The game is not started; what to do is said in the log and in a
+        /// message. MPFEVER_NOMODSTOP=0: started as before.</summary>
+        bool ModMissingStop()
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_NOMODSTOP") == "0") return false;
+            bool reachable = true;
+            try { reachable = GameInstall.ModReachable(GameInstall.FindModSource(), GameInstall.ModsDirs(gameDir)); } catch { }
+            if (reachable) return false;
+            var text = T("Il manque des fichiers de MPFever (le dossier « mod » à côté de MPFever.exe) : le jeu ne trouverait pas MPFever et se fermerait aussitôt. Décompressez toute l'archive de MPFever dans un nouveau dossier, vérifiez que votre antivirus n'a rien retiré (winhttp.dll), puis lancez MPFever.exe depuis ce dossier.",
+                         "Some of MPFever's files are missing (the « mod » folder beside MPFever.exe): the game would not find MPFever and would close at once. Extract the whole MPFever archive into a new folder, check that your antivirus removed nothing (winhttp.dll), then start MPFever.exe from that folder.");
+            Log.Err(text);
+            try { MessageBox.Show(this, text, "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Warning); } catch { }
+            return true;
+        }
+
         void LaunchFromButton()
         {
             if (!waitingLaunch || installing) return;
+            if (ModMissingStop()) return;
             waitingLaunch = false;
             ShowLaunchControls();
             StartMenuMode();
@@ -1343,10 +1361,12 @@ namespace MPFever
             }
             if (MenuModeDefault && !autotest)
             {
-                if (LaunchAtStart(AutoLaunchSetting(), JoinAtStart != null, Program.Args)) { ShowLaunchControls(); StartMenuMode(); return; }
+                // (0.8.8, #294: not without the mod; the button stays, and says it again)
+                bool modMissing = ModMissingStop();
+                if (!modMissing && LaunchAtStart(AutoLaunchSetting(), JoinAtStart != null, Program.Args)) { ShowLaunchControls(); StartMenuMode(); return; }
                 waitingLaunch = true;
                 ShowLaunchControls();
-                Log.Ok(T("Prêt : réglez MPFever si besoin (⚙ Réglages en bas), puis cliquez sur « Lancer Transport Fever 3 ».",
+                if (!modMissing) Log.Ok(T("Prêt : réglez MPFever si besoin (⚙ Réglages en bas), puis cliquez sur « Lancer Transport Fever 3 ».",
                          "Ready: set MPFever up if needed (⚙ Settings at the bottom), then click « Start Transport Fever 3 »."));
                 return;
             }

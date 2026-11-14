@@ -36,6 +36,9 @@ if not m:
     sys.exit(1)
 L = lupa.LuaRuntime(unpack_returned_tuples=True)
 L.execute("ENVV = {} os.getenv = function(k) return ENVV[k] end STEP = 200 K = {} C = {}\n" + m.group(0))
+# (0.8.8, MPFEVER_STEPSFLOOR: a window is taken only when its 50 steps come after the load, see test_stepsfloor088.py; here the
+# game was loaded long before these checks)
+L.execute("K.stepsFloor = 100000")
 f = L.eval("function(at, text) return K.stepsDigestAt(at, text) end")
 
 FILE = "135590 111\r\n135600 222\r\n135610 0\r\n135620 444\r\n"

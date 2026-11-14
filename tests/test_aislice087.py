@@ -126,7 +126,7 @@ r = bridge[bridge.index("if G.aiMod and G.aiMod.tick then"):]
 r = r[:r.index("\nend\n")]
 check('if G.aiMod.slicing and (sl == "1" or (sl ~= "0" and G.aiMod.slicingWanted and G.aiMod.slicingWanted())) then' in r,
       "the bridge: in slices only while a plan needs it, MPFEVER_AISLICE=1 always, =0 never")
-check('function M.slicingWanted() local v = os.getenv("MPFEVER_AIPAXRAIL"); return v == "1" or v == "hard" end' in ai,
+check('function M.slicingWanted() local v = os.getenv("MPFEVER_AIPAXRAIL"); return v == "1" or v == "hard" or (v ~= "0" and M.trainsOn == true) end' in ai,
       "  needed by the passenger railway only (off by default: the step in one go, as in 0.8.6)")
 L2 = lupa.LuaRuntime(unpack_returned_tuples=True)
 sw = ai[ai.index("function M.slicingWanted()"):]
