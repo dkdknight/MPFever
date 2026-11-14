@@ -1,5 +1,5 @@
-"""Offline test (0.8.9): a stop or a signal is shipped at the click only with MPFEVER_PRESHIPSTOP=1 (research; G.preship in
-mpfever_bridge.script.lua).
+"""Offline test (0.8.9): a stop or a signal is shipped at the click when its copy is complete (G.preship, G.preshipObjects in
+mpfever_bridge.script.lua; MPFEVER_PRESHIPSTOP=0: the usual way, as in 0.8.8).
 
 #296 and #297 (0.8.7): every stand of more than a second before a replay was a stop or a signal built by the player who did not
 lead (shipped the usual way, its data came once its builder reached its step). Shipping it at the click was tried for 0.8.9 and
@@ -99,11 +99,12 @@ end
     def env(**kw):
         return lua_table(L.table_from(kw))
 
-    check(run(True, None) == "true|false|0|0|nil", "a stop: shipped the usual way by default (nothing translated or sent)")
+    eo_ok0 = L.eval('{"3f0aa0fa", "", "stations/street/small_stops/small_old.con"}')
+    check(run(True, env(MPFEVER_PRESHIPSTOP="0"), eo_ok0) == "true|false|0|0|nil", "MPFEVER_PRESHIPSTOP=0: a stop shipped the usual way, as in 0.8.8 (nothing translated or sent)")
     check(any("a stop or a signal: shipped the usual way" in str(x) for x in L.globals().LOGS.values()), "  (and said in the logs)")
     check(run(False, None).startswith("true|true|1|1|host:"), "a plain street: shipped at the click as before")
     eo_ok = L.eval('{"3f0aa0fa", "", "stations/street/small_stops/small_old.con"}')
-    check(run(True, env(MPFEVER_PRESHIPSTOP="1"), eo_ok).startswith("true|true|1|1|host:"), "MPFEVER_PRESHIPSTOP=1: a stop read in the tool's command shipped at the click")
+    check(run(True, None, eo_ok).startswith("true|true|1|1|host:"), "by default (0.8.9): a stop read in the tool's command shipped at the click")
     last = L.globals().LAST
     check(last.model == "::/stations/street/small_stops/small_old.con" and repr(last.param) == "0.5415188074111938",
           "  its construction and place filled exactly as its capture reads them (::/...small_old.con, 0.54151880741119385)")
@@ -124,19 +125,19 @@ end
           "  its builder moved no ground either: only the confirmation goes")
     check(settle(L.eval("{ al = 0.5, ar = 0, tr = 0, rk = 0, ba = 0, br = 0, tv = 0 }")).startswith("true|true|replay_failed,pre_done"),
           "  its builder's build moved ground: a resynchronisation is asked for")
-    check(run(True, env(MPFEVER_PRESHIPSTOP="1")) == "true|false|0|0|nil", "MPFEVER_PRESHIPSTOP=1: nothing read in the command: the usual way")
+    check(run(True, None) == "true|false|0|0|nil", "nothing read in the command: the usual way")
     check(any("not complete at the click" in str(x) for x in L.globals().LOGS.values()), "  (and said in the logs)")
-    check(run(True, env(MPFEVER_PRESHIPSTOP="1"), L.eval('{"3f0aa0fa", "somemod", "stations/x.con"}')) == "true|false|0|0|nil",
-          "MPFEVER_PRESHIPSTOP=1: a construction not known here: the usual way")
-    check(run(True, env(MPFEVER_PRESHIPSTOP="1"), L.eval('{"7f800000", "", "stations/street/small_stops/small_old.con"}')) == "true|false|0|0|nil",
-          "MPFEVER_PRESHIPSTOP=1: a place that is no number (infinite): the usual way")
+    check(run(True, None, L.eval('{"3f0aa0fa", "somemod", "stations/x.con"}')) == "true|false|0|0|nil",
+          "a construction not known here: the usual way")
+    check(run(True, None, L.eval('{"7f800000", "", "stations/street/small_stops/small_old.con"}')) == "true|false|0|0|nil",
+          "a place that is no number (infinite): the usual way")
     f32 = L.eval("G.f32")
     check(f32("3f800000") == 1.0 and f32("0") == 0.0 and f32("bf000000") == -0.5, "G.f32: 1, 0, -0.5 from their bits")
     name = L.eval("G.eoModelName")
     check(name("", "stations/a.con") == "::/stations/a.con" and name("m_1", "/stations/a.con") == "m_1::/stations/a.con" and name("", "") is None,
           "G.eoModelName: the base game's ::/<path>, a mod's <mod>::/<path>")
     check(run(True, env(MPFEVER_PRESHIPOBJ="1")).startswith("true|true|1|1|host:"), "MPFEVER_PRESHIPOBJ=1: at the click, as 0.7.4")
-    check(run(False, env(MPFEVER_PRESHIPSTOP="1"), eo_ok).startswith("true|true|1|1|host:"), "MPFEVER_PRESHIPSTOP=1: a plain street unchanged")
+    check(run(False, env(MPFEVER_PRESHIPSTOP="0"), eo_ok).startswith("true|true|1|1|host:"), "MPFEVER_PRESHIPSTOP=0: a plain street still at the click")
 
     j = src.find("local preCon = a.pre and type(a.args[1]) == \"table\"")
     rp = src[j:j + 1400]

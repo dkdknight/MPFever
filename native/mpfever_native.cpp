@@ -1796,6 +1796,17 @@ static void DumpPayload(const u8* pay, const char* tag)
                 if (n && Readable((void*)t, n)) for (u32 i = 0; i < n && o + 2 < cap; i++) { u8 c = t[i]; txt[o++] = (c >= 32 && c < 127) ? (char)c : '?'; }
                 if (o + 2 < cap) txt[o++] = '\n';
             }
+            // (#261, deeper) the object's model list at +0x10 (items of 0xb0 bytes) and the list at +0xd8 (0x68 bytes)
+            {
+                static const u32 lists[] = { 0x10, 0xd8 };
+                for (u32 lo : lists) {
+                    u64 lb = *(const u64*)(eo + lo), le = *(const u64*)(eo + lo + 8);
+                    u32 ln = (lb > 0x10000 && le > lb && le - lb <= 0x400) ? (u32)(le - lb) : 0;
+                    label("@eolist", lo, ln);
+                    if (ln && Readable((void*)lb, ln)) hexOut((const u8*)lb, ln);
+                    if (o + 2 < cap) txt[o++] = '\n';
+                }
+            }
             for (u32 k = 0; k < 3; k++) {
                 u64 pp = *(const u64*)(eo + 0xb0 + k * 8);
                 label("@params", 0xb0 + k * 8, 0x100);

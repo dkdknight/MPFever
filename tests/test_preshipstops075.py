@@ -9,7 +9,7 @@ keviK's through those stops was refused there ("DESYNC unresolved: sg#..."), 6 r
   - G.preHasObjects (run here through lupa): a copy that adds or removes edge objects (a stop, a signal) has some; a plain
     street or a segment's removal has none; nothing readable: none;
   - G.preship ships such a build the usual way (before anything is translated or sent), MPFEVER_PRESHIPOBJ=1: as 0.7.4
-    (0.8.9: MPFEVER_PRESHIPSTOP=1 ships it at the click, research only, see test_preshipstop089.py);
+    (0.8.9: only with MPFEVER_PRESHIPSTOP=0, or a copy not complete, see test_preshipstop089.py);
   - a copy with stops or signals that comes anyway is replayed as a capture, not applied as a street proposal.
 Run: python tests/test_preshipstops075.py
 """
@@ -51,7 +51,7 @@ def main():
     i = src.find("G.preship = function(r)")
     body = src[i:i + 8000]   # (0.8.9: 8000; 0.7.14: the construction-removal rule added before the translation, see test_nostopdefault0714.py)
     a = body.find("if not G.preHasContent(r.copy) then")
-    b = body.find('if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") ~= "1" then')
+    b = body.find('if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") == "0" then')
     c = body.find("R.translateOut(")
     check(0 < a < b < c, "G.preship: a stop or a signal shipped the usual way, before anything is translated or sent")
     check("return false" in body[b:b + 400], "  (false: held and shipped the usual way)")

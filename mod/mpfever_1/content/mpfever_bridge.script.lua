@@ -6317,6 +6317,7 @@ local function replayStop(a, plan, variant)
 				end)
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " stops on the map " .. before .. " -> " .. after .. ((after == expected) and "" or (" (EXPECTED " .. expected .. ")"))
 				.. ", segment owner " .. tostring(owner) .. " (here " .. table.concat(owners, ",") .. ")")
+			pcall(G.groundProbe, a.args and a.args[1], a.uid, "replay")
 			end }
 		end
 	end)
@@ -7663,6 +7664,7 @@ G.replayNativeStop = function(a, plan)
 				local after = G.eoCount()
 				if keep then keep.res = nil end
 				log("NATIVE REPLAY " .. uid .. " stops on the map " .. before .. " -> " .. after .. ((after == expected) and "" or (" (EXPECTED " .. expected .. "): resynchronisation")))
+				pcall(G.groundProbe, a.args and a.args[1], uid, "replay")
 				if after ~= expected then replayFailed(a, "native stop: stops differ") end
 			end }
 			G.eoCheckHold()
@@ -11702,7 +11704,7 @@ G.eoModelName = function(mod, path)
 	if path:sub(1, 1) == "/" then path = path:sub(2) end
 	return (mod or "") .. "::/" .. path
 end
--- (0.8.9, research, MPFEVER_PRESHIPSTOP=1) a copy with new stops or signals made complete for the click: each one's construction and
+-- (0.8.9) a copy with new stops or signals made complete for the click: each one's construction and
 -- place from the tool's command (the tool's proposal does not show them to the scripts, and the stop is not built yet: the copies of
 -- 0.7.4 had neither, and the other games' stop replays would ask for a resynchronisation). True when every one is filled and its
 -- construction is known here; false and why otherwise (shipped the usual way)
@@ -11724,6 +11726,41 @@ G.preshipObjects = function(r)
 	end
 	return true
 end
+-- (0.8.9 research, #261, MPFEVER_GROUNDPROBE=1) the ground along and beside the new segments of a build (m: its compact proposal),
+-- 30 frames after it stands: 21 points along each segment, at -6, -3, 0, 3, 6 m to its side, their heights summed and hashed, to
+-- compare the builder's game with the replaying games ("GROUND <uid> <who> ...")
+G.groundProbe = function(m, uid, who)
+	if os.getenv("MPFEVER_GROUNDPROBE") ~= "1" or type(m) ~= "table" then return end
+	local segs = {}
+	for _, sg in ipairs(((m.proposal or {}).addedSegments) or {}) do
+		local c = type(sg) == "table" and sg.comp or nil
+		if type(c) == "table" and type(c.position0) == "table" and type(c.position1) == "table" then segs[#segs + 1] = c end
+	end
+	if #segs == 0 then return end
+	G.waits[#G.waits + 1] = { at = G.frames + 30, fn = function()
+		local sum, n, h = 0, 0, 5381
+		for _, c in ipairs(segs) do
+			local x0, y0, x1, y1 = c.position0.x, c.position0.y, c.position1.x, c.position1.y
+			local dx, dy = x1 - x0, y1 - y0
+			local len = math.sqrt(dx * dx + dy * dy)
+			if len > 0 then
+				local nx, ny = -dy / len, dx / len
+				for k = 0, 20 do
+					for _, off in ipairs({ -6, -3, 0, 3, 6 }) do
+						local px, py = x0 + dx * k / 20 + nx * off, y0 + dy * k / 20 + ny * off
+						local ok, z = pcall(function() return api.engine.terrain.getHeightAt(api.type.Vec2f.new(px, py)) end)
+						if ok and type(z) == "number" then
+							sum = sum + z
+							n = n + 1
+							h = (h * 33 + math.floor(z * 1000 + 0.5)) % 2147483647
+						end
+					end
+				end
+			end
+		end
+		log(string.format("GROUND %s %s: %d points, sum %.4f, signature %d", tostring(uid), tostring(who), n, sum, h))
+	end }
+end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
 	if not G.preHasContent(r.copy) then log("PRESHIP native build " .. tostring(r.id) .. ": its copy has nothing in it: shipped the usual way") return false end
@@ -11731,17 +11768,18 @@ G.preship = function(r)
 	-- rebuilt the segment without its stop (AMD and keviK, 2026-11-07, "several players building without stopping": keviK's
 	-- first bus stop built on its game only, every line through it refused on the host, 6 reloads in 10 minutes); the stop
 	-- replays of a capture build it. MPFEVER_PRESHIPOBJ=1: shipped at the click, as 0.7.4
-	-- (0.8.9, research, MPFEVER_PRESHIPSTOP=1: shipped at the click) Shipped the usual way, a stop or a signal of the player who
+	-- (0.8.9: shipped at the click when its copy is complete, see G.preshipObjects; MPFEVER_PRESHIPSTOP=0: always the usual
+	-- way, as in 0.7.5 to 0.8.8) Shipped the usual way, a stop or a signal of the player who
 	-- does not lead stands the leading game 1 to 5 s (#296, #297). The other games replay such a copy as a capture since 0.7.5, but
 	-- the copy lacks what the stop replays need: the tool's proposal holds its objects' model instances, not their construction
 	-- (model) nor their place on the segment (param), and at the click the new segment does not stand yet for enrichEdgeObjects to
 	-- read them (the copies of 0.7.4 in the report of AMD and keviK, 2026-11-07: name, side and owner only). Replayed so, every stop
-	-- would ask for a resynchronisation ("model nil not in this game"): off until the copy carries them
-	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") ~= "1" then
+	-- would ask for a resynchronisation ("model nil not in this game"): G.preshipObjects now makes it complete from the tool's command
+	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") == "0" then
 		log("PRESHIP native build " .. tostring(r.id) .. ": a stop or a signal: shipped the usual way")
 		return false
 	end
-	-- (MPFEVER_PRESHIPSTOP=1) its stops and signals made complete from the tool's command, or the usual way
+	-- (0.8.9) its stops and signals made complete from the tool's command, or the usual way
 	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then
 		local okO, done, why = pcall(G.preshipObjects, r)
 		if not (okO and done) then
@@ -11853,6 +11891,7 @@ end
 -- only a confirmation goes, false when the capture goes too (marked as the capture of that copy)
 G.preshipSettle = function(a, o)
 	local e = a.preOf
+	pcall(G.groundProbe, type(o.args) == "table" and o.args[1] or nil, e.pre, "builder")
 	-- (0.8.9) a stop shipped at the click with the town numbers of a build that moves no ground: its builder's own numbers
 	if type(e.preTs) == "table" then
 		local moved = nil
@@ -14110,7 +14149,7 @@ H.terrainlead_stop = function(from, p) G.tlHold = nil end
 
 -- (0.8.9) Lead hold (MPFEVER_SCENARIO=leadhold, run by the host first): the game that runs it keeps a terrain tool in hand, without
 -- any edit, for MPFEVER_LEADHOLD_SECONDS (600): it leads, and a build made meanwhile on the other game with a real tool is a held
--- build of the game that does not lead (the stands of #296 and #297; with MPFEVER_PRESHIPSTOP=1 a stop shipped at the click)
+-- build of the game that does not lead (the stands of #296 and #297; a stop of it is shipped at the click since 0.8.9)
 H.leadhold = function(from, p)
 	if p.role ~= C.ROLE or AUTO.running then return end
 	AUTO.running = true
