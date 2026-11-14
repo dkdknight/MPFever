@@ -25467,6 +25467,19 @@
       "ko": "컴퓨터가 운영하는 회사는 버스, 트럭, 화물 열차 외에도 자기 구역의 도시들을 철도로 연결할 수 있습니다(도시마다 역, 선로, 차량기지, 열차). 실험적 기능: 역과 선로는 비싸므로 여유가 있을 때만 건설합니다.",
       "zh-CN": "由电脑经营的公司除了公交车、卡车和货运列车外，还可以用铁路连接其区域内的城镇（每个城镇一座车站、轨道、一座车库、列车）。实验性功能：车站和轨道很贵，只有在资金足够时才会建造。",
       "zh-TW": "由電腦經營的公司除了公車、卡車和貨運列車外，還可以用鐵路連接其區域內的城鎮（每個城鎮一座車站、軌道、一座機廠、列車）。實驗性功能：車站和軌道很貴，只有在資金足夠時才會建造。"
+    },
+    "%s's edit was not kept (the game is resynchronising): please make it again afterwards.": {
+      "de": "Die Änderung von %s wurde nicht behalten (das Spiel wird resynchronisiert): bitte danach erneut vornehmen.",
+      "es": "La modificación de %s no se ha conservado (la partida se está resincronizando): vuelve a hacerla después.",
+      "it": "La modifica di %s non è stata mantenuta (la partita si sta risincronizzando): rifalla dopo.",
+      "nl": "De wijziging van %s is niet behouden (het spel wordt opnieuw gesynchroniseerd): voer haar daarna opnieuw uit.",
+      "pl": "Zmiana gracza %s nie została zachowana (gra jest ponownie synchronizowana): wprowadź ją potem jeszcze raz.",
+      "pt-BR": "A modificação de %s não foi mantida (o jogo está sendo ressincronizado): faça-a de novo depois.",
+      "ru": "Изменение игрока %s не сохранилось (игра ресинхронизируется): повторите его после этого.",
+      "ja": "%s の変更は保持されませんでした(ゲームを再同期中):後でもう一度行ってください。",
+      "ko": "%s의 변경이 유지되지 않았습니다(게임 재동기화 중): 나중에 다시 해 주세요.",
+      "zh-CN": "%s 的修改未被保留(游戏正在重新同步):请稍后重新进行。",
+      "zh-TW": "%s 的修改未被保留(遊戲正在重新同步):請稍後重新進行。"
     }
   }
 }

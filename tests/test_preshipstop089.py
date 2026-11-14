@@ -155,6 +155,7 @@ end
     check(i > 0 and "pay + 0x128" in blk and "% 0x1a0 == 0" in blk and "eo + 0x28" in blk and "0x70 : 0x90" in blk,
           "native: deferred_eo from the held command's edgeObjectsToAdd (+0x128, 0x1a0 each: place +0x28, mod +0x70, path +0x90)")
     check('"MPFEVER_EOCLICK"' in blk and nat.find('Buf e; e.str("deferred ")') > i, "  (MPFEVER_EOCLICK=0: none; written before the deferred line)")
+    check("g_buildStamp == 0x6ad9ce10u" in blk and "g_buildStamp = fh->TimeDateStamp;" in nat, "  only on the build its layout was read on (Steam 40425, stamp 6ad9ce10)")
     check("H.leadhold = function(from, p)" in src and "MPFEVER_LEADHOLD_SECONDS" in src, "scenario leadhold: a game that leads with a terrain tool, no edit")
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0

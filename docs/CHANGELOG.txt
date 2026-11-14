@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.8.9 - (in progress)
+  - FIX (crash, #305: seaso's game, the host, 2026-11-14 15:49): Brumaren's edit of a modular station was rebuilt on the host
+    without the 7 stops and signals on the station's own tracks (a resynchronisation asked for), and his next edit of the same
+    station, applied on that state 3 s later, crashed the host's game ('it != components.end()', GetComponentDataIndex) before
+    the resynchronisation. The host's game now leaves out the next edits of constructions by the same player until the
+    resynchronisation (45 s at most), and tells that player to make them again; a player's game did so already (#113).
+    MPFEVER_HOSTFAILHOLD=0: applied as before. Test: tests/test_hostfailhold089.py.
   - RESEARCH (#261, stops whose ground is aligned otherwise on the replaying games): measured with the real stop tool on Test
     Mittelland (MPFEVER_GROUNDPROBE=1: the ground along and beside the new segment, 105 points, 30 frames after the build):
     the same to the millimetre on the builder's game and on the replaying game, although the replay gives the towns other
@@ -23,7 +29,8 @@ MPFever - Changelog
     shipped at the click and built alike (the same place 0.54151880741119385), and a signal on a new track; the leading game
     stood 290 to 579 ms instead of 2353 ms, every check after them in sync (a slight money difference may show for one or two
     checks after a stop: the replaying game books its price difference when the builder confirms, 3 s later). MPFEVER_PRESHIPSTOP=0: the usual way, as in 0.8.8; MPFEVER_EOCLICK=0: the
-    native module reads nothing (then the usual way too). New autotest scenario leadhold (MPFEVER_LEADHOLD_SECONDS) and option
+    native module reads nothing (then the usual way too). Only on the game build the layout was read on (Steam's 40425): another
+    build (a GOG copy of 40393, #303) ships its stops the usual way. New autotest scenario leadhold (MPFEVER_LEADHOLD_SECONDS) and option
     MPFEVER_DSTOP_LEAD=1. Research dumps: MPFEVER_TOOLDUMP=1 (the tool's proposal, previews too), MPFEVER_PAYLOAD_DUMP=1 (the
     command, its first segment, its edge objects, node configurations, maps). Test: tests/test_preshipstop089.py.
   - FIX (the links between the game and the network slower than meant): Windows 11 left the launcher's 1 ms timer

@@ -6448,6 +6448,12 @@ local function replayFailed(a, why)
 	if C.ROLE ~= "host" and os.getenv("MPFEVER_FAILHOLD") ~= "0" and G.replayBroken == nil then
 		G.replayBroken = { uid = tostring(a and a.uid), why = tostring(why):sub(1, 120), at = os.clock() }
 	end
+	-- (0.8.9, #305) the host's game that could not reproduce the edit of a construction (its stops or signals on its own tracks
+	-- not replayed): the next edits of constructions by the same player are left out until the resynchronisation, see
+	-- G.brokenSkip. MPFEVER_HOSTFAILHOLD=0: applied as before
+	if C.ROLE == "host" and a and os.getenv("MPFEVER_HOSTFAILHOLD") ~= "0" and tostring(why):find("construction edge objects", 1, true) then
+		G.hostBroken = { uid = tostring(a.uid), origin = a.origin, why = tostring(why):sub(1, 120), at = os.clock() }
+	end
 end
 G.replayFailedFn = replayFailed
 
@@ -10164,6 +10170,25 @@ end
 -- launcher waits 15 s between two), the builds are applied again, as before. MPFEVER_FAILHOLD=0: applied as before
 G.BROKEN_HOLD = 45
 function G.brokenSkip(a)
+	-- (0.8.9, #305: seaso's game, the host, 2026-11-14 15:49) Brumaren's edit of a modular station was rebuilt there without the
+	-- 7 stops and signals on the station's own tracks (a resynchronisation asked for), and his next edit of the same station, applied
+	-- on that state 3 s later, crashed the host's game ('it != components.end()', GetComponentDataIndex) before the
+	-- resynchronisation. The host's game is the one every game reloads, so it leaves out only what can crash it: the next edits of
+	-- constructions by the same player, for HOLD seconds; that player is told to make them again after the resynchronisation
+	local hb = G.hostBroken
+	if hb and C.ROLE == "host" then
+		if os.clock() - hb.at > G.BROKEN_HOLD then
+			G.hostBroken = nil
+		elseif a.origin == hb.origin and a.native and type(a.args) == "table" and type(a.args[1]) == "table"
+			and (#(a.args[1].toRemove or {}) > 0 or #(a.args[1].toAdd or {}) > 0) then
+			log("NATIVE REPLAY " .. tostring(a.uid) .. ": an edit of a construction by the player whose " .. hb.uid .. " this game could not reproduce ("
+				.. hb.why .. "): not built here before the resynchronisation")
+			pcall(send, "replay_failed", { uid = tostring(a.uid), why = "construction edit after " .. hb.uid })
+			pcall(G.coSay, C.Tf("La modification de %s n'a pas été gardée (la partie se resynchronise) : refaites-la ensuite.",
+				"%s's edit was not kept (the game is resynchronising): please make it again afterwards.", tostring(a.origin)))
+			return true
+		end
+	end
 	local b = G.replayBroken
 	if b == nil or a.fn == "mpfCoJoin" then return false end
 	if os.clock() - b.at > G.BROKEN_HOLD then
@@ -10178,6 +10203,7 @@ end
 -- (0.7.7) the host's launcher: that build was refused on every game, its builder's too (a computer company's garage refused
 -- everywhere, 2026-11-08): this game does not differ, the next builds are applied (see "replay_failed" in the launcher)
 H.replay_alike = function(from, p)
+	if G.hostBroken and type(p) == "table" and tostring(p.uid) == G.hostBroken.uid then G.hostBroken = nil end
 	local b = G.replayBroken
 	if b and type(p) == "table" and tostring(p.uid) == b.uid then
 		G.replayBroken = nil

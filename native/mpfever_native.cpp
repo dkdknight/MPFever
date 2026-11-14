@@ -361,6 +361,8 @@ static const BuildAddrs BUILDS[] = {
 };
 static bool SelectBuild(u32 stamp);
 static u32 g_knownLua = 0, g_knownPool = 0;
+// (0.8.9) the game's build stamp (its exe's TimeDateStamp), for the readings measured on one build only
+static u32 g_buildStamp = 0;
 
 typedef void* (*AddFn)(void* list, void* out, void* cmd, void* done, void* progress);
 static AddFn g_addOrig = 0;
@@ -2342,7 +2344,8 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
                     static int eoOn = -1;
                     if (eoOn < 0) { char v[4] = {}; eoOn = (GetEnvironmentVariableA("MPFEVER_EOCLICK", v, 3) == 1 && v[0] == '0') ? 0 : 1; }
                     u8* pay = *(u8**)h->cmd;
-                    if (eoOn && pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) {
+                    // (the layout was read on Steam's 40425, stamp 6ad9ce10: another build reads nothing, its stops go the usual way)
+                    if (eoOn && g_buildStamp == 0x6ad9ce10u && pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) {
                         u64 eb = *(const u64*)(pay + 0x128), ee = *(const u64*)(pay + 0x130);
                         if (eb > 0x10000 && ee > eb && (ee - eb) % 0x1a0 == 0 && (ee - eb) / 0x1a0 <= 16 && Readable((void*)eb, (u32)(ee - eb))) {
                             u32 n = (u32)((ee - eb) / 0x1a0);
@@ -6388,6 +6391,7 @@ static DWORD WINAPI Init(void*)
         if (g_log == INVALID_HANDLE_VALUE) g_log = 0;
     }
     Buf b;
+    g_buildStamp = fh->TimeDateStamp;
     b.str("mpfever_native v3 loaded, base ").hex(g_base).str(", build stamp ").hex(fh->TimeDateStamp);
     LogLine(b);
     // (0.8.7 diagnostic build: every thread's floating-point control, see FpuDiag; MPFEVER_FPUDIAG=1 or MPFEVER_FINEDIAG=1)
