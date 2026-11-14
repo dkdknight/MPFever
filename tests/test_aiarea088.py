@@ -95,6 +95,34 @@ check(got == "19,18,17,16,15,14,13,12,11,10" and run("return M.f.areaOf(E, 700)"
       "MPFEVER_AIAREA=0: the whole map for Easy too, as before: " + str(got))
 run("ENV.MPFEVER_AIAREA = nil")
 
+print("two companies starting at once (M.homePick)")
+check(run("return M.homePick({ 19, 18, 17, 16 }, {})") == 19, "alone: the first town of its list")
+check(run("return M.homePick({ 19, 18, 17, 16 }, { { home = 19, towns = { [19] = true, [18] = true, [17] = true } } })") == 16,
+      "another company's area holds its first three: the first town outside it")
+check(run("return M.homePick({ 19, 18 }, { { home = 19, towns = { [19] = true, [18] = true } } })") == 18,
+      "every town in another one's area: the first that is no other one's home")
+check(run("return M.homePick({ 19 }, { { home = 19, towns = { [19] = true } } })") == 19, "    no other town at all: the first")
+check(run("return M.homePick({ 19, 18 }, { { home = nil, towns = nil } })") == 19, "a company with no area (Hard) takes nothing")
+check(run("return M.homePick({}, {})") is None, "no town: none")
+run(WORLD)
+# (the session of 2026-11-14: Easy and Normal both took Weiden; here the second company's state sees the first one's area)
+run('''
+M.p.set(1, 700000, 150000)
+FIRST = G.AI
+G.AIS = { FIRST }
+T1 = towns(M.f.townsForLines(E, 700))
+SECOND = {}
+G.AIS = { FIRST, SECOND }
+G.AI = SECOND
+M.p.set(2, 400000, 150000)
+T2 = towns(M.f.townsForLines(E, 701))
+''')
+check(run("return T1") == "19,18,17" and run("return FIRST.areaHome") == 19, "the first company (Easy): at home in the best town, 19")
+check(run("return SECOND.areaHome") == 16, "the second (Normal): its home is the best town outside the first one's area: " + str(run("return SECOND.areaHome")))
+got = run("return T2")
+check(sorted(got.split(",")) == ["13", "14", "15", "16", "17", "18"], "    its six towns around it (areas may touch, the homes differ): " + str(got))
+run("G.AI = FIRST; G.AIS = nil")
+
 print("inArea")
 run(WORLD)
 run("M.p.set(1, 700000, 150000); STATIONS[14] = { 5001 }; OWN[5001] = 700; AR = M.f.areaOf(E, 700)")

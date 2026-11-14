@@ -98,15 +98,15 @@ def main():
       TOWNS = { TP(1, 0, 0, 3000), TP(2, 5000, 0, 2500), TP(3, 1500, 0, 2800), TP(4, 0, 20000, 2900), TP(5, -6000, 0, 900) }
       E.G.AI.paxTried = nil
     ''')
-    r = run("return M.f.RP.route(E, TOWNS, {})")
+    r = run("return (M.f.RP.route(E, TOWNS, {}))")
     check(r is not None and {r["from"].e, r.to.e} == {1, 2}, "the biggest pair in reach: 1 and 2 (3 is 1.5 km away, 4 is 20 km away)" + " " + str(r and (r["from"].e, r.to.e)))
-    r = run("return M.f.RP.route(E, TOWNS, { [2] = true })")
+    r = run("return (M.f.RP.route(E, TOWNS, { [2] = true }))")
     check(r is not None and {r["from"].e, r.to.e} == {3, 5}, "a town with a passenger station near its centre is left: 3 and 5 (7.5 km, before 1 and 5, 6 km)" + " " + str(r and (r["from"].e, r.to.e)))
     run("E.G.AI.paxTried = { ['1-2'] = true }")
-    r = run("return M.f.RP.route(E, TOWNS, {})")
+    r = run("return (M.f.RP.route(E, TOWNS, {}))")
     check(r is not None and {r["from"].e, r.to.e} != {1, 2}, "a pair left before is not tried again" + " " + str(r and (r["from"].e, r.to.e)))
     run("E.G.AI.paxTried = nil")
-    check(run("return M.f.RP.route(E, { TP(1, 0, 0, 3000), TP(3, 1500, 0, 2800) }, {})") is None, "no pair in reach: none")
+    check(run("return (M.f.RP.route(E, { TP(1, 0, 0, 3000), TP(3, 1500, 0, 2800) }, {}))") is None, "no pair in reach: none")
 
     print("levels")
     def on(level, env=None, rail=None):

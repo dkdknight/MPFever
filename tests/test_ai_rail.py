@@ -266,7 +266,7 @@ def main():
       PROD[1004] = 300
       useIndustries()
     ''')
-    r = run('return M.f.RL.route(E, { ent = 700 }, {}, {})')
+    r = run('return (M.f.RL.route(E, { ent = 700 }, {}, {}))')
     check(r is not None and r["from"].e == 1001 and r.to.e == 1101 and r.cargo == 2, "the farm to the mill 4 km away, not the one 1 km away")
     check(run('return M.f.RL.route(E, { ent = 700 }, {}, { { pos = { x = 100, y = 0 } } }) == nil'), "not a producer one of its train stations serves")
     check(run('PROD[1004] = 110; local r = M.f.RL.route(E, { ent = 700 }, {}, {}); PROD[1004] = 300; return r == nil'), "a producer of 110 a year: no railway (300 at least)")

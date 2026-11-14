@@ -49,8 +49,14 @@ MPFever - Changelog
   - AI (the user's rule): a computer company now works in an AREA that depends on its level. Easy: 3 towns close to one another
     (its home town and its two nearest neighbours). Normal: 6 towns. Hard: the whole map, as before. Its bus lines, its freight
     (an industry belongs to the area when the town nearest to it does) and its railways stay there; what a company already runs
-    elsewhere is kept. Said in the lobby's text of the levels. MPFEVER_AIAREA=0: the whole map for every level, as before.
-    Test: tests/test_aiarea088.py.
+    elsewhere is kept. Said in the lobby's text of the levels. Companies that start together take different home towns (the
+    first test had Easy and Normal both at home in the same town). MPFEVER_AIAREA=0: the whole map for every level, as before.
+    Test: tests/test_aiarea088.py. In game (three companies, 25 minutes at x4): "area (easy, 3 towns): Weiden, Kerpen,
+    Windeck", "area (normal, 6 towns): ...", the games in sync.
+  - AI: which railway first. A company took the route of the best score whatever its price: in the tests, grain over 12 km
+    for 19.8 million with 2 to 3 million in hand, waited for at every look and never built. It now takes the best route it
+    can pay at once, and when it can pay none, the cheapest one (a 3 km route costs half of it); the same for its passenger
+    railway. MPFEVER_AIRAILPICK=0: as before. Test: tests/test_airailpick088.py.
   - AI: a game option « Computer companies' passenger trains » (the lobby's game settings, one company per player; off by
     default): the computer companies may link the towns of their area by rail. Off, they play exactly as in 0.8.7. The tests'
     switch MPFEVER_AIPAXRAIL (1, hard, 0) still decides over it. Test: tests/test_aitrains088.py.

@@ -273,7 +273,22 @@ function M.areaTownOf(pts, p)
 	end
 	return best
 end
+-- (pure) the home of a company that has no station yet: the first town of its list (the towns it would take, the best first)
+-- that is in no other computer company's area, else the first that is no other one's home, else the first. The companies all
+-- start at once and would take the same best town: the test of 2026-11-14 had Easy and Normal both at home in Weiden, the
+-- three towns of the first inside the six of the second. others: { { home = town, towns = set }, ... }
+function M.homePick(cands, others)
+	local taken, homes = {}, {}
+	for _, o in ipairs(others or {}) do
+		if o.home then homes[o.home] = true end
+		for t in pairs(o.towns or {}) do taken[t] = true end
+	end
+	for _, t in ipairs(cands or {}) do if not taken[t] and not homes[t] then return t end end
+	for _, t in ipairs(cands or {}) do if not homes[t] then return t end end
+	return cands and cands[1] or nil
+end
 -- the company's area: nil for the whole map (Hard, the switch, or no town read), else { towns = set, order, pts, home }
+-- (first: the towns it would take, the best first, for a company with no station yet, see M.homePick)
 local function areaOf(E, ent, first)
 	local n = M.AREA[LV.name]
 	if not n or os.getenv("MPFEVER_AIAREA") == "0" then return nil end
@@ -296,7 +311,13 @@ local function areaOf(E, ent, first)
 			end)
 		end
 	end
-	home = home or first
+	if not home and type(first) == "table" then
+		local others = {}
+		for _, S in pairs(E.G.AIS or {}) do
+			if S ~= A then others[#others + 1] = { home = S.areaHome, towns = S.area and S.area.towns or nil } end
+		end
+		home = M.homePick(first, others)
+	end
 	local set, order = nil, nil
 	if home then set, order = M.areaPick(pts, home, n) end
 	if set and A.areaHome ~= home then
@@ -353,7 +374,9 @@ local function townsForLines(E, ent)
 	end
 	table.sort(list, function(a, b) if a.score ~= b.score then return a.score > b.score end return a.e < b.e end)
 	-- (0.8.8: the towns of its area only, see areaOf; while it has no station, its home is the first town of this list)
-	local ar = areaOf(E, ent, list[1] and list[1].e)
+	local cands = {}
+	for i, t in ipairs(list) do cands[i] = t.e end
+	local ar = areaOf(E, ent, cands)
 	if ar then
 		local keep = {}
 		for _, t in ipairs(list) do if ar.towns[t.e] then keep[#keep + 1] = t end end
@@ -4112,12 +4135,14 @@ end
 -- the best railway not built yet: a producer that makes RL.MINPROD a year of a cargo or more now (tests: MPFEVER_AIRAILMIN) (one the company's trucks serve
 -- too: the railway carries more, further) and an industry that takes it RL.MIN to RL.MAX apart, neither served by another company
 -- (PvE, as the trucks), no train station of the company near the producer; the most cargo times the distance
+-- (0.8.8: second answer, every route found, for RL.pick)
 function RL.route(E, co, lines, stations)
 	local inds = industries(E)
 	local others = servedByOthers(E, co.ent)
 	local mine = {}
 	for _, l in ipairs(lines) do for _, g in ipairs(l.groups) do mine[g] = true end end
 	local best
+	local all = {}
 	for _, a in ipairs(inds) do
 		-- (not a producer one of its train stations already serves)
 		local near = false
@@ -4134,7 +4159,9 @@ function RL.route(E, co, lines, stations)
 							local d = dist(a.pos, b.pos)
 							if d >= RL.MIN and d <= RL.MAX then
 								local score = made * d
-								if not best or score > best.score then best = { from = a, to = b, cargo = c, d = d, score = score } end
+								local cand = { from = a, to = b, cargo = c, d = d, score = score }
+								all[#all + 1] = cand
+								if not best or score > best.score then best = cand end
 							end
 						end
 					end
@@ -4142,8 +4169,29 @@ function RL.route(E, co, lines, stations)
 			end
 		end
 	end
-	return best
+	return best, all
 end
+
+-- (0.8.8) Which railway first. The best route by its score (the most cargo over the longest way) was a 12 km one of 19.8
+-- million for a company of 2 to 3 million (the tests of 2026-11-14: "railway ... waits for 19767380 (has 2000000)", look after
+-- look, and no railway ever built), while a route of 3 km costs half of it. Now: the best route among those the company can pay
+-- at once (need(route) within its money to spare); when it can pay none, the cheapest one, which it will afford first. (pure;
+-- routes: { score, ... }, need: its whole price, math.huge when it cannot be built; sets route.need.)
+-- MPFEVER_AIRAILPICK=0: the best score whatever its price, as before
+function RL.pick(routes, need, spare)
+	local bestScore, bestPaid, cheapest
+	for _, r in ipairs(routes or {}) do
+		r.need = need(r)
+		if not bestScore or r.score > bestScore.score then bestScore = r end
+		if r.need <= spare and (not bestPaid or r.score > bestPaid.score) then bestPaid = r end
+		if r.need < math.huge and (not cheapest or r.need < cheapest.need or (r.need == cheapest.need and r.score > cheapest.score)) then cheapest = r end
+	end
+	if os.getenv("MPFEVER_AIRAILPICK") == "0" then return bestScore end
+	return bestPaid or cheapest or bestScore
+end
+-- (the price of a railway: two stations of 0.9 million, a depot of 1.9, about 600 a metre of track in 1972 (the first one,
+-- 7.8 km with 8 bridges, cost 4.36 million), its way 1.3 times the distance, the train)
+function RL.need(d, trainPrice) return 2 * 900000 + 2000000 + d * 1.3 * 600 + trainPrice end
 
 -- A station of the company near an industry, its tracks along the way to the other end of the railway (axis a): the first
 -- free place on rings around the industry, the side facing the other end first; built. True when asked for, "dear" when
@@ -4921,17 +4969,23 @@ function RL.project(E, co, lines, money, begin)
 		-- (a new railway: only with the money for all of it, see RL.cost)
 		if not begin then return false end
 		if A.railNextAt and E.G.frames < A.railNextAt then return false end
-		local r = RL.route(E, co, lines, stations)
+		local r, routes = RL.route(E, co, lines, stations)
 		if not r then A.railNextAt = E.G.frames + 3600; return false end
+		-- (0.8.8: the best route it can pay, else the cheapest, see RL.pick; a train's price by cargo, read once each)
+		do
+			local trains = {}
+			local function trainOf(c) if trains[c] == nil then trains[c] = RL.train(E, c) or false end return trains[c] end
+			r = RL.pick(routes, function(x) local t = trainOf(x.cargo); return t and RL.need(x.d, t.price) or math.huge end,
+				money - (A.loanCash or 0) - RESERVE) or r
+		end
 		local train = RL.train(E, r.cargo)
 		if not train then
 			A.railTried = A.railTried or {}; A.railTried[r.from.e] = true
 			L(E, "railway: no train for " .. cargoName(E, r.cargo) .. " on sale")
 			return false
 		end
-		-- (its price: two stations of 0.9 million, a depot of 1.9, about 600 a metre of track in 1972 (the first one, 7.8 km with
-		-- 8 bridges, cost 4.36 million), its way 1.3 times the distance, the train)
-		local need = 2 * 900000 + 2000000 + r.d * 1.3 * 600 + train.price
+		-- (its price, see RL.need)
+		local need = RL.need(r.d, train.price)
 		if money - (A.loanCash or 0) < RESERVE + need then
 			if E.G.frames - (A.railSaid or -100000) > 3600 then
 				A.railSaid = E.G.frames
@@ -5404,6 +5458,7 @@ end
 function RP.route(E, towns, taken)
 	local A = E.G.AI
 	local best
+	local all = {}
 	for i = 1, #towns do
 		for j = i + 1, #towns do
 			local a, b = towns[i], towns[j]
@@ -5411,11 +5466,14 @@ function RP.route(E, towns, taken)
 			local key = math.min(a.e, b.e) .. "-" .. math.max(a.e, b.e)
 			if d >= RP.MIN and d <= RP.MAX and not taken[a.e] and not taken[b.e] and not ((A.paxTried or {})[key]) then
 				local score = math.min(a.size, b.size) * math.sqrt(d)
-				if not best or score > best.score then best = { from = a, to = b, d = d, key = key, score = score } end
+				local cand = { from = a, to = b, d = d, key = key, score = score }
+				all[#all + 1] = cand
+				if not best or score > best.score then best = cand end
 			end
 		end
 	end
-	return best
+	-- (0.8.8: second answer, every pair found, for RL.pick)
+	return best, all
 end
 
 -- a place for the company's passenger station near a town, its tracks along a (towards the other town): on rings around the
@@ -5515,13 +5573,15 @@ function RP.project(E, co, lines, money, begin)
 	if not begin then return false end
 	if A.paxNextAt and E.G.frames < A.paxNextAt then return false end
 	if (A.paxFailed or 0) >= RP.FAILS then return false end
-	local r = RP.route(E, towns, RP.taken(E, towns))
+	local r, routes = RP.route(E, towns, RP.taken(E, towns))
 	if not r then A.paxNextAt = E.G.frames + 3600; return false end
 	local pid
 	pcall(function() pid = api.res.cargoTypeRep.getPassengerCargoTypeId() end)
 	local train = type(pid) == "number" and RL.train(E, pid)
 	if not train then RP.leave(E, r.key, "no train of coaches on sale"); return false end
-	local need = 2 * 900000 + 2000000 + r.d * 1.3 * 600 + train.price
+	-- (0.8.8: the best pair it can pay, else the cheapest, see RL.pick)
+	r = RL.pick(routes, function(x) return RL.need(x.d, train.price) end, money - (A.loanCash or 0) - RESERVE) or r
+	local need = RL.need(r.d, train.price)
 	if money - (A.loanCash or 0) < RESERVE + need then
 		if E.G.frames - (A.paxSaid or -100000) > 3600 then
 			A.paxSaid = E.G.frames
