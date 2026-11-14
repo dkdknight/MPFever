@@ -1717,11 +1717,61 @@ static void DumpPayload(const u8* pay, const char* tag)
     long n = _InterlockedIncrement(&g_dumpN);
     if (n > 60) return;
     static const char hx[] = "0123456789abcdef";
-    char* txt = (char*)HeapAlloc(GetProcessHeap(), 0, 0x9c0 * 2 + 64);
+    const u64 cap = 0x9c0 * 2 + 0x350 * 2 + 0x8000 * 2 + 4096;
+    char* txt = (char*)HeapAlloc(GetProcessHeap(), 0, cap);
     if (!txt) return;
     u64 o = 0;
     for (u32 i = 0; i < 0x9c0; i++) { txt[o++] = hx[pay[i] >> 4]; txt[o++] = hx[pay[i] & 15]; }
     txt[o++] = '\n';
+    // (0.8.9 research, #261) and the first added segment of its street proposal (addedSegments at +0x18, elements of 0x350 bytes),
+    // to compare a tool's segment with its replay's
+    {
+        u64 b = *(const u64*)(pay + 0x18), e = *(const u64*)(pay + 0x20);
+        if (b > 0x10000 && e >= b + 0x350 && Readable((void*)b, 0x350)) {
+            const u8* sg = (const u8*)b;
+            for (u32 i = 0; i < 0x350; i++) { txt[o++] = hx[sg[i] >> 4]; txt[o++] = hx[sg[i] & 15]; }
+            txt[o++] = '\n';
+        }
+    }
+    // (0.8.9 research) the street proposal's vectors, each on a line "@off n=bytes hex..." (at most 0x800 bytes each): node
+    // configurations (+0x60, +0x78), edge objects removed/added (+0x110, +0x128), the replacement maps' heads (+0x140..+0x1d0);
+    // then, for the first added edge object (0x1a0 bytes), its two strings (+0x70, +0x90) and the 0x100 bytes its params
+    // container (+0xb0, three words) points to
+    {
+        auto hexOut = [&](const u8* p, u32 n) { for (u32 i = 0; i < n && o + 4 < cap; i++) { txt[o++] = hx[p[i] >> 4]; txt[o++] = hx[p[i] & 15]; } };
+        auto label = [&](const char* t, u32 off, u32 n) {
+            Buf lb; lb.str(t).hex(off).str(" n=").dec((int)n).str(" "); for (int i = 0; i < lb.n && o + 4 < cap; i++) txt[o++] = lb.s[i];
+        };
+        static const u32 vecs[] = { 0x60, 0x78, 0x110, 0x128 };
+        for (u32 vo : vecs) {
+            u64 b = *(const u64*)(pay + vo), e = *(const u64*)(pay + vo + 8);
+            u32 n = (b > 0x10000 && e > b && e - b < 0x100000) ? (u32)(e - b) : 0;
+            if (n > 0x800) n = 0x800;
+            label("@", vo, n);
+            if (n && Readable((void*)b, n)) hexOut((const u8*)b, n);
+            if (o + 2 < cap) txt[o++] = '\n';
+        }
+        label("@maps", 0x140, 0x98); hexOut(pay + 0x140, 0x98); if (o + 2 < cap) txt[o++] = '\n';
+        u64 eb = *(const u64*)(pay + 0x128), ee = *(const u64*)(pay + 0x130);
+        if (eb > 0x10000 && ee >= eb + 0x1a0 && Readable((void*)eb, 0x1a0)) {
+            const u8* eo = (const u8*)eb;
+            static const u32 strs[] = { 0x70, 0x90, 0x168 };
+            for (u32 so : strs) {
+                u64 len = *(const u64*)(eo + so + 0x10), capS = *(const u64*)(eo + so + 0x18);
+                const u8* t = (capS < 16) ? (eo + so) : (const u8*)*(const u64*)(eo + so);
+                u32 n = (len < 400) ? (u32)len : 0;
+                label("@str", so, n);
+                if (n && Readable((void*)t, n)) for (u32 i = 0; i < n && o + 2 < cap; i++) { u8 c = t[i]; txt[o++] = (c >= 32 && c < 127) ? (char)c : '?'; }
+                if (o + 2 < cap) txt[o++] = '\n';
+            }
+            for (u32 k = 0; k < 3; k++) {
+                u64 pp = *(const u64*)(eo + 0xb0 + k * 8);
+                label("@params", 0xb0 + k * 8, 0x100);
+                if (pp > 0x10000 && Readable((void*)pp, 0x100)) hexOut((const u8*)pp, 0x100);
+                if (o + 2 < cap) txt[o++] = '\n';
+            }
+        }
+    }
     char path[400];
     Buf nb; nb.str("payload_").dec(n).str("_").str(tag).str(".txt"); nb.s[nb.n] = 0;
     PathOf(path, nb.s);
@@ -2239,6 +2289,39 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
                         cbits = (pay[0x358] ? 1u : 0) | (pay[0x360] ? 2u : 0) | (pay[0x362] ? 4u : 0) | (pay[0x3d1] ? 8u : 0) | 32u;
                 }
                 Buf b; b.str("deferred build ").dec(h->id).str(" from tool site ").hex(caller).str(" context ").dec(cbits); LogLine(b);
+                // (0.8.9) the new stops and signals of the tool's build as its command holds them, before the "deferred" line: for each
+                // element of the street proposal's edgeObjectsToAdd (payload+0x128, elements of 0x1a0 bytes), its place on the segment
+                // (the float at +0x28, as its bits) and its construction (the strings at +0x70, its mod, and +0x90, its path). The
+                // copy shipped at the click has neither (the tool's proposal does not show them to the scripts, and the stop is not
+                // built yet): "deferred_eo <id> <rank> <bits> <mod>|<path>". Layout of build 40425 (the research of 2026-11-14).
+                // MPFEVER_EOCLICK=0: none
+                {
+                    static int eoOn = -1;
+                    if (eoOn < 0) { char v[4] = {}; eoOn = (GetEnvironmentVariableA("MPFEVER_EOCLICK", v, 3) == 1 && v[0] == '0') ? 0 : 1; }
+                    u8* pay = *(u8**)h->cmd;
+                    if (eoOn && pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) {
+                        u64 eb = *(const u64*)(pay + 0x128), ee = *(const u64*)(pay + 0x130);
+                        if (eb > 0x10000 && ee > eb && (ee - eb) % 0x1a0 == 0 && (ee - eb) / 0x1a0 <= 16 && Readable((void*)eb, (u32)(ee - eb))) {
+                            u32 n = (u32)((ee - eb) / 0x1a0);
+                            for (u32 k = 0; k < n; k++) {
+                                const u8* eo = (const u8*)eb + k * 0x1a0;
+                                char t[2][300];
+                                bool ok = true;
+                                for (int j = 0; j < 2 && ok; j++) {
+                                    const u8* so = eo + (j == 0 ? 0x70 : 0x90);
+                                    u64 len = *(const u64*)(so + 0x10), capS = *(const u64*)(so + 0x18);
+                                    const u8* sp = (capS < 16) ? so : (const u8*)*(const u64*)so;
+                                    if (len >= 290 || capS < len || (len && !Readable((void*)sp, (u32)len))) { ok = false; break; }
+                                    for (u64 i = 0; i < len; i++) { u8 c = sp[i]; if (c < 32 || c > 126 || c == '|') { ok = false; break; } t[j][i] = (char)c; }
+                                    t[j][len] = 0;
+                                }
+                                if (!ok) continue;
+                                u32 bits = *(const u32*)(eo + 0x28);
+                                Buf q; q.str("deferred_eo ").dec(h->id).str(" ").dec((int)k).str(" ").hex(bits).str(" ").str(t[0]).str("|").str(t[1]); AppendEvent(q);
+                            }
+                        }
+                    }
+                }
                 Buf e; e.str("deferred ").dec(h->id).str(" ").dec(cbits); AppendEvent(e);
                 return out;
             }

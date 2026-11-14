@@ -4,12 +4,20 @@ MPFever - Changelog
 0.8.9 - (in progress)
   - RESEARCH (stands of 1 to 5 s while two players build, #296 #297): a stop or a signal built by the player who does not
     lead is shipped the usual way: its data comes once its builder's game reaches its step, and the leading game stands until
-    then (every stand of more than a second before a replay in those sessions; reproduced by the autotest dstop with
-    MPFEVER_DSTOP_LEAD=1: 2.1 to 3.4 s per stop). Shipping it at the click stays OFF: the tool's copy names its objects' model
-    instances, not their construction nor their place on the segment, and at the click the new segment does not stand yet to
-    read them (the copies of 0.7.4: name, side and owner only); the stop replays would ask for a resynchronisation. MPFEVER_
-    PRESHIPSTOP=1: shipped at the click (research). New autotest option: MPFEVER_DSTOP_LEAD=1 (the other game leads with a
-    terrain tool in hand). Test: tests/test_preshipstop089.py.
+    then (reproduced by the autotest dstop with MPFEVER_DSTOP_LEAD=1: 2.1 to 3.4 s per stop). Its copy at the click lacked what
+    the stop replays need: the tool's proposal shows the scripts neither the stop's construction nor its place on the segment
+    (the copies of 0.7.4: name, side and owner only). The native module now reads both in the tool's command it holds at the
+    click ("deferred_eo": the place's 32 bits, the construction's mod and path; layout of build 40425) and the copy is made
+    complete from them; a copy not complete, or whose construction is not known on this game, goes the usual way. The copy says
+    the build moves no ground (the stop tool's build never does, #177-#180), so the other games hide their replay's ground from
+    the towns as for a capture; its builder checks that against its own numbers once built (a resynchronisation if they differ).
+    Tested with the real stop tool on Test Mittelland while the other game led (new scenario leadhold): shipped at the click,
+    built alike on both games (the same place 0.54151880741119385), the leading game stood 359 ms instead of 2353 ms, every
+    check after it in sync. OFF by default until more shapes are tested (signals, a stop removed, a stop on a bridge, mods'
+    stops): MPFEVER_PRESHIPSTOP=1 turns it on; MPFEVER_EOCLICK=0: the native module reads nothing. New autotest scenario
+    leadhold (MPFEVER_LEADHOLD_SECONDS) and option MPFEVER_DSTOP_LEAD=1. Research dumps: MPFEVER_TOOLDUMP=1 (the tool's
+    proposal, previews too), MPFEVER_PAYLOAD_DUMP=1 (the command, its first segment, its edge objects). Test:
+    tests/test_preshipstop089.py.
   - FIX (the links between the game and the network slower than meant): Windows 11 left the launcher's 1 ms timer
     unheeded (the self-test measured 15.4 ms per Thread.Sleep(5) with the timer asked, the released 0.8.8 too; 5.7 ms from
     any other program). The launcher now asks Windows to keep its timer resolution (power throttling of the timer off for

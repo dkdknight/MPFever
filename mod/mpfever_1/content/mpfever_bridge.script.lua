@@ -9204,6 +9204,9 @@ local function pollNativeEvents()
 		end
 		local rid, rst = line:match("^terrain_in (%d+) (%a+)")
 		if rid then G.terrainIn[tonumber(rid)] = rst end
+		-- (0.8.9) a new stop or signal of a held build, as its command holds it (see G.preshipObjects)
+		local eid, erank, ebits, emod, epath = line:match("^deferred_eo (%d+) (%d+) (%x+) ([^|]*)|(.*)$")
+		if eid then pcall(G.noteEo, tonumber(eid), tonumber(erank), ebits, emod, epath) end
 		local id = tonumber(line:match("^deferred (%d+)"))
 		if id and G.resyncRefuse("native build " .. id) then
 			-- (held by the DLL: dropped there, never given to the engine)
@@ -9341,6 +9344,8 @@ end
 -- the share of copies alike is in the PRESHIP lines. MPFEVER_PRECREATE=0: none, as before
 G.toolCreated = function(id, param)
 	local tool = tostring(id)
+	-- (0.8.9 research, MPFEVER_TOOLDUMP=1: the previews too, to see what a stop's preview holds before the click)
+	if os.getenv("MPFEVER_TOOLDUMP") == "1" then pcall(G.toolDump, param, "create " .. tool) end
 	G.lastCreate = { frame = G.frames, tool = tool }
 	if G.toolPrepares[tool] or G.toolCopyAtApply() or os.getenv("MPFEVER_PRECREATE") == "0" then return end
 	if not ((G.preshipOn and G.preshipOn()) or (G.restaleV2() and G.othersBusy())) or not G.session.started then return end
@@ -9430,6 +9435,38 @@ G.toolDump = function(param, tag)
 			.. " buildings " .. #data.collisionInfo.buildingEntities .. " collisions " .. #data.collisionInfo.collisionEntities
 			.. " critical " .. tostring(data.errorState.critical)
 	end)
+	-- (0.8.9 research: what the tool's proposal holds for its new stops and signals, to ship them at the click: their construction
+	-- and their place on the segment, see G.preship)
+	pcall(function()
+		local sp = pr.proposal
+		local l = sp.edgeObjectsToAdd
+		out[#out + 1] = "edge objects: " .. #l .. "; proposal members " .. table.concat(C.members(sp) or {}, ",")
+		for i = 1, #l do
+			local eo = l[i]
+			out[#out + 1] = "eo" .. i .. " members " .. table.concat(C.members(eo) or {}, ",") .. " = " .. C.ser(C.marshal(eo)):sub(1, 3000)
+			-- (its entity, already numbered at the click: does it stand already, with its construction and place?)
+			pcall(function()
+				local e = eo.resultEntity
+				local okE, there = pcall(api.engine.entityExists, e)
+				local okC, comp = pcall(api.engine.getComponent, e, api.type.ComponentType.EDGE_OBJECT)
+				out[#out + 1] = "eo" .. i .. " entity " .. tostring(e) .. " exists " .. tostring(okE and there) .. " EDGE_OBJECT " .. (okC and comp and C.ser(C.marshal(comp)):sub(1, 1500) or tostring(comp))
+				local okS, segc = pcall(api.engine.getComponent, eo.segmentEntity, api.type.ComponentType.BASE_EDGE)
+				out[#out + 1] = "eo" .. i .. " segment " .. tostring(eo.segmentEntity) .. " BASE_EDGE " .. (okS and segc and ("objects " .. C.ser(C.marshal(segc.objects))) or tostring(segc))
+			end)
+			pcall(function()
+				local mi = eo.modelInstance
+				out[#out + 1] = "eo" .. i .. " modelInstance members " .. table.concat(C.members(mi) or {}, ",") .. " = " .. C.ser(C.marshal(mi)):sub(1, 3000)
+			end)
+		end
+		for i = 1, #sp.addedSegments do
+			local sg = sp.addedSegments[i]
+			out[#out + 1] = "seg" .. i .. " entity " .. tostring(sg.entity) .. " objects " .. C.ser(C.marshal(sg.comp.objects))
+				.. " p0 " .. C.ser(C.marshal(sg.comp.position0)) .. " p1 " .. C.ser(C.marshal(sg.comp.position1))
+				.. " t0 " .. C.ser(C.marshal(sg.comp.tangent0)) .. " t1 " .. C.ser(C.marshal(sg.comp.tangent1))
+		end
+		pcall(function() out[#out + 1] = "new2oldEdgeObjects " .. C.ser(C.marshal(sp.new2oldEdgeObjects)) .. " old2newEdgeObjects " .. C.ser(C.marshal(sp.old2newEdgeObjects)) end)
+	end)
+	pcall(function() out[#out + 1] = "data members " .. table.concat(C.members(data) or {}, ",") end)
 	local c0 = os.clock()
 	local okc, compact = pcall(C.compactProposal, pr)
 	out[#out + 1] = "compact (" .. string.format("%.3f", os.clock() - c0) .. " s): " .. (okc and C.ser(compact):sub(1, 12000) or tostring(compact))
@@ -11619,6 +11656,59 @@ G.preTouchesCon = function(copy, con)
 	end
 	return nil
 end
+-- (0.8.9) the new stops and signals of this game's held builds, as the native module read them in the tool's command at the click
+-- ("deferred_eo <id> <rank> <bits> <mod>|<path>"): G.natEo[id][rank] = { bits, mod, path }; the 16 last builds kept
+G.natEo = {}
+G.natEoOrder = {}
+G.noteEo = function(id, rank, bits, mod, path)
+	if type(id) ~= "number" or type(rank) ~= "number" then return end
+	if not G.natEo[id] then
+		G.natEo[id] = {}
+		G.natEoOrder[#G.natEoOrder + 1] = id
+		while #G.natEoOrder > 16 do G.natEo[table.remove(G.natEoOrder, 1)] = nil end
+	end
+	G.natEo[id][rank] = { bits = bits, mod = mod or "", path = path or "" }
+end
+-- a float given by its 32 bits (hexadecimal), exactly as the engine holds it (a stop's place on its segment): the same number its
+-- capture reads from the built stop (0.54151880741119385 for 3f0aa0fa)
+G.f32 = function(hexbits)
+	local b = tonumber(hexbits, 16)
+	if type(b) ~= "number" or b < 0 or b > 0xffffffff then return nil end
+	local sign = (b >= 0x80000000) and -1 or 1
+	local e = math.floor(b / 0x800000) % 0x100
+	local m = b % 0x800000
+	if e == 0xff then return nil end
+	if e == 0 then return sign * math.ldexp(m, -149) end
+	return sign * math.ldexp(m + 0x800000, e - 150)
+end
+-- a construction's name from the command's two strings: the base game's "::/<path>", a mod's "<mod>::/<path>"
+G.eoModelName = function(mod, path)
+	if type(path) ~= "string" or path == "" then return nil end
+	if path:sub(1, 1) == "/" then path = path:sub(2) end
+	return (mod or "") .. "::/" .. path
+end
+-- (0.8.9, research, MPFEVER_PRESHIPSTOP=1) a copy with new stops or signals made complete for the click: each one's construction and
+-- place from the tool's command (the tool's proposal does not show them to the scripts, and the stop is not built yet: the copies of
+-- 0.7.4 had neither, and the other games' stop replays would ask for a resynchronisation). True when every one is filled and its
+-- construction is known here; false and why otherwise (shipped the usual way)
+G.preshipObjects = function(r)
+	local st = type(r.copy) == "table" and r.copy.proposal or nil
+	local list = type(st) == "table" and st.edgeObjectsToAdd or {}
+	local got = G.natEo[r.id] or {}
+	for i, entry in ipairs(list) do
+		if type(entry) ~= "table" then return false, "object " .. i .. " unreadable" end
+		local d = got[i - 1]
+		if not d then return false, "object " .. i .. " not read in the command" end
+		local model = G.eoModelName(d.mod, d.path)
+		local param = G.f32(d.bits)
+		if not model or type(param) ~= "number" or param < 0 or param > 1 then return false, "object " .. i .. " unreadable (" .. tostring(d.bits) .. " " .. tostring(d.path) .. ")" end
+		local okF, rid = pcall(api.res.constructionRep.find, model)
+		if not okF or type(rid) ~= "number" or rid < 0 then return false, "object " .. i .. ": construction " .. model .. " not known here" end
+		entry.model = model
+		entry.param = param
+	end
+	return true
+end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
 	if not G.preHasContent(r.copy) then log("PRESHIP native build " .. tostring(r.id) .. ": its copy has nothing in it: shipped the usual way") return false end
@@ -11635,6 +11725,20 @@ G.preship = function(r)
 	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") ~= "1" then
 		log("PRESHIP native build " .. tostring(r.id) .. ": a stop or a signal: shipped the usual way")
 		return false
+	end
+	-- (MPFEVER_PRESHIPSTOP=1) its stops and signals made complete from the tool's command, or the usual way
+	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then
+		local okO, done, why = pcall(G.preshipObjects, r)
+		if not (okO and done) then
+			log("PRESHIP native build " .. tostring(r.id) .. ": a stop or a signal not complete at the click (" .. tostring(okO and why or done) .. "): shipped the usual way")
+			return false
+		end
+		log("PRESHIP native build " .. tostring(r.id) .. ": its stop(s)/signal(s) completed from the tool's command (" .. C.ser(r.copy.proposal.edgeObjectsToAdd):sub(1, 300) .. ")")
+		-- the builder's town numbers are not known before its build: the stop tool's build moves no ground (#177-#180, the real-tool
+		-- tests of 2026-11-14: al/ar 0 on the builder, 0.141/0.370 on the replaying game), so the copy says so, and the other games
+		-- replay it as they replay such a capture (hidden from the towns, see G.stopNoTown). Its builder checks it against its own
+		-- numbers once built (G.preshipSettle): a build that did move ground asks for a resynchronisation
+		r.preTs = { al = 0, ar = 0, tr = 0, rk = 0, ba = 0, br = 0, tv = 0 }
 	end
 	-- (0.7.4: constructions too - stations, depots, modules. The tool's proposal it hands over at proposalPrepareForApply carries
 	-- the station's own tracks and the construction's frozen nodes, as a capture does (the manual test x1 of 2026-11-07: a
@@ -11708,7 +11812,7 @@ G.preship = function(r)
 	G.oseq = G.oseq + 1
 	local a = { fn = "makeWorldBuildProposalCmd", args = args, at = r.at, origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
 		native = true, natId = r.id, co = aiCo or G.myCo, lt = G.loadId, pre = true, refs = refs, refSig = sig, preSig = G.preStreetSig(r.copy),
-		ctx = (G.natCtx and G.natCtx[r.id]) or r.ctxBits, refund = G.natRefund and G.natRefund[r.id] or nil }
+		ctx = (G.natCtx and G.natCtx[r.id]) or r.ctxBits, refund = G.natRefund and G.natRefund[r.id] or nil, ts = r.preTs }
 	send("act", a)
 	r.preshipped = a.uid
 	r.preSig = a.preSig
@@ -11734,6 +11838,18 @@ end
 -- only a confirmation goes, false when the capture goes too (marked as the capture of that copy)
 G.preshipSettle = function(a, o)
 	local e = a.preOf
+	-- (0.8.9) a stop shipped at the click with the town numbers of a build that moves no ground: its builder's own numbers
+	if type(e.preTs) == "table" then
+		local moved = nil
+		for _, k in ipairs({ "al", "ar", "tr", "rk", "ba", "br", "tv" }) do
+			local v = type(o.ts) == "table" and tonumber(o.ts[k]) or nil
+			if v ~= nil and v ~= 0 then moved = (moved and (moved .. " ") or "") .. k .. " " .. v end
+		end
+		if moved then
+			log("PRESHIP " .. tostring(e.pre) .. ": its stop moved ground on its builder's game (" .. moved .. "), shipped as moving none: resynchronisation")
+			pcall(send, "replay_failed", { uid = tostring(e.pre), why = "stop shipped at the click moved ground on its builder" })
+		end
+	end
 	local sig = G.preStreetSig(type(o.args) == "table" and o.args[1] or nil)
 	G.preStats = G.preStats or { shipped = 0, same = 0, differ = 0, changed = 0 }
 	local same = sig == e.preSig and o.at == e.preAt
@@ -13976,6 +14092,30 @@ end
 
 -- (the builder of the terrain lead scenario is done: the leader puts the terrain tool away)
 H.terrainlead_stop = function(from, p) G.tlHold = nil end
+
+-- (0.8.9) Lead hold (MPFEVER_SCENARIO=leadhold, run by the host first): the game that runs it keeps a terrain tool in hand, without
+-- any edit, for MPFEVER_LEADHOLD_SECONDS (600): it leads, and a build made meanwhile on the other game with a real tool is a held
+-- build of the game that does not lead (the stands of #296 and #297; with MPFEVER_PRESHIPSTOP=1 a stop shipped at the click)
+H.leadhold = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local secs = tonumber(os.getenv("MPFEVER_LEADHOLD_SECONDS") or "600") or 600
+	local t0 = os.clock()
+	G.tlHold = true
+	log("AUTOTEST leadhold: a terrain tool in hand for " .. secs .. " s")
+	local function keep()
+		if os.clock() - t0 > secs then
+			G.tlHold = nil
+			AUTO.results[#AUTO.results + 1] = "held the lead " .. secs .. " s"
+			return autoFinish()
+		end
+		terrainLead("autotest leadhold")
+		G.waits[#G.waits + 1] = { at = G.frames + 60, fn = keep }
+	end
+	keep()
+end
 
 -- Build and demolish scenario (MPFEVER_SCENARIO=dozenew): this game lays a road and demolishes its new segments a second after
 -- the engine's answer, three times, each sent like a tool's build (with MPFEVER_BUILDLEAD=1 once it leads, with the street tool
