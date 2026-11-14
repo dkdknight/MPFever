@@ -34,7 +34,7 @@ i_after = rc.index("\tif countsAfter and edgesBefore == nil then countNow() end\
 check(rc.index("if not countsAfter then countNow() end") < i_send < i_after, "  else counted right after the conversion is handed to the engine, in the same frame")
 check(rc.index("if edgesBefore == nil then countNow() end", i_send) < rc.index("if success then", i_send), "  (an answer before that: counted first)")
 check("local got = #R.allEdges() - edgesBefore" in rc and "(objs - objsBefore)" in rc, "the line after the build still compares with them")
-ir = src[src.index("SIM.idResolve = function(state, force)"):][:2600]
+ir = src[src.index("SIM.idResolve = function(state, force)"):][:4600]
 check("local idc0 = os.clock()" in ir and "local idMs = (os.clock() - idc0) * 1000" in ir and "if idMs > 20 then" in ir,
       "F4: the build ids lookup timed, said when over 20 ms")
 check('log("build ids t=" .. ck.at .. ": segments " .. table.concat(si, ",") .. " nodes " .. table.concat(ni, ",") .. " (node configurations " .. cfg .. ")" .. nms)' in ir,

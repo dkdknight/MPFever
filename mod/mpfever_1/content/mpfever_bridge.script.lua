@@ -3398,6 +3398,23 @@ SIM.idResolve = function(state, force)
 				for _, s in ipairs(si) do t[#t + 1] = (type(s) == "number" and s >= 0) and ("'" .. R.nameOf(s) .. "'") or "-" end
 				nms = " names " .. table.concat(t, ",")
 			end
+			-- (0.8.9 research, #261, MPFEVER_ENDSPROBE=1) how far each new segment's own ends lie from its nodes: a replay that leaves
+			-- them elsewhere than its builder's build did (#288: 0.095 m after a merged upgrade, 0 on the builder's game) is not seen
+			-- by the checks (they read the nodes' places) until a later build on that segment comes out otherwise
+			if os.getenv("MPFEVER_ENDSPROBE") == "1" then
+				local t = {}
+				for _, sgi in ipairs(si) do
+					if type(sgi) == "number" and sgi >= 0 then
+						pcall(function()
+							local c = api.engine.getComponent(sgi, api.type.ComponentType.BASE_EDGE)
+							local a, b = api.engine.getComponent(c.node0, api.type.ComponentType.BASE_NODE), api.engine.getComponent(c.node1, api.type.ComponentType.BASE_NODE)
+							local function d(p, q) return math.sqrt((p.x - q.x) ^ 2 + (p.y - q.y) ^ 2 + (p.z - q.z) ^ 2) end
+							t[#t + 1] = string.format("%d:%.5f/%.5f", sgi, d(c.position0, a.position), d(c.position1, b.position))
+						end)
+					end
+				end
+				nms = nms .. (#t > 0 and (" ends off " .. table.concat(t, " ")) or "")
+			end
 			log("build ids t=" .. ck.at .. ": segments " .. table.concat(si, ",") .. " nodes " .. table.concat(ni, ",") .. " (node configurations " .. cfg .. ")" .. nms)
 			-- (and summed for the checks, part "buildIds": every game gives a build the same ids, or the games went apart
 			-- right there - an entity one game made and not the other, 2026-10-25 11:03 - long before it shows elsewhere. In
@@ -11758,7 +11775,30 @@ G.groundProbe = function(m, uid, who)
 				end
 			end
 		end
-		log(string.format("GROUND %s %s: %d points, sum %.4f, signature %d", tostring(uid), tostring(who), n, sum, h))
+		-- and the trees, plants and rocks within 15 m of the segments: their groups and models (fat and thin)
+		local groups, models = 0, 0
+		pcall(function()
+			for _, c in ipairs(segs) do
+				local x0, y0, x1, y1 = c.position0.x, c.position0.y, c.position1.x, c.position1.y
+				local mid = { x = (x0 + x1) / 2, y = (y0 + y1) / 2 }
+				local dx, dy = x1 - x0, y1 - y0
+				local l2 = dx * dx + dy * dy
+				for _, e in ipairs(R.assetsNear(mid, math.sqrt(l2) / 2 + 30, "MODEL_INSTANCE_LIST")) do
+					if R.isTreeGroup(e) then
+						local near = 0
+						R.eachInstance(e, function(_, q)
+							if q then
+								local t = l2 > 0 and math.max(0, math.min(1, ((q.x - x0) * dx + (q.y - y0) * dy) / l2)) or 0
+								local ex, ey = x0 + dx * t - q.x, y0 + dy * t - q.y
+								if ex * ex + ey * ey <= 225 then near = near + 1 end
+							end
+						end)
+						if near > 0 then groups = groups + 1; models = models + near end
+					end
+				end
+			end
+		end)
+		log(string.format("GROUND %s %s: %d points, sum %.4f, signature %d; trees within 15 m: %d model(s) in %d group(s)", tostring(uid), tostring(who), n, sum, h, models, groups))
 	end }
 end
 G.preship = function(r)
@@ -14146,6 +14186,97 @@ end
 
 -- (the builder of the terrain lead scenario is done: the leader puts the terrain tool away)
 H.terrainlead_stop = function(from, p) G.tlHold = nil end
+
+-- (0.8.9 research, #261) Tree scan (MPFEVER_SCENARIO=treescan, host only, nothing built): for each town street segment without
+-- objects, the proposal data of a stop's replay as replayStop makes it (the segment replaced by its copy with a stop, the replay's
+-- context) and the trees and rocks the towns would see taken away (getAutoRemovalEntityImpact): the segments where a replayed
+-- stop would take trees away, the case left of #261 (#194, #288). MPFEVER_TREESCAN_MAX (3000) segments at most
+H.treescan = function(from, p)
+	if p.role ~= C.ROLE or C.ROLE ~= "host" or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t)
+		log("TREESCAN " .. t)
+		AUTO.results[#AUTO.results + 1] = t
+		pcall(C.appendFile, C.DIR .. BS .. "treescan.txt", os.date("%H:%M:%S") .. " " .. t .. NL)
+	end
+	local maxN = tonumber(os.getenv("MPFEVER_TREESCAN_MAX") or "3000") or 3000
+	local all = R.allEdges()
+	local idx, n, hits = 0, 0, {}
+	local function report()
+		table.sort(hits, function(x, y) return x.tr > y.tr end)
+		say(n .. " town street segments looked at, " .. #hits .. " would take trees or rocks away")
+		for i = 1, math.min(15, #hits) do
+			local h = hits[i]
+			say(string.format("segment %d: trees %.3f rocks %.3f at %.1f,%.1f", h.E, h.tr, h.rk, h.x, h.y))
+		end
+		G.waits[#G.waits + 1] = { at = G.frames + 30, fn = autoFinish }
+	end
+	-- (20 segments a frame: a dry run takes milliseconds; all at once the game stood two minutes. Also in treescan.txt: the bridge's log
+	-- is trimmed)
+	local step
+	step = function()
+		local done = 0
+		while done < 20 and idx < #all and n < maxN do
+			idx = idx + 1
+			local E = all[idx]
+			local c = api.engine.getComponent(E, api.type.ComponentType.BASE_EDGE)
+			if c and c.type == 0 and #c.objects == 0 and api.engine.getComponent(E, api.type.ComponentType.BASE_EDGE_STREET)
+				and tostring(c.roadTemplate):find("/town/", 1, true) then
+				n = n + 1
+				pcall(function()
+					local sp = api.type.SimpleProposal.new()
+					local ssp = sp.streetProposal
+					local e = api.type.SegmentAndEntity.new()
+					e.entity = -1
+					e.type = 0
+					local cc = e.comp
+					cc.node0 = c.node0; cc.node1 = c.node1
+					cc.tangent0 = vec(c.tangent0); cc.tangent1 = vec(c.tangent1)
+					cc.position0, cc.position1 = G.autoSegEnds(c)
+					cc.type = c.type; cc.typeIndex = c.typeIndex
+					cc.roadTemplate = c.roadTemplate; cc.roadStyle = c.roadStyle; cc.roadType = c.roadType
+					cc.laneConfigs = c.laneConfigs
+					C.keepSegmentLook(cc, c, false)
+					cc.objects = { { -400000000, 1 } }
+					e.comp = cc
+					local eo = api.type.SimpleStreetProposal.EdgeObject.new()
+					eo.edgeEntity = -1
+					eo.param = 0.5
+					eo.oneWay = false
+					eo.left = false
+					eo.model = K.STOP_MODEL
+					eo.playerEntity = api.engine.util.getPlayer()
+					eo.name = "MPF scan"
+					ssp.edgesToRemove = { E }
+					ssp.edgesToAdd = { e }
+					ssp.edgeObjectsToAdd = { eo }
+					sp.streetProposal = ssp
+					local ctx = api.type.Context.new()
+					ctx.checkTerrainAlignment = false
+					ctx.cleanupStreetGraph = false
+					ctx.gatherBuildings = false
+					ctx.gatherFields = true
+					ctx.player = api.engine.util.getPlayer()
+					local pd = api.engine.util.proposal.makeProposalData(sp, ctx)
+					local tr, rk = 0, 0
+					local r = api.engine.util.town.getAutoRemovalEntityImpact(pd)
+					for _, v in pairs(r) do tr = tr + (tonumber(v[1]) or 0); rk = rk + (tonumber(v[2]) or 0) end
+					if tr > 0 or rk > 0 then
+						local a0, a1 = nodePosition(c.node0), nodePosition(c.node1)
+						hits[#hits + 1] = { E = E, tr = tr, rk = rk, x = (a0.x + a1.x) / 2, y = (a0.y + a1.y) / 2 }
+					end
+				end)
+				done = done + 1
+			end
+		end
+		if idx >= #all or n >= maxN then return report() end
+		if n > 0 and n % 500 < 20 and done > 0 then pcall(C.appendFile, C.DIR .. BS .. "treescan.txt", n .. " looked at, " .. #hits .. " hits so far" .. NL) end
+		G.waits[#G.waits + 1] = { at = G.frames + 1, fn = step }
+	end
+	step()
+end
 
 -- (0.8.9) Lead hold (MPFEVER_SCENARIO=leadhold, run by the host first): the game that runs it keeps a terrain tool in hand, without
 -- any edit, for MPFEVER_LEADHOLD_SECONDS (600): it leads, and a build made meanwhile on the other game with a real tool is a held
