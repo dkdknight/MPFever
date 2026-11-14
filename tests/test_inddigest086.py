@@ -20,8 +20,8 @@ except ImportError:
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 src = open(os.path.join(HERE, "..", "mod", "mpfever_1", "content", "mpfever_bridge.script.lua"), encoding="utf-8").read().replace("\r\n", "\n")
-a = src.index("K.industriesDigest = function()")
-b = src.index("\nend\n", a) + 5
+a = src.index("K.RULE_TAIL = 4")  # (0.8.10: with K.ruleDatasText)
+b = src.index("\nend\n", src.index("K.industriesDigest = function()")) + 5
 fails = []
 
 
@@ -37,8 +37,8 @@ ENV = {}
 os.getenv = function(k) return ENV[k] end
 K = {}
 ORDER = { 1, 2, 3 }
-SL = { [1] = { ruleDatas = { { t = 1.25 } }, stockDatas = { { f = 0.5 } }, thrownAwayCargo = 0 },
-       [2] = { ruleDatas = { { t = 2.5 } }, stockDatas = {}, thrownAwayCargo = 3 },
+SL = { [1] = { ruleDatas = { { applyHistory = { { time = 1 } }, lastApplyDecayFactor = 1.25 } }, stockDatas = { { f = 0.5 } }, thrownAwayCargo = 0 },
+       [2] = { ruleDatas = { { applyHistory = { { time = 5 }, { time = 6 }, { time = 7 }, { time = 8 }, { time = 9 } }, lastApplyDecayFactor = 2.5 } }, stockDatas = {}, thrownAwayCargo = 3 },
        [3] = nil }
 R = { entitiesWith = function(k) return ORDER end }
 IND = {}
@@ -50,9 +50,21 @@ d1 = L.eval("K.industriesDigest()")
 check(d1.startswith("2/"), "two industries with a stock list counted", d1)
 L.execute("ORDER = { 3, 2, 1 }")
 check(L.eval("K.industriesDigest()") == d1, "another order: the same digest")
-L.execute("SL[2].ruleDatas[1].t = 2.5000001")
+L.execute("SL[2].ruleDatas[1].lastApplyDecayFactor = 2.5000001")
 check(L.eval("K.industriesDigest()") != d1, "one industry's rule data otherwise: another digest")
-L.execute("SL[2].ruleDatas[1].t = 2.5; SL[12] = SL[2]; SL[2] = nil; IND[2] = { stockList = 12, level = 1, upgradeProgress = 0.25, closureTimeStamp = -1 }")
+L.execute("SL[2].ruleDatas[1].lastApplyDecayFactor = 2.5")
+L.execute("SL[2].ruleDatas[1].applyHistory[5].time = 10")
+check(L.eval("K.industriesDigest()") != d1, "(0.8.10) its newest application otherwise: another digest")
+L.execute("SL[2].ruleDatas[1].applyHistory[5].time = 9; SL[2].ruleDatas[1].applyHistory[1].time = 4")
+check(L.eval("K.industriesDigest()") == d1, "(0.8.10) an application older than the last 4: not read")
+L.execute("SL[2].ruleDatas[1].applyHistory[1].time = 5; table.insert(SL[2].ruleDatas[1].applyHistory, 1, { time = 3 })")
+check(L.eval("K.industriesDigest()") != d1, "(0.8.10) the history's length counts")
+L.execute("table.remove(SL[2].ruleDatas[1].applyHistory, 1)")
+check(L.eval("K.industriesDigest()") == d1, "(0.8.10) back to the same history: the same digest")
+L.execute('ENV.MPFEVER_INDDIGESTFULL = "1"')
+check(L.eval("K.ruleDatasText(SL[2]) == C.dump(SL[2].ruleDatas)") is True, "(0.8.10) MPFEVER_INDDIGESTFULL=1: the whole history, as before")
+L.execute('ENV.MPFEVER_INDDIGESTFULL = nil; SL[2].ruleDatas[1].applyHistory[1].time = 5')
+L.execute("SL[12] = SL[2]; SL[2] = nil; IND[2] = { stockList = 12, level = 1, upgradeProgress = 0.25, closureTimeStamp = -1 }")
 d2 = L.eval("K.industriesDigest()")
 check(d2.startswith("2/"), "the stock list on the entity the industry names (industry.stockList)", d2)
 L.execute("IND[2].upgradeProgress = 0.2500001")

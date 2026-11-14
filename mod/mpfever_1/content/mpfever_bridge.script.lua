@@ -229,9 +229,25 @@ function SDUMP.stocks(dump)
 			local sle = (ic and type(ic.stockList) == "number" and ic.stockList >= 0) and ic.stockList or ind
 			local sl = api.engine.getComponent(sle, CT.STOCK_LIST)
 			if sl then
-				local whole = C.dump(sl)
+				-- ((0.8.10, #317) without the rules' whole application histories, see K.ruleDatasText: this dump took 4.5 to 6 s
+				-- on BeunHaas34's game after two hours. MPFEVER_INDDIGESTFULL=1: whole, as before)
+				local full = os.getenv("MPFEVER_INDDIGESTFULL") == "1"
+				local okW, whole = true, nil
+				if full then whole = C.dump(sl) else
+					okW, whole = pcall(function() return C.dump(sl.stocks) .. "|" .. C.dump(sl.rules) .. "|" .. C.dump(sl.stockDatas) .. "|" .. K.ruleDatasText(sl) end)
+					if not okW then whole = "ERR " .. tostring(whole):sub(1, 80) end
+				end
 				local rules = {}
-				pcall(function() for i = 1, #sl.ruleDatas do rules[#rules + 1] = C.dump(sl.ruleDatas[i]):gsub("%s+", " "):sub(1, 120) end end)
+				pcall(function()
+					if full then
+						for i = 1, #sl.ruleDatas do rules[#rules + 1] = C.dump(sl.ruleDatas[i]):gsub("%s+", " "):sub(1, 120) end
+					else
+						for i = 1, #sl.ruleDatas do
+							local h = sl.ruleDatas[i].applyHistory
+							rules[#rules + 1] = (#h .. " " .. (#h > 0 and C.dump(h[#h]) or "-")):gsub("%s+", " "):sub(1, 120)
+						end
+					end
+				end)
 				dump[#dump + 1] = "~stocklist " .. holder(ind) .. " = #" .. tostring(C.hashStr(0, whole)) .. " thrown " .. tostring(sl.thrownAwayCargo) .. " rules " .. table.concat(rules, " | ")
 			end
 		end
@@ -719,23 +735,58 @@ end
 -- industry (its stock list's rules' and stocks' runtime data, the cargo it threw away), an order-free sum over the industries.
 -- #274's drift began as one cargo item more on one game and showed in "stocks" and "vehicles" only later: this tells at which
 -- check the industries went apart first (then the dumps' "~stocklist" lines tell which one). MPFEVER_INDDIGEST=0: not measured
+-- (0.8.10, #317) A stock list's rules' runtime data, bounded: each rule's application history keeps every application of the
+-- rule since the industry was founded (it grows with the game's time and is saved with the game), and the whole of it was read
+-- and turned into text at every check, every industry: BeunHaas34's checks grew from 0.01 s to 2 to 8.7 s in two hours of play
+-- (2026-11-14, a small map), stayed so after a resynchronisation (the same save) and went back to 0.13 s with a new game only.
+-- Now: each rule's history length, its last decay factor and its last K.RULE_TAIL applications (a drift shows in the newest
+-- ones first). MPFEVER_INDDIGESTFULL=1: the whole history, as before
+K.RULE_TAIL = 4
+K.ruleDatasText = function(sl)
+	if os.getenv("MPFEVER_INDDIGESTFULL") == "1" then return C.dump(sl.ruleDatas) end
+	local t = {}
+	local rds = sl.ruleDatas
+	for i = 1, #rds do
+		local rd = rds[i]
+		local h = rd.applyHistory
+		local n = #h
+		local s = { tostring(n), string.format("%.9g", rd.lastApplyDecayFactor or 0) }
+		for k = math.max(1, n - K.RULE_TAIL + 1), n do s[#s + 1] = C.dump(h[k]) end
+		t[#t + 1] = table.concat(s, ";")
+	end
+	return table.concat(t, "|")
+end
 K.industriesDigest = function()
 	if os.getenv("MPFEVER_INDDIGEST") == "0" then return nil end
 	local n, sum = 0, 0
+	-- (MPFEVER_INDPROBE=1, diagnostic: what the digest reads and costs, logged)
+	local probe = os.getenv("MPFEVER_INDPROBE") == "1" and { get = 0, rules = 0, len = 0, hist = 0 } or nil
 	for _, ind in ipairs(R.entitiesWith("INDUSTRY")) do
 		-- (the stock list is the entity the industry names, as the game's industries script reads it: industry.stockList)
+		local t0 = probe and os.clock()
 		local ic = api.engine.getComponent(ind, api.type.ComponentType.INDUSTRY)
 		local sle = (ic and type(ic.stockList) == "number" and ic.stockList >= 0) and ic.stockList or ind
 		local sl = api.engine.getComponent(sle, api.type.ComponentType.STOCK_LIST)
+		if probe then probe.get = probe.get + os.clock() - t0 end
 		if sl then
 			local t = {}
 			pcall(function() t[#t + 1] = tostring(ic and ic.level) .. "/" .. string.format("%.9g", ic and ic.upgradeProgress or 0) .. "/" .. tostring(ic and ic.closureTimeStamp) end)
-			pcall(function() t[#t + 1] = C.dump(sl.ruleDatas) end)
+			local t1 = probe and os.clock()
+			pcall(function() t[#t + 1] = K.ruleDatasText(sl) end)
+			if probe then
+				probe.rules = probe.rules + os.clock() - t1
+				probe.len = probe.len + #(t[#t] or "")
+				pcall(function() for i = 1, #sl.ruleDatas do probe.hist = math.max(probe.hist, #sl.ruleDatas[i].applyHistory) end end)
+			end
 			pcall(function() t[#t + 1] = C.dump(sl.stockDatas) end)
 			pcall(function() t[#t + 1] = tostring(sl.thrownAwayCargo) end)
 			sum = (sum + C.hashStr(0, table.concat(t, "|"))) % 4294967296
 			n = n + 1
 		end
+	end
+	if probe then
+		log(string.format("industries digest probe: %d industries, components %.3f s, rules' text %.3f s (%d characters), longest history %d%s",
+			n, probe.get, probe.rules, probe.len, probe.hist, os.getenv("MPFEVER_INDDIGESTFULL") == "1" and " (whole histories)" or ""))
 	end
 	return n .. "/" .. sum
 end
@@ -788,8 +839,15 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 		end
 	end
 	parts.buildIds = bn .. "/" .. bs
+	-- (0.8.10, #317) the diagnostic parts timed too ("y.*" in the "hash costs" lines): a player's checks grew to seconds with
+	-- most of their time in no part listed
+	local tY = os.clock()
+	local yCost = { contentHash = tY - tStart }
 	pcall(function() parts.stepsDigest = K.stepsDigestAt(tonumber(at)) end)
+	yCost.stepsDigest = os.clock() - tY
+	tY = os.clock()
 	pcall(function() parts.industriesDigest = K.industriesDigest() end)
+	yCost.industriesDigest = os.clock() - tY
 	-- ((0.7.5) with the halves, "owners" takes its turn too, with "edges2": it reads every road, construction and vehicle
 	-- again, 0.03 to 0.07 s of every check)
 	local skipOwners = R.hashSkip and R.hashSkip.owners
@@ -817,6 +875,7 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	end
 	local costs = {}
 	for k, v in pairs(R.partCost or {}) do costs[k] = v end
+	for k, v in pairs(yCost) do costs["y." .. k] = v end
 	local tMark = os.clock()
 	if reg and reg.mode == "separate" then
 		parts.companies = CO.signature(reg)

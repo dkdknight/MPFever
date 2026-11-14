@@ -1,6 +1,17 @@
 MPFever - Changelog
 ===================
 
+0.8.10 - 2026-11-14: the freezes every 10 s in long sessions fixed (#317)
+  - FIX (freezes every 10 s in long sessions, #317: BeunHaas34, 0.8.8, a small map): the sync check grew from 0.01 s to 2 to
+    8.7 s in two hours, stayed so after a resynchronisation and fell back with a new game only. The industries' digest (0.8.6)
+    and the dump's stock lists read every industry rule's whole application history (every application since the industry was
+    founded, saved with the game) at every check. They now read its length and its last 4 applications (K.ruleDatasText).
+    MPFEVER_INDDIGESTFULL=1: whole, as before; MPFEVER_INDPROBE=1 logs what the digest reads and costs. The check's diagnostic
+    parts are timed too ("y.contentHash", "y.stepsDigest", "y.industriesDigest" in the "hash costs" lines).
+    Measured (Test Gameplay, two games, 7 min each): the digest 0.29-0.34 s -> 0.01-0.05 s, the world dump 0.72 s -> 0.14 s,
+    whole checks 0.55-1.3 s -> 0.30-0.47 s; both runs in sync, Lua clean. Test: tests/test_inddigest0810.py (and
+    test_inddigest086.py with real-shaped rule data).
+
 0.8.9 - 2026-11-14: stops and signals at the click (no more stand while two players build), a host crash after station edits fixed
   - TESTS: the autotests' nodePosition no longer stops a scenario on a node an earlier build took away ("Invalid entity": the
     upgrade burst of the full run stopped after 6 builds). 19 autotests of the full run in sync, Lua clean.
