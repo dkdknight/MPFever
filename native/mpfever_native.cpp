@@ -1752,6 +1752,38 @@ static void DumpPayload(const u8* pay, const char* tag)
             if (o + 2 < cap) txt[o++] = '\n';
         }
         label("@maps", 0x140, 0x98); hexOut(pay + 0x140, 0x98); if (o + 2 < cap) txt[o++] = '\n';
+        // (#261, deeper) for each added node configuration (0x80 bytes: laneConnections vector at +0, crosswalks container at
+        // +0x18: control bytes at *(+0x18), c+16 of them with c = *(+0x30), slots at *(+0x20)): their contents; and the one-entry
+        // segment maps (+0x160 new2old, +0x170 old2new): 0x30 bytes at the root of each
+        {
+            u64 nb = *(const u64*)(pay + 0x60), ne = *(const u64*)(pay + 0x68);
+            if (nb > 0x10000 && ne > nb && (ne - nb) % 0x80 == 0 && (ne - nb) / 0x80 <= 4 && Readable((void*)nb, (u32)(ne - nb))) {
+                for (u32 k = 0; k < (u32)((ne - nb) / 0x80); k++) {
+                    const u8* e = (const u8*)nb + k * 0x80;
+                    u64 lb = *(const u64*)e, le = *(const u64*)(e + 8);
+                    u32 ln = (lb > 0x10000 && le > lb && le - lb <= 0x400) ? (u32)(le - lb) : 0;
+                    label("@lane", k, ln);
+                    if (ln && Readable((void*)lb, ln)) hexOut((const u8*)lb, ln);
+                    if (o + 2 < cap) txt[o++] = '\n';
+                    u64 cc = *(const u64*)(e + 0x30), ctrl = *(const u64*)(e + 0x18), slots = *(const u64*)(e + 0x20);
+                    u32 cn = (cc < 0xf0) ? (u32)(cc + 16) : 0;
+                    label("@cwc", k, cn);
+                    if (cn && ctrl > 0x10000 && Readable((void*)ctrl, cn)) hexOut((const u8*)ctrl, cn);
+                    if (o + 2 < cap) txt[o++] = '\n';
+                    label("@cws", k, 0x100);
+                    if (slots > 0x10000 && Readable((void*)slots, 0x100)) hexOut((const u8*)slots, 0x100);
+                    if (o + 2 < cap) txt[o++] = '\n';
+                }
+            }
+            static const u32 maps[] = { 0x160, 0x170 };
+            for (u32 mo : maps) {
+                u64 head = *(const u64*)(pay + mo);
+                u64 rootN = (head > 0x10000 && Readable((void*)head, 0x10)) ? *(const u64*)(head + 8) : 0;
+                label("@map", mo, 0x30);
+                if (rootN > 0x10000 && Readable((void*)rootN, 0x30)) hexOut((const u8*)rootN, 0x30);
+                if (o + 2 < cap) txt[o++] = '\n';
+            }
+        }
         u64 eb = *(const u64*)(pay + 0x128), ee = *(const u64*)(pay + 0x130);
         if (eb > 0x10000 && ee >= eb + 0x1a0 && Readable((void*)eb, 0x1a0)) {
             const u8* eo = (const u8*)eb;
