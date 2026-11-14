@@ -96,6 +96,7 @@ with its cause and the test that now guards it.
 | The **loan form keeps what was typed**; an empty field takes its grey example (1000000 / 12 / 10); emptied once sent, kept when the send failed; wrong terms still refused (#266). | 0.8.5 | U.loanTermsIn, U.loanCard | test_loanform085.py |
 | A game's **hello says whether its native module runs** (nat on/off/none); the host warns everyone once per player for off/none; a hello without nat (older mod): nothing (#268). | 0.8.5 | WarnNative | test_nativecheck085.py |
 | The **autotests run with the players' default session settings** (BUILDLEAD on included); an environment variable or MPFEVER_ENV_HOST/_CLIENT still decides; players' sessions unchanged (settings.txt). | 0.8.6 | Options.TestDefaults | test_testdefaults086.py |
+| A **build made in a pause keeps its turn** until it goes, also once the pause is over (the game still standing at its step); a build made **as a pause begins** (the pause known, not reached, its stamp at the pause or past it) is a build of the pause: the pause's time, a turn, not shipped at the click. Builds outside a pause: unchanged (rank of the names at one step) (#296 #297). | 0.8.8 | runNativeRelease (MPFEVER_PTAFTERPAUSE), G.pauseEdge (MPFEVER_PAUSEEDGE) | test_ptafterpause088.py, test_pauseedge088.py |
 
 ## Regressions found
 

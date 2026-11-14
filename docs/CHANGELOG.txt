@@ -1,6 +1,19 @@
 MPFever - Changelog
 ===================
 
+0.8.8 - 2026-11-14 (in progress)
+  - FIX (#296, Kasper + Eier): three builds made in the pause of a session save, turns 5, 6 and 7 from the host. Eier's own build
+    (turn 7) was still held when the pause ended: its game left the pause's rule for the usual one (the builds of one step ranked
+    by their players' names) and built it before Kasper's turn 6, whose data came 9 s after its announcement. The two builds
+    got each other's ids, the towns drifted, a resynchronisation. A build made in a pause now keeps its turn until it goes,
+    whatever the speed since. MPFEVER_PTAFTERPAUSE=0: as before. Test: tests/test_ptafterpause088.py.
+  - FIX (#297, chris + dujuk + Wretched): a build made just as a pause begins (the pause's time known, the game not there yet)
+    was stamped past the pause as a usual build, with no turn; the games went to its time in the pause, and the builds the other
+    players then made in the pause took that same time, with turns. Nothing ordered the one against the others: dujuk's street
+    was first on dujuk's game, second on chris's, last on the host's. Such a build is now a build of the pause: the pause's time,
+    its turn from the host, not shipped at the click. Not covered: a build clicked before its game has heard of the pause (a
+    fraction of a second). MPFEVER_PAUSEEDGE=0: as before. Test: tests/test_pauseedge088.py.
+
 0.8.7 - 2026-11-13: a new farm is the same on every game
   - FIX (#279, Erik's session): a new farm (an industry with fields) built by a player got other fields on the other games: the
     builder's tool chose 12, every replay 20. A farm's fields are slots the game fills itself at random each time it builds one, on

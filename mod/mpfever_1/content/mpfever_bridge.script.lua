@@ -9017,6 +9017,20 @@ end
 -- MPFEVER_PAUSEDORDER=0: as before.
 G.pt = { next = 1, done = 0, of = {}, skip = {}, seen = false }
 G.ptOn = os.getenv("MPFEVER_PAUSEDORDER") ~= "0"
+-- (0.8.8, #296: this game's own build of a pause still waits for its turn once the pause is over, see runNativeRelease)
+G.ptAfterPause = os.getenv("MPFEVER_PTAFTERPAUSE") ~= "0"
+-- (0.8.8, #297) A build made as a pause begins: the session's pause time is known here, this game's clock is still before it,
+-- and the build's stamp falls at it or past it. It was not a build of the pause (no turn), yet it was applied in the pause: the
+-- games go to its time and stand there, and the builds the other players then make in the pause take that same time, with turns.
+-- Nothing ordered the one against the others (the rank of the names is not used in a pause): dujuk's street, stamped 6385600
+-- eight steps before the pause of 6384400, was built first on dujuk's game, second on chris's and last on the host's, among
+-- chris's five builds of the pause (other ids on each game, a resynchronisation). Such a build is now a build of the pause: its
+-- time is the pause's, it takes its turn from the host and is not shipped at the click. MPFEVER_PAUSEEDGE=0: as before.
+G.pauseEdgeOn = os.getenv("MPFEVER_PAUSEEDGE") ~= "0"
+G.pauseEdge = function(now, stamp)
+	local p = G.session.pauseAt
+	return G.pauseEdgeOn and G.ptOn and p ~= nil and now < p and stamp >= p
+end
 G.ptKey = function(origin, id) return tostring(origin) .. ":" .. tostring(id) end
 G.ptTicket = function(origin, id, seq)
 	-- (the first turn this game hears of: the ones before it were made before this game was loaded)
@@ -9207,6 +9221,12 @@ local function pollNativeEvents()
 			end)
 			local now = gameTime()
 			local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt
+			-- (0.8.8, #297: or made as the pause begins, see G.pauseEdge)
+			local edge = not paused and G.pauseEdge ~= nil and G.pauseEdge(now, stampFor(now) + STEP)
+			if edge then
+				paused = true
+				log("native build " .. id .. " made as the pause begins (now " .. now .. ", the pause at " .. tostring(G.session.pauseAt) .. "): a build of the pause, in its turn")
+			end
 			-- BUILDLEAD: this game leads, and the others stay well behind it: no hold, no circle on the ground, the build goes to the
 			-- engine in this very frame (runNativeRelease). It is announced for the time this game is at: the earliest it can land at.
 			local lead, why = false, nil
@@ -9221,7 +9241,7 @@ local function pollNativeEvents()
 				log("BUILDLEAD native build " .. id .. " released at once at t=" .. now .. " (it lands at this step or a few later) [frame " .. G.frames .. "]")
 			else
 				markPending(id)
-				local at = paused and pausedStamp(now) or (stampFor(now) + STEP)
+				local at = paused and math.max(pausedStamp(now), edge and G.session.pauseAt or 0) or (stampFor(now) + STEP)
 				-- (paused: released in its turn, see G.pt)
 				local pt = paused and G.ptOn or nil
 				-- (t0, copy: see G.restale)
@@ -9669,6 +9689,12 @@ local function deferredSend(cmd, cb, proposal, still)
 	if G.buildLead then G.leadRefusedCheck(true) end
 	-- (in a pause: as a tool's build, at the paused time, in its turn: see pollNativeEvents and G.pt)
 	local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt
+	-- (0.8.8, #297: or made as the pause begins, see G.pauseEdge)
+	local edge = not paused and G.pauseEdge ~= nil and G.pauseEdge(now, stampFor(now) + STEP)
+	if edge then
+		paused = true
+		log("autotest build " .. id .. " made as the pause begins (now " .. now .. ", the pause at " .. tostring(G.session.pauseAt) .. "): a build of the pause, in its turn")
+	end
 	if G.buildLead and not paused then lead, why = G.buildLeadState() end
 	-- (MPFEVER_LEADHELDTEST=1, autotests: as a build of the module tool, see G.leadFromBuild)
 	if not paused and os.getenv("MPFEVER_LEADHELDTEST") == "1" then pcall(G.leadFromBuild, lead, why) end
@@ -9689,7 +9715,7 @@ local function deferredSend(cmd, cb, proposal, still)
 		log("BUILDLEAD autotest build " .. id .. " released at once at t=" .. now .. " [frame " .. G.frames .. "]")
 		return
 	end
-	local at = paused and pausedStamp(now) or (stampFor(now) + STEP)
+	local at = paused and math.max(pausedStamp(now), edge and G.session.pauseAt or 0) or (stampFor(now) + STEP)
 	if stampAt and not paused and stampAt > at then at = stampAt end
 	local pt = paused and G.ptOn or nil
 	-- (MPFEVER_RESTALETEST=1: kept like a tool's proposal, made again at its release when another player built meanwhile, see
@@ -9865,8 +9891,12 @@ local function runNativeRelease()
 		if r.lead then
 			-- (BUILDLEAD: at once, the game keeps running; r.at is the time it was announced for, the earliest it can land at)
 			releaseOne(r, now, " at once (BUILDLEAD)")
-		elseif now >= r.at and gameSpeed() == 0 and r.paused then
+		elseif now >= r.at and r.paused and (gameSpeed() == 0 or G.ptAfterPause) then
 			-- (paused: in its turn, after the builds before it are applied here; no turn from the host within 10 s: at once)
+			-- (0.8.8, #296: also once the pause is over. Eier's build of the save's pause, turn 7, was still held when the pause
+			-- ended: this branch was left for the usual one, which ranks the builds of one step by their players' names, and it went
+			-- before Kasper's turn 6, whose data came 9 s after its announcement; the host and every replay kept the turns. A build
+			-- made in a pause keeps its turn until it goes, whatever the speed since. MPFEVER_PTAFTERPAUSE=0: as before)
 			local seq = G.pt.of[G.ptKey(G.me, r.id)]
 			-- (0.7.13, #161 #166: nor while the stops of a street replayed before it are placed again, as the replays and the paused
 			-- actions wait for them; it went between the street and its stops here only, see G.ownWaitsReplay. MPFEVER_OWNAFTERREPLAY=0:
