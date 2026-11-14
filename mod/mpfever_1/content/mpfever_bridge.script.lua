@@ -12539,8 +12539,10 @@ local function deadEnds()
 end
 
 local function nodePosition(n)
-	local c = api.engine.getComponent(n, api.type.ComponentType.BASE_NODE)
-	return c and pos3(c.position) or nil
+	-- (0.8.9: a node an earlier build took away is no error: nil, the scenario goes on. The upgrade burst stopped on one,
+	-- "Invalid entity", the full autotest run c89ub)
+	local ok, c = pcall(api.engine.getComponent, n, api.type.ComponentType.BASE_NODE)
+	return ok and c and pos3(c.position) or nil
 end
 
 local function roadProposal(fromNode, fromPos, toPos, tmpl)

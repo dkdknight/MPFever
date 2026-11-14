@@ -1,7 +1,9 @@
 MPFever - Changelog
 ===================
 
-0.8.9 - (in progress)
+0.8.9 - 2026-11-14: stops and signals at the click (no more stand while two players build), a host crash after station edits fixed
+  - TESTS: the autotests' nodePosition no longer stops a scenario on a node an earlier build took away ("Invalid entity": the
+    upgrade burst of the full run stopped after 6 builds). 19 autotests of the full run in sync, Lua clean.
   - FIX (crash, #305: seaso's game, the host, 2026-11-14 15:49): Brumaren's edit of a modular station was rebuilt on the host
     without the 7 stops and signals on the station's own tracks (a resynchronisation asked for), and his next edit of the same
     station, applied on that state 3 s later, crashed the host's game ('it != components.end()', GetComponentDataIndex) before

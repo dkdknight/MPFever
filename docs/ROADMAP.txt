@@ -78,7 +78,8 @@ it is stable enough.
       size on a 4K screen (0.8.8)
   [ ] The last recurring desyncs: builds rebuilt otherwise on another game (#261: stops and stations whose ground is
       aligned differently); the drift's other causes, if the reports of 0.8.8 still show some (#150)
-  [ ] No stand of several seconds when a player places a stop or a signal while another one builds
+  [x] No stand of several seconds when a player places a stop or a signal while another one builds: shipped at the click
+      like streets and tracks (0.8.9)
 
 0.9 - Long sessions, more players (the road to 1.0)
   [ ] Sessions of several hours between two different PCs without a resynchronisation (#150 confirmed by your reports)
