@@ -11626,7 +11626,13 @@ G.preship = function(r)
 	-- rebuilt the segment without its stop (AMD and keviK, 2026-11-07, "several players building without stopping": keviK's
 	-- first bus stop built on its game only, every line through it refused on the host, 6 reloads in 10 minutes); the stop
 	-- replays of a capture build it. MPFEVER_PRESHIPOBJ=1: shipped at the click, as 0.7.4
-	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then
+	-- (0.8.9, research, MPFEVER_PRESHIPSTOP=1: shipped at the click) Shipped the usual way, a stop or a signal of the player who
+	-- does not lead stands the leading game 1 to 5 s (#296, #297). The other games replay such a copy as a capture since 0.7.5, but
+	-- the copy lacks what the stop replays need: the tool's proposal holds its objects' model instances, not their construction
+	-- (model) nor their place on the segment (param), and at the click the new segment does not stand yet for enrichEdgeObjects to
+	-- read them (the copies of 0.7.4 in the report of AMD and keviK, 2026-11-07: name, side and owner only). Replayed so, every stop
+	-- would ask for a resynchronisation ("model nil not in this game"): off until the copy carries them
+	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") ~= "1" then
 		log("PRESHIP native build " .. tostring(r.id) .. ": a stop or a signal: shipped the usual way")
 		return false
 	end
@@ -19383,9 +19389,17 @@ H.dstop = function(from, p)
 		local offFirst = os.getenv("MPFEVER_DSTOPOFFSET") == "1"
 		say("dstop: " .. #offList .. " of " .. #list .. " free town street segments have an end off its node" .. (offFirst and " (taken first)" or ""))
 		local used, n, step = {}, 0, ((C.ROLE == "host") and 7 or 23)
+		-- (0.8.9, MPFEVER_DSTOP_LEAD=1) the other game has a terrain tool in hand and shapes the ground while this one puts its
+		-- stops (the terrain lead scenario's leader, see H.terrainlead): each stop is a held build of the game that does not lead,
+		-- the stands of #296 and #297; the logs show whether it was shipped at the click (PRESHIP) and how long the leader stood
+		local lead = os.getenv("MPFEVER_DSTOP_LEAD") == "1"
+		local function done()
+			if lead then send("terrainlead_stop", {}) end
+			G.waits[#G.waits + 1] = { at = G.frames + 90, fn = autoFinish }
+		end
 		local nextOne
 		nextOne = function()
-			if n >= want then G.waits[#G.waits + 1] = { at = G.frames + 90, fn = autoFinish }; return end
+			if n >= want then return done() end
 			local E
 			for _, pool in ipairs((offFirst and #offList > 0) and { offList, list } or { list }) do
 				for k = 1, #pool do
@@ -19395,7 +19409,7 @@ H.dstop = function(from, p)
 				end
 				if E then break end
 			end
-			if not E then say("dstop: no segment left"); return autoFinish() end
+			if not E then say("dstop: no segment left"); return done() end
 			n = n + 1
 			local c = api.engine.getComponent(E, api.type.ComponentType.BASE_EDGE)
 			used[c.node0] = true; used[c.node1] = true
@@ -19502,7 +19516,21 @@ H.dstop = function(from, p)
 				G.natCtx[100000 + G.autoBuildSeq] = 32
 			end
 		end
-		nextOne()
+		if lead then
+			send("terrainlead", { role = C.ROLE })
+			local startFrame = G.frames
+			local function waitLead()
+				local leads = otherLeads()
+				if leads or G.frames - startFrame > 1800 then
+					say(leads and ("dstop: the other game leads after " .. (G.frames - startFrame) .. " frames") or "dstop: no lead of the other game seen in 1800 frames")
+					return nextOne()
+				end
+				G.waits[#G.waits + 1] = { at = G.frames + 5, fn = waitLead }
+			end
+			waitLead()
+		else
+			nextOne()
+		end
 	end)
 	if not ok then
 		say("failed " .. shortErr(err))

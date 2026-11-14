@@ -2,6 +2,18 @@ MPFever - Changelog
 ===================
 
 0.8.9 - (in progress)
+  - RESEARCH (stands of 1 to 5 s while two players build, #296 #297): a stop or a signal built by the player who does not
+    lead is shipped the usual way: its data comes once its builder's game reaches its step, and the leading game stands until
+    then (every stand of more than a second before a replay in those sessions; reproduced by the autotest dstop with
+    MPFEVER_DSTOP_LEAD=1: 2.1 to 3.4 s per stop). Shipping it at the click stays OFF: the tool's copy names its objects' model
+    instances, not their construction nor their place on the segment, and at the click the new segment does not stand yet to
+    read them (the copies of 0.7.4: name, side and owner only); the stop replays would ask for a resynchronisation. MPFEVER_
+    PRESHIPSTOP=1: shipped at the click (research). New autotest option: MPFEVER_DSTOP_LEAD=1 (the other game leads with a
+    terrain tool in hand). Test: tests/test_preshipstop089.py.
+  - FIX (the links between the game and the network slower than meant): Windows 11 left the launcher's 1 ms timer
+    unheeded (the self-test measured 15.4 ms per Thread.Sleep(5) with the timer asked, the released 0.8.8 too; 5.7 ms from
+    any other program). The launcher now asks Windows to keep its timer resolution (power throttling of the timer off for
+    its process): 5.7 ms again. MPFEVER_TIMERKEEP=0: not asked, as before. Test: tests/test_timerkeep089.py, selftest.
 
 0.8.8 - 2026-11-14: the slow drift between two PCs found and fixed, builds of a pause in one order, the Hub in the game's style
   - UI: the MPFever Hub redrawn with the game's own windows as its model (the user's request). Its groups are tabs at the top

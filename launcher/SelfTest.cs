@@ -1324,6 +1324,12 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 Check(avg < 10, "timer: Thread.Sleep(5) lasts " + avg.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms (15.6 with the system's timer)");
                 Environment.SetEnvironmentVariable("MPFEVER_TIMER1MS", "0");
                 Check(!FineTimer.Begin(), "timer: MPFEVER_TIMER1MS=0 asks nothing");
+                // (0.8.9) the 1 ms timer kept when Windows would leave it unheeded; MPFEVER_TIMERKEEP=0 asks nothing
+                var keptKeep = Environment.GetEnvironmentVariable("MPFEVER_TIMERKEEP");
+                Environment.SetEnvironmentVariable("MPFEVER_TIMERKEEP", "0");
+                Check(!FineTimer.KeepResolution(), "timer: MPFEVER_TIMERKEEP=0 does not ask Windows to keep it");
+                Environment.SetEnvironmentVariable("MPFEVER_TIMERKEEP", keptKeep);
+                Log.W("  timer: kept by Windows: " + FineTimer.KeepResolution());
             }
             catch (Exception e) { Check(false, "timer: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_TIMER1MS", kept); }

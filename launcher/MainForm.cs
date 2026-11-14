@@ -107,9 +107,28 @@ namespace MPFever
         [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
         [System.Runtime.InteropServices.DllImport("winmm.dll")] static extern uint timeEndPeriod(uint ms);
         internal static bool Wanted() => Environment.GetEnvironmentVariable("MPFEVER_TIMER1MS") != "0";
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct PowerThrottling { public uint Version, ControlMask, StateMask; }
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PowerThrottling info, uint size);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+        /// <summary>(0.8.9) Windows 11 may leave a process's 1 ms timer unheeded (its power throttling of the timer resolution: the
+        /// launcher's window hidden behind the game's, 2026-11-14 the self-test measured 15.4 ms per Thread.Sleep(5) with the timer
+        /// asked): this process asks to keep it (ProcessPowerThrottling, PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION off).
+        /// MPFEVER_TIMERKEEP=0: not asked, as before. True when Windows took it (false before Windows 11, which has no such rule).</summary>
+        internal static bool KeepResolution()
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_TIMERKEEP") == "0") return false;
+            try
+            {
+                var s = new PowerThrottling { Version = 1, ControlMask = 4, StateMask = 0 };
+                return SetProcessInformation(GetCurrentProcess(), 4, ref s, (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(PowerThrottling)));
+            }
+            catch { return false; }
+        }
         public static bool Begin()
         {
             if (!Wanted()) return false;
+            KeepResolution();
             try { return timeBeginPeriod(1) == 0; } catch { return false; }
         }
         public static void End() { try { timeEndPeriod(1); } catch { } }

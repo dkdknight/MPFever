@@ -8,7 +8,8 @@ replayed from a capture ("stop on segment ...: BUILT") was there. The host had f
 keviK's through those stops was refused there ("DESYNC unresolved: sg#..."), 6 reloads in 10 minutes.
   - G.preHasObjects (run here through lupa): a copy that adds or removes edge objects (a stop, a signal) has some; a plain
     street or a segment's removal has none; nothing readable: none;
-  - G.preship ships such a build the usual way (before anything is translated or sent), MPFEVER_PRESHIPOBJ=1: as 0.7.4;
+  - G.preship ships such a build the usual way (before anything is translated or sent), MPFEVER_PRESHIPOBJ=1: as 0.7.4
+    (0.8.9: MPFEVER_PRESHIPSTOP=1 ships it at the click, research only, see test_preshipstop089.py);
   - a copy with stops or signals that comes anyway is replayed as a capture, not applied as a street proposal.
 Run: python tests/test_preshipstops075.py
 """
@@ -48,12 +49,12 @@ def main():
     check(not has("{}") and not has("'x'") and not has("{ proposal = 'x' }"), "nothing readable: none")
 
     i = src.find("G.preship = function(r)")
-    body = src[i:i + 6000]   # (0.7.14: the construction-removal rule added before the translation, see test_nostopdefault0714.py)
+    body = src[i:i + 8000]   # (0.8.9: 8000; 0.7.14: the construction-removal rule added before the translation, see test_nostopdefault0714.py)
     a = body.find("if not G.preHasContent(r.copy) then")
-    b = body.find('if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then')
+    b = body.find('if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") ~= "1" then')
     c = body.find("R.translateOut(")
     check(0 < a < b < c, "G.preship: a stop or a signal shipped the usual way, before anything is translated or sent")
-    check("return false" in body[b:b + 200], "  (false: held and shipped the usual way)")
+    check("return false" in body[b:b + 400], "  (false: held and shipped the usual way)")
     j = src.find("local preCon = a.pre and type(a.args[1]) == \"table\"")
     rp = src[j:j + 1400]
     k = rp.find('if a.pre and not preCon and G.preHasObjects(a.args[1]) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" then')
