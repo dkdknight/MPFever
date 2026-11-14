@@ -53,8 +53,6 @@ it is stable enough.
   [x] The join page every time a running game is joined; computer companies no longer freeze the other games (0.7.10)
   [x] Vehicles drifting apart in bus terminals on one game: « Same platform order (test) » tried (0.7.10), no measured
       gain, removed in 0.7.13 (players who differ drift apart)
-  [ ] Replays of big stations without the engine's two proposals (the rest of their freeze)
-  [ ] Tests and fixes for 3 to 8 players
   [ ] Feedback from the first testers
 
 0.8 - Building together without stopping
@@ -62,8 +60,6 @@ it is stable enough.
   [x] No-stop v2 ON by default (0.7.14): no wait only for the replays that have no retry path (street stops keep theirs),
       a construction taken away not shipped at the click, the vehicle and line windows no longer lead
   [x] Street stops without waiting too (0.7.15): each form given to the game's verdict first, the right one sent at its step
-  [ ] The field's reports with it on: sessions of 3 players or more without a resynchronisation
-  [ ] Big station edits without their last freeze
   [x] Streets and tracks bulldozed while paused, the pieces left joined again, rebuilt the same on every game (0.8.4 / 0.8.5,
       tested with the real bulldozer); a player's incomplete MPFever (native module off) told to everyone (0.8.5)
   [x] Two players acting at the same moment kept in sync: two demolitions, a terrain edit and a build (0.8.6, reproduced
@@ -83,6 +79,13 @@ it is stable enough.
   [ ] The last recurring desyncs: builds rebuilt otherwise on another game (#261: stops and stations whose ground is
       aligned differently); the drift's other causes, if the reports of 0.8.8 still show some (#150)
   [ ] No stand of several seconds when a player places a stop or a signal while another one builds
+
+0.9 - Long sessions, more players (the road to 1.0)
+  [ ] Sessions of several hours between two different PCs without a resynchronisation (#150 confirmed by your reports)
+  [ ] Sessions of 3 players or more without a resynchronisation; tests and fixes for 3 to 8 players
+  [ ] Big station edits and their replays without their last freeze
+  [ ] Computer companies' track planner: their passenger trains on most maps, then lines that pay better
+  [ ] The dedicated server in long real games
 
 1.0 - Stable and complete
   [ ] Sessions of several hours between different PCs without a recurring resynchronisation or crash, one company for
