@@ -1055,8 +1055,37 @@ namespace MPFever
         public readonly List<BulkLink> Bulk = new List<BulkLink>();
     }
 
+    /// <summary>What the host's code (MainForm.OnHostMessage and the session around it) needs from the place its players connect to:
+    /// a Relay (the host's own TCP listener) or a RemoteRelay (a server the host and the players all connect to, server-linux/).</summary>
+    interface IRelay : IDisposable
+    {
+        event Action<Peer, Msg> Received;
+        event Action<Peer> Joined, Left, Away;
+        event Action<Peer, double, int> Resumed;
+        Func<Peer, bool> MayWait { get; set; }
+        double Grace { get; set; }
+        Func<Peer, Msg, string> Admit { get; set; }
+        string SteamSecret { get; set; }
+        int Count { get; }
+        int AdmittedCount { get; }
+        int Port { get; }
+        string[] PeerNames();
+        Peer[] Admitted();
+        Peer Find(string name);
+        Dictionary<string, double> AwayNames();
+        BulkLink[] BulkOf(Peer p);
+        void Start(int port);
+        void Send(Peer p, Msg m);
+        bool TrySend(Peer p, Msg m);
+        void Broadcast(Msg m, Peer except = null);
+        void DropOlder(Peer p);
+        void Deny(Peer p, string payload);
+        int Kick(string name, string payload);
+        void FinalizeAway(string why);
+    }
+
     /// <summary>Host side: accepts TCP clients and relays every message to everybody else.</summary>
-    sealed class Relay : IDisposable
+    sealed class Relay : IRelay
     {
         TcpListener listener;
         readonly List<Peer> peers = new List<Peer>();
@@ -1070,16 +1099,16 @@ namespace MPFever
         /// messages it got again); else Left.</summary>
         public event Action<Peer> Away;
         public event Action<Peer, double, int> Resumed;
-        public Func<Peer, bool> MayWait;
-        public double Grace = 60;
+        public Func<Peer, bool> MayWait { get; set; }
+        public double Grace { get; set; } = 60;
         /// <summary>The secret the host's game module writes in the first line of every Steam tunnel it opens to this Relay
         /// (SteamNet): a connection that says "steamtun" is let in only from this PC with it. Null: no Steam tunnel.</summary>
-        public string SteamSecret;
+        public string SteamSecret { get; set; }
 
         /// <summary>Decides whether a player who says "join" may come in (a dedicated server checks its password, its
         /// version and the number of players): null lets it in, otherwise the payload of the "denied" message it receives
         /// before its connection is closed. Unset: everybody comes in.</summary>
-        public Func<Peer, Msg, string> Admit;
+        public Func<Peer, Msg, string> Admit { get; set; }
 
         public int Count { get { lock (peers) return peers.Count; } }
 
@@ -1559,7 +1588,7 @@ namespace MPFever
         /// then names the other attempts first and ends with one short note on IPv6 (issue #31).
         /// The password is the one of a dedicated server (none: null); the join also tells this MPFever's version
         /// (a dedicated server only lets in its own).</summary>
-        public void Connect(string host, int port, string name, string password = null, bool resume = false)
+        public void Connect(string host, int port, string name, string password = null, bool resume = false, bool tunnelHost = false)
         {
             // "steam:<id>" entries: through the host's Steam (the game's module, SteamNet), tried at the same time as the
             // addresses; a direct connection is taken when there is one (no rate limit), unless Steam was 1.5 s faster
@@ -1629,7 +1658,7 @@ namespace MPFever
             else Link.Reset(null);   // (a new player: the host counts from this join; what waited is dropped)
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
-                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + "}"));
+                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + "}"));
             viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             usedDirect = viaSteam ? null : used;
             gotAny = false;
@@ -2126,6 +2155,16 @@ namespace MPFever
             try
             {
                 c.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+#if NET
+                // (the Linux server, server-linux/: no IOControl there, the same values as socket options)
+                if (!OperatingSystem.IsWindows())
+                {
+                    c.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 15);
+                    c.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 3);
+                    c.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 5);
+                    return;
+                }
+#endif
                 var v = new byte[12];
                 BitConverter.GetBytes(1u).CopyTo(v, 0);
                 BitConverter.GetBytes(15000u).CopyTo(v, 4);

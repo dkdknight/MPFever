@@ -1045,7 +1045,7 @@ namespace MPFever
 
         /// <summary>Who may come in: the same MPFever version, the password, a free place (a player reconnecting keeps
         /// its own). Returns null, or the payload of the "denied" message.</summary>
-        string ServerAdmit(Relay r, Peer p, Msg m)
+        string ServerAdmit(IRelay r, Peer p, Msg m)
         {
             var refused = server.Admission(m.Payload, OthersConnected(r, p), out var reason);
             if (refused != null) Log.Warn(F("{0} ({1}) refusé : {2}", "{0} ({1}) refused: {2}", BaseName(p.Name), p.Address, reason));
@@ -1053,7 +1053,7 @@ namespace MPFever
         }
 
         /// <summary>The players connected besides p (its own older connection, closed when it comes back, not counted).</summary>
-        internal static int OthersConnected(Relay r, Peer p)
+        internal static int OthersConnected(IRelay r, Peer p)
         {
             var me = BaseName(p.Name);
             return r.Admitted().Count(o => o != p && !string.Equals(BaseName(o.Name), me, StringComparison.OrdinalIgnoreCase));
