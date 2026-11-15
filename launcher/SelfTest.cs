@@ -335,6 +335,8 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 C(sh == "203.0.113.7" && sp == 28090, "  the address of a join, as the takeover reuses it (the port is not added twice)");
                 MainForm.ParseServer(NetAddr.First("203.0.113.7", 28090), out sh, out sp);
                 C(sh == "203.0.113.7" && sp == 28090, "  the same without a port in what was typed");
+                C(MainForm.InviteConnect("203.0.113.7:28090") == "+mpfever_connect 203.0.113.7:28090", "a Steam invitation of a host that uses a server names the server");
+                C(NetAddr.First(MainForm.InviteConnect("203.0.113.7:28090").Substring("+mpfever_connect".Length).Trim(), 28090) == "203.0.113.7:28090", "  and the friend's game reads it back as the address to join");
             }
             C(MainForm.PortSetting(" 28100 ") == 28100 && MainForm.PortSetting("1024") == 1024 && MainForm.PortSetting("65535") == 65535, "  port=28100: that port");
             C(MainForm.PortSetting("80") == 28090 && MainForm.PortSetting("70000") == 28090 && MainForm.PortSetting("abc") == 28090 && MainForm.PortSetting("-5") == 28090, "  out of 1024-65535 or not a number: 28090");

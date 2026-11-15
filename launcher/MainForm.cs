@@ -150,6 +150,11 @@ namespace MPFever
         /// <summary>Started by the previous MPFever.exe after an update (--updated).</summary>
         public static bool JustUpdated;
         string steamConnect, lastSteamJoin;
+        /// <summary>(hosting through a server) the server's address as friends join it: "host:port", or null.</summary>
+        string remoteAddress;
+
+        /// <summary>The Steam invitation's connect string for a server (the friend's game starts MPFever with it, OnMenuRequest "join").</summary>
+        internal static string InviteConnect(string serverAddress) => "+mpfever_connect " + serverAddress;
         int steamSeq;
         bool menuMode;
 
@@ -2338,6 +2343,18 @@ namespace MPFever
                 // Steam: friends can join from their friends list or an invitation
                 new Thread(() =>
                 {
+                    // (hosting through a server: friends join the server's address; there is no port of this PC to give and no address to look up.
+                    // A server with a password asks the friend for it on the Multiplayer page, as for any join)
+                    var viaServer = remoteAddress;
+                    if (relay is RemoteRelay && viaServer != null)
+                    {
+                        lobbyPublic = viaServer; lobbyLocal = "";
+                        steamConnect = InviteConnect(viaServer);
+                        SteamCtl("presence", steamConnect);
+                        Log.Ok(T("Steam : invitations possibles par le serveur (", "Steam: invitations enabled through the server (") + steamConnect + ")");
+                        MenuStatus();
+                        return;
+                    }
                     // the public IPv4 and, when this PC has one, its IPv6 (behind DS-Lite only the IPv6 reaches it)
                     var v6 = LoadSettings().TryGetValue("ipv6", out var i6) && i6.Trim() == "0" ? new List<string>() : NetAddr.PublicIPv6List();
                     var pub = PublicAddress();
@@ -2816,6 +2833,7 @@ namespace MPFever
             lock (modIssues) modIssues.Clear();
             lock (dlcIssues) dlcIssues.Clear();
             joinedAddr = null;
+            remoteAddress = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
             if (menuGame != null)
             {
@@ -3513,6 +3531,7 @@ namespace MPFever
                 // (the address the player typed: "ip", "ip:port" or several, each with or without its port)
                 StartHost(name, false, game, NetAddr.First(host, port), password, token);
                 Log.Ok(T("Hébergement repris : les autres joueurs vont recevoir la partie de cet hôte.", "Hosting taken over: the other players will receive this host's game."));
+                if (remoteAddress != null && menuGame != null && SteamNet.Enabled) { steamConnect = InviteConnect(remoteAddress); SteamCtl("presence", steamConnect); }
                 // the host that left is no longer a player: every game forgets its clock (else it stays the barrier and nothing runs on)
                 if (!string.IsNullOrEmpty(prev)) HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(BaseName(prev)) + "}"));
                 // and this player's own clock under the name the old host knew it by ("Name#n"): from now on it is sent as the host's
@@ -3596,6 +3615,7 @@ namespace MPFever
                 throw new InvalidOperationException(ServerWhy(e));
             }
             remote.Lost += why => { try { BeginInvoke((Action)(() => { if (relay == remote) EndSession(T("=== Connexion au serveur perdue : fin de la session ===", "=== Connection to the server lost: the session ends ===")); })); } catch { } };
+            remoteAddress = NetAddr.Show(srvHost, srvPort);
             Log.Ok(F("Hébergement par le serveur {0}:{1} : les joueurs rejoignent à cette adresse.", "Hosting through the server {0}:{1}: players join at that address.", srvHost, srvPort));
         }
 

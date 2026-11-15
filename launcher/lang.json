@@ -25662,6 +25662,19 @@
       "ko": "호스트 변경: 15초 안에 플레이어 목록이 도착하지 않아 계속 진행합니다.",
       "zh-CN": "主持人变更：15 秒内未收到玩家列表，继续进行。",
       "zh-TW": "主持人變更：15 秒內未收到玩家清單，繼續進行。"
+    },
+    "Steam: invitations enabled through the server (": {
+      "de": "Steam: Einladungen über den Server möglich (",
+      "es": "Steam: invitaciones posibles a través del servidor (",
+      "it": "Steam: inviti possibili tramite il server (",
+      "nl": "Steam: uitnodigingen mogelijk via de server (",
+      "pl": "Steam: zaproszenia możliwe przez serwer (",
+      "pt-BR": "Steam: convites possíveis pelo servidor (",
+      "ru": "Steam: приглашения возможны через сервер (",
+      "ja": "Steam：サーバー経由で招待できます（",
+      "ko": "Steam: 서버를 통해 초대할 수 있습니다 (",
+      "zh-CN": "Steam：可通过服务器邀请（",
+      "zh-TW": "Steam：可透過伺服器邀請（"
     }
   }
 }
