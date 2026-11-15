@@ -6148,11 +6148,17 @@ static void InstallStepSnap()
 
 // ---------------------------------------------------------------- dedicated server without display (MPFEVER_HEADLESS=1)
 // The game of a server started "without display" simulates the world and runs the mod's scripts as always, but nobody looks
-// at it: its window is made hidden (and never full screen), the 3D world is not drawn (CRenderer::Render returns at once: the
-// terrain, the buildings, the vehicles, shadows, water...), its sound is silent (every OpenAL gain at 0), and its frames are
+// at it: its window is made hidden (and never full screen), its sound is silent (every OpenAL gain at 0), and its frames are
 // paced by a sleep: the main loop's own limiter (in CCore::UpdateTime) only waits until 4 ms have passed since the last frame,
-// with a busy loop; the drawing's wait for the screen held the loop before. The interface's frame (its light 2D pass, the
-// frame's begin and end) still runs, which keeps the graphics device's per-frame work as it is.
+// with a busy loop; the drawing's wait for the screen held the loop before.
+// (0.8.13) The 3D world is drawn again, in the hidden window, as on a server with display: 0.5.8 to 0.8.12 skipped
+// CRenderer::Render (the terrain, the buildings, the vehicles...), but the graphics resources of removed vehicles are released
+// along that drawing, and with many vehicles replaced at once the game failed at the end of a frame (Vulkan assertion
+// 'destroyLater->back().empty()', issue #354) or crashed in the graphics driver (nvoglv64.dll, issue #361, 2026-11-15).
+// MPFEVER_HEADLESS_NORENDER=1: the world not drawn, as in 0.5.8 to 0.8.12.
+// (0.8.13) A message box of the game (its crash box "An error just occurred", an "Out of memory") waited for a click nobody
+// could give in the hidden window: the server's game stood still until the launcher's watchdog (180 s). Its text is written in
+// native.log and it returns at once (the default button), so a crashed game closes and the launcher starts it again in 10 s.
 // MPFEVER_HEADLESS_FPS: frames per second at most (default 60). MPFEVER_HEADLESS_NOUPDATE=1 (an experiment): the renderer's
 // per-frame preparation (CRenderer::NewUpdate: levels of detail, culling) is skipped too.
 static bool g_headless = false;
@@ -6162,6 +6168,7 @@ typedef void (*AlListenerfF)(int param, float value);
 typedef void (*AlSourcefF)(u32 source, int param, float value);
 typedef void (*AlSourcePlayF)(u32 source);
 static SdlCreateWindowF g_sdlCreateWindow = 0;
+static int g_headlessBoxHooks = 0;
 static AlListenerfF g_alListenerf = 0;
 static AlSourcefF g_alSourcef = 0;
 static AlSourcePlayF g_alSourcePlay = 0;
@@ -6183,6 +6190,40 @@ extern "C" void AlSourcePlayHeadless(u32 source)
     g_alSourcePlay(source);
 }
 extern "C" void HeadlessYield() { Sleep(1); }
+// (0.8.13) the game's message boxes: written in native.log, answered at once with the default button
+typedef int (*SdlShowSimpleMessageBoxF)(u32 flags, const char* title, const char* message, void* window);
+static volatile long g_headlessBoxes = 0;
+static void LogHeadlessBox(const char* title, const char* message)
+{
+    if (_InterlockedIncrement(&g_headlessBoxes) > 20) return;
+    Buf b; b.str("without display: a message box of the game answered at once (nobody can click it): ").str(title ? title : "").str(" | ");
+    for (int i = 0; message && message[i] && b.n < 900; i++) b.s[b.n++] = (message[i] == 13 || message[i] == 10) ? ' ' : message[i];
+    LogLine(b);
+}
+extern "C" int SdlShowSimpleMessageBoxHeadless(u32, const char* title, const char* message, void*)
+{
+    LogHeadlessBox(title, message);
+    return 0;
+}
+// SDL_MessageBoxData: flags (+0), window (+8), title (+16), message (+24), numbuttons (+32), buttons (+40, 16 bytes each:
+// flags, buttonid, text); SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT = 1
+extern "C" int SdlShowMessageBoxHeadless(const void* data, int* buttonid)
+{
+    int id = -1;
+    if (data) {
+        const u8* d = (const u8*)data;
+        LogHeadlessBox(*(const char* const*)(d + 16), *(const char* const*)(d + 24));
+        int n = *(const int*)(d + 32);
+        const u8* bt = *(const u8* const*)(d + 40);
+        for (int i = 0; bt && i < n && i < 16; i++) {
+            u32 f = *(const u32*)(bt + 16 * i);
+            if (id == -1 || (f & 1)) id = *(const int*)(bt + 16 * i + 4);
+            if (f & 1) break;
+        }
+    }
+    if (buttonid) *buttonid = id;
+    return 0;
+}
 
 // in DllMain, before the game creates its window and opens its sound device: their imports
 static void SetupHeadlessImports()
@@ -6193,6 +6234,8 @@ static void SetupHeadlessImports()
     uptr base = (uptr)GetModuleHandleW(0);
     g_sdlCreateWindow = (SdlCreateWindowF)PatchImport(base, "SDL2.dll", "SDL_CreateWindow", (void*)&SdlCreateWindowHeadless);
     PatchImport(base, "SDL2.dll", "SDL_SetWindowFullscreen", (void*)&SdlSetWindowFullscreenHeadless);
+    g_headlessBoxHooks = (PatchImport(base, "SDL2.dll", "SDL_ShowSimpleMessageBox", (void*)&SdlShowSimpleMessageBoxHeadless) ? 1 : 0)
+        + (PatchImport(base, "SDL2.dll", "SDL_ShowMessageBox", (void*)&SdlShowMessageBoxHeadless) ? 1 : 0);
     g_alListenerf = (AlListenerfF)PatchImport(base, "OpenAL32.dll", "alListenerf", (void*)&AlListenerfHeadless);
     g_alSourcef = (AlSourcefF)PatchImport(base, "OpenAL32.dll", "alSourcef", (void*)&AlSourcefHeadless);
     g_alSourcePlay = (AlSourcePlayF)PatchImport(base, "OpenAL32.dll", "alSourcePlay", (void*)&AlSourcePlayHeadless);
@@ -6337,10 +6380,13 @@ static void InstallHeadless()
     if (!g_headless) return;
     {
         Buf b; b.str("without display (dedicated server): window ").str(g_sdlCreateWindow ? "hidden" : "NOT hidden (SDL_CreateWindow not imported)")
-            .str(", sound ").str(g_alSourcePlay ? "silent" : "NOT silent (OpenAL not imported)");
+            .str(", sound ").str(g_alSourcePlay ? "silent" : "NOT silent (OpenAL not imported)")
+            .str(", message boxes ").str(g_headlessBoxHooks == 2 ? "answered at once" : "NOT all answered (SDL message boxes not imported)");
         LogLine(b);
     }
-    SkipFunction("CRenderer::Render (the 3D world)", "48 8B C4 55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 A8 F3 FF FF");
+    { char v[4]; if (GetEnvironmentVariableA("MPFEVER_HEADLESS_NORENDER", v, 3) > 0 && v[0] == '1')
+        SkipFunction("CRenderer::Render (the 3D world)", "48 8B C4 55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 A8 F3 FF FF");
+      else { Buf b; b.str("without display: the 3D world drawn in the hidden window (MPFEVER_HEADLESS_NORENDER=1: not drawn)"); LogLine(b); } }
     { char v[4]; if (GetEnvironmentVariableA("MPFEVER_HEADLESS_NOUPDATE", v, 3) > 0 && v[0] == '1')
         SkipFunction("CRenderer::NewUpdate (the renderer's preparation)", "48 89 5C 24 10 48 89 74 24 18 57 41 54 41 55 41 56 41 57 B8 80 14 00 00"); }
     // CCore::UpdateTime's wait for the next frame: "mov rax,rbx / sub rax,[r15] / cmp rax,0FA0h / jge ... / call _Thrd_yield":

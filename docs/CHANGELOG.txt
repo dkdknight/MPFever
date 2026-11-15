@@ -1,6 +1,18 @@
 MPFever - Changelog
 ===================
 
+0.8.13 - 2026-11-15: dedicated servers "without display" no longer crash when vehicles are replaced
+  - FIX (#354, #361, the reports of 2026-11-15, MPFeverServerTest and DEOKCHEON's server): a server started without display
+    skipped the drawing of the world since 0.5.8 (CRenderer::Render), but the game releases the graphics resources of removed
+    vehicles along that drawing. With many vehicles replaced at once the hidden game failed at the end of a frame (Vulkan
+    assertion 'destroyLater->back().empty()') or crashed in the graphics driver (nvoglv64.dll) a minute later. The world is drawn
+    again in the hidden window, as on a server with display; the window stays hidden and the sound silent.
+    MPFEVER_HEADLESS_NORENDER=1: not drawn, as in 0.5.8 to 0.8.12.
+  - FIX (#361): after such a crash the game's error box waited for a click nobody could give in the hidden window, and the
+    players' games stood still until the launcher's watchdog (180 s). In a server without display the game's message boxes are
+    written in native.log and answered at once: a crashed game closes and the server starts it again in 10 s.
+    Test: tests/test_headless0813.py.
+
 0.8.12 - 2026-11-15: fewer resyncs after building tracks with signals (a fault of 0.8.9)
   - FIX (more resyncs since 0.8.9, the reports of 2026-11-15: Kasper and Eier, Jakob and Peter, From-Hellscream and Sascha, Julian
     and marcu): since 0.8.9 every build carrying a stop or a signal was shipped at the click with the town numbers of a build that
