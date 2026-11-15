@@ -60,7 +60,7 @@ api = { res = { constructionRep = { find = function(n) if n == "::/stations/stre
 def main():
     src = open(BRIDGE, encoding="utf-8").read().replace("\r\n", "\n")
     parts = []
-    for name in ("G.preHasContent", "G.preHasObjects", "G.noteEo", "G.f32", "G.eoModelName", "G.preshipObjects", "G.preship", "G.preshipSettle"):
+    for name in ("G.preHasContent", "G.preHasObjects", "G.preStopOnly", "G.noteEo", "G.f32", "G.eoModelName", "G.preshipObjects", "G.preship", "G.preshipSettle"):
         m = re.search(r"^" + re.escape(name) + r" = function\(.*?\)\n.*?^end\n", src, re.S | re.M)
         check(m is not None, name + " found")
         if not m:

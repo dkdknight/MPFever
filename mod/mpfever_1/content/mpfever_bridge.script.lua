@@ -11853,6 +11853,19 @@ G.preHasObjects = function(m)
 	if type(st) ~= "table" then return false end
 	return #(st.edgeObjectsToAdd or {}) > 0 or #(st.edgeObjectsToRemove or {}) > 0
 end
+-- (0.8.12) A copy that only puts stops or signals on segments, or takes them away: every segment it takes away put back by one
+-- (the same segment with its objects), no node added or taken away, no construction. The stop and signal tools build so, and their
+-- build moves no ground (#177-#180, the real-tool tests of 2026-11-14). Anything else that carries an object (a track laid or
+-- changed with a signal on it, a segment demolished with its signal, a station demolished with its stops) does move ground.
+G.preStopOnly = function(m)
+	local st = type(m) == "table" and (m.proposal or m.streetProposal) or nil
+	if type(st) ~= "table" then return false end
+	if #(m.toAdd or {}) > 0 or #(m.toRemove or {}) > 0 then return false end
+	if #(st.addedNodes or {}) > 0 or #(st.removedNodes or {}) > 0 then return false end
+	local add, rem = #(st.addedSegments or {}), #(st.removedSegments or {})
+	if add ~= rem then return false end
+	return #(st.edgeObjectsToAdd or {}) > 0 or #(st.edgeObjectsToRemove or {}) > 0
+end
 -- (0.7.17, #186) the construction (its entity) one of the segments a copy takes away, or one of their nodes, belongs to; nil when
 -- none. con(kind, id): the street connector's answer (the engine's by default)
 G.preTouchesCon = function(copy, con)
@@ -12043,6 +12056,16 @@ G.preship = function(r)
 	-- would ask for a resynchronisation ("model nil not in this game"): G.preshipObjects now makes it complete from the tool's command
 	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOP") == "0" then
 		log("PRESHIP native build " .. tostring(r.id) .. ": a stop or a signal: shipped the usual way")
+		return false
+	end
+	-- ((0.8.12) Only a copy that puts stops or signals on segments as they are (G.preStopOnly) goes at the click: since 0.8.9 every
+	-- copy with an object went, with the town numbers of a build that moves no ground, and a track laid or changed with a signal, a
+	-- segment demolished with its signal or a station demolished with its stops moved ground on the replaying games: "town stats
+	-- differ (builder 0 / here 0.2 to 1825)", every one of the 9 builds not reproduced of the 0.8.11 reports (2026-11-15: Eier, Peter,
+	-- Sascha, From-Hellscream, marcu), and the smaller ones hidden from the towns. Such a build goes the usual way again, as in 0.8.8
+	-- (its capture, with its builder's own numbers). MPFEVER_PRESHIPSTOPALL=1: every copy with an object at the click, as 0.8.9-0.8.11)
+	if G.preHasObjects(r.copy) and os.getenv("MPFEVER_PRESHIPOBJ") ~= "1" and os.getenv("MPFEVER_PRESHIPSTOPALL") ~= "1" and not G.preStopOnly(r.copy) then
+		log("PRESHIP native build " .. tostring(r.id) .. ": stops or signals with segments or nodes added or taken away, or a construction: shipped the usual way")
 		return false
 	end
 	-- (0.8.9) its stops and signals made complete from the tool's command, or the usual way

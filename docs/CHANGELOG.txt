@@ -1,7 +1,17 @@
 MPFever - Changelog
 ===================
 
-0.8.11 - in progress
+0.8.12 - 2026-11-15: fewer resyncs after building tracks with signals (a fault of 0.8.9)
+  - FIX (more resyncs since 0.8.9, the reports of 2026-11-15: Kasper and Eier, Jakob and Peter, From-Hellscream and Sascha, Julian
+    and marcu): since 0.8.9 every build carrying a stop or a signal was shipped at the click with the town numbers of a build that
+    moves no ground, as the stop tool's. A track laid or changed with a signal on it, a segment demolished with its signal or a
+    station demolished with its stops do move ground: the other games found other numbers and resynchronised ("town stats differ
+    (builder 0 / here 0.2 to 1825)", all 9 builds not reproduced in the 0.8.11 reports), or hid smaller ones from the towns with the
+    ground left different. Only a build that puts stops or signals on segments as they are (no segment or node added or taken away,
+    no construction) still goes at the click; the others go the usual way again, as in 0.8.8. MPFEVER_PRESHIPSTOPALL=1: as 0.8.9 to
+    0.8.11. Test: tests/test_prestoponly0812.py.
+
+0.8.11 - 2026-11-15
   - FIX (#261, chris's stops of 2026-11-14 23:03, #325-#329, and #288): a stop placed on a street whose end lies more than 2 m
     from its node (2.7 m, 11.5 m, 11.9 m in the reports; town streets of Test Leawood and Test Lag Rp have such ends too) was
     rebuilt on the other games with the node's position as that end: the street was laid on the ground again there only (68 to
