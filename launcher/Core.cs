@@ -1104,6 +1104,12 @@ namespace MPFever
         public readonly List<BulkLink> Bulk = new List<BulkLink>();
     }
 
+    /// <summary>The version of the relay protocol: what a launcher and the Linux relay (server-linux/) must agree on, whatever their MPFever
+    /// versions. A launcher sends it in its join ("rp"); the relay refuses another number. Raise it only when the message format, the
+    /// admission, the reconnection or the tun_ messages change (docs/LINUX-RELAY.md). The "same MPFever version between players" rule is
+    /// the host's, as with a host that listens itself.</summary>
+    static class RelayProtocol { public const int Number = 1; }
+
     /// <summary>What the host's code (MainForm.OnHostMessage and the session around it) needs from the place its players connect to:
     /// a Relay (the host's own TCP listener) or a RemoteRelay (a server the host and the players all connect to, server-linux/).</summary>
     interface IRelay : IDisposable
@@ -1724,7 +1730,7 @@ namespace MPFever
             else Link.Reset(null);   // (a new player: the host counts from this join; what waited is dropped)
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
-                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
+                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
             viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             usedDirect = viaSteam ? null : used;
             gotAny = false;

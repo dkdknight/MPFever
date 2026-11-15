@@ -34,6 +34,7 @@ namespace MPFever.LinuxServer
         readonly HashSet<Peer> capable = new HashSet<Peer>();     // the players that can take over (join { mig = true })
         readonly HashSet<Peer> failed = new HashSet<Peer>();      // asked during this migration and not there in time
         readonly Dictionary<Peer, string> presentedTokens = new Dictionary<Peer, string>();   // what a host join showed as its token
+        readonly Dictionary<Peer, string> joinVersions = new Dictionary<Peer, string>();      // the MPFever version each player said (for the host)
         Peer host;                                                // the current host, or null (nobody, or a migration under way)
         Peer candidate;                                           // the player asked to take over
         Phase phase = Phase.Idle;
@@ -122,6 +123,7 @@ namespace MPFever.LinuxServer
                 hostJoins.Remove(p);
                 capable.Remove(p);
                 presentedTokens.Remove(p);
+                joinVersions.Remove(p);
                 wasHost = host == p;
                 wasCandidate = phase == Phase.AwaitingSuccessor && candidate == p;
                 if (wasHost) host = null;

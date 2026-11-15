@@ -38,7 +38,8 @@ namespace MPFever.LinuxServer
     /// port), the admission rules, and the choice of the host. Wire format between the server and the host's launcher:
     ///
     ///   server -> host   tun_host  { you, epoch, migrate, prev, token }   this connection is the host (see Hosting.cs for a migration)
-    ///                    tun_join  { name, addr }                  a player was let in (name = "Name#n")
+    ///                    tun_join  { name, addr, v }               a player was let in (name = "Name#n"; v = its MPFever version: the host
+    ///                                                              decides whether it accepts that version, as a host that listens itself does)
     ///                    tun_left  { name }                        a player is gone for good (a guest that drops is waited for first)
     ///                    tun_players { n }                         after a takeover: the n players already there were all announced
     ///                    any other message of a player, unchanged kind and payload, From = that player's name
@@ -128,7 +129,8 @@ namespace MPFever.LinuxServer
             var me = BaseName(p.Name);
             var ip = AddressOf(p);
             int others = relay.Admitted().Count(o => o != p && !string.Equals(BaseName(o.Name), me, StringComparison.OrdinalIgnoreCase));
-            if (S("v") != MainForm.Version) { reason = "version"; extra = ",[\"v\"]=" + LuaLit.Quote(MainForm.Version); }
+            // (the relay checks the protocol it speaks, not the MPFever version: the host checks the version between players, see RemoteRelay)
+            if (!(t.TryGetValue("rp", out var rpv) && rpv is double rpd && (int)rpd == RelayProtocol.Number)) { reason = "relay"; extra = ",[\"rp\"]=" + RelayProtocol.Number; }
             else if (opt.Password != "" && LockedOut(ip)) reason = "password";   // (too many wrong ones from this address: even the right one waits)
             else if (opt.Password != "" && !SamePassword(S("pw"), opt.Password)) { reason = "password"; NoteBadPassword(ip); }
             else if (others >= opt.MaxPlayers) { reason = "full"; extra = ",[\"max\"]=" + opt.MaxPlayers; }
@@ -140,6 +142,7 @@ namespace MPFever.LinuxServer
                 {
                     if (WantsHost(t)) { hostJoins.Add(p); if (HasHost) presentedTokens[p] = S("mtok"); }
                     if (CanTakeOver(t)) capable.Add(p);
+                    joinVersions[p] = S("v");
                 }
             }
             else Log.Warn(BaseName(p.Name) + " (" + p.Address + ") refused: " + reason);
@@ -178,7 +181,8 @@ namespace MPFever.LinuxServer
         /// <summary>Tells the host's launcher that a player came in.</summary>
         void AnnounceJoin(Peer host, Peer p)
         {
-            ToHost(host, Msg.Make("tun_join", p.Name, "{[\"name\"]=" + LuaLit.Quote(p.Name) + ",[\"addr\"]=" + LuaLit.Quote(p.Address ?? "") + "}"));
+            string v; lock (hostGate) joinVersions.TryGetValue(p, out v);
+            ToHost(host, Msg.Make("tun_join", p.Name, "{[\"name\"]=" + LuaLit.Quote(p.Name) + ",[\"addr\"]=" + LuaLit.Quote(p.Address ?? "") + ",[\"v\"]=" + LuaLit.Quote(v ?? "") + "}"));
         }
 
         // ---------------------------------------------------------------- messages

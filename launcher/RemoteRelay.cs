@@ -93,6 +93,17 @@ namespace MPFever
                         if (string.IsNullOrEmpty(name)) return;
                         var p = new Peer { Id = Interlocked.Increment(ref nextId), Name = name, Admitted = true,
                             Address = t.TryGetValue("addr", out var a) ? a as string : "" };
+                        // The relay checks the password, the places and the relay protocol; the rest of the admission is the host's, as with a host that
+                        // listens itself (the same MPFever version between players, the rules of a public game...): Admit gets the join as the relay
+                        // saw it. A refused player is sent away with the host's own "denied" and never reaches Joined.
+                        var admit = Admit;
+                        if (admit != null)
+                        {
+                            string refused = null;
+                            try { refused = admit(p, Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(t.TryGetValue("v", out var vv) ? vv as string ?? "" : "") + "}")); }
+                            catch (Exception e) { Log.Warn("admit: " + e.Message); }
+                            if (refused != null) { Deny(p, refused); return; }
+                        }
                         lock (gate) peers[name] = p;
                         Joined?.Invoke(p);
                         return;

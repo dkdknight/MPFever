@@ -6,7 +6,7 @@ namespace MPFever.LinuxServer
 {
     static class Program
     {
-        const string Usage = @"mpfever-relay " + MainForm.Version + @" - MPFever session server without a game (Linux)
+        static readonly string Usage = @"mpfever-relay, relay protocol " + RelayProtocol.Number + @" - MPFever session server without a game (Linux)
 
   mpfever-relay [--port 28090] [--password SECRET] [--max-players 8] [--name TEXT] [--migration]
                 [--max-connections 64] [--grace 60] [--migration-timeout 120]

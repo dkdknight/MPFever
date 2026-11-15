@@ -7,8 +7,8 @@ namespace MPFever
 {
     static class MainForm
     {
-        // keep equal to MainForm.Version in launcher/MainForm.cs (checked by tests/check_repo.py)
-        public const string Version = "0.8.10";
+        // Core.cs sends a version in the join of the relay's own self-test clients; the relay itself never reads one (it checks RelayProtocol)
+        public const string Version = "selftest";
         internal static string MemNow() => "";
     }
 

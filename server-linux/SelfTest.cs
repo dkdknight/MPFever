@@ -56,6 +56,7 @@ namespace MPFever.LinuxServer
             Migration();
             Parser();
             Compat();
+            VersionBetweenPlayers();
             Hardening();
             Races();
             Load();
@@ -229,6 +230,50 @@ namespace MPFever.LinuxServer
                 return false;
             }
             public void Dispose() { try { T.Close(); } catch { } }
+        }
+
+        /// <summary>The relay no longer compares MPFever versions: the host's own admission does (RemoteRelay.Admit), as for a host that listens itself.</summary>
+        static void VersionBetweenPlayers()
+        {
+            Console.WriteLine("the version rule between players stays with the host");
+            using (var srv = new Relay())
+            {
+                var core = new SessionCore(srv, new ServerOptions());
+                srv.Start(0);
+                int port = srv.Port;
+                var host = new RemoteRelay();
+                var joined = new List<Peer>();
+                var seen = new List<string>();
+                host.Joined += p => { lock (joined) joined.Add(p); };
+                // the host's rule of the launcher: only players of its own version (MainForm.VersionAdmit), here "9.9.9"
+                host.Admit = (p, m) =>
+                {
+                    var t = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+                    var v = t != null && t.TryGetValue("v", out var vo) ? vo as string : "";
+                    lock (seen) seen.Add(v);
+                    return v == "9.9.9" ? null : "{[\"reason\"]=\"version\",[\"v\"]=\"9.9.9\"}";
+                };
+                try
+                {
+                    host.Connect("127.0.0.1", port, "Hank", null);
+                    using (var good = new Raw(port))
+                    {
+                        good.Send("join\tGood\t{[\"v\"]=\"9.9.9\",[\"rp\"]=" + RelayProtocol.Number + "}\n");
+                        var t0 = Environment.TickCount64; while (Environment.TickCount64 - t0 < 4000) { lock (joined) if (joined.Count == 1) break; Thread.Sleep(20); }
+                        Check("a player of the host's version reaches Joined", new Func<bool>(() => { lock (joined) return joined.Count == 1 && joined[0].Name.StartsWith("Good#"); })());
+                        Check("the host was given the version the player said", new Func<bool>(() => { lock (seen) return seen.Contains("9.9.9"); })());
+                    }
+                    var other = new Player(port, "Other");   // (its Client says MainForm.Version, which is not "9.9.9")
+                    try
+                    {
+                        Check("a player of another MPFever version is refused by the host, with the host's own reason", other.Wait(() => other.DeniedReason != null) && other.DeniedReason == "version");
+                        Thread.Sleep(300);
+                        Check("and never reaches Joined", new Func<bool>(() => { lock (joined) return joined.All(p => !p.Name.StartsWith("Other#")); })());
+                    }
+                    finally { other.Dispose(); }
+                }
+                finally { host.Dispose(); }
+            }
         }
 
         static void Hardening()
@@ -545,7 +590,7 @@ namespace MPFever.LinuxServer
                         // a client that is let in and then sends rubbish
                         using (var raw = new Raw(port))
                         {
-                            raw.Send("join\tRude\t{[\"v\"]=\"" + MainForm.Version + "\"}\n");
+                            raw.Send("join\tRude\t{[\"v\"]=\"x\",[\"rp\"]=" + RelayProtocol.Number + "}\n");
                             Thread.Sleep(400);
                             raw.Send("no tab at all\n\n\t\t\n" + "kind\tfrom\t{this is [not lua\n" + "@x:welcome\tx\t{}\n" + "\u0001\u0002\tx\t{}\n" + new string('k', 5000) + "\tx\t{}\n");
                             raw.Send("resync_bin\t-\t{[\"len\"]=5000}\n");
@@ -560,8 +605,19 @@ namespace MPFever.LinuxServer
                     }
                     using (var nov = new Raw(port))
                     {
-                        nov.Send("join\tNoVersion\t{}\n");
-                        Check("a join without the right version is refused and closed", nov.ClosedBy(3000));
+                        nov.Send("join\tNoProtocol\t{[\"v\"]=\"x\"}\n");
+                        Check("a join without the relay protocol is refused and closed", nov.ClosedBy(3000));
+                    }
+                    using (var old = new Raw(port))
+                    {
+                        old.Send("join\tOther\t{[\"v\"]=\"x\",[\"rp\"]=999}\n");
+                        Check("a join with another relay protocol is refused and closed", old.ClosedBy(3000));
+                    }
+                    using (var oldver = new Raw(port))
+                    {
+                        // (another MPFever version with the same relay protocol: the relay does not mind, the host decides)
+                        oldver.Send("join\tOldMpfever\t{[\"v\"]=\"0.0.1\",[\"rp\"]=" + RelayProtocol.Number + "}\n");
+                        Check("a join with another MPFever version but the same relay protocol is let in", new Func<bool>(() => { var end = Environment.TickCount64 + 4000; while (Environment.TickCount64 < end) { lock (joined) if (joined.Any(p => p.Name.StartsWith("OldMpfever#"))) return true; Thread.Sleep(20); } return false; })());
                     }
                     using (var bj = new Raw(port))
                     {
