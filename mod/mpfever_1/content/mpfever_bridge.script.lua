@@ -7044,7 +7044,7 @@ local function replayNativeConstruction(a)
 					replayFailed(a, "native construction refused " .. why)
 					return
 				end
-				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction BUILT")
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction BUILT"); pcall(G.groundProbe, a.args and a.args[1], a.uid, "replay")  -- ((0.8.11) the ground, see G.groundProbe)
 				-- the edge objects of the tool's build (an airport's or an airfield's signs on its runways and taxiways) are not
 				-- made by the engine's conversion. 0.3.13 placed them afterwards as stops are, by rebuilding each segment: those
 				-- segments are the construction's own (frozen) edges, the construction kept the removed ones, and the game crashed
@@ -7366,7 +7366,7 @@ local function replayNativeStreet(a)
 			failed("native street refused " .. why)
 			return
 		end
-		log("NATIVE REPLAY " .. tostring(a.uid) .. " native street BUILT (" .. label .. ")")
+		log("NATIVE REPLAY " .. tostring(a.uid) .. " native street BUILT (" .. label .. ")"); pcall(G.groundProbe, a.args and a.args[1], a.uid, "replay")  -- ((0.8.11) the ground, see G.groundProbe)
 		if eoUsed then
 			-- one build as the builder's, its stops and signals in it: none placed afterwards (a.stopsAfter is never set on this
 			-- way). Their number here against the builder's, net of what the build removed
@@ -8439,7 +8439,7 @@ local function replayNative(a, formIndex)
 	if not (a.stopsAfter and #a.stopsAfter > 0) then pcall(G.gateSingle) end
 	replaySend(cmd, function(res, success)
 		if success then
-			log("NATIVE REPLAY " .. tostring(a.uid) .. " BUILT with form " .. label)
+			log("NATIVE REPLAY " .. tostring(a.uid) .. " BUILT with form " .. label); pcall(G.groundProbe, a.args and a.args[1], a.uid, "replay")  -- ((0.8.11) the ground, see G.groundProbe)
 			pcall(function()
 				local st = res.proposal.proposal
 				log("NATIVE REPLAY " .. tostring(a.uid) .. " engine applied: +nodes " .. #st.addedNodes .. " -nodes " .. #st.removedNodes
@@ -11941,12 +11941,18 @@ end
 -- (0.8.9 research, #261, MPFEVER_GROUNDPROBE=1) the ground along and beside the new segments of a build (m: its compact proposal),
 -- 30 frames after it stands: 21 points along each segment, at -6, -3, 0, 3, 6 m to its side, their heights summed and hashed, to
 -- compare the builder's game with the replaying games ("GROUND <uid> <who> ...")
+-- ((0.8.11, #150) on by default without the trees (their scan is the costly part): the animals, where the drift between two PCs now
+-- begins, choose their way by the terrain's height among others, and the checks do not compare the ground; with every player's
+-- report the GROUND lines of one build tell whether it left the ground otherwise on one game. MPFEVER_GROUNDPROBE=1: with the
+-- trees, as in 0.8.9; =0: none)
 G.groundProbe = function(m, uid, who)
-	if os.getenv("MPFEVER_GROUNDPROBE") ~= "1" or type(m) ~= "table" then return end
+	local mode = os.getenv("MPFEVER_GROUNDPROBE")
+	if mode == "0" or type(m) ~= "table" then return end
 	local segs = {}
 	for _, sg in ipairs(((m.proposal or {}).addedSegments) or {}) do
 		local c = type(sg) == "table" and sg.comp or nil
-		if type(c) == "table" and type(c.position0) == "table" and type(c.position1) == "table" then segs[#segs + 1] = c end
+		-- ((0.8.11) at most 8 segments (840 points) on by default: a big build's probe stays a short pause of the interface)
+		if type(c) == "table" and type(c.position0) == "table" and type(c.position1) == "table" and (mode == "1" or #segs < 8) then segs[#segs + 1] = c end
 	end
 	if #segs == 0 then return end
 	G.waits[#G.waits + 1] = { at = G.frames + 30, fn = function()
@@ -11970,9 +11976,9 @@ G.groundProbe = function(m, uid, who)
 				end
 			end
 		end
-		-- and the trees, plants and rocks within 15 m of the segments: their groups and models (fat and thin)
+		-- and the trees, plants and rocks within 15 m of the segments: their groups and models (fat and thin; MPFEVER_GROUNDPROBE=1 only)
 		local groups, models = 0, 0
-		pcall(function()
+		if mode == "1" then pcall(function()
 			for _, c in ipairs(segs) do
 				local x0, y0, x1, y1 = c.position0.x, c.position0.y, c.position1.x, c.position1.y
 				local mid = { x = (x0 + x1) / 2, y = (y0 + y1) / 2 }
@@ -11992,9 +11998,34 @@ G.groundProbe = function(m, uid, who)
 					end
 				end
 			end
-		end)
-		log(string.format("GROUND %s %s: %d points, sum %.4f, signature %d; trees within 15 m: %d model(s) in %d group(s)", tostring(uid), tostring(who), n, sum, h, models, groups))
+		end) end
+		log(string.format("GROUND %s %s: %d points, sum %.4f, signature %d", tostring(uid), tostring(who), n, sum, h)
+			.. (mode == "1" and string.format("; trees within 15 m: %d model(s) in %d group(s)", models, groups) or ""))
 	end }
+end
+-- (0.8.11, #316) The id of another held build of this game (G.natRelease, not yet released) whose references (r2.preRefs, kept when it
+-- was shipped at the click) share an entity with refs; nil when none. A held build shipped the usual way (no preRefs) counts when it
+-- is released no later than r: what it changes is not known here
+G.prePendingOverlap = function(r, refs)
+	local mine = {}
+	for _, x in ipairs(refs or {}) do
+		local id = type(x) == "table" and type(x.ref) == "table" and x.ref.id or nil
+		if type(id) == "number" then mine[id] = true end
+	end
+	if next(mine) == nil then return nil end
+	for _, r2 in ipairs(G.natRelease or {}) do
+		if r2 ~= r and r2.id ~= r.id and (tonumber(r2.at) or 0) <= (tonumber(r.at) or 0) then
+			if type(r2.preRefs) == "table" then
+				for _, x in ipairs(r2.preRefs) do
+					local id = type(x) == "table" and type(x.ref) == "table" and x.ref.id or nil
+					if id and mine[id] then return r2.id end
+				end
+			elseif r2.preshipped == nil and r2.copy ~= nil then
+				return r2.id
+			end
+		end
+	end
+	return nil
 end
 G.preship = function(r)
 	if not G.preshipOn() or r.lead or r.paused or type(r.copy) ~= "table" or type(r.at) ~= "number" then return false end
@@ -12097,6 +12128,19 @@ G.preship = function(r)
 	local refs = G.preRefsOf(args)
 	local okS, sig = pcall(G.refSigOf, refs)
 	if not okS then log("PRESHIP native build " .. tostring(r.id) .. ": what it was computed on could not be read (" .. tostring(sig) .. "): shipped the usual way") return false end
+	-- (0.8.11, #316: From-Hellscream's three roads of 2026-11-14 21:27, held while the game gave way to Sascha's demolition, all
+	-- released at the same step) A build computed at the click while another build of this game, still held, names the same
+	-- segments or nodes: the tool computed it without that one, and the engine, applying both at their step, built it otherwise
+	-- than its copy ("built otherwise than shipped at the click", a resynchronisation). Such a build is shipped the usual way (its
+	-- capture once built). A build that names nothing the held ones name is shipped at the click as before. MPFEVER_PREPENDING=0:
+	-- as before
+	if os.getenv("MPFEVER_PREPENDING") ~= "0" then
+		local okP, other = pcall(G.prePendingOverlap, r, refs)
+		if okP and other then
+			log("PRESHIP native build " .. tostring(r.id) .. ": names what this game's held build " .. tostring(other) .. " names, not built yet: shipped the usual way")
+			return false
+		end
+	end
 	G.oseq = G.oseq + 1
 	local a = { fn = "makeWorldBuildProposalCmd", args = args, at = r.at, origin = G.me, oseq = G.oseq, uid = G.me .. ":" .. G.oseq,
 		native = true, natId = r.id, co = aiCo or G.myCo, lt = G.loadId, pre = true, refs = refs, refSig = sig, preSig = G.preStreetSig(r.copy),
@@ -12364,6 +12408,8 @@ local function shipNativeBuilds(st)
 			if G.featOn then pcall(G.featNativeAct, a) end
 			G.builtAt = math.max(G.builtAt or -1, o.at)
 			if not preDone then log("native build shipped " .. a.uid .. " (built here at t=" .. o.at .. ", the other games build it at the same time) [frame " .. G.frames .. "]") end
+			-- ((0.8.11, #150) the builder's ground under a build shipped the usual way too, see G.groundProbe)
+			if not preDone and a.post == nil then pcall(G.groundProbe, type(o.args) == "table" and o.args[1] or nil, a.uid, "builder") end
 		end
 	end
 end
@@ -19961,7 +20007,20 @@ H.dstop = function(from, p)
 		nextOne = function()
 			if n >= want then return done() end
 			local E
-			for _, pool in ipairs((offFirst and #offList > 0) and { offList, list } or { list }) do
+			-- ((0.8.11, #316) MPFEVER_DSTOPADJ=1: the next stop on a segment next to the last one (sharing a node), so that with
+			-- MPFEVER_DSTOP_LEAD=1 two held builds of this game name the same node: the second goes the usual way, see
+			-- G.prePendingOverlap)
+			if os.getenv("MPFEVER_DSTOPADJ") == "1" and G.dstopLast then
+				local last = api.engine.getComponent(G.dstopLast, api.type.ComponentType.BASE_EDGE)
+				for _, cand in ipairs(list) do
+					local cc0 = cand ~= G.dstopLast and api.engine.getComponent(cand, api.type.ComponentType.BASE_EDGE)
+					if last and cc0 and #cc0.objects == 0 and (cc0.node0 == last.node0 or cc0.node0 == last.node1 or cc0.node1 == last.node0 or cc0.node1 == last.node1) then
+						E = cand
+						break
+					end
+				end
+			end
+			for _, pool in ipairs((E == nil) and ((offFirst and #offList > 0) and { offList, list } or { list }) or {}) do
 				for k = 1, #pool do
 					local cand = pool[(step * (n + 1) + k) % #pool + 1]
 					local cc0 = api.engine.getComponent(cand, api.type.ComponentType.BASE_EDGE)
@@ -19970,6 +20029,7 @@ H.dstop = function(from, p)
 				if E then break end
 			end
 			if not E then say("dstop: no segment left"); return done() end
+			G.dstopLast = E
 			n = n + 1
 			local c = api.engine.getComponent(E, api.type.ComponentType.BASE_EDGE)
 			used[c.node0] = true; used[c.node1] = true
@@ -20558,6 +20618,14 @@ H.upgburst = function(from, p)
 		AUTO.points = {}
 		local n = tonumber(os.getenv("MPFEVER_UPGBURST_N") or "") or 12
 		local gap = tonumber(os.getenv("MPFEVER_UPGBURST_GAP") or "") or 40
+		-- ((0.8.11, #316) MPFEVER_UPGBURST_LEAD=1: the other game leads with its terrain tool (H.terrainlead), this game's upgrades are
+		-- held; MPFEVER_UPGBURST_ADJ=1: each next segment shares a node with the last one; MPFEVER_UPGBURST_NOWAIT=1: the next one
+		-- after the gap without waiting for the answer. Together: two held builds of this game name the same node, the second goes
+		-- the usual way, see G.prePendingOverlap)
+		local leadOther = os.getenv("MPFEVER_UPGBURST_LEAD") == "1"
+		local adj = os.getenv("MPFEVER_UPGBURST_ADJ") == "1"
+		local noWait = os.getenv("MPFEVER_UPGBURST_NOWAIT") == "1"
+		local lastC = nil
 		local list, templates = {}, {}
 		for _, e in ipairs(R.allEdges()) do
 			local c = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
@@ -20581,16 +20649,27 @@ H.upgburst = function(from, p)
 		local function nextOne()
 			if built >= n or tried >= n * 4 or #list == 0 then
 				AUTO.results[#AUTO.results + 1] = "upgburst: " .. built .. " upgrades built, " .. (tried - built) .. " refused or skipped"
+				if leadOther then send("terrainlead_stop", {}); G.waits[#G.waits + 1] = { at = G.frames + 120, fn = autoFinish }; return end
 				return autoFinish()
 			end
 			tried = tried + 1
 			local pick = list[((p.offset or 0) * 131 + tried * 211) % #list + 1]
+			if adj and lastC then
+				for _, cand in ipairs(list) do
+					if not used[cand.e] and api.engine.entityExists(cand.e) and wider(cand.t)
+						and (cand.c.node0 == lastC.node0 or cand.c.node0 == lastC.node1 or cand.c.node1 == lastC.node0 or cand.c.node1 == lastC.node1) then
+						pick = cand
+						break
+					end
+				end
+			end
 			local target = wider(pick.t)
 			if used[pick.e] or not target or not api.engine.entityExists(pick.e) then
 				G.waits[#G.waits + 1] = { at = G.frames + 1, fn = nextOne }
 				return
 			end
 			used[pick.e] = true
+			lastC = pick.c
 			local okp, P = pcall(function() return api.engine.util.proposal.replaceSegment(pick.e, target) end)
 			if not okp or not P then
 				log("AUTOTEST upgburst replaceSegment(" .. pick.e .. ") failed: " .. tostring(P))
@@ -20610,15 +20689,22 @@ H.upgburst = function(from, p)
 					if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)):sub(1, 200) end) end
 					log("AUTOTEST upgburst segment " .. pick.e .. " " .. pick.t:match("[^/]+$") .. " -> " .. target:match("[^/]+$") .. ": " .. (success and "built" or ("refused " .. why)) .. " [frame " .. G.frames .. "]")
 					if success then built = built + 1; AUTO.points[#AUTO.points + 1] = a end
-					G.waits[#G.waits + 1] = { at = G.frames + gap, fn = nextOne }
+					if not noWait then G.waits[#G.waits + 1] = { at = G.frames + gap, fn = nextOne } end
 				end)
 			end)
 			if not okc then
 				log("AUTOTEST upgburst command failed: " .. shortErr(errc))
 				G.waits[#G.waits + 1] = { at = G.frames + 1, fn = nextOne }
+			elseif noWait then
+				G.waits[#G.waits + 1] = { at = G.frames + gap, fn = nextOne }
 			end
 		end
-		nextOne()
+		if leadOther then
+			send("terrainlead", { role = C.ROLE })
+			G.waits[#G.waits + 1] = { at = G.frames + 300, fn = nextOne }
+		else
+			nextOne()
+		end
 	end)
 	if not ok then
 		log("AUTOTEST upgburst failed: " .. tostring(err))

@@ -111,6 +111,7 @@ with its cause and the test that now guards it.
 | The **sync check's cost does not grow with the game's age**: the industries' digest and the dump's stock lists read each rule's history length and its last 4 applications, never the whole application history (2 to 8.7 s per check after two hours, #317). | 0.8.10 | K.ruleDatasText (MPFEVER_INDDIGESTFULL) | test_inddigest0810.py |
 | A **stop replayed on a street whose end lies far from its node keeps that end** when the builder's segment has it too (2.7 to 15.6 m seen): never the node's position, which laid the street on the ground again on the other games only (#261, #325-#329). | 0.8.11 | replayStop builderEnd (MPFEVER_STOPENDSBUILDER) | test_stopfarend0811.py, autotest dstop MPFEVER_DSTOPFAR=1 |
 | A **burst of a mod's game script commands goes as one action** (16 or more in one frame, none waiting for an answer, no build): 15,800 actions at one step held the simulation 9 minutes (#331). | 0.8.11 | G.gsBatchable, stampHeld, executeBatch (MPFEVER_GSBATCH) | test_gsbatch0811.py, autotest gsburst |
+| A **build that names what another held build of the same game names is shipped the usual way**, never at the click: computed without that build, the engine built it otherwise than its copy when both were released at one step (#316). | 0.8.11 | G.prePendingOverlap in G.preship (MPFEVER_PREPENDING) | test_prepending0811.py, autotest upgburst LEAD+ADJ+NOWAIT |
 
 ## Regressions found
 

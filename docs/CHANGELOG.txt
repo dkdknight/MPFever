@@ -14,6 +14,17 @@ MPFever - Changelog
     game script read in the same frame (none waiting for an answer, no build) now goes as one action ("mpfBatch", at most 2000
     commands), applied in the same order with the same checks on every game. Fewer: one action each, as before.
     MPFEVER_GSBATCH=0: one action each. Autotest scenario gsburst (300 renames in one frame). Test: tests/test_gsbatch0811.py.
+  - FIX (#316, From-Hellscream's three roads of 2026-11-14 21:27): builds held while the game gave way to another player's build
+    were all shipped at the click and released at the same step; the second named segments and nodes of the first, which the tool
+    had computed it without, and the engine built it otherwise than its copy: a resynchronisation. A build that names what another
+    held build of the same game names (not built yet) is now shipped the usual way (its capture once built); one that names
+    nothing of them is still shipped at the click. MPFEVER_PREPENDING=0: as before. Autotest upgburst: MPFEVER_UPGBURST_LEAD=1
+    (the other game leads), _ADJ=1 (neighbouring segments), _NOWAIT=1 (no wait for the answer). Test: tests/test_prepending0811.py.
+  - DIAGNOSTIC (#150: the drift between two PCs now begins with the animals; a research of the game's code found their moves
+    deterministic given the same inputs, among them the terrain's height, which the checks never compare): the ground probe of 0.8.9
+    research is on by default, heights only, on the builder's game and every replay ("GROUND <uid> <who>: ..." in mod.log, 30 frames
+    after a build, at most 8 segments); tools/ground_diff.py compares every player's lines of a report and names a build that left
+    the ground otherwise on one game. MPFEVER_GROUNDPROBE=0: none; =1: with the trees, as in 0.8.9. Test: tests/test_groundprobe0811.py.
   - DOCS: a resynchronisation takes about a minute (README said 20 seconds; the median of the reports is 1 min 12 s).
 
 0.8.10 - 2026-11-14: the freezes every 10 s in long sessions fixed (#317)
