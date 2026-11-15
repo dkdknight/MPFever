@@ -25,6 +25,14 @@ MPFever - Changelog
     research is on by default, heights only, on the builder's game and every replay ("GROUND <uid> <who>: ..." in mod.log, 30 frames
     after a build, at most 8 segments); tools/ground_diff.py compares every player's lines of a report and names a build that left
     the ground otherwise on one game. MPFEVER_GROUNDPROBE=0: none; =1: with the trees, as in 0.8.9. Test: tests/test_groundprobe0811.py.
+  - RESEARCH (#261, street upgrades of several segments, #288): with the real upgrade tool on Test Mittelland, a 2-segment
+    upgrade at speed and a paused one are rebuilt on the other game by the tool's replacement maps (native street proposal): the
+    same segment ids, the segments' ends exact (0/0), the same ground (GROUND signatures equal); the merged replay of #288 is no
+    longer taken for them. (#316) Two quick clicks of the upgrade tool cannot make two held builds: the tool takes no click until
+    its build is answered; the case needs the street tool and a long hold.
+  - RESEARCH (#150, the animals): the game's animal code is deterministic given the same inputs (no order by memory address, the
+    emission grid filled deterministically, rand only in a simulation-thread command); the simulation thread's floating-point
+    control is the default in every report (121 logs). The inputs that can differ: the ground (now probed), the vehicles' places.
   - DOCS: a resynchronisation takes about a minute (README said 20 seconds; the median of the reports is 1 min 12 s).
 
 0.8.10 - 2026-11-14: the freezes every 10 s in long sessions fixed (#317)
