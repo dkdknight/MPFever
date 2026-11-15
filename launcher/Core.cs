@@ -377,6 +377,11 @@ namespace MPFever
         int pos, count;
         public NetReader(Stream s) { this.s = s; }
 
+        /// <summary>True: a binary message of more than 1 MB is kept in parts as the bytes arrive, so a size announced and never sent does
+        /// not reserve that memory (the cost: the bytes are copied once more). Only a Relay with StrictBeforeAdmission (the Linux relay) sets
+        /// it; everywhere else the message is read straight into one buffer, as it always was.</summary>
+        public bool ChunkLargeBinary;
+
         /// <summary>Longest text line taken, in bytes (a longer one ends the connection). A Relay lowers it for a connection that is not let
         /// in yet: nothing is needed from it but a short "join".</summary>
         public int MaxLine = int.MaxValue;
@@ -415,7 +420,7 @@ namespace MPFever
             if (!AllowBinary) throw new IOException("binary message not expected here");
             if (n < 0 || n > 64 << 20) throw new IOException("binary message of " + n + " bytes");
             // (a size announced and never sent must not reserve that memory: past 1 MB the bytes are kept as they arrive)
-            if (n > 1 << 20)
+            if (ChunkLargeBinary && n > 1 << 20)
             {
                 var parts = new List<byte[]>();
                 int have = 0;
@@ -1108,7 +1113,19 @@ namespace MPFever
     /// versions. A launcher sends it in its join ("rp"); the relay refuses another number. Raise it only when the message format, the
     /// admission, the reconnection or the tun_ messages change (docs/LINUX-RELAY.md). The "same MPFever version between players" rule is
     /// the host's, as with a host that listens itself.</summary>
-    static class RelayProtocol { public const int Number = 1; }
+    static class RelayProtocol
+    {
+        public const int Number = 1;
+
+        /// <summary>The relay's own kinds ("tun_..."): the relay tells the host who joined and who hosts with them, and the host tells the relay
+        /// what to do. A player never sends one, and a host never passes one of a player's on (a "tun_host" with migrate=true would make every
+        /// player that receives it take over as the host).</summary>
+        public static bool IsReserved(string kind) => kind != null && kind.StartsWith("tun_", StringComparison.Ordinal);
+
+        /// <summary>The routing prefixes of a host's message to the relay: "@name:kind" to one player, "!name:kind" to all but one. Nothing a player
+        /// sends starts with them: through a host that passes on what it does not know, one would aim a reserved kind at another player.</summary>
+        public static bool IsRouting(string kind) => kind != null && kind.Length > 1 && (kind[0] == '@' || kind[0] == '!');
+    }
 
     /// <summary>What the host's code (MainForm.OnHostMessage and the session around it) needs from the place its players connect to:
     /// a Relay (the host's own TCP listener) or a RemoteRelay (a server the host and the players all connect to, server-linux/).</summary>
@@ -1314,7 +1331,7 @@ namespace MPFever
             string endWhy = null;
             try
             {
-                var r = new NetReader(tcp.GetStream());
+                var r = new NetReader(tcp.GetStream()) { ChunkLargeBinary = StrictBeforeAdmission };
                 Msg m;
                 while (true)
                 {

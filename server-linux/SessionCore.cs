@@ -209,7 +209,9 @@ namespace MPFever.LinuxServer
             if (fromHost) { FromHost(m, from); return; }
 
             // "tun_" is the server's own: a player cannot speak for it (it could make the host forget a player or believe in one that is not there)
-            if (m.Kind.StartsWith("tun_", StringComparison.Ordinal) || m.Kind == "host_ready")
+            // (also the host's routing prefixes "@name:" and "!name:": a host passes on what it does not know, and the server would deliver
+            // "@Victim#3:tun_host" as a "tun_host" to Victim)
+            if (RelayProtocol.IsReserved(m.Kind) || RelayProtocol.IsRouting(m.Kind) || m.Kind == "host_ready")
             {
                 if (Interlocked.Increment(ref DroppedControl) <= 3) Log.Warn(from.Name + " sent '" + m.Kind + "', which is the server's: dropped");
                 return;
@@ -240,6 +242,7 @@ namespace MPFever.LinuxServer
                 var target = relay.Find(m.Kind.Substring(1, i - 1));
                 if (target == null || target == host) return;
                 m.Kind = m.Kind.Substring(i + 1);
+                if (RelayProtocol.IsReserved(m.Kind) || RelayProtocol.IsRouting(m.Kind)) return;   // (a reserved kind is never delivered to a player)
                 lock (sendGate) relay.Send(target, Fix(m, target));
                 return;
             }
@@ -250,6 +253,7 @@ namespace MPFever.LinuxServer
                 int i = m.Kind.IndexOf(':');
                 if (i > 0) { except = relay.Find(m.Kind.Substring(1, i - 1)); m.Kind = m.Kind.Substring(i + 1); }
             }
+            if (RelayProtocol.IsReserved(m.Kind) || RelayProtocol.IsRouting(m.Kind)) return;
             lock (sendGate)
                 foreach (var q in relay.Admitted()) if (q != host && q != except) relay.Send(q, Fix(m, q));
         }

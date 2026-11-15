@@ -4743,6 +4743,18 @@ namespace MPFever
                 }
                 return;
             }
+            // A player's message that is the relay's own is never passed on: "tun_..." kinds tell a launcher who hosts (a "tun_host" with
+            // migrate=true makes everybody that receives it take over as the host), and through a relay "@name:" and "!name:" would aim one at
+            // another player. The default below passes on what it does not know.
+            if (from != null && (RelayProtocol.IsReserved(m.Kind) || (relay is RemoteRelay && RelayProtocol.IsRouting(m.Kind))))
+            {
+                if (DateTime.UtcNow - hostOnlyWarned > TimeSpan.FromSeconds(10))
+                {
+                    hostOnlyWarned = DateTime.UtcNow;
+                    Log.W(from.Name + " sent a reserved message (" + m.Kind + "): dropped");
+                }
+                return;
+            }
             // a dedicated server: a player whose game is not in this session's world yet (it reconnected after a restart of
             // the server, still in its old world) only counts once its game has loaded the server's world: its clock,
             // actions and checks are those of another world

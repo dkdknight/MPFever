@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1869,6 +1869,11 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 string actual = c.Admission(extra, others, out var actualReason);
                 Check(expected == actual && expectedReason == actualReason, "dedicated admission ignores rp and mig");
             }
+
+            // the relay's own kinds are never a player's: a host does not pass them on (OnHostMessage), the relay drops them
+            Check(RelayProtocol.IsReserved("tun_host") && RelayProtocol.IsReserved("tun_join") && RelayProtocol.IsReserved("tun_"), "reserved kinds: tun_*");
+            Check(!RelayProtocol.IsReserved("hash") && !RelayProtocol.IsReserved("welcome") && !RelayProtocol.IsReserved("Tun_host") && !RelayProtocol.IsReserved(null) && !RelayProtocol.IsReserved(""), "reserved kinds: the game's kinds are not");
+            Check(RelayProtocol.IsRouting("@Bob#2:tun_host") && RelayProtocol.IsRouting("!Bob#2:chat") && !RelayProtocol.IsRouting("@") && !RelayProtocol.IsRouting("chat") && !RelayProtocol.IsRouting(null), "routing prefixes: @name: and !name:");
 
             // 2. who comes in
             int port = 28192;

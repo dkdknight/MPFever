@@ -156,6 +156,39 @@ a change on every player's side (the launcher's `Client`) and a certificate, whi
 use a password, prefer a private network (Tailscale, WireGuard) between the players and the server, or put a TLS tunnel (stunnel, ssh -L)
 in front. The server's `--password` is a shared secret for a group of friends, not an account system.
 
+## How long a large world takes to reach a player
+
+Through the relay the host sends **one copy of the world per player, over its single connection to the server** (64 KB binary parts, one
+thread per player), and the server forwards each copy to its player. The parallel Steam connections that a host listening itself can use
+(`steam:` addresses) are not available, so the host's upload decides, not the server:
+
+    time for every player to have the world  ~=  players x size / the host's upload speed      (if the server's link is as fast)
+
+- **What the relay itself costs, measured.** Host and players on one PC (loopback), 300 MB sent in 64 KB parts through `mpfever-relay`
+  (Windows, .NET 9, a 32-thread CPU; a throw-away benchmark that sends the world to each player from its own thread, as `SendSave` does):
+
+  | Players | Time for all of them to receive 300 MB | Rate per player | Total through the relay |
+  | --- | --- | --- | --- |
+  | 1 | 0.2 s | about 1300 MB/s | about 1300 MB/s |
+  | 2 | 0.8 s | about 370 MB/s | about 740 MB/s |
+  | 4 | 1.4 s | about 210 MB/s | about 860 MB/s |
+
+  So the server's own work (reading and forwarding the parts) is far above what an Internet connection gives: on a real connection the limit is
+  the host's upload (and the server's and the player's links), never the relay's processing. These are the relay's limits on one machine, **not**
+  a measure of a connection over the Internet, which depends on the host's, the server's and the player's links.
+- **What to expect on a connection** (calculated from the formula above, for a host's upload speed; not measured):
+
+  | Host upload | 300 MB world, 1 player | 300 MB world, 3 players | 300 MB world sent as differences (9 to 15 %, about 45 MB), 3 players |
+  | --- | --- | --- | --- |
+  | 20 Mbit/s (2.5 MB/s) | about 2 min | about 6 min | about 54 s |
+  | 100 Mbit/s (12.5 MB/s) | about 24 s | about 72 s | about 11 s |
+  | 500 Mbit/s (62.5 MB/s) | about 5 s | about 14 s | about 2 s |
+
+  A player that already has the host's last game gets the differences only (`SaveDelta`, the host's choice, see `DeltaPeers`); a new player, or one
+  that kept nothing, gets the whole world. The 9 to 15 % are the figures of the launcher's own measurements of `SaveDelta`, not of the relay.
+  The same copy per player is sent when a host listens itself, except that the Steam connections can be added there; hosting through a server
+  adds one hop and the server's bandwidth to the path, so choose a server whose link is not slower than the host's upload.
+
 ## Known limits
 
 - A guest that drops is waited for (`--grace`, 60 s: its launcher goes on with its link, the host is not told); the **host** is not: when its

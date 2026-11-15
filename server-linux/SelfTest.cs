@@ -304,6 +304,18 @@ namespace MPFever.LinuxServer
                         Check("a player cannot make the host forget another player (tun_left)", host.Find(cat) != null);
                         Check("a player cannot make the host believe in a player that is not there (tun_join)", host.Find("Ghost#99") == null);
                         Check("a player's control messages are dropped by the server, not passed on", core.DroppedControl >= 3);
+                        // (through a host that passes on what it does not know, "@Victim:tun_host" would reach Victim as a "tun_host")
+                        int before = core.DroppedControl;
+                        b.C.Send(Msg.Make("@" + cat + ":tun_host", "x", "{[\"you\"]=\"Cat#1\",[\"migrate\"]=true,[\"token\"]=\"x\"}"));
+                        b.C.Send(Msg.Make("!" + cat + ":tun_host", "x", "{[\"migrate\"]=true}"));
+                        Pause(); Pause();
+                        Check("a player's routing prefixes are dropped by the server, not passed on", core.DroppedControl >= before + 2 && !host.Find(cat).Equals(null));
+                        Check("so no player receives a tun_host from another player", c.Of("tun_host").Length == 0 && b.Of("tun_host").Length == 0);
+                        // (and a host's message that would deliver a reserved kind is not delivered either)
+                        host.Broadcast(Msg.Make("@" + cat + ":tun_host", "Hank", "{[\"migrate\"]=true,[\"token\"]=\"x\"}"));
+                        host.Broadcast(Msg.Make("!" + cat + ":tun_host", "Hank", "{[\"migrate\"]=true}"));
+                        Pause(); Pause();
+                        Check("a host's reserved kind behind a routing prefix is not delivered to a player", c.Of("tun_host").Length == 0 && b.Of("tun_host").Length == 0);
                     }
                 }
                 finally { host.Dispose(); }
@@ -446,6 +458,18 @@ namespace MPFever.LinuxServer
         /// <summary>A regular or dedicated host keeps the default reader limits, even when it has an Admit rule.</summary>
         static void Compat()
         {
+            // the reader keeps a binary message of more than 1 MB in parts only when asked to (the Linux relay): the result is the same
+            {
+                var big = new byte[3 * 1024 * 1024 + 17];
+                new Random(5).NextBytes(big);
+                var wire = new List<byte>(System.Text.Encoding.UTF8.GetBytes("resync_bin\t-\t{[\"len\"]=" + big.Length + "}\n"));
+                wire.AddRange(big);
+                bool def = !new NetReader(new System.IO.MemoryStream(wire.ToArray())).ChunkLargeBinary;
+                var plain = new NetReader(new System.IO.MemoryStream(wire.ToArray())).Read();
+                var chunked = new NetReader(new System.IO.MemoryStream(wire.ToArray())) { ChunkLargeBinary = true }.Read();
+                Check("the reader reads a large binary message straight by default, and in parts on request, with the same bytes",
+                    def && plain != null && chunked != null && plain.Data.SequenceEqual(big) && chunked.Data.SequenceEqual(big));
+            }
             Console.WriteLine("a regular Relay accepts large messages with its default settings");
             using (var relay = new Relay())
             {
