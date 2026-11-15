@@ -630,8 +630,9 @@ def case_source():
     check("a resynchronisation's save waits while a pull is under way (busy())", "if G.pull then return true end" in busy)
     co = grab(r"^G\.coEvent = function\(name, param\)\n.*?^end\n", "G.coEvent")
     held = grab(r"^local function stampHeld\(\)\n.*?^end\n", "stampHeld")
+    # (0.8.11, #331: and the batch of a game script's commands, "mpfBatch", see stampHeld: 3 in stampHeld)
     check("its load (ep = G.epoch) on every action this game makes for the queue: G.coEvent, the players' and the host's mod commands",
-          co.count("ep = G.epoch") == 1 and held.count("ep = G.epoch") == 2 and re.search(r"^\tepoch = os\.time\(\), qLedger = \{\}", SRC, re.M) is not None)
+          co.count("ep = G.epoch") == 1 and held.count("ep = G.epoch") == 3 and re.search(r"^\tepoch = os\.time\(\), qLedger = \{\}", SRC, re.M) is not None)
     q = grab(r"^local function queueLocal\(a\)\n.*?^end\n", "queueLocal")
     check("queueLocal notes both queue paths (pcall: never in the way)", q.count("pcall(G.pullNote, a)") == 2)
     check("the simulation's events pt_pull, unqueue, pt_pull_done", all(f'elseif name == "{n}" then' in SIM_EVENTS for n in ("pt_pull", "unqueue", "pt_pull_done")))

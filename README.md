@@ -101,7 +101,7 @@ Players can also join a game already running, and a lost connection reconnects b
 ### Repairs itself
 
 - The games compare their state every 10 seconds, and money is corrected at once.
-- A lasting difference reloads the host's world for everybody, in about 20 seconds.
+- A lasting difference reloads the host's world for everybody, usually in about a minute (longer on very big maps: the save goes to every player).
 
 ### Dedicated server
 

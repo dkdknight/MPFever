@@ -1,6 +1,21 @@
 MPFever - Changelog
 ===================
 
+0.8.11 - in progress
+  - FIX (#261, chris's stops of 2026-11-14 23:03, #325-#329, and #288): a stop placed on a street whose end lies more than 2 m
+    from its node (2.7 m, 11.5 m, 11.9 m in the reports; town streets of Test Leawood and Test Lag Rp have such ends too) was
+    rebuilt on the other games with the node's position as that end: the street was laid on the ground again there only (68 to
+    790 m3 of terrain aligned, trees taken away, 0 on the builder's game) and the games resynchronised. Such an end is kept now
+    when the builder's segment had the same end (within 1 cm). MPFEVER_STOPENDSBUILDER=0: the node's position, as before.
+    Autotest dstop: MPFEVER_DSTOPFAR=1 takes only segments with an end more than 2 m off its node. Test: tests/test_stopfarend0811.py.
+  - FIX (#331, Nitropc's session, 2026-11-15 00:16): the mod A Corporate World (industry_brands) took away 15,800 custom entities
+    in one go; each of its game script's commands was shipped as an action of its own, and the 15,800 actions waiting at one step
+    held the simulation for 9 minutes, the resynchronisation failed and the game was closed. A run of 16 or more commands of one
+    game script read in the same frame (none waiting for an answer, no build) now goes as one action ("mpfBatch", at most 2000
+    commands), applied in the same order with the same checks on every game. Fewer: one action each, as before.
+    MPFEVER_GSBATCH=0: one action each. Autotest scenario gsburst (300 renames in one frame). Test: tests/test_gsbatch0811.py.
+  - DOCS: a resynchronisation takes about a minute (README said 20 seconds; the median of the reports is 1 min 12 s).
+
 0.8.10 - 2026-11-14: the freezes every 10 s in long sessions fixed (#317)
   - FIX (freezes every 10 s in long sessions, #317: BeunHaas34, 0.8.8, a small map): the sync check grew from 0.01 s to 2 to
     8.7 s in two hours, stayed so after a resynchronisation and fell back with a new game only. The industries' digest (0.8.6)

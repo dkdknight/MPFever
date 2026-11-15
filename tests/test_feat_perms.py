@@ -813,6 +813,9 @@ BRIDGE_PARTS = [
     extract(BRIDGE_SRC, r"^G\.featRefuse = function\(p\)\n.*?^end\n", "G.featRefuse"),
     extract(BRIDGE_SRC, r"^G\.featGuiVeto = function\(id, name, param\)\n.*?^end\n", "G.featGuiVeto"),
     extract(BRIDGE_SRC, r"^G\.featRequest = function\(p\)\n.*?^end\n", "G.featRequest"),
+    # (0.8.11, #331: stampHeld sends a game script's bursts as one action, see G.gsBatchable)
+    extract(BRIDGE_SRC, r"^G\.GSBATCH_MIN, G\.GSBATCH_MAX = .*?\n", "G.GSBATCH_MIN"),
+    extract(BRIDGE_SRC, r"^G\.gsBatchable = function\(p\)\n.*?^end\n", "G.gsBatchable"),
     extract(BRIDGE_SRC, r"^local function stampHeld\(\)\n.*?^end\n", "stampHeld", local=True),
     extract(BRIDGE_SRC, r"^local function guiHandleEvent\(userParams, state, guiState, src, id, name, param\)\n.*?^end\n", "guiHandleEvent", local=True),
 ]

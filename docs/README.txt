@@ -73,7 +73,7 @@ WHAT WORKS
   - Money differences are corrected automatically.
   - Any other lasting difference triggers an automatic RESYNCHRONISATION: the game
     pauses, the host's game is saved and sent to every player, everybody reloads it,
-    and the game resumes (about 20 seconds).
+    and the game resumes (usually about a minute, longer on very big maps).
   - A build one game cannot reproduce makes the host resynchronise at once.
 - If the connection is lost, the player's MPFever reconnects by itself (for 5 minutes).
 - Dedicated server (NEW, in development): a PC of its own can run the world for everybody,

@@ -1500,13 +1500,43 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		if result.answered then done(result) end
 		return result
 	end
-	log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " at t=" .. tostring(gameTime()) .. " -> " .. (result.success and "OK" or "REFUSED"))
+	if not a.batchQuiet then log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " at t=" .. tostring(gameTime()) .. " -> " .. (result.success and "OK" or "REFUSED")) end
 	return result
 end
 
 -- done is called exactly once, also for an action skipped before it reached the engine (an unresolved reference...):
 -- a skipped paused action was never reported (issue #12)
+-- (0.8.11, #331) A burst of one game script's commands shipped as one action ("mpfBatch", see G.gsBatch): each command applied in
+-- its order, as its own action would have been (the same checks, skipped the same way on every game), with one line in mod.log
+-- for the whole burst. No callback per command: G.gsBatch only puts in a batch the commands sent without one.
+local function executeBatch(a, sendCommand, bind)
+	local result = { tok = a.tok, id = a.id, uid = a.uid, fn = a.fn, success = true }
+	local list = type(a.args) == "table" and type(a.args[1]) == "table" and a.args[1] or {}
+	local ok, skipped, kinds = 0, 0, {}
+	for k, item in ipairs(list) do
+		if type(item) == "table" and type(item.fn) == "string" and item.fn ~= "mpfBatch" then
+			local sub = { tok = a.tok, id = item.id, fn = item.fn, args = item.args, origin = a.origin, co = a.co, uid = tostring(a.uid) .. "#" .. k,
+				at = a.at, paused = a.paused, ep = a.ep, batchQuiet = true }
+			local okE, r = pcall(executeActionOnce, sub, sendCommand, false, bind, nil)
+			if okE and type(r) == "table" and r.success then ok = ok + 1 else skipped = skipped + 1 end
+			kinds[item.fn] = (kinds[item.fn] or 0) + 1
+		else
+			skipped = skipped + 1
+		end
+	end
+	local t = {}
+	for f, n in pairs(kinds) do t[#t + 1] = f .. " x" .. n end
+	table.sort(t)
+	log("action " .. tostring(a.uid) .. " mpfBatch of " .. #list .. " command(s) of a game script (" .. table.concat(t, ", ") .. ") at t=" .. tostring(gameTime())
+		.. ": " .. ok .. " applied, " .. skipped .. " skipped")
+	return result
+end
 executeAction = function(a, sendCommand, useCallback, bind, done)
+	if a.fn == "mpfBatch" then
+		local r = executeBatch(a, sendCommand, bind)
+		if done then done(r) end
+		return r
+	end
 	if not (useCallback and done) then return executeActionOnce(a, sendCommand, useCallback, bind, done) end
 	local fired = false
 	local function once(r)
@@ -6063,6 +6093,19 @@ local function replayStop(a, plan, variant)
 	-- in that session, none laid one again).
 	-- An end more than 2 m from its node on any axis is taken for a bad read: the node's position then, logged once.
 	-- MPFEVER_STOPNODEPOS=1: the nodes' positions, as before
+	-- ((0.8.11, #261: chris's stops of 2026-11-14 23:03 (#325-#329) and #288) Ends 2.7 m, 11.5 m and 11.9 m off their nodes are real:
+	-- the builder's segment had the same ends (the copy's ends, plan.seg.comp). Rebuilt with the node's position, the street was
+	-- laid on the ground again on the replaying games only: 68 to 790 m3 of terrain aligned and trees taken away, against 0 on
+	-- the builder's game, and a resynchronisation each time. An end farther than 2 m that is one of the builder's ends (within
+	-- 1 cm) is kept now. MPFEVER_STOPENDSBUILDER=0: the node's position, as before)
+	local function builderEnd(q)
+		if os.getenv("MPFEVER_STOPENDSBUILDER") == "0" then return false end
+		for _, b in ipairs({ sc.position0, sc.position1 }) do
+			if type(b) == "table" and type(b.x) == "number" and type(b.y) == "number" and type(b.z) == "number"
+				and math.abs(q.x - b.x) < 0.01 and math.abs(q.y - b.y) < 0.01 and math.abs(q.z - b.z) < 0.01 then return true end
+		end
+		return false
+	end
 	local function segEnd(k)
 		local np = sNodePos((k == 0) and c.node0 or c.node1)
 		if os.getenv("MPFEVER_STOPNODEPOS") ~= "1" then
@@ -6070,6 +6113,13 @@ local function replayStop(a, plan, variant)
 			if okp and type(q) == "table" and type(q.x) == "number" and type(q.y) == "number" and type(q.z) == "number" then
 				if not np and q.x == q.x and q.y == q.y and q.z == q.z then return sVec(q) end
 				if np and math.abs(q.x - np.x) < 2 and math.abs(q.y - np.y) < 2 and math.abs(q.z - np.z) < 2 then return sVec(q) end
+				if q.x == q.x and q.y == q.y and q.z == q.z and builderEnd(q) then
+					if not plan.farEndLogged then
+						log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: segment " .. plan.E .. " end " .. k .. " lies far from its node, as on the builder's game: kept")
+					end
+					plan.farEndLogged = true
+					return sVec(q)
+				end
 			end
 			if not plan.endLogged then
 				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: segment " .. plan.E .. " end " .. k .. " not usable ("
@@ -11398,11 +11448,71 @@ G.coEvent = function(name, param)
 end
 
 -- commands held by the UI hook: stamp them (two steps ahead, or at the pause point) and ship them
+-- (0.8.11, #331: Nitropc's session, 2026-11-15 00:16, the mod A Corporate World (industry_brands) took away 15,800 custom entities
+-- in one go, each a command of its game script: 15,800 actions, every one in the simulation's queue at the same step; the queue's
+-- state, made again at every update, held the simulation for 9 minutes, the resynchronisation failed and the game was closed) A run
+-- of at least G.GSBATCH_MIN commands of the game scripts in a row (the same "gsmod-" token, none waiting for an answer, none a
+-- build) read in one frame goes as one action, "mpfBatch", of at most G.GSBATCH_MAX commands, applied in the same order at the
+-- same step on every game (see executeBatch). Fewer: one action each, as before. MPFEVER_GSBATCH=0: one action each, as before
+G.GSBATCH_MIN, G.GSBATCH_MAX = 16, 2000
+G.gsBatchable = function(p)
+	if os.getenv("MPFEVER_GSBATCH") == "0" or type(p) ~= "table" or type(p.tok) ~= "string" or p.tok:sub(1, 6) ~= "gsmod-" then return false end
+	if p.fn == "makeWorldBuildProposalCmd" or p.fn == "mpfBatch" or type(p.fn) ~= "string" then return false end
+	local h = package.loaded["mpfever_gs_hook"]
+	if type(h) == "table" and type(h.pending) == "table" and h.pending[p.id] ~= nil then return false end
+	return true
+end
 local function stampHeld()
+	local entries = {}
 	for _, line in ipairs(readLines("ui.log", "uiOff")) do
 		local kind, _, payload = parseLine(line)
-		local p = payload and C.deser(payload)
-		if p and kind == "act_req" and G.resyncRefuse(p.fn) then
+		entries[#entries + 1] = { kind = kind, p = payload and C.deser(payload) }
+	end
+	-- (the runs of a game script's commands that go as one action, see G.gsBatchable)
+	local i = 1
+	while i <= #entries do
+		local e = entries[i]
+		if e.kind == "act_req" and G.gsBatchable(e.p) then
+			local j = i
+			while j + 1 <= #entries and j + 1 - i < G.GSBATCH_MAX and entries[j + 1].kind == "act_req" and G.gsBatchable(entries[j + 1].p)
+				and entries[j + 1].p.tok == e.p.tok do
+				j = j + 1
+			end
+			if j - i + 1 >= G.GSBATCH_MIN then
+				local list = {}
+				for k = i, j do list[#list + 1] = { fn = entries[k].p.fn, args = entries[k].p.args, id = entries[k].p.id } end
+				entries[i] = { kind = "act_req", p = { tok = e.p.tok, id = e.p.id, fn = "mpfBatch", args = { n = 1, list }, co = e.p.co } }
+				for k = i + 1, j do entries[k] = { kind = "batched" } end
+				log("mods: " .. #list .. " commands of a game script in a row (" .. tostring(e.p.fn) .. " first) shipped as one action")
+			end
+			i = j + 1
+		else
+			i = i + 1
+		end
+	end
+	for _, ent in ipairs(entries) do
+		local kind, p = ent.kind, ent.p
+		-- (a batch: each of its commands checked as its own action would have been, once; the refused ones taken out)
+		if p and kind == "act_req" and p.fn == "mpfBatch" then
+			local keep = {}
+			for _, item in ipairs(p.args[1]) do
+				if not G.resyncRefuse(item.fn) and not (G.featOn and G.featAllow and G.featRefuse({ tok = p.tok, id = item.id, fn = item.fn, args = item.args, co = p.co })) then
+					keep[#keep + 1] = item
+				end
+			end
+			p.args[1] = keep
+			if #keep == 0 then p = nil end
+		end
+		if p and kind == "act_req" and p.fn == "mpfBatch" then
+			-- (checked above)
+			local now = gameTime()
+			G.oseq = G.oseq + 1
+			local paused = G.session.pauseAt ~= nil and now >= G.session.pauseAt and gameSpeed() == 0
+			local a = { tok = p.tok, id = p.id, fn = p.fn, args = p.args, origin = G.me, oseq = G.oseq, co = tonumber(p.co) or G.myCo,
+				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil, ep = G.epoch }
+			send("act", a)
+			queueLocal(a)
+		elseif p and kind == "act_req" and G.resyncRefuse(p.fn) then
 			-- (refused: never applied here, never sent)
 		elseif p and kind == "act_req" and G.featOn and G.featAllow and G.featRefuse(p) then
 			-- (0.6, refused by a game option: never applied here, never sent; the window's command gets its refusal, see G.featRefuse)
@@ -14387,6 +14497,42 @@ H.leadhold = function(from, p)
 		G.waits[#G.waits + 1] = { at = G.frames + 60, fn = keep }
 	end
 	keep()
+end
+
+-- (0.8.11, #331) A game script's burst (MPFEVER_SCENARIO=gsburst): MPFEVER_GSBURST_N (300) renames of one line (else station, else
+-- town) of the savegame in one frame, written as a game script's commands are ("gsmod-" token, see G.installGsMods): they go as
+-- "mpfBatch" actions (G.gsBatchable), every game applies them in order and ends with the last name; the checks' "names" must stay
+-- alike. With MPFEVER_GSBATCH=0 the same burst goes as 300 actions, as before.
+H.gsburst = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST gsburst " .. t); AUTO.results[#AUTO.results + 1] = t end
+	local ok, err = pcall(function()
+		local target, kind = nil, nil
+		for _, k in ipairs({ "LINE", "STATION_GROUP", "TOWN" }) do
+			for _, e in ipairs(R.entitiesWith(k)) do
+				if api.engine.getComponent(e, api.type.ComponentType.NAME) then target, kind = e, k; break end
+			end
+			if target then break end
+		end
+		if not target then say("no named entity"); return autoFinish() end
+		local n = tonumber(os.getenv("MPFEVER_GSBURST_N") or "300") or 300
+		local tok = "gsmod-auto-" .. C.ROLE
+		local lines = {}
+		for k = 1, n do
+			lines[#lines + 1] = C.line("act_req", { tok = tok, id = k, fn = "makeEntitySetNameCmd", args = { n = 2, target, "MPF burst " .. C.ROLE .. " " .. k } })
+		end
+		C.appendFile(C.DIR .. BS .. "ui.log", table.concat(lines))
+		say(n .. " renames of " .. kind .. " " .. target .. " written in one frame")
+		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
+			local nm = api.engine.getComponent(target, api.type.ComponentType.NAME)
+			say("name now: " .. tostring(nm and nm.name))
+			autoFinish()
+		end }
+	end)
+	if not ok then say("error " .. tostring(err)); autoFinish() end
 end
 
 -- Build and demolish scenario (MPFEVER_SCENARIO=dozenew): this game lays a road and demolishes its new segments a second after
@@ -19793,7 +19939,9 @@ H.dstop = function(from, p)
 				if (len > 40 and len < 120) or (bridge and len > 12) then
 					list[#list + 1] = e
 					local d0, d1 = G.autoEndsOff(c)
-					if d0 and (d0 > 0 or d1 > 0) then offList[#offList + 1] = e end
+					-- ((0.8.11, #261) MPFEVER_DSTOPFAR=1: only an end more than 2 m off its node counts, the case of chris's stops)
+					local far = os.getenv("MPFEVER_DSTOPFAR") == "1"
+					if d0 and ((not far and (d0 > 0 or d1 > 0)) or (far and (d0 > 2 or d1 > 2))) then offList[#offList + 1] = e end
 				end
 			end
 		end
