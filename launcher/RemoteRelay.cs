@@ -30,8 +30,8 @@ namespace MPFever
         /// <summary>The connection to the server was lost: the session cannot go on.</summary>
         public event Action<string> Lost;
 
-        // The server admits the players (version, password, places) and waits for those who drop (it has its own link with each):
-        // these are the Relay's settings, of no use here.
+        // The server checks the relay protocol, password and places and waits for players who drop.
+        // The host supplies Admit for its own version and public-game rules.
         public Func<Peer, bool> MayWait { get; set; }
         public double Grace { get; set; }
         public Func<Peer, Msg, string> Admit { get; set; }
@@ -54,7 +54,7 @@ namespace MPFever
         public void FinalizeAway(string why) { }
 
         /// <summary>Connects to the server as its host. Throws with the server's reason when it refuses (another host, wrong password,
-        /// version...).</summary>
+        /// relay protocol...).</summary>
         public void Connect(string host, int port, string name, string password, string migrationToken = null)
         {
             client.Received += OnServerMessage;
@@ -94,8 +94,8 @@ namespace MPFever
                         var p = new Peer { Id = Interlocked.Increment(ref nextId), Name = name, Admitted = true,
                             Address = t.TryGetValue("addr", out var a) ? a as string : "" };
                         // The relay checks the password, the places and the relay protocol; the rest of the admission is the host's, as with a host that
-                        // listens itself (the same MPFever version between players, the rules of a public game...): Admit gets the join as the relay
-                        // saw it. A refused player is sent away with the host's own "denied" and never reaches Joined.
+                        // listens itself (the same MPFever version between players, the rules of a public game...). Admit receives the version
+                        // from tun_join. A refused player gets the host's own "denied" and never reaches Joined.
                         var admit = Admit;
                         if (admit != null)
                         {

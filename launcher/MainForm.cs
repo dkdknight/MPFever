@@ -3601,6 +3601,7 @@ namespace MPFever
                 case "hosted": return T("Quelqu'un héberge déjà sur ce serveur : rejoignez-le.", "Somebody already hosts on this server: join it instead.");
                 case "password": return T("Mot de passe du serveur refusé (serverpw= dans mpfever_settings.txt).", "The server's password was refused (serverpw= in mpfever_settings.txt).");
                 case "version": return T("Le serveur utilise une autre version de MPFever.", "The server runs another MPFever version.");
+                case "relay": return DeniedText(new Dictionary<object, object> { ["reason"] = "relay" });
                 case "full": return T("Le serveur est plein.", "The server is full.");
                 default: return e.Message;
             }
@@ -3630,7 +3631,8 @@ namespace MPFever
             leftSession = null;   // (a report describes this session now)
             hostName = name;
             // (a host that has a server in mpfever_settings.txt hosts through it: no port to open, one address for everybody)
-            string serverSpec = ServerSetting(out string serverPw);
+            string serverPw = null;
+            string serverSpec = server == null ? ServerSetting(out serverPw) : null;
             if (serverOverride != null) { serverSpec = serverOverride; serverPw = serverPasswordOverride ?? ""; }
             RemoteRelay remote = serverSpec != null ? new RemoteRelay() : null;
             relay = remote != null ? (IRelay)remote : new Relay();

@@ -443,10 +443,10 @@ namespace MPFever.LinuxServer
             }
         }
 
-        /// <summary>A host that listens itself (Relay without Admit, as the launcher uses it) must behave as before: no limit on what a connection sends.</summary>
+        /// <summary>A regular or dedicated host keeps the default reader limits, even when it has an Admit rule.</summary>
         static void Compat()
         {
-            Console.WriteLine("a Relay without Admit (the launcher's own host) is unchanged");
+            Console.WriteLine("a regular Relay accepts large messages with its default settings");
             using (var relay = new Relay())
             {
                 var got = new List<Msg>();
@@ -468,6 +468,60 @@ namespace MPFever.LinuxServer
                     }
                 }
             }
+            using (var joined = new ManualResetEventSlim())
+            using (var relay = new Relay())
+            {
+                string pad = new string('p', 300 * 1024);
+                string join = "{[\"pad\"]=" + LuaLit.Quote(pad) + "}";
+                relay.Admit = (p, m) => m.Payload == join ? null : "{[\"reason\"]=\"test\"}";
+                relay.Joined += p => joined.Set();
+                relay.Start(0);
+                using (var raw = new Raw(relay.Port))
+                {
+                    var data = new byte[3 * 1024 * 1024];
+                    raw.Send("resync_bin\t-\t{[\"len\"]=" + data.Length + "}\n");
+                    raw.Send(data);
+                    raw.Send("join\tGuest\t" + join + "\n");
+                    Check("default Relay with Admit consumes 3 MB of binary then reads a 300 KB join before admission", joined.Wait(5000));
+                }
+            }
+        }
+
+        static bool SameLiteral(object left, object right)
+        {
+            if (left is Dictionary<object, object> table)
+                return right is Dictionary<object, object> other && table.Count == other.Count
+                    && table.All(kv => other.TryGetValue(kv.Key, out var value) && SameLiteral(kv.Value, value));
+            return Equals(left, right);
+        }
+
+        static void ParserCompatibility()
+        {
+            var random = new Random(334);
+            string[] scalars = { "true", "false", "nil", "-33", "1.25", "2E+3", "-7.3e-4", "\"é\\n\\r\\\"\\\\\\065\"" };
+            string Scalar() => scalars[random.Next(scalars.Length)];
+
+            string Table(int depth)
+            {
+                string Value() => depth > 0 && random.Next(4) == 0 ? Table(depth - 1) : Scalar();
+                var fields = new List<string>();
+                for (int i = 0, count = random.Next(1, 9); i < count; i++)
+                {
+                    string value = Value();
+                    if (i % 3 == 0) fields.Add(value);
+                    else fields.Add("[" + (i % 3 == 1 ? i.ToString() : "\"k" + i + "\"") + "] = " + value);
+                }
+                return "{ " + string.Join(" ,\t", fields) + " }";
+            }
+
+            const int count = 4096;
+            int matches = 0;
+            for (int i = 0; i < count; i++)
+            {
+                string input = Table(i % 6);
+                if (SameLiteral(LegacyLuaLit.Parse(input), LuaLit.Parse(input))) matches++;
+            }
+            Check("generated valid tables match the 0.8.11 parser (" + matches + "/" + count + ")", matches == count);
         }
 
         /// <summary>The reader of Lua literals sees text from players: it must end, and not overflow the stack.</summary>
@@ -494,6 +548,7 @@ namespace MPFever.LinuxServer
             Check("a backslash and a Unicode digit in a string do not throw", Quick("{[\"a\"]=\"x\\\u0661\u0662\"}", out v));
             Check("a normal message is still read as before", Quick("{[\"name\"]=\"Bob#2\",[\"n\"]=12.5,[\"t\"]={[\"a\"]=true,[\"b\"]=nil,[1]=\"x\"}}", out v)
                 && v is Dictionary<object, object> d && (string)d["name"] == "Bob#2" && (double)d["n"] == 12.5 && d["t"] is Dictionary<object, object> t && (bool)t["a"] && (string)t[1L] == "x");
+            ParserCompatibility();
         }
 
         /// <summary>The timer of an attempt and the successor's takeover can meet (review of the pull request): a takeover that slips in
@@ -603,15 +658,17 @@ namespace MPFever.LinuxServer
                         ok.C.Send(Msg.Make("hello", "x", "{}"));
                         Check("the other players and the service are fine", new Func<bool>(() => { for (int i = 0; i < 100; i++) { lock (rx) if (rx.Any(m => m.Kind == "hello")) return true; Thread.Sleep(30); } return false; })());
                     }
-                    using (var nov = new Raw(port))
+                    foreach (var protocol in new[] { "", ",[\"rp\"]=999", ",[\"rp\"]=1.5" })
                     {
-                        nov.Send("join\tNoProtocol\t{[\"v\"]=\"x\"}\n");
-                        Check("a join without the relay protocol is refused and closed", nov.ClosedBy(3000));
-                    }
-                    using (var old = new Raw(port))
-                    {
-                        old.Send("join\tOther\t{[\"v\"]=\"x\",[\"rp\"]=999}\n");
-                        Check("a join with another relay protocol is refused and closed", old.ClosedBy(3000));
+                        using (var raw = new Raw(port))
+                        {
+                            raw.T.ReceiveTimeout = 3000;
+                            raw.Send("join\tProtocol\t{[\"v\"]=\"x\"" + protocol + "}\n");
+                            var denied = new NetReader(raw.T.GetStream()).Read();
+                            Check("absent or different relay protocol is refused with reason relay (" + protocol + ")",
+                                denied != null && denied.Kind == "denied" && Field(denied, "reason") == "relay"
+                                && Field(denied, "rp") == RelayProtocol.Number.ToString() && raw.ClosedBy(3000));
+                        }
                     }
                     using (var oldver = new Raw(port))
                     {

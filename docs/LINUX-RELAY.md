@@ -1,7 +1,7 @@
 # MPFever session server for Linux (tunnel mode)
 
 Status: **works with two real games** (`MPFever.exe --autotest`, one host and one client through the server, also through a server on
-a remote Linux VPS): `IN SYNC, desyncs 0, refused 0`. Host migration (`--migration`) works with three real games, see "Host migration".
+a remote Linux VPS): `IN SYNC, desyncs 0, refused 0`. Experimental host migration has been tested with three real games.
 
 ## What it is
 
@@ -29,8 +29,18 @@ server=my.server.example:28090
 serverpw=SECRET
 ```
 
-then hosts from the game's Multiplayer page as usual. The players join `my.server.example:28090` (and the password) as for any host. Without
-`server=` nothing changes. Everybody needs the same MPFever version as the server (it refuses others, like the dedicated server does).
+then hosts from the game's Multiplayer page as usual. The players join `my.server.example:28090` and enter the password as for any host.
+Without `server=` the player hosts directly. The Windows dedicated server listens directly and uses its own admission settings.
+
+## Relay protocol
+
+The relay protocol number is `1` (`RelayProtocol.Number`). The hosting and joining launchers send it as `rp` when they join.
+The relay refuses a missing or different number with reason `relay`. Launchers and the relay can come from different
+MPFever releases if they speak the same relay protocol. The host applies its usual MPFever version rule using the version
+in `tun_join`. The guest still checks the host's version in `welcome`.
+
+Raise the relay protocol number when an incompatible change affects the message format, admission, reconnection, or a
+`tun_*` message. An MPFever release by itself requires no change to the relay protocol number.
 
 ## How it works
 
@@ -38,27 +48,36 @@ The wire format is in the comment of `server-linux/SessionCore.cs`. In short: th
 (`RemoteRelay`, `launcher/RemoteRelay.cs`, the same surface as `Relay` through the new `IRelay`). The server tells it which players
 came in and left (`tun_join`, `tun_left`) and forwards what they send; the host's messages go back through it: to everybody, to everybody
 but one (`!name:kind`, the host's `Broadcast(m, except)`) or to one player (`@name:kind`). A savegame sent to a player is a binary message
-and goes through untouched. The server decides who may come in (version, password, places, one host at a time) and nothing else.
+and goes through untouched. The relay checks the relay protocol, password, available places and the host role. The host applies its own
+admission rules and can send a refusal through the relay.
 
-What it does not do: a player that drops is not waited for (the host's 60 s grace is not used through a server yet); the Steam
-tunnelling (`steam:` addresses) and the router port mapping are off for a host that uses a server.
+| Message | Fields | Purpose |
+| --- | --- | --- |
+| `tun_join` | `name`, `addr`, `v` | Tells the host the guest's name, address and MPFever version. The relay keeps the password. |
+| `tun_left` | `name` | Tells the host a guest has left. |
+| `tun_host` | `you`, `epoch`, `migrate`, `prev`, `token` | Assigns the host role or asks a player to take it over. |
+| `tun_players` | `n` | Marks the end of the guest announcements after a takeover. |
+| `tun_kick` | `name`, `payload` | Sends a host's refusal or kick to a guest and disconnects it. |
+
+The relay waits for a dropped guest for up to `--grace` seconds. Steam tunnelling (`steam:` addresses) and router
+port mapping are off for a host that uses a relay.
 
 ## Tests
 
-- `mpfever-relay --selftest`: 65 checks, no game: admission, routing to and from the host, savegame-sized binary messages, kick, and the host's
+- `mpfever-relay --selftest`: admission, routing to and from the host, savegame-sized binary messages, kick, and the host's
   `RemoteRelay` against the server; also the migration below.
 - `MPFever.exe --selftest` (unchanged, passes).
 - With a game: `set MPFEVER_SERVER=127.0.0.1:28090` and `MPFever.exe --autotest <savegame>` with the server running (or reached through
   `ssh -L 28090:127.0.0.1:28090 vps`): two real games build roads and upgrade streets through the server; the verdict is `IN SYNC`.
 
-## Host migration
+## Host migration (experimental)
 
-`mpfever-relay --migration`: when the host leaves, a player that can take over does, instead of the session ending. No player has to
-reconnect; they see the world stop and a resynchronisation (a loading screen) of about 25 s on the test save.
+Host migration is experimental and off by default. Enable it with `mpfever-relay --migration`. When a successor
+takes over, the remaining players stay connected and see a resynchronisation. The loading screen took about 25 s on the test save.
 
 How it goes (`server-linux/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` in `launcher/MainForm.cs`):
 
-1. A launcher that has the takeover code says so when it joins (`mig` in its join). One that does not (an older MPFever) is never asked.
+1. The relay only considers players that advertised takeover support in their join (`mig`).
 2. The host's connection ends. The server asks the oldest player that can take over (`tun_host { migrate, prev, epoch, token }`). The token
    is random (128 bits), made for this attempt and this player, and valid once.
 3. The successor's launcher stops acting as a client (its game and its connection stay), sets the host state it knows (session started,
@@ -68,6 +87,19 @@ How it goes (`server-linux/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` i
 5. The launcher tells every game that the old host and its own old name are gone (`peerleft`): a game that kept their last clock would wait
    for them for ever. It then starts the host's own resynchronisation: it pauses everybody, saves its game, reloads it (as the host: the role
    is read when a game loads) and sends the save to the others, as for any resynchronisation.
+
+| State | After a takeover | Code |
+| --- | --- | --- |
+| World | The successor saves and reloads its current world as host and sends that save to the other players. This includes companies present in the save. | `PromoteToHost`, `Resync` |
+| Running state, speed, company mode | The successor marks the session started, uses the last positive speed it received (default 1), and uses the received shared or separate mode when known. Scheduled pauses and the old host's resync state are reset. | `hostSessionSpeed`, `hostCompanyMode`, `pauseAt`, `SessionPayload` |
+| Connected players and Steam invitations | The relay re-announces the guests. The successor refreshes Steam presence with the same relay address when Steam is enabled for the menu game. | `tun_join`, `tun_players`, `InviteConnect` |
+| Lobby rules and AI configuration | The old lobby's starting money, bankruptcy delay, sharing rules, auctions and AI setup are not transferred. The successor computes its own session payload. | `StartMoney`, `BankruptMonths`, `ShareRules`, `AuctionRule`, `lobbyAi`, `AiPayload` |
+| Game and launcher options | The successor computes the settings it advertises from its own launcher state. This includes the launcher settings for waiting and stopping where enabled. | `GameOptions`, `Options.SessionPayload`, `MPFEVER_NOWAIT`, `MPFEVER_NOSTOP` |
+| Autosaves, public games, reports and chat | No transfer of the old host's autosave schedule or files, public listing, approvals and ban list, report requests, or chat backlog for new arrivals. | `HostAutosaveTick`, `PublicGames.cs`, `ReportShare.cs`, `chatLog` |
+| Mods and DLCs | The save carries its own world content. The successor uses the information it built locally as a guest and does not receive the old host's mod/DLC bookkeeping. | `lobbyMods`, `lobbyModsKnown`, `lastHostDlcs`, `SessionDlcs` |
+
+Guests keep their last seen chat ID (`lastChatId`). Since the successor uses its own chat counter (`chatId`), guests may skip
+new chat messages until that counter exceeds the last ID they saw.
 
 If the successor does not connect within `--migration-timeout` seconds or leaves, it is not asked again for this migration and the next
 player is; when nobody is left, the session ends and every player is disconnected. If the new host's connection drops later, a new migration
@@ -105,7 +137,7 @@ for the host, then two `MPFever.exe --autoclient 127.0.0.1:28090 <save> <name>` 
 The server may be reachable from the Internet, so what a connection can do before it is let in, and what a player can do to the others, is
 limited on purpose (each point has a test in `mpfever-relay --selftest`):
 
-- **Before a player is let in:** a line longer than 64 KB, or any binary message, ends the connection; a connection that has not joined within
+- **Before a player is let in:** the Linux relay opts in to a 64 KB line limit and rejects binary messages. A connection that has not joined within
   15 s is cut; no more than 64 connections (`--max-connections`) are accepted at once; a `join` that cannot be read is refused (the Relay lets
   a player in when its admission check throws: this one refuses).
 - **Passwords:** compared in constant time; 5 wrong ones from an address refuse that address for 5 minutes, even with the right one (the table
@@ -143,13 +175,22 @@ in front. The server's `--password` is a shared secret for a group of friends, n
 
 ## Deploying
 
-Build: `dotnet publish server-linux -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true`. A systemd unit that keeps it small
-and contained (the server writes nothing to disk):
+Download `mpfever-relay` and `mpfever-relay.sha256` from the [release assets](https://github.com/dkdknight/MPFever/releases/latest)
+once attached. The Release build workflow produces both in the `mpfever-relay-linux-x64` artifact. The code-signing policy covers the Windows
+release files. The Linux relay is unsigned. On Linux, check the download and make the binary executable from the directory containing both files.
+
+```sh
+sha256sum -c mpfever-relay.sha256
+chmod +x mpfever-relay
+```
+
+To build from source, run `dotnet publish server-linux -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true`.
+The server writes nothing to disk. An example systemd service follows.
 
 ```
 [Service]
 User=mpfever
-EnvironmentFile=/etc/default/mpfever-relay      # MPFEVER_RELAY_OPTS=--port 28090 --password SECRET --migration
+EnvironmentFile=/etc/default/mpfever-relay      # MPFEVER_RELAY_OPTS=--port 28090 --password SECRET
 ExecStart=/opt/mpfever-relay/mpfever-relay $MPFEVER_RELAY_OPTS
 Restart=on-failure
 NoNewPrivileges=true
@@ -159,4 +200,5 @@ PrivateTmp=true
 Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/tmp
 ```
 
-Open the TCP port of `--port` in the firewall. Every player needs the same MPFever version as the server (it says so when it refuses one).
+Open the TCP port configured with `--port` in the firewall. Use launchers that speak the relay protocol number printed by
+`mpfever-relay --help`.

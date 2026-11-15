@@ -65,6 +65,7 @@ namespace MPFever.LinuxServer
             relay.Admit = Admit;
             relay.Joined += OnJoined;
             relay.Left += OnLeft;
+            relay.StrictBeforeAdmission = true;
             relay.UnadmittedTimeoutSeconds = opt.UnadmittedTimeoutSeconds;
             relay.MaxConnections = opt.MaxConnections;
             // a guest that drops is waited for, as a host of its own would (its launcher goes on with its link); the host is not: a migration starts
@@ -117,9 +118,11 @@ namespace MPFever.LinuxServer
             catch (Exception e)
             {
                 Log.Warn(p.Name + " (" + p.Address + ") refused: its join could not be read (" + e.Message + ")");
-                return "{[\"reason\"]=\"version\",[\"v\"]=" + LuaLit.Quote(MainForm.Version) + "}";
+                return ProtocolDenied;
             }
         }
+
+        static string ProtocolDenied => "{[\"reason\"]=\"relay\",[\"rp\"]=" + RelayProtocol.Number + "}";
 
         string AdmitCore(Peer p, Msg m)
         {
@@ -130,8 +133,12 @@ namespace MPFever.LinuxServer
             var ip = AddressOf(p);
             int others = relay.Admitted().Count(o => o != p && !string.Equals(BaseName(o.Name), me, StringComparison.OrdinalIgnoreCase));
             // (the relay checks the protocol it speaks, not the MPFever version: the host checks the version between players, see RemoteRelay)
-            if (!(t.TryGetValue("rp", out var rpv) && rpv is double rpd && (int)rpd == RelayProtocol.Number)) { reason = "relay"; extra = ",[\"rp\"]=" + RelayProtocol.Number; }
-            else if (opt.Password != "" && LockedOut(ip)) reason = "password";   // (too many wrong ones from this address: even the right one waits)
+            if (!t.TryGetValue("rp", out var rpv) || !(rpv is double rp) || rp != RelayProtocol.Number)
+            {
+                Log.Warn(me + " (" + p.Address + ") refused: relay");
+                return ProtocolDenied;
+            }
+            if (opt.Password != "" && LockedOut(ip)) reason = "password";   // (too many wrong ones from this address: even the right one waits)
             else if (opt.Password != "" && !SamePassword(S("pw"), opt.Password)) { reason = "password"; NoteBadPassword(ip); }
             else if (others >= opt.MaxPlayers) { reason = "full"; extra = ",[\"max\"]=" + opt.MaxPlayers; }
             else if (WantsHost(t) && HasHost && !IsAwaitedSuccessor(me, S("mtok"))) reason = "hosted";   // somebody hosts this server already: join it

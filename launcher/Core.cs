@@ -1164,6 +1164,11 @@ namespace MPFever
         /// version and the number of players): null lets it in, otherwise the payload of the "denied" message it receives
         /// before its connection is closed. Unset: everybody comes in.</summary>
         public Func<Peer, Msg, string> Admit { get; set; }
+        /// <summary>True: a connection that is not let in yet (it has an Admit that has not said yes) may only send a short text line
+        /// (64 KB), no binary message, so that anybody on the Internet cannot make this process hold megabytes for nothing. False (the
+        /// default): nothing is limited, as it always was. Only the Linux relay (server-linux/) sets it; a launcher's host, a dedicated
+        /// server and public games never do.</summary>
+        public bool StrictBeforeAdmission { get; set; }
         /// <summary>With Admit: seconds a connection may stay without being let in before it is cut (0: no limit, as before). A host that
         /// listens on the Internet (the Linux server) sets it: a connection that says nothing otherwise stays for ever.</summary>
         public int UnadmittedTimeoutSeconds { get; set; }
@@ -1313,10 +1318,10 @@ namespace MPFever
                 Msg m;
                 while (true)
                 {
-                    // (a connection not let in yet: a short text line, nothing else; a host without Admit lets everybody in at once, as before)
-                    bool inNow = In(p);
-                    r.MaxLine = inNow ? int.MaxValue : 64 * 1024;
-                    r.AllowBinary = inNow || p.IsBulk;
+                    // (StrictBeforeAdmission, the Linux relay only: a connection not let in yet may send a short text line, nothing else)
+                    bool strict = StrictBeforeAdmission && !In(p);
+                    r.MaxLine = strict ? 64 * 1024 : int.MaxValue;
+                    r.AllowBinary = !strict || p.IsBulk;
                     if ((m = r.Read()) == null) break;
                     Interlocked.Exchange(ref p.LastRecvTicks, DateTime.UtcNow.Ticks);
                     if (m.Kind == "steamtun")

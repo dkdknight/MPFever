@@ -1856,6 +1856,20 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                   "settings: values, " + problems.Count + " line(s) ignored");
             try { Directory.Delete(dir, true); } catch { }
 
+            // The regular host and Windows dedicated server read the same fields when a launcher also supports the Linux relay.
+            foreach (var version in new[] { MainForm.Version, "0.0.1" })
+            foreach (var password in new[] { c.Password, "wrong" })
+            foreach (var others in new[] { 0, c.MaxPlayers })
+            {
+                string join = "{[\"v\"]=" + LuaLit.Quote(version) + ",[\"pw\"]=" + LuaLit.Quote(password);
+                string plain = join + "}";
+                string extra = join + ",[\"rp\"]=" + RelayProtocol.Number + ",[\"mig\"]=true}";
+                Check(MainForm.VersionAdmit(plain) == MainForm.VersionAdmit(extra), "host admission ignores rp and mig");
+                string expected = c.Admission(plain, others, out var expectedReason);
+                string actual = c.Admission(extra, others, out var actualReason);
+                Check(expected == actual && expectedReason == actualReason, "dedicated admission ignores rp and mig");
+            }
+
             // 2. who comes in
             int port = 28192;
             var relay = new Relay();
