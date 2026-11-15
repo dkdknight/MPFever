@@ -190,6 +190,7 @@ The savegames are in `Steam\userdata\<number>\3493540\local\save\` (Steam) or `%
 | Launcher | `launcher/` (C#, .NET Framework 4.8) | Hosts or joins over TCP, starts the game, installs the mod and the native module. It relays actions, compares the games' state and runs the resyncs. With `--server`, it is the dedicated server. |
 | Game mod | `mod/mpfever_1/` (Lua) | Captures player actions and replays them in every game at the same game time (barrier lockstep). It computes the state checksums and manages the companies. It also draws the multiplayer page and the in-game windows. It does nothing unless the game was started by the launcher. |
 | Native module | `native/` (C++, no CRT) | `winhttp.dll` in the game folder, a pass-through proxy. In a session, it holds construction commands until the shared step, copies terrain edits, separates each player's company, and fixes the game's sources of randomness and its pacing. |
+| Linux session server | `server-linux/` (C#, .NET 9) | An optional meeting point for a session that runs on any small Linux server, with no game on it: the first player in hosts through it (no port to open, one address for everybody) and, with `--migration`, the next player takes over when the host leaves, without anyone reconnecting. See [LINUX-RELAY](docs/LINUX-RELAY.md). |
 | Tests | `tests/` (Python + lupa) | Language files and a simulated lockstep. |
 
 The launcher and the game talk through files in `%TEMP%\mpfever\<session>\`. No process injection is used.

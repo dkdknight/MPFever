@@ -18,3 +18,8 @@ __pycache__/
 dev-test.bat
 dev-test - Server.bat
 serverlist/obj/
+
+# Linux relay server (docs/LINUX-RELAY.md)
+server-linux/bin/
+server-linux/obj/
+artifacts/
