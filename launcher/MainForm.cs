@@ -3544,7 +3544,10 @@ namespace MPFever
                 var r0 = relay;
                 new Thread(() =>
                 {
-                    // the server says when it has announced every player that was there (tun_players): no guess about how long that takes
+                    // the server says when it has announced every player that was there (tun_players): no guess about how long that takes.
+                    // On a timeout (a server older than tun_players, which says nothing) it goes on, as the first version did: a player announced
+                    // later is a new arrival for the host's code, which sends it the host's game by itself (joinPending). The connection to a
+                    // live server cannot lose the message: if it were broken the host connection would be gone and a new migration would start.
                     if (r0 is RemoteRelay rr0 && !rr0.WaitPlayersAnnounced(15000)) Log.Warn(T("Changement d'hôte : la liste des joueurs n'est pas arrivée en 15 s, on continue.", "Host change: the list of players did not arrive within 15 s, going on."));
                     if (relay != r0 || resyncing) return;
                     joinPending = false;

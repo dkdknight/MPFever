@@ -45,6 +45,8 @@ namespace MPFever.LinuxServer
         public string HostPlayer { get { lock (hostGate) return (phase == Phase.AwaitingSuccessor ? candidate : host)?.Name; } }
         public bool Migrating { get { lock (hostGate) return phase == Phase.AwaitingSuccessor; } }
         public bool SessionEnded { get; private set; }
+        /// <summary>Tests only: called by the timer of an attempt between its check and Migrate, where a takeover can slip in.</summary>
+        internal Action TestHookBeforeMigrate;
         bool HasHost { get { lock (hostGate) return host != null || phase == Phase.AwaitingSuccessor; } }
 
         static bool WantsHost(Dictionary<object, object> join) => join.TryGetValue("host", out var h) && h is bool b && b;
@@ -112,9 +114,10 @@ namespace MPFever.LinuxServer
 
         void HostLeft(Peer p)
         {
-            bool wasHost, wasCandidate; Peer h;
+            bool wasHost, wasCandidate; Peer h; int atEpoch;
             lock (hostGate)
             {
+                atEpoch = epoch;
                 order.Remove(p);
                 hostJoins.Remove(p);
                 capable.Remove(p);
@@ -128,10 +131,10 @@ namespace MPFever.LinuxServer
             }
             if (wasHost)
             {
-                if (opt.Migration) Migrate(p.Name);
+                if (opt.Migration) Migrate(p.Name, atEpoch);
                 else EndSession("The host " + p.Name + " left");
             }
-            else if (wasCandidate) Migrate(p.Name);
+            else if (wasCandidate) Migrate(p.Name, atEpoch);
             else if (h != null && !SameName(p, h)) ToHost(h, Msg.Make("tun_left", p.Name, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));
         }
 
@@ -152,12 +155,15 @@ namespace MPFever.LinuxServer
         }
 
         /// <summary>The host is gone (or the successor asked before did not come): ask the next player that can take over, once each.
-        /// When none is left the session ends.</summary>
-        void Migrate(string prev)
+        /// When none is left the session ends. fromEpoch is the epoch the caller saw when it decided: if the state has moved on since (a
+        /// takeover, another call that already asked the next player) nothing is done, which makes the transition atomic: a late timer, or two
+        /// events at once, cannot ask a second player while a host is there, nor end a healthy session.</summary>
+        void Migrate(string prev, int fromEpoch)
         {
             Peer next; string tok = null; int ep = 0; CancellationTokenSource cts = null;
             lock (hostGate)
             {
+                if (epoch != fromEpoch || host != null) return;
                 attempt?.Cancel(); attempt = null;
                 next = order.FirstOrDefault(q => q != host && capable.Contains(q) && !failed.Contains(q));
                 if (next != null)
@@ -184,7 +190,8 @@ namespace MPFever.LinuxServer
                 }
                 if (stale) return;
                 Log.Warn(next.Name + " did not take over in " + seconds + " s");
-                Migrate(next.Name);
+                TestHookBeforeMigrate?.Invoke();
+                Migrate(next.Name, ep);
             }, TaskScheduler.Default);
         }
     }

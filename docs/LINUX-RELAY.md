@@ -71,7 +71,20 @@ How it goes (`server-linux/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` i
 
 If the successor does not connect within `--migration-timeout` seconds or leaves, it is not asked again for this migration and the next
 player is; when nobody is left, the session ends and every player is disconnected. If the new host's connection drops later, a new migration
-starts. The server cannot know whether the new host has finished the resynchronisation: it only knows the successor is connected as the host.
+starts.
+
+Each transition is decided under one lock and only if the state is the one the caller saw (`Migrate(prev, fromEpoch)`): a late timer, or two
+events at once, cannot ask a second player while a host is there nor end a healthy session. This was a real race, reproduced with a test seam
+before it was fixed.
+
+**What the server does not know:** whether the new host has finished its resynchronisation. It is deliberately not a phase of the server:
+a host that is connected but slow cannot be told from one that is busy loading a save of 150 MB, so a "resynchronising" timeout would
+replace a working host. The failure that can be told, a connection that drops, already starts the next migration. Confirming the
+resynchronisation (a message from the new host when it is done, and a policy for a host that never says it) would need a new message in the
+launcher and a decision about how long a resynchronisation may take; left for a later change.
+
+On the launcher side, if `tun_players` does not arrive within 15 s (a server older than this message), the takeover goes on, as the first
+version did: a player announced later is a new arrival for the host's code, which sends it the host's game by itself.
 
 The test: `MPFEVER_SERVER=127.0.0.1:28090 MPFEVER_NOLOCALCLIENT=1 MPFEVER_CLIENT2=1 MPFEVER_SCENARIO=migrate MPFever.exe --autotest <save>`
 for the host, then two `MPFever.exe --autoclient 127.0.0.1:28090 <save> <name>` for the players, against `mpfever-relay --migration`.
@@ -95,7 +108,10 @@ limited on purpose (each point has a test in `mpfever-relay --selftest`):
 - **Before a player is let in:** a line longer than 64 KB, or any binary message, ends the connection; a connection that has not joined within
   15 s is cut; no more than 64 connections (`--max-connections`) are accepted at once; a `join` that cannot be read is refused (the Relay lets
   a player in when its admission check throws: this one refuses).
-- **Passwords:** compared in constant time; 5 wrong ones from an address refuse that address for 5 minutes, even with the right one.
+- **Passwords:** compared in constant time; 5 wrong ones from an address refuse that address for 5 minutes, even with the right one (the table
+  of addresses is purged as entries expire and never holds more than 10 000).
+- **Settings** are checked at start (`--port`, `--max-players`, `--max-connections`, `--grace`, `--migration-timeout`); `--max-connections 0`
+  (no limit) and no `--password` are allowed but the server says so in its log.
 - **The server's own messages** (kinds that start with `tun_`) cannot be sent by a player: they are dropped. Otherwise a player could make the
   host forget another player (`tun_left`), believe in a player that is not there (`tun_join`) or give the host role away (`tun_host`).
 - **The host role:** only the first player that asks, or the successor with its one-time token, can be the host.
@@ -113,7 +129,11 @@ in front. The server's `--password` is a shared secret for a group of friends, n
 - A guest that drops is waited for (`--grace`, 60 s: its launcher goes on with its link, the host is not told); the **host** is not: when its
   connection drops a migration starts at once. A short cut of the host therefore costs a resynchronisation. Reconnecting the host with its
   link would need `RemoteRelay` to reconnect and the server to wait for it; left for later.
-- Steam invitations and the router port mapping are off for a host that uses a server.
+- **Steam invitations work through the server:** the host's invitation names the server's address (`+mpfever_connect host:port`), a new host
+  after a takeover sets it again, and the address does not change when the host does. The friend's game joins that address; a server that has a
+  password asks the friend for it on the Multiplayer page, as for any join (the password is not put in the invitation: it would be visible to
+  every Steam friend of the host). Joining through the host's own Steam connection (`steam:`) and the router port mapping are off for a host that
+  uses a server.
 - A host that goes back to the main menu less than 2 minutes after its last load keeps its session (the existing rule of
   `OnMenuRequest("menu")`); closing the game ends it and triggers the takeover.
 - Players that join while a migration is under way wait; the server announces them to the new host.

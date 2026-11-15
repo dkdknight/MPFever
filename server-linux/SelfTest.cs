@@ -57,6 +57,8 @@ namespace MPFever.LinuxServer
             Parser();
             Compat();
             Hardening();
+            Races();
+            Load();
             Robustness();
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ALL " + passed + " CHECKS PASSED" : failed + " FAILED, " + passed + " passed");
@@ -449,6 +451,79 @@ namespace MPFever.LinuxServer
                 && v is Dictionary<object, object> d && (string)d["name"] == "Bob#2" && (double)d["n"] == 12.5 && d["t"] is Dictionary<object, object> t && (bool)t["a"] && (string)t[1L] == "x");
         }
 
+        /// <summary>The timer of an attempt and the successor's takeover can meet (review of the pull request): a takeover that slips in
+        /// between the timer's check and its call to Migrate must not start another migration, nor end a healthy session.</summary>
+        static void Races()
+        {
+            Console.WriteLine("races: the timer of an attempt meets the successor's takeover");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
+                relay.Start(0);
+                int port = relay.Port;
+                var held = new ManualResetEventSlim(false); var release = new ManualResetEventSlim(false);
+                core.TestHookBeforeMigrate = () => { held.Set(); release.Wait(5000); };
+                var a = new Player(port, "Ann", null, true);
+                a.Wait(() => a.Of("tun_host").Length == 1);
+                var b = new Player(port, "Bob", null, false, true);
+                var c = new Player(port, "Cat", null, false, true);
+                a.Wait(() => a.Of("tun_join").Length >= 2);
+                Player nb = null;
+                try
+                {
+                    a.C.Leave();
+                    b.Wait(() => b.Of("tun_host").Length == 1);
+                    bool fired = held.Wait(6000);                       // (the timer has decided that Bob is late, and waits)
+                    Check("the timer fired for the late successor", fired);
+                    nb = TakeOver(b, port, "Bob");                      // (Bob arrives at that very moment)
+                    nb.Wait(() => nb.Of("tun_host").Length == 1 && core.HostPlayer == nb.Me);
+                    Check("the successor took over", core.HostPlayer == nb.Me && !core.Migrating);
+                    release.Set();                                      // (now the timer goes on)
+                    Thread.Sleep(600);
+                    Check("the late timer does not ask another player to take over", c.Of("tun_host").Length == 0);
+                    Check("nor end the session", !core.SessionEnded);
+                    Check("and the successor stays the host", core.HostPlayer == nb.Me && !core.Migrating);
+                }
+                finally { release.Set(); a.Dispose(); b.Dispose(); c.Dispose(); nb?.Dispose(); }
+            }
+        }
+
+        /// <summary>A light load (not a benchmark): many players at once and a burst of host messages; the time is printed.</summary>
+        static void Load()
+        {
+            Console.WriteLine("load: 60 players, a burst of messages");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 64, MaxConnections = 200 });
+                relay.Start(0);
+                int port = relay.Port;
+                var host = new RemoteRelay();
+                var guests = new List<Player>();
+                try
+                {
+                    host.Connect("127.0.0.1", port, "Hank", null);
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    for (int i = 0; i < 60; i++) guests.Add(new Player(port, "G" + i));
+                    var t0 = Environment.TickCount64; while (host.AdmittedCount < 60 && Environment.TickCount64 - t0 < 20000) Thread.Sleep(20);
+                    var joinMs = sw.ElapsedMilliseconds;
+                    Check("60 players join within 20 s (" + joinMs + " ms)", host.AdmittedCount == 60);
+                    sw.Restart();
+                    for (int i = 0; i < 300; i++) host.Broadcast(Msg.Make("peerclock", "Hank", "{[\"name\"]=\"x\",[\"t\"]=" + i + "}"));
+                    t0 = Environment.TickCount64; while (guests.Any(g => g.Of("peerclock").Length < 300) && Environment.TickCount64 - t0 < 20000) Thread.Sleep(20);
+                    var burstMs = sw.ElapsedMilliseconds;
+                    Check("300 broadcasts reach all 60 players, in order, within 20 s (" + burstMs + " ms, 18000 deliveries)", guests.All(g => g.Of("peerclock").Length == 300)
+                        && guests.All(g => Field(g.Of("peerclock")[299], "t") == "299"));
+                    t0 = Environment.TickCount64; int heard = 0;
+                    host.Received += (p, m) => { if (m.Kind == "clock") Interlocked.Increment(ref heard); };
+                    for (int i = 0; i < 60; i++) guests[i].C.Send(Msg.Make("clock", "x", "{[\"t\"]=" + i + "}"));
+                    while (heard < 60 && Environment.TickCount64 - t0 < 10000) Thread.Sleep(20);
+                    Check("the host hears all 60 players", heard >= 60);
+                    Console.WriteLine("    (memory of this process: " + (GC.GetTotalMemory(false) / 1048576) + " MB managed)");
+                }
+                finally { host.Dispose(); foreach (var g in guests) g.Dispose(); }
+            }
+        }
+
         static void Robustness()
         {
             Console.WriteLine("robustness: bad input does not stop the service");
@@ -496,6 +571,8 @@ namespace MPFever.LinuxServer
                     // the host cannot speak with the server's own kinds either
                     using (var p2 = new Player(port, "Other"))
                     {
+                        // (the broadcast goes to the players the server has let in: wait until the host has been told of this one)
+                        var wait0 = Environment.TickCount64; while (!host.PeerNames().Any(n => n.StartsWith("Other#")) && Environment.TickCount64 - wait0 < 4000) Thread.Sleep(20);
                         host.Broadcast(Msg.Make("tun_join", "Hank", "{[\"name\"]=\"Zed#1\"}"));
                         host.Broadcast(Msg.Make("session", "Hank", "{[\"started\"]=true}"));
                         Check("the server's kinds are not passed on from the host to the players", p2.Wait(() => p2.Of("session").Length == 1) && p2.Of("tun_join").Length == 0);

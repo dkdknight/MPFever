@@ -101,6 +101,7 @@ namespace MPFever.LinuxServer
             lock (badPasswords)
             {
                 var now = DateTime.UtcNow;
+                if (badPasswords.Count >= 10000 && !badPasswords.ContainsKey(ip)) return;   // (a hard limit: addresses cost memory)
                 if (badPasswords.Count > 1000) foreach (var k in badPasswords.Where(kv => kv.Value.LockedUntil < now && now - kv.Value.Since > TimeSpan.FromSeconds(opt.LockoutSeconds)).Select(kv => kv.Key).ToList()) badPasswords.Remove(k);
                 if (!badPasswords.TryGetValue(ip, out var b) || now - b.Since > TimeSpan.FromSeconds(opt.LockoutSeconds)) badPasswords[ip] = b = new BadPasswords { Since = now };
                 if (++b.Count >= opt.MaxBadPasswords) b.LockedUntil = now.AddSeconds(opt.LockoutSeconds);
