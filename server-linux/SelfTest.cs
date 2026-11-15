@@ -17,12 +17,12 @@ namespace MPFever.LinuxServer
             public readonly List<Msg> Got = new List<Msg>();
             public string DeniedReason;
             public volatile bool Closed;
-            public Player(int port, string name, string pw = null, bool asHost = false)
+            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null)
             {
                 C.Received += m => { lock (Got) Got.Add(m); };
                 C.Denied += d => { DeniedReason = d.TryGetValue("reason", out var r) ? r as string : "?"; };
                 C.Closed += () => Closed = true;
-                C.Connect("127.0.0.1", port, name, pw, false, asHost);
+                C.Connect("127.0.0.1", port, name, pw, false, asHost, canTakeOver, token);
             }
             public Msg[] Of(string kind) { lock (Got) return Got.Where(m => m.Kind == kind).ToArray(); }
             public bool Wait(Func<bool> cond, int ms = 4000)
@@ -54,7 +54,10 @@ namespace MPFever.LinuxServer
             Tunnel();
             Remote();
             Migration();
-            MigrationReconnect();
+            Parser();
+            Compat();
+            Hardening();
+            Robustness();
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ALL " + passed + " CHECKS PASSED" : failed + " FAILED, " + passed + " passed");
             return failed == 0 ? 0 : 1;
@@ -199,10 +202,67 @@ namespace MPFever.LinuxServer
             }
         }
 
-        /// <summary>The successor takes over by connecting again as the host (what the launcher does after reloading as the host).</summary>
-        static void MigrationReconnect()
+        // ---------------------------------------------------------------- hardening (review of the pull request)
+
+        /// <summary>A raw TCP connection that says what it likes (a client that is not an MPFever).</summary>
+        sealed class Raw : IDisposable
         {
-            Console.WriteLine("the successor reconnects as the host");
+            public readonly System.Net.Sockets.TcpClient T = new System.Net.Sockets.TcpClient();
+            public Raw(int port) { T.Connect("127.0.0.1", port); T.NoDelay = true; }
+            public void Send(byte[] b) { T.GetStream().Write(b, 0, b.Length); }
+            public void Send(string s) { Send(System.Text.Encoding.UTF8.GetBytes(s)); }
+            /// <summary>True when the server closed the connection (within ms).</summary>
+            public bool ClosedBy(int ms)
+            {
+                var end = Environment.TickCount64 + ms;
+                while (Environment.TickCount64 < end)
+                {
+                    try
+                    {
+                        if (T.Client.Poll(50 * 1000, System.Net.Sockets.SelectMode.SelectRead) && T.Client.Available == 0) return true;
+                        Send("A");   // (a closed connection fails on the second write at the latest)
+                    }
+                    catch (Exception) { return true; }
+                }
+                return false;
+            }
+            public void Dispose() { try { T.Close(); } catch { } }
+        }
+
+        static void Hardening()
+        {
+            Console.WriteLine("hardening: messages a player must not be able to send");
+            using (var srv = new Relay())
+            {
+                var core = new SessionCore(srv, new ServerOptions());
+                srv.Start(0);
+                int port = srv.Port;
+                var host = new RemoteRelay();
+                var gone = new List<Peer>(); var got = new List<Peer>();
+                host.Left += p => { lock (gone) gone.Add(p); };
+                host.Joined += p => { lock (got) got.Add(p); };
+                try
+                {
+                    host.Connect("127.0.0.1", port, "Hank", null);
+                    using (var b = new Player(port, "Bob"))
+                    using (var c = new Player(port, "Cat"))
+                    {
+                        var t0 = Environment.TickCount64; while (host.AdmittedCount < 2 && Environment.TickCount64 - t0 < 4000) Thread.Sleep(20);
+                        var names = host.PeerNames();
+                        var cat = names.First(n => n.StartsWith("Cat#"));
+                        b.C.Send(Msg.Make("tun_left", "x", "{[\"name\"]=\"" + cat + "\"}"));
+                        b.C.Send(Msg.Make("tun_join", "x", "{[\"name\"]=\"Ghost#99\",[\"addr\"]=\"\"}"));
+                        b.C.Send(Msg.Make("tun_host", "x", "{[\"you\"]=\"Bob#1\",[\"epoch\"]=9}"));
+                        Pause(); Pause();
+                        Check("a player cannot make the host forget another player (tun_left)", host.Find(cat) != null);
+                        Check("a player cannot make the host believe in a player that is not there (tun_join)", host.Find("Ghost#99") == null);
+                        Check("a player's control messages are dropped by the server, not passed on", core.DroppedControl >= 3);
+                    }
+                }
+                finally { host.Dispose(); }
+            }
+
+            Console.WriteLine("hardening: the successor is the one the server asked");
             using (var relay = new Relay())
             {
                 var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 30 });
@@ -210,86 +270,322 @@ namespace MPFever.LinuxServer
                 int port = relay.Port;
                 var a = new Player(port, "Ann", null, true);
                 a.Wait(() => a.Of("tun_host").Length == 1);
-                var b = new Player(port, "Bob");
-                var c = new Player(port, "Cat");
+                var b = new Player(port, "Bob", null, false, true);
+                var c = new Player(port, "Cat", null, false, true);
+                a.Wait(() => a.Of("tun_join").Length >= 2);
+                Player evil = null, real = null;
+                try
+                {
+                    a.C.Leave();
+                    Check("the successor is asked", b.Wait(() => b.Of("tun_host").Length == 1));
+                    // another player of the server, with the successor's name, connects as the host without having been asked
+                    evil = new Player(port, "Bob", null, true);
+                    Check("a connection that only has the successor's name is refused", evil.Wait(() => evil.DeniedReason != null || evil.Of("tun_host").Length > 0) && evil.DeniedReason == "hosted");
+                    Check("and the server still waits for the successor", core.Migrating && core.HostPlayer != null && core.HostPlayer.StartsWith("Bob#"));
+                    var token = Field(b.Of("tun_host")[0], "token");
+                    Check("the successor's request carries a token", !string.IsNullOrEmpty(token) && token.Length >= 16);
+                    real = new Player(port, "Bob", null, true, false, token);
+                    Check("the successor, with its token, takes over", real.Wait(() => real.Of("tun_host").Length == 1 && !core.Migrating));
+                    using (var again = new Player(port, "Bob", null, true, false, token))
+                        Check("a token cannot be used twice", again.Wait(() => again.DeniedReason != null) && again.DeniedReason == "hosted");
+                }
+                finally { a.Dispose(); b.Dispose(); c.Dispose(); evil?.Dispose(); real?.Dispose(); }
+            }
+
+            Console.WriteLine("hardening: a migration does not go on for ever");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
+                relay.Start(0);
+                int port = relay.Port;
+                var a = new Player(port, "Ann", null, true);
+                a.Wait(() => a.Of("tun_host").Length == 1);
+                var b = new Player(port, "Bob", null, false, true);   // (able to take over, but silent)
+                var c = new Player(port, "Cat", null, false, true);
+                var o = new Player(port, "Old");                        // (an MPFever that cannot take over: never asked)
+                a.Wait(() => a.Of("tun_join").Length >= 3);
+                try
+                {
+                    a.C.Leave();
+                    Check("each able player is asked once", b.Wait(() => b.Of("tun_host").Length == 1) && c.Wait(() => c.Of("tun_host").Length == 1, 5000));
+                    Check("when nobody answers the session ends", new Func<bool>(() => { for (int i = 0; i < 120 && !core.SessionEnded; i++) Thread.Sleep(50); return core.SessionEnded; })());
+                    Thread.Sleep(1500);
+                    Check("nobody is asked a second time", b.Of("tun_host").Length == 1 && c.Of("tun_host").Length == 1);
+                    Check("a player that cannot take over is never asked", o.Of("tun_host").Length == 0);
+                }
+                finally { a.Dispose(); b.Dispose(); c.Dispose(); o.Dispose(); }
+            }
+
+            Console.WriteLine("hardening: a connection that is not let in");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new ServerOptions { UnadmittedTimeoutSeconds = 2, MaxConnections = 4 });
+                relay.Start(0);
+                int port = relay.Port;
+                using (var r1 = new Raw(port))
+                {
+                    r1.Send(new string('A', 200 * 1024));
+                    Check("a line that never ends closes the connection", r1.ClosedBy(3000));
+                }
+                using (var r2 = new Raw(port))
+                {
+                    r2.Send("x_bin\t-\t{[\"len\"]=60000000}\n");
+                    Check("a binary message before the player is let in closes the connection", r2.ClosedBy(3000));
+                }
+                using (var r3 = new Raw(port))
+                    Check("a connection that says nothing is closed after a few seconds", r3.ClosedBy(6000));
+                var raws = new List<Raw>();
+                try
+                {
+                    for (int i = 0; i < 4; i++) raws.Add(new Raw(port));
+                    Thread.Sleep(300);
+                    bool extra;
+                    using (var r5 = new Raw(port)) extra = r5.ClosedBy(1500);
+                    Check("connections beyond the limit are refused", extra);
+                }
+                finally { foreach (var r in raws) r.Dispose(); }
+                Check("the server still works after all that", new Func<bool>(() => { using (var h = new Player(port, "Hank", null, true)) return h.Wait(() => h.Of("tun_host").Length == 1); })());
+            }
+
+            Console.WriteLine("hardening: wrong passwords");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new ServerOptions { Password = "right", MaxPlayers = 4 });
+                relay.Start(0);
+                int port = relay.Port;
+                for (int i = 0; i < 6; i++) using (var bad = new Player(port, "Eve" + i, "wrong")) bad.Wait(() => bad.DeniedReason != null);
+                using (var good = new Player(port, "Hank", "right", true))
+                    Check("after repeated wrong passwords the same address is refused for a while, even with the right one", good.Wait(() => good.DeniedReason != null || good.Of("tun_host").Length > 0) && good.DeniedReason == "password");
+            }
+
+            Console.WriteLine("hardening: a guest that drops is waited for");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Grace = 10 });
+                relay.Start(0);
+                int port = relay.Port;
+                var host = new RemoteRelay();
+                var left = new List<Peer>(); var rx = new List<Msg>();
+                host.Left += p => { lock (left) left.Add(p); };
+                host.Received += (p, m) => { lock (rx) rx.Add(m); };
+                var link = new SessionLink();
+                var guest = new Client(link);
+                var inbox = new List<Msg>();
+                guest.Received += m => { lock (inbox) inbox.Add(m); };
+                try
+                {
+                    host.Connect("127.0.0.1", port, "Hank", null);
+                    guest.Connect("127.0.0.1", port, "Bob", null, false, false);
+                    var t0 = Environment.TickCount64; while (host.AdmittedCount < 1 && Environment.TickCount64 - t0 < 4000) Thread.Sleep(20);
+                    var bob = host.PeerNames()[0];
+                    host.Send(host.Find(bob), Msg.Make("welcome", "Hank", "{[\"you\"]=\"" + bob + "\",[\"rtok\"]=\"\"}"));
+                    t0 = Environment.TickCount64; while (string.IsNullOrEmpty(link.Token) && Environment.TickCount64 - t0 < 4000) Thread.Sleep(20);
+                    guest.Dispose();   // the network drops: no goodbye
+                    Thread.Sleep(1500);
+                    Check("the host is not told that the guest left (the server waits for it)", new Func<bool>(() => { lock (left) return left.Count == 0; })());
+                    host.Send(host.Find(bob), Msg.Make("chatmsg", "Hank", "{[\"text\"]=\"while you were away\"}"));
+                    var back = new Client(link);
+                    back.Received += m => { lock (inbox) inbox.Add(m); };
+                    back.Connect("127.0.0.1", port, "Bob", null, true, false);
+                    t0 = Environment.TickCount64; while (Environment.TickCount64 - t0 < 4000) { lock (inbox) if (inbox.Any(m => m.Kind == "chatmsg")) break; Thread.Sleep(20); }
+                    Check("back in time, the guest gets what it missed", new Func<bool>(() => { lock (inbox) return inbox.Any(m => m.Kind == "chatmsg"); })());
+                    Check("and the host never heard of the cut", new Func<bool>(() => { lock (left) return left.Count == 0; })());
+                    back.Dispose();
+                }
+                finally { host.Dispose(); guest.Dispose(); }
+            }
+        }
+
+        /// <summary>A host that listens itself (Relay without Admit, as the launcher uses it) must behave as before: no limit on what a connection sends.</summary>
+        static void Compat()
+        {
+            Console.WriteLine("a Relay without Admit (the launcher's own host) is unchanged");
+            using (var relay = new Relay())
+            {
+                var got = new List<Msg>();
+                relay.Received += (p, m) => { lock (got) got.Add(m); };
+                relay.Start(0);
+                using (var raw = new Raw(relay.Port))
+                {
+                    raw.Send("act\tx\t{[\"pad\"]=\"" + new string('p', 300 * 1024) + "\"}\n");
+                    var data = new byte[3 * 1024 * 1024];
+                    new Random(5).NextBytes(data);
+                    raw.Send("resync_bin\t-\t{[\"len\"]=" + data.Length + "}\n");
+                    raw.Send(data);
+                    var end = Environment.TickCount64 + 5000;
+                    while (Environment.TickCount64 < end) { lock (got) if (got.Count >= 2) break; Thread.Sleep(20); }
+                    lock (got)
+                    {
+                        Check("a long text line is taken", got.Any(m => m.Kind == "act" && m.Payload.Length > 300 * 1024));
+                        Check("a binary message of 3 MB is taken, byte for byte", got.Any(m => m.Kind == "resync_bin" && m.Data != null && m.Data.SequenceEqual(data)));
+                    }
+                }
+            }
+        }
+
+        /// <summary>The reader of Lua literals sees text from players: it must end, and not overflow the stack.</summary>
+        static void Parser()
+        {
+            Console.WriteLine("the Lua-literal parser on hostile text");
+            bool Quick(string text, out object result)
+            {
+                object r = null;
+                var t = new Thread(() => { r = LuaLit.Parse(text); }, 16 * 1024 * 1024) { IsBackground = true };
+                t.Start();
+                bool done = t.Join(3000);
+                result = r;
+                return done;
+            }
+            object v;
+            Check("text that is not Lua ends", Quick("{not lua at all", out v));
+            Check("characters that start nothing end", Quick("{!!!@@@###$$$%%%^^^}", out v));
+            Check("an unterminated string ends", Quick("{[\"a\"]=\"never closed", out v));
+            Check("a table never closed ends", Quick("{[1]={[2]={[3]=", out v));
+            Check("a line of 60000 opening braces ends (no stack overflow)", Quick(new string('{', 60000), out v));
+            Check("a line of 30000 nested braces closed ends", Quick(new string('{', 30000) + new string('}', 30000), out v));
+            Check("nested keys ends", Quick(string.Concat(Enumerable.Repeat("{[", 20000)), out v));
+            Check("a backslash and a Unicode digit in a string do not throw", Quick("{[\"a\"]=\"x\\\u0661\u0662\"}", out v));
+            Check("a normal message is still read as before", Quick("{[\"name\"]=\"Bob#2\",[\"n\"]=12.5,[\"t\"]={[\"a\"]=true,[\"b\"]=nil,[1]=\"x\"}}", out v)
+                && v is Dictionary<object, object> d && (string)d["name"] == "Bob#2" && (double)d["n"] == 12.5 && d["t"] is Dictionary<object, object> t && (bool)t["a"] && (string)t[1L] == "x");
+        }
+
+        static void Robustness()
+        {
+            Console.WriteLine("robustness: bad input does not stop the service");
+            using (var srv = new Relay())
+            {
+                var core = new SessionCore(srv, new ServerOptions { Grace = 1 });
+                srv.Start(0);
+                int port = srv.Port;
+                var host = new RemoteRelay();
+                var joined = new List<Peer>(); var left = new List<Peer>(); var rx = new List<Msg>();
+                host.Joined += p => { lock (joined) joined.Add(p); };
+                host.Left += p => { lock (left) left.Add(p); };
+                host.Received += (p, m) => { lock (rx) rx.Add(m); };
+                try
+                {
+                    host.Connect("127.0.0.1", port, "Hank", null);
+                    using (var ok = new Player(port, "Fine"))
+                    {
+                        // a client that is let in and then sends rubbish
+                        using (var raw = new Raw(port))
+                        {
+                            raw.Send("join\tRude\t{[\"v\"]=\"" + MainForm.Version + "\"}\n");
+                            Thread.Sleep(400);
+                            raw.Send("no tab at all\n\n\t\t\n" + "kind\tfrom\t{this is [not lua\n" + "@x:welcome\tx\t{}\n" + "\u0001\u0002\tx\t{}\n" + new string('k', 5000) + "\tx\t{}\n");
+                            raw.Send("resync_bin\t-\t{[\"len\"]=5000}\n");
+                            raw.Send(new byte[100]);   // (a savegame part that stops after 100 of 5000 bytes: the connection is cut)
+                        }
+                        Thread.Sleep(2500);
+                        Check("a savegame part cut in the middle is never passed on", new Func<bool>(() => { lock (rx) return rx.All(m => m.Kind != "resync_bin"); })());
+                        Check("the host is told that player left once its time is over", new Func<bool>(() => { lock (left) return left.Any(p => p.Name.StartsWith("Rude#")); })());
+                        Check("the host did not take the targeted-looking kind for a targeted message", new Func<bool>(() => { lock (rx) return rx.All(m => m.Kind != "welcome" || m.From.StartsWith("Rude#")); })());
+                        ok.C.Send(Msg.Make("hello", "x", "{}"));
+                        Check("the other players and the service are fine", new Func<bool>(() => { for (int i = 0; i < 100; i++) { lock (rx) if (rx.Any(m => m.Kind == "hello")) return true; Thread.Sleep(30); } return false; })());
+                    }
+                    using (var nov = new Raw(port))
+                    {
+                        nov.Send("join\tNoVersion\t{}\n");
+                        Check("a join without the right version is refused and closed", nov.ClosedBy(3000));
+                    }
+                    using (var bj = new Raw(port))
+                    {
+                        bj.Send("join\tBad\t{not lua at all\n");
+                        Check("a join that is not even a table is refused and closed", bj.ClosedBy(3000));
+                    }
+                    // the host cannot speak with the server's own kinds either
+                    using (var p2 = new Player(port, "Other"))
+                    {
+                        host.Broadcast(Msg.Make("tun_join", "Hank", "{[\"name\"]=\"Zed#1\"}"));
+                        host.Broadcast(Msg.Make("session", "Hank", "{[\"started\"]=true}"));
+                        Check("the server's kinds are not passed on from the host to the players", p2.Wait(() => p2.Of("session").Length == 1) && p2.Of("tun_join").Length == 0);
+                    }
+                }
+                finally { host.Dispose(); }
+            }
+        }
+
+        static string TokenOf(Player p) => Field(p.Of("tun_host").Last(), "token");
+
+        /// <summary>The successor, asked on its guest connection, connects again as the host with its token.</summary>
+        static Player TakeOver(Player guest, int port, string name)
+        {
+            guest.Wait(() => guest.Of("tun_host").Length >= 1);
+            return new Player(port, name, null, true, false, TokenOf(guest));
+        }
+
+        static void Migration()
+        {
+            Console.WriteLine("host migration");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 30 });
+                relay.Start(0);
+                int port = relay.Port;
+                var a = new Player(port, "Ann", null, true);
+                a.Wait(() => a.Of("tun_host").Length == 1);
+                var b = new Player(port, "Bob", null, false, true);
+                var c = new Player(port, "Cat", null, false, true);
                 a.Wait(() => a.Of("tun_join").Length >= 2);
                 Player nb = null;
                 try
                 {
                     var cn = Field(a.Of("tun_join")[1], "name");
                     a.C.Leave();
-                    Check("the next player is asked to take over", b.Wait(() => b.Of("tun_host").Length == 1));
+                    Check("the next player is asked to take over, with epoch, previous host and a token",
+                        b.Wait(() => b.Of("tun_host").Length == 1 && Field(b.Of("tun_host")[0], "migrate") == "True" && Field(b.Of("tun_host")[0], "prev").StartsWith("Ann#") && (TokenOf(b) ?? "").Length >= 16));
+                    Check("the session is not ended and waits for it", !core.SessionEnded && core.Migrating);
                     using (var eve = new Player(port, "Eve", null, true))
                         Check("another player cannot take over", eve.Wait(() => eve.DeniedReason != null) && eve.DeniedReason == "hosted");
-                    nb = new Player(port, "Bob", null, true);
-                    Check("the successor, connecting again as the host, is accepted", nb.Wait(() => nb.Of("tun_host").Length == 1 && core.HostPlayer == nb.Me));
+                    var dan = new Player(port, "Dan", null, false, true);   // joins while the migration waits
+                    nb = TakeOver(b, port, "Bob");
+                    Check("the successor, connecting again with its token, is accepted", nb.Wait(() => nb.Of("tun_host").Length == 1 && core.HostPlayer == nb.Me));
                     Check("the migration is over", !core.Migrating && !core.SessionEnded);
-                    Check("the other players are announced to it", nb.Wait(() => nb.Of("tun_join").Any(m => Field(m, "name") == cn)));
-                    Pause();
-                    Check("but not the successor's own guest connection", nb.Of("tun_join").All(m => !(Field(m, "name") ?? "").StartsWith("Bob#")));
+                    Check("the players are announced to it, the one that joined meanwhile too", nb.Wait(() => nb.Of("tun_join").Any(m => Field(m, "name") == cn) && nb.Of("tun_join").Any(m => (Field(m, "name") ?? "").StartsWith("Dan#"))));
+                    Check("it is told when the list is complete", nb.Wait(() => nb.Of("tun_players").Length == 1 && Field(nb.Of("tun_players")[0], "n") == "2"));
+                    Check("but not its own old guest connection", nb.Of("tun_join").All(m => !(Field(m, "name") ?? "").StartsWith("Bob#")));
                     c.C.Send(Msg.Make("hello", "x", "{}"));
                     Check("messages go to the new host", nb.Wait(() => nb.Of("hello").Length == 1));
                     nb.C.Send(Msg.Make("session", "x", "{[\"started\"]=true}"));
                     Check("and its messages reach the players", c.Wait(() => c.Of("session").Length == 1));
-                    Pause();
-                    Check("the successor's old guest connection is closed without a new migration", core.HostPlayer == nb.Me && !core.Migrating);
+                    dan.Dispose();
                 }
                 finally { a.Dispose(); b.Dispose(); c.Dispose(); nb?.Dispose(); }
             }
-        }
 
-        static void Migration()
-        {
-            Console.WriteLine("host migration");
-            var opt = new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 2 };
+            Console.WriteLine("several migrations one after the other, and a successor that does not come");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, opt);
+                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 1 });
                 relay.Start(0);
                 int port = relay.Port;
-                var a = new Player(port, "Ann", null, true);
-                a.Wait(() => a.Of("tun_host").Length == 1);
-                var b = new Player(port, "Bob");
-                var c = new Player(port, "Cat");
-                b.Wait(() => a.Of("tun_join").Length >= 1);
-                c.Wait(() => a.Of("tun_join").Length >= 2);
+                var h = new Player(port, "Ann", null, true);
+                h.Wait(() => h.Of("tun_host").Length == 1);
+                var guests = new List<Player>();
+                foreach (var n in new[] { "Bob", "Cat", "Dan", "Eli" }) guests.Add(new Player(port, n, null, false, true));
+                h.Wait(() => h.Of("tun_join").Length >= 4);
+                var all = new List<Player>(guests) { h };
                 try
                 {
-                    var bn = Field(a.Of("tun_join")[0], "name");
-                    var cn = Field(a.Of("tun_join")[1], "name");
-                    a.C.Leave();
-                    Check("the next player is asked to take over", b.Wait(() => b.Of("tun_host").Length == 1 && Field(b.Of("tun_host")[0], "migrate") == "True"));
-                    Check("with the epoch and the previous host", Field(b.Of("tun_host")[0], "prev").StartsWith("Ann#"));
-                    Check("the session is not ended", !core.SessionEnded && core.Migrating);
-                    var ep = int.Parse(Field(b.Of("tun_host")[0], "epoch"));
-                    b.C.Send(Msg.Make("host_ready", "x", "{[\"epoch\"]=" + (ep + 5) + "}"));
-                    Pause();
-                    Check("a host_ready of another epoch is ignored", core.Migrating);
-                    c.C.Send(Msg.Make("host_ready", "x", "{[\"epoch\"]=" + ep + "}"));
-                    Pause();
-                    Check("a host_ready from another player is ignored", core.Migrating);
-                    b.C.Send(Msg.Make("host_ready", "x", "{[\"epoch\"]=" + ep + "}"));
-                    Check("the new host's host_ready ends the migration", b.Wait(() => !core.Migrating && core.HostPlayer == bn));
-                    Check("the others are announced to the new host", b.Wait(() => b.Of("tun_join").Any(m => Field(m, "name") == cn)));
-                    c.C.Send(Msg.Make("hello", "x", "{}"));
-                    Check("messages now go to the new host", b.Wait(() => b.Of("hello").Length == 1));
-                    b.C.Send(Msg.Make("session", "x", "{[\"started\"]=true}"));
-                    Check("and the new host's messages reach the players", c.Wait(() => c.Of("session").Length == 1));
-
-                    Console.WriteLine("a successor that does not answer");
-                    var d = new Player(port, "Dan");
-                    b.Wait(() => b.Of("tun_join").Any(m => (Field(m, "name") ?? "").StartsWith("Dan#")));
-                    b.C.Leave();
-                    Check("the oldest remaining player is asked first", c.Wait(() => c.Of("tun_host").Length == 1));
-                    Check("after the timeout the next one is asked", d.Wait(() => d.Of("tun_host").Length == 1, 8000));
-                    var ep2 = int.Parse(Field(d.Of("tun_host")[0], "epoch"));
-                    d.C.Send(Msg.Make("host_ready", "x", "{[\"epoch\"]=" + ep2 + "}"));
-                    Check("it takes over", d.Wait(() => !core.Migrating && core.HostPlayer == d.Me));
-                    d.C.Leave();
-                    c.C.Leave();
-                    Check("nobody left: no host", new Func<bool>(() => { for (int i = 0; i < 100 && core.HostPlayer != null; i++) Thread.Sleep(50); return core.HostPlayer == null; })());
+                    // 1. the oldest is silent: the next one is asked after the timeout and takes over
+                    h.C.Leave();
+                    Check("the oldest successor is asked first", guests[0].Wait(() => guests[0].Of("tun_host").Length == 1));
+                    var host2 = TakeOver(guests[1], port, "Cat"); all.Add(host2);
+                    Check("it did not come: the next one is asked, and takes over", host2.Wait(() => host2.Of("tun_host").Length == 1 && core.HostPlayer == host2.Me && !core.Migrating, 8000));
+                    Check("the first one was not asked again", guests[0].Of("tun_host").Length == 1);
+                    // 2. a second migration, at once
+                    host2.C.Leave();
+                    Check("a second migration asks a player that was not asked before", guests[2].Wait(() => guests[2].Of("tun_host").Length == 1 || guests[0].Of("tun_host").Length > 1, 4000));
+                    // the host and the successor leave together: the next one is asked
+                    guests[2].C.Leave();
+                    var host3 = guests[3].Wait(() => guests[3].Of("tun_host").Length >= 1, 8000) ? new Player(port, "Eli", null, true, false, TokenOf(guests[3])) : null;
+                    all.Add(host3);
+                    Check("when the successor leaves too, the next one is asked and takes over", host3 != null && host3.Wait(() => host3.Of("tun_host").Length == 1 && core.HostPlayer == host3.Me));
+                    // 3. the last host leaves with nobody able to take over
+                    host3?.C.Leave();
+                    Check("with nobody left able to take over, the session ends", new Func<bool>(() => { for (int i = 0; i < 100 && !core.SessionEnded; i++) Thread.Sleep(50); return core.SessionEnded; })());
                 }
-                finally { a.Dispose(); b.Dispose(); c.Dispose(); }
+                finally { foreach (var x in all) x?.Dispose(); }
             }
         }
     }

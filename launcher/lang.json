@@ -25649,6 +25649,19 @@
       "ko": "호스트 변경",
       "zh-CN": "主持人变更",
       "zh-TW": "主持人變更"
+    },
+    "Host change: the list of players did not arrive within 15 s, going on.": {
+      "de": "Hostwechsel: Die Spielerliste ist nicht innerhalb von 15 s angekommen, es geht weiter.",
+      "es": "Cambio de anfitrión: la lista de jugadores no llegó en 15 s, se continúa.",
+      "it": "Cambio di host: l'elenco dei giocatori non è arrivato entro 15 s, si continua.",
+      "nl": "Hostwissel: de spelerslijst kwam niet binnen 15 s aan, we gaan door.",
+      "pl": "Zmiana hosta: lista graczy nie dotarła w ciągu 15 s, kontynuujemy.",
+      "pt-BR": "Troca de anfitrião: a lista de jogadores não chegou em 15 s, continuando.",
+      "ru": "Смена хозяина игры: список игроков не пришёл за 15 с, продолжаем.",
+      "ja": "ホスト交代：プレイヤー一覧が15秒以内に届かなかったため、続行します。",
+      "ko": "호스트 변경: 15초 안에 플레이어 목록이 도착하지 않아 계속 진행합니다.",
+      "zh-CN": "主持人变更：15 秒内未收到玩家列表，继续进行。",
+      "zh-TW": "主持人變更：15 秒內未收到玩家清單，繼續進行。"
     }
   }
 }

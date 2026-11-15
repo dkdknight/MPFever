@@ -1,68 +1,84 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace MPFever.LinuxServer
 {
     /// <summary>
     /// Who plays the host (docs/LINUX-RELAY.md). The server has no game, so one connected player's launcher and game are the host: the
     /// reference for the world, the one that holds and sends the savegame, answers the mod and build checks and compares the games.
-    /// The first player in is the host. When it leaves, either the session ends (as with a host of its own, the default) or, with
-    /// ServerOptions.Migration, the next player in is asked to take over:
+    /// The first player in is the host. When it leaves, either the session ends (the default) or, with ServerOptions.Migration, a player
+    /// that said it can take over ("mig" in its join) is asked, the oldest first:
     ///
-    ///   server -> new host   tun_host  { you, epoch, migrate = true, prev = "Name#n" }     "take over": its game is reloaded as the host
-    ///   new host -> server   host_ready { epoch }                                          done: the others are announced to it (tun_join)
+    ///   server -> successor   tun_host  { you, epoch, migrate = true, prev, token }   "take over": the token is random, made for this
+    ///                                                                                attempt and this player, and used once
+    ///   successor -> server   a new connection, join { host = true, mtok = token }    its game was reloaded as the host
+    ///   server -> new host    tun_join for every other player, then tun_players { n }  (the end of the list: it may start)
+    ///
+    /// A successor that does not connect within MigrationTimeoutSeconds, or that leaves, is not asked again for this migration; the
+    /// next one is. When nobody is left to ask, the session ends. Whether the new host has finished reloading and resynchronising the
+    /// others is up to the launchers: the server only knows that the successor is connected as the host, and if that connection drops
+    /// a new migration starts.
     /// </summary>
     sealed partial class SessionCore
     {
+        enum Phase { Idle, AwaitingSuccessor }
+
         readonly object hostGate = new object();
-        readonly List<Peer> order = new List<Peer>();   // connected players, oldest first
-        Peer host;                                       // the current host, or null (nobody, or a migration under way)
-        Peer candidate;                                  // the player asked to take over
-        int epoch;
-        bool migrating;
-        long migrationId;                                // identifies the running migration for its timeout
+        readonly List<Peer> order = new List<Peer>();             // connected players, oldest first
         readonly HashSet<Peer> hostJoins = new HashSet<Peer>();   // the connections that asked to host (join { host = true })
+        readonly HashSet<Peer> capable = new HashSet<Peer>();     // the players that can take over (join { mig = true })
+        readonly HashSet<Peer> failed = new HashSet<Peer>();      // asked during this migration and not there in time
+        readonly Dictionary<Peer, string> presentedTokens = new Dictionary<Peer, string>();   // what a host join showed as its token
+        Peer host;                                                // the current host, or null (nobody, or a migration under way)
+        Peer candidate;                                           // the player asked to take over
+        Phase phase = Phase.Idle;
+        string token;                                             // the successor's token (null outside a migration)
+        int epoch;
+        CancellationTokenSource attempt;                          // the wait for the successor, cancelled as soon as it is over
 
         public int Epoch { get { lock (hostGate) return epoch; } }
-        public string HostPlayer { get { lock (hostGate) return (migrating ? candidate : host)?.Name; } }
-        public bool Migrating { get { lock (hostGate) return migrating; } }
+        public string HostPlayer { get { lock (hostGate) return (phase == Phase.AwaitingSuccessor ? candidate : host)?.Name; } }
+        public bool Migrating { get { lock (hostGate) return phase == Phase.AwaitingSuccessor; } }
         public bool SessionEnded { get; private set; }
-        bool HasHost { get { lock (hostGate) return host != null || migrating; } }
+        bool HasHost { get { lock (hostGate) return host != null || phase == Phase.AwaitingSuccessor; } }
+
+        static bool WantsHost(Dictionary<object, object> join) => join.TryGetValue("host", out var h) && h is bool b && b;
+        static bool CanTakeOver(Dictionary<object, object> join) => join.TryGetValue("mig", out var h) && h is bool b && b;
+
+        /// <summary>This join is the successor's: a migration waits for a player of this name and the token is the one given to it.</summary>
+        bool IsAwaitedSuccessor(string baseName, string presented)
+        {
+            lock (hostGate)
+            {
+                if (phase != Phase.AwaitingSuccessor || candidate == null || token == null || string.IsNullOrEmpty(presented)) return false;
+                if (!string.Equals(BaseName(candidate.Name), baseName, StringComparison.OrdinalIgnoreCase)) return false;
+                // (compared in constant time: the token is a secret)
+                return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(presented));
+            }
+        }
+
+        static bool SameName(Peer a, Peer b) => string.Equals(BaseName(a.Name), BaseName(b.Name), StringComparison.OrdinalIgnoreCase);
+
+        static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
 
         bool IsHostJoin(Peer p) { lock (hostGate) return hostJoins.Contains(p); }
-
-        /// <summary>A migration is waiting for this player (by name, without its #n): it may connect again as the host.</summary>
-        bool IsAwaitedSuccessor(string baseName)
-        {
-            lock (hostGate) return migrating && candidate != null && string.Equals(BaseName(candidate.Name), baseName, StringComparison.OrdinalIgnoreCase);
-        }
 
         void HostJoined(Peer p)
         {
             Peer h; bool first;
-            // the awaited successor, back as the host (a second connection of the same name while its guest connection is still there)
-            if (IsHostJoin(p) && IsAwaitedSuccessor(BaseName(p.Name)))
-            {
-                Peer[] others;
-                lock (hostGate)
-                {
-                    host = p; candidate = null; migrating = false; migrationId++;
-                    others = order.Where(q => q != p && !SameName(q, p)).ToArray();
-                    order.Remove(p); order.Add(p);
-                }
-                Log.Ok(p.Name + " is the host now (reconnected)");
-                ToHost(p, TunHost(p, true, ""));
-                foreach (var q in others) AnnounceJoin(p, q);
-                return;
-            }
+            // the successor, back as the host (its token proves it is the one that was asked)
+            if (IsHostJoin(p) && TakeOver(p)) return;
 
             lock (hostGate)
             {
                 order.Remove(p);
                 order.Add(p);
-                first = host == null && !migrating && IsHostJoin(p);
+                first = host == null && phase == Phase.Idle && IsHostJoin(p);
                 if (first) { host = p; epoch++; }
                 h = host;
             }
@@ -74,6 +90,26 @@ namespace MPFever.LinuxServer
             else if (h != null && !SameName(p, h)) AnnounceJoin(h, p);
         }
 
+        /// <summary>The awaited successor connected again as the host.</summary>
+        bool TakeOver(Peer p)
+        {
+            Peer[] others;
+            lock (hostGate)
+            {
+                if (!presentedTokens.TryGetValue(p, out var presented) || !IsAwaitedSuccessor(BaseName(p.Name), presented)) return false;
+                host = p; candidate = null; phase = Phase.Idle; token = null; failed.Clear();
+                attempt?.Cancel(); attempt = null;
+                presentedTokens.Clear();
+                others = order.Where(q => q != p && !SameName(q, p)).ToArray();
+                order.Remove(p); order.Add(p);
+            }
+            Log.Ok(p.Name + " is the host now (reconnected)");
+            ToHost(p, TunHost(p, true, ""));
+            foreach (var q in others) AnnounceJoin(p, q);
+            ToHost(p, Msg.Make("tun_players", HostName, "{[\"n\"]=" + others.Length + "}"));   // (the end of the list)
+            return true;
+        }
+
         void HostLeft(Peer p)
         {
             bool wasHost, wasCandidate; Peer h;
@@ -81,80 +117,75 @@ namespace MPFever.LinuxServer
             {
                 order.Remove(p);
                 hostJoins.Remove(p);
+                capable.Remove(p);
+                presentedTokens.Remove(p);
                 wasHost = host == p;
-                wasCandidate = migrating && candidate == p;
+                wasCandidate = phase == Phase.AwaitingSuccessor && candidate == p;
                 if (wasHost) host = null;
+                if (wasHost) failed.Clear();
+                if (wasCandidate) failed.Add(p);
                 h = host;
             }
             if (wasHost)
             {
-                if (opt.Migration) Migrate(p.Name, "left");
-                else EndSession(p.Name);
+                if (opt.Migration) Migrate(p.Name);
+                else EndSession("The host " + p.Name + " left");
             }
-            else if (wasCandidate) Migrate(p.Name, "left");
+            else if (wasCandidate) Migrate(p.Name);
             else if (h != null && !SameName(p, h)) ToHost(h, Msg.Make("tun_left", p.Name, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));
         }
 
-        static bool SameName(Peer a, Peer b) => string.Equals(BaseName(a.Name), BaseName(b.Name), StringComparison.OrdinalIgnoreCase);
-
         /// <summary>The host is gone and nobody takes over: every player is disconnected, as when a host of its own quits.</summary>
-        void EndSession(string prev)
+        void EndSession(string why)
         {
-            Log.Warn("The host " + prev + " left: session ended");
+            Log.Warn(why + ": session ended");
             SessionEnded = true;
-            lock (hostGate) { migrating = false; candidate = null; }
+            lock (hostGate) { phase = Phase.Idle; candidate = null; token = null; failed.Clear(); presentedTokens.Clear(); attempt?.Cancel(); attempt = null; }
             foreach (var q in relay.Admitted()) { q.NoWait = true; NetAddr.Cut(q.Tcp); }
         }
 
-        Msg TunHost(Peer p, bool migrate, string prev)
+        Msg TunHost(Peer p, bool migrate, string prev, string tok = null)
         {
             int ep; lock (hostGate) ep = epoch;
             return Msg.Make("tun_host", HostName, "{[\"you\"]=" + LuaLit.Quote(p.Name) + ",[\"epoch\"]=" + ep + ",[\"migrate\"]=" + (migrate ? "true" : "false")
-                + ",[\"prev\"]=" + LuaLit.Quote(prev) + "}");
+                + ",[\"prev\"]=" + LuaLit.Quote(prev) + (tok != null ? ",[\"token\"]=" + LuaLit.Quote(tok) : "") + "}");
         }
 
-        /// <summary>The host is gone (or its successor did not answer): ask the next player to take over.</summary>
-        void Migrate(string prev, string why)
+        /// <summary>The host is gone (or the successor asked before did not come): ask the next player that can take over, once each.
+        /// When none is left the session ends.</summary>
+        void Migrate(string prev)
         {
-            Peer next; long id;
+            Peer next; string tok = null; int ep = 0; CancellationTokenSource cts = null;
             lock (hostGate)
             {
-                if (why == "timeout" && candidate != null && order.Remove(candidate)) order.Add(candidate);   // it goes last
-                next = order.FirstOrDefault();
-                if (next == null) { migrating = false; candidate = null; host = null; return; }
-                migrating = true;
-                candidate = next;
-                epoch++;
-                id = ++migrationId;
+                attempt?.Cancel(); attempt = null;
+                next = order.FirstOrDefault(q => q != host && capable.Contains(q) && !failed.Contains(q));
+                if (next != null)
+                {
+                    phase = Phase.AwaitingSuccessor;
+                    candidate = next;
+                    token = tok = NewToken();
+                    ep = ++epoch;
+                    attempt = cts = new CancellationTokenSource();
+                }
             }
-            Log.Warn("The host " + prev + " is gone (" + why + "): " + next.Name + " is asked to take over");
-            ToHost(next, TunHost(next, true, prev));
+            if (next == null) { EndSession("No player left to take over after " + prev); return; }
+            Log.Warn("The host " + prev + " is gone: " + next.Name + " is asked to take over (epoch " + ep + ")");
+            ToHost(next, TunHost(next, true, prev, tok));
             int seconds = opt.MigrationTimeoutSeconds;
-            new Thread(() =>
+            Task.Delay(TimeSpan.FromSeconds(seconds), cts.Token).ContinueWith(t =>
             {
-                Thread.Sleep(TimeSpan.FromSeconds(seconds));
+                if (t.IsCanceled) return;
                 bool stale;
-                lock (hostGate) stale = !migrating || migrationId != id;
+                lock (hostGate)
+                {
+                    stale = phase != Phase.AwaitingSuccessor || candidate != next || epoch != ep;
+                    if (!stale) failed.Add(next);
+                }
                 if (stale) return;
-                Log.Warn(next.Name + " did not answer in " + seconds + " s");
-                Migrate(next.Name, "timeout");
-            }) { IsBackground = true, Name = "migration timeout" }.Start();
-        }
-
-        /// <summary>The successor's game was reloaded as the host: the other players are announced to it.</summary>
-        void OnHostReady(Msg m, Peer from)
-        {
-            Peer[] others;
-            lock (hostGate)
-            {
-                int ep = LuaLit.Parse(m.Payload) is Dictionary<object, object> t && t.TryGetValue("epoch", out var ev) && ev is double ed ? (int)ed : -1;
-                if (!migrating || from != candidate || ep != epoch) { Log.Dim(from.Name + ": host_ready ignored (not the awaited one)"); return; }
-                host = candidate; candidate = null; migrating = false;
-                migrationId++;
-                others = order.Where(q => q != host).ToArray();
-            }
-            Log.Ok(from.Name + " is the host now");
-            foreach (var q in others) AnnounceJoin(from, q);
+                Log.Warn(next.Name + " did not take over in " + seconds + " s");
+                Migrate(next.Name);
+            }, TaskScheduler.Default);
         }
     }
 }

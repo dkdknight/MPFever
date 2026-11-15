@@ -17,6 +17,7 @@ namespace MPFever
         readonly Dictionary<string, Peer> peers = new Dictionary<string, Peer>();
         readonly object gate = new object();
         readonly ManualResetEventSlim hosted = new ManualResetEventSlim(false);
+        readonly ManualResetEventSlim announced = new ManualResetEventSlim(false);
         string denied;
         int nextId = 1;
         volatile bool stop;
@@ -54,19 +55,23 @@ namespace MPFever
 
         /// <summary>Connects to the server as its host. Throws with the server's reason when it refuses (another host, wrong password,
         /// version...).</summary>
-        public void Connect(string host, int port, string name, string password)
+        public void Connect(string host, int port, string name, string password, string migrationToken = null)
         {
             client.Received += OnServerMessage;
             client.Denied += d => { denied = d.TryGetValue("reason", out var r) ? r as string : "?"; hosted.Set(); };
             client.Closed += () => { if (!stop) { Lose("connection to the server closed"); } hosted.Set(); };
-            client.Connect(host, port, name, password, false, true);
+            client.Connect(host, port, name, password, false, true, false, migrationToken);
             hosted.Wait(TimeSpan.FromSeconds(15));
             if (denied != null) throw new InvalidOperationException(denied);
             if (Me == null) throw new TimeoutException("the server did not answer");
         }
 
+        /// <summary>After a takeover: waits until the server has announced every player that was there (tun_players). False on timeout.</summary>
+        public bool WaitPlayersAnnounced(int milliseconds) => announced.Wait(milliseconds);
+
         void OnServerMessage(Msg m)
         {
+            // (the server's own kinds come from the server only, which drops a player's: nothing else is taken for a control message)
             switch (m.Kind)
             {
                 case "tun_host":
@@ -77,6 +82,10 @@ namespace MPFever
                         hosted.Set();
                         return;
                     }
+                case "tun_players":
+                    // (after a takeover: every player that was there has been announced, see Joined)
+                    announced.Set();
+                    return;
                 case "tun_join":
                     {
                         var t = LuaLit.Parse(m.Payload) as Dictionary<object, object>;

@@ -377,6 +377,12 @@ namespace MPFever
         int pos, count;
         public NetReader(Stream s) { this.s = s; }
 
+        /// <summary>Longest text line taken, in bytes (a longer one ends the connection). A Relay lowers it for a connection that is not let
+        /// in yet: nothing is needed from it but a short "join".</summary>
+        public int MaxLine = int.MaxValue;
+        /// <summary>False: a binary message ends the connection (nothing binary is expected before a player is let in).</summary>
+        public bool AllowBinary = true;
+
         bool Fill()
         {
             if (pos < count) return true;
@@ -395,6 +401,7 @@ namespace MPFever
                 int start = pos;
                 while (pos < count && buf[pos] != (byte)'\n') pos++;
                 line.Write(buf, start, pos - start);
+                if (line.Length > MaxLine) throw new IOException("line of more than " + MaxLine + " bytes");
                 if (pos < count) { pos++; break; }
             }
             var bytes = line.ToArray();
@@ -405,7 +412,27 @@ namespace MPFever
 
         public byte[] ReadBytes(int n)
         {
+            if (!AllowBinary) throw new IOException("binary message not expected here");
             if (n < 0 || n > 64 << 20) throw new IOException("binary message of " + n + " bytes");
+            // (a size announced and never sent must not reserve that memory: past 1 MB the bytes are kept as they arrive)
+            if (n > 1 << 20)
+            {
+                var parts = new List<byte[]>();
+                int have = 0;
+                while (have < n)
+                {
+                    if (!Fill()) throw new IOException("connection closed in a binary message");
+                    int k = Math.Min(n - have, count - pos);
+                    var part = new byte[k];
+                    Buffer.BlockCopy(buf, pos, part, 0, k);
+                    parts.Add(part);
+                    pos += k; have += k;
+                }
+                var all = new byte[n];
+                int at = 0;
+                foreach (var part in parts) { Buffer.BlockCopy(part, 0, all, at, part.Length); at += part.Length; }
+                return all;
+            }
             var d = new byte[n];
             int got = 0;
             while (got < n)
@@ -445,18 +472,22 @@ namespace MPFever
         public static object Parse(string s)
         {
             int i = 0;
-            var v = Value(s, ref i);
+            var v = Value(s, ref i, 0);
             return v;
         }
 
+        /// <summary>How deep a table may hold tables: past it the text is skipped, not followed (a line of braces from a player must not
+        /// overflow the stack of this process, which no catch can stop).</summary>
+        const int MaxDepth = 64;
+
         static void Ws(string s, ref int i) { while (i < s.Length && char.IsWhiteSpace(s[i])) i++; }
 
-        static object Value(string s, ref int i)
+        static object Value(string s, ref int i, int depth)
         {
             Ws(s, ref i);
             if (i >= s.Length) return null;
             char c = s[i];
-            if (c == '{') return Table(s, ref i);
+            if (c == '{') return depth >= MaxDepth ? Skip(s, ref i) : Table(s, ref i, depth + 1);
             if (c == '"') return Str(s, ref i);
             // (compared in place: a copy of the rest of the text at every value made a station's 850 KB build take 30 s to read,
             // and the reader of that player's messages, their clock among them, stood still meanwhile: issue #54)
@@ -465,11 +496,27 @@ namespace MPFever
             if (string.CompareOrdinal(s, i, "nil", 0, 3) == 0) { i += 3; return null; }
             int st = i;
             while (i < s.Length && "+-0123456789.eE".IndexOf(s[i]) >= 0) i++;
+            // (a character that starts nothing known is skipped: else a table made of such characters was read for ever)
+            if (i == st) { i++; return null; }
             double.TryParse(s.Substring(st, i - st), NumberStyles.Float, CultureInfo.InvariantCulture, out var d);
             return d;
         }
 
-        static Dictionary<object, object> Table(string s, ref int i)
+        /// <summary>A table nested too deep: its text is passed over, with no recursion.</summary>
+        static object Skip(string s, ref int i)
+        {
+            int open = 0;
+            while (i < s.Length)
+            {
+                char c = s[i++];
+                if (c == '"') { while (i < s.Length && s[i] != '"') { if (s[i] == '\\') i++; i++; } i++; }
+                else if (c == '{') open++;
+                else if (c == '}' && --open <= 0) break;
+            }
+            return null;
+        }
+
+        static Dictionary<object, object> Table(string s, ref int i, int depth)
         {
             var t = new Dictionary<object, object>();
             i++; // {
@@ -482,15 +529,15 @@ namespace MPFever
                 if (s[i] == '[')
                 {
                     i++;
-                    var k = Value(s, ref i);
+                    var k = Value(s, ref i, depth);
                     Ws(s, ref i);
                     if (i < s.Length && s[i] == ']') i++;
                     Ws(s, ref i);
                     if (i < s.Length && s[i] == '=') i++;
-                    var v = Value(s, ref i);
+                    var v = Value(s, ref i, depth);
                     if (k != null) t[Norm(k)] = v;
                 }
-                else { Value(s, ref i); }
+                else { Value(s, ref i, depth); }
             }
         }
 
@@ -508,10 +555,10 @@ namespace MPFever
                     char e = s[i];
                     if (e == 'n') sb.Append('\n');
                     else if (e == 'r') sb.Append('\r');
-                    else if (char.IsDigit(e))
+                    else if (e >= '0' && e <= '9')
                     {
                         int st = i;
-                        while (i < s.Length && i - st < 3 && char.IsDigit(s[i])) i++;
+                        while (i < s.Length && i - st < 3 && s[i] >= '0' && s[i] <= '9') i++;
                         sb.Append((char)int.Parse(s.Substring(st, i - st)));
                         continue;
                     }
@@ -1028,6 +1075,8 @@ namespace MPFever
     sealed class Peer
     {
         public int Id;
+        /// <summary>When the connection was accepted (a Relay may drop one that is not let in within UnadmittedTimeoutSeconds).</summary>
+        public readonly DateTime Born = DateTime.UtcNow;
         public string Name;
         public TcpClient Tcp;
         public StreamWriter Writer;
@@ -1109,6 +1158,11 @@ namespace MPFever
         /// version and the number of players): null lets it in, otherwise the payload of the "denied" message it receives
         /// before its connection is closed. Unset: everybody comes in.</summary>
         public Func<Peer, Msg, string> Admit { get; set; }
+        /// <summary>With Admit: seconds a connection may stay without being let in before it is cut (0: no limit, as before). A host that
+        /// listens on the Internet (the Linux server) sets it: a connection that says nothing otherwise stays for ever.</summary>
+        public int UnadmittedTimeoutSeconds { get; set; }
+        /// <summary>Connections accepted at once, let in or not (0: no limit, as before); the others are closed at once.</summary>
+        public int MaxConnections { get; set; }
 
         public int Count { get { lock (peers) return peers.Count; } }
 
@@ -1162,6 +1216,12 @@ namespace MPFever
             {
                 Thread.Sleep(500);
                 var now = DateTime.UtcNow;
+                if (UnadmittedTimeoutSeconds > 0 && Admit != null)
+                {
+                    Peer[] idle;
+                    lock (peers) idle = peers.Where(q => !q.Admitted && !q.IsBulk && q.SteamId == null && q.Tcp != null && q.Tcp != q.CutTcp && (now - q.Born).TotalSeconds > UnadmittedTimeoutSeconds).ToArray();
+                    foreach (var q in idle) { q.CutTcp = q.Tcp; NetAddr.Cut(q.Tcp); }
+                }
                 Peer[] all;
                 lock (peers) all = peers.Where(q => q.Admitted && q.Link != null).ToArray();
                 foreach (var q in all)
@@ -1222,6 +1282,7 @@ namespace MPFever
                 try
                 {
                     var c = listener.AcceptTcpClient();
+                    if (MaxConnections > 0 && Count >= MaxConnections) { try { c.Close(); } catch { } continue; }
                     c.NoDelay = true;
                     NetAddr.KeepAlive(c);
                     var p = new Peer { Id = nextId++, Tcp = c, Writer = new StreamWriter(c.GetStream(), new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true } };
@@ -1244,8 +1305,13 @@ namespace MPFever
             {
                 var r = new NetReader(tcp.GetStream());
                 Msg m;
-                while ((m = r.Read()) != null)
+                while (true)
                 {
+                    // (a connection not let in yet: a short text line, nothing else; a host without Admit lets everybody in at once, as before)
+                    bool inNow = In(p);
+                    r.MaxLine = inNow ? int.MaxValue : 64 * 1024;
+                    r.AllowBinary = inNow || p.IsBulk;
+                    if ((m = r.Read()) == null) break;
                     Interlocked.Exchange(ref p.LastRecvTicks, DateTime.UtcNow.Ticks);
                     if (m.Kind == "steamtun")
                     {
@@ -1588,7 +1654,7 @@ namespace MPFever
         /// then names the other attempts first and ends with one short note on IPv6 (issue #31).
         /// The password is the one of a dedicated server (none: null); the join also tells this MPFever's version
         /// (a dedicated server only lets in its own).</summary>
-        public void Connect(string host, int port, string name, string password = null, bool resume = false, bool tunnelHost = false)
+        public void Connect(string host, int port, string name, string password = null, bool resume = false, bool tunnelHost = false, bool canTakeOver = false, string migrationToken = null)
         {
             // "steam:<id>" entries: through the host's Steam (the game's module, SteamNet), tried at the same time as the
             // addresses; a direct connection is taken when there is one (no rate limit), unless Steam was 1.5 s faster
@@ -1658,7 +1724,7 @@ namespace MPFever
             else Link.Reset(null);   // (a new player: the host counts from this join; what waited is dropped)
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
-                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + "}"));
+                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
             viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             usedDirect = viaSteam ? null : used;
             gotAny = false;
