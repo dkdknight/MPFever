@@ -6940,6 +6940,16 @@ local function replayNativeConstruction(a)
 			return
 		end
 		local conv = res.proposal
+		-- ((0.8.16) the dry run's result, its proposal and its edge object list kept referenced until the next replay: the
+		-- edge objects below are the engine's own objects inside that list, and once Lua collected the list (it was only a
+		-- temporary) the command made with them failed now and then, "Unknown exception" (chain h7ec: same build, same step,
+		-- refused once, built twice), and the host's game was reloaded. MPFEVER_CONVKEEP=0: not kept, as before)
+		if os.getenv("MPFEVER_CONVKEEP") ~= "0" then
+			G.convKeep = { res = res, conv = conv }
+			pcall(function() G.convKeep.p = conv.proposal end)
+			pcall(function() G.convKeep.eo = conv.proposal.edgeObjectsToAdd end)
+			pcall(function() G.convKeep.ta = conv.toAdd end)
+		end
 		-- the construction's edge objects (an airport's signs) as the engine converts them: a script cannot write a native
 		-- edge object's model ("no writable member 'model'", issue #50). The conversion has them once per converted copy
 		-- of the construction (C.nativeEdgeObjects matches them by model, place and side)
@@ -7014,6 +7024,12 @@ local function replayNativeConstruction(a)
 			G.refundInto(ctx2)
 			if a.keepBuildings == true then log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: the town buildings in its way are kept (a computer company's build)") end
 			local okk, cmd = false, nil
+			-- (0.8.16, tests only: MPFEVER_GCSTRESS=1 makes garbage enough for Lua to collect before the command, see G.convKeep)
+			if os.getenv("MPFEVER_GCSTRESS") == "1" then
+				local junk = nil
+				for i = 1, 3000000 do junk = { i, junk ~= nil } end
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: garbage made before the command (MPFEVER_GCSTRESS)")
+			end
 			if withObjects then
 				C.errors = {}
 				local okw, PW = pcall(C.rebuildNativeWithConstruction, m, conv, rm, { toolNodes = toolNodes, withObjects = eoNative,

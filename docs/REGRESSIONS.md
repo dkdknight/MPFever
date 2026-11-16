@@ -126,6 +126,7 @@ with its cause and the test that now guards it.
 | Every **native fix that changes the simulation** names itself (Fx) once in place; the host compares every game's list with its own and says the difference. A new sim-changing native fix must call Fx, or a game without it drifts unseen. | 0.8.16 | native g_fx / native_fx.txt, hello "fx", MainForm.WarnNativeFx (MPFEVER_NATIVEFXCHECK) | test_nativefx0816.py, launcher selftest |
 | A game running a **native module older than its mod** (updated while the game was open) is told in its chat and to the whole session by the host. The module's version comes from build.bat (MPF_VERSION); keep it there. | 0.8.16 | native_fx.txt version line, hello natold/natver, MainForm.NativeOldProblem (MPFEVER_NATVERCHECK) | test_natold0816.py, launcher selftest |
 | A junction's **traffic light phases changed by a player** (userModifiedTrafficLightStates) are rebuilt from the shipped copy; phases nobody changed are left to the engine as before (never send every replay's phases). | 0.8.16 | C.nodeConfigs (MPFEVER_TLCSHIP) | test_tlcship0816.py, scenario tlphase |
+| A replay that uses **objects the engine made in a dry run** (converted constructions, stops, signals) keeps the dry run's **result itself** referenced until the build is made, not only a part of it: Lua collects a result nothing refers to, and the objects inside go with it ("Unknown exception" now and then). | 0.8.16 | G.convKeep (MPFEVER_CONVKEEP), eoRes, treeDryRes | test_convkeep0816.py, autotest conedgeobj with MPFEVER_GCSTRESS=1 |
 
 ## Regressions found
 

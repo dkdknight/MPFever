@@ -32,6 +32,12 @@ MPFever - Changelog
     own too, kept the old phases. Phases a player changed are now rebuilt from the shipped copy, as the game's window makes them;
     junctions whose phases nobody changed are rebuilt as before. MPFEVER_TLCSHIP=0: as before. New autotest scenario tlphase
     (before: 27.09 s asked to 37, unchanged on both games). Test: tests/test_tlcship0816.py.
+  - FIX (found by the final regression chain, h7ec: a station edited with a signal on its own new track): the replaying game
+    refused the build now and then ("Unknown exception" making the command with the signal), then reloaded. The engine's
+    converted construction was kept, but not the dry run's result that owns it: once Lua collected that result, the signal taken
+    from it was gone. Proved with MPFEVER_GCSTRESS=1 (garbage made before the command, tests only): both replays refused without
+    the fix, both built with it, in sync. The dry run's result is now kept until the next replay, as every other replay already
+    did with its own (eoRes, treeDryRes). MPFEVER_CONVKEEP=0: as before. Test: tests/test_convkeep0816.py.
 
 0.8.15 - 2026-11-16: one company per player, vehicles maintained at the other companies' open depots
   - NEW (Discord, Chris P. Bacon and Getriebesand, design approved by the maintainer): one company per player, the depots another
