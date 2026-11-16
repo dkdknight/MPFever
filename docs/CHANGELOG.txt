@@ -1,6 +1,23 @@
 MPFever - Changelog
 ===================
 
+0.8.15 - 2026-11-16: one company per player, vehicles maintained at the other companies' open depots
+  - NEW (Discord, Chris P. Bacon and Getriebesand, design approved by the maintainer): one company per player, the depots another
+    company opened (its rule « open » or « toll », the depot's own setting or its company's) now maintain this company's
+    vehicles too; private depots stay private. The engine gave a depot only the vehicles of its own company (TransportVehicleSystem,
+    the maintenance's list of each depot's vehicles, 40425 0xb83470): the native module clears the depot's owner for that list
+    when the depot is open (the carrier, the distance and the depot's capacity stay the engine's own). Which depots are open is a
+    rule of the simulation: the simulation's script makes the table from the companies' registry the savegame keeps
+    (mpfever_eco.lua E.maintTable) and gives it to the native module when it changed (os.getenv; the check costs 12 to 33
+    microseconds per step); the module puts it in use at the start of the next simulation iteration only (the engine's lists
+    came before the script's call in one session and after it in another), so every game decides alike at the same step; a
+    table given before a load is never used.
+    A toll depot charges its toll once a month for each vehicle of another company it maintains (vehicle maintenance for that
+    company, revenue for the depot's; « Tolls (tracks and depots) » of the company window). The host's session setting « Open
+    depots usable by the other companies » (0.8.14) covers it (MPFEVER_SHAREDDEPOTS=0: off with the purchases); MPFEVER_SHAREDMAINT=0
+    on every game: the maintenance only off. New autotest scenario maintshare. Tests: tests/test_sharedmaint0815.py,
+    tests/test_sharedmaintnative0815.py.
+
 0.8.14 - 2026-11-16: signals on stations' and depots' own tracks replayed, fewer crashes and resyncs, open depots usable by others
   - FIX (#364, #374, #380, #381: 5 builds of 2026-11-15, From-Hellscream's modular station edits, Holzi's rail depots laid over a
     signalled track): the signals and stops on a construction's own TRACKS were never replayed (the engine's conversion of the

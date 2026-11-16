@@ -860,10 +860,16 @@ function E.tick(st, env)
 			-- (the months in debt are counted when the host's look at this month arrives: see co_month)
 			reg.month = m
 			changed = true
+			-- (0.8.15) the month's toll of the vehicles maintained at another company's depots
+			local okM2, errM2 = pcall(E.maintTolls, st, env)
+			if not okM2 then env.log("companies: maintenance tolls failed: " .. tostring(errM2)) end
 		end
 	end
 	local okT, ch = pcall(E.tolls, st, env)
 	if okT and ch then changed = true elseif not okT then env.log("companies: tolls failed: " .. tostring(ch)) end
+	-- (0.8.15) the depot entities of the depots with a setting of their own, for the shared maintenance
+	local okR, chR = pcall(E.maintResolve, reg, math.floor(gt() / (env.STEP or 200) + 0.5))
+	if okR and chR then changed = true elseif not okR then env.log("companies: shared maintenance: depots not found again: " .. tostring(chR)) end
 	return changed
 end
 
@@ -1211,6 +1217,201 @@ function E.depotUse(reg, env, depot, co, ownerCo)
 	if r.rule == "open" then return true, 0 end
 	if r.rule == "toll" then return true, math.max(0, math.floor(tonumber(r.toll) or E.TOLL_DEFAULT)) end
 	return false, 0
+end
+
+-- ---------------------------------------------------------------- shared maintenance (0.8.15, Discord 2026-11-15)
+-- The engine maintains a vehicle only at a depot of its own company. MPFever's native module (mpfever_native.cpp,
+-- InstallSharedMaint) lets the depots another company opened (rule « open » or « toll », the depot's own setting or its company's)
+-- take every company's vehicles, the private ones stay private. That is a rule of the simulation: every game must use the same
+-- table at the same step. E.maintTable makes it from the registry alone (st.co, kept in the savegame, the same on every game),
+-- E.maintSync gives it to the native module at every step of the simulation (through os.getenv, only when it changed or after a
+-- load). The depots with a setting of their own are found by their key (E.depotKey); their depot entities are kept in the
+-- registry with the setting (r.ents, set when the setting is chosen and checked every 50 steps by E.maintResolve, at the same
+-- steps on every game). The host's lobby setting « Open depots usable by the other companies » (MPFEVER_SHAREDDEPOTS, a session
+-- setting: the same on every game) switches it off with the purchases. MPFEVER_SHAREDMAINT=0 (on every game, tests): off.
+E.SHARED_MAINT = os.getenv("MPFEVER_SHAREDMAINT") ~= "0" and os.getenv("MPFEVER_SHAREDDEPOTS") ~= "0"
+local function maintHash(s)
+	local h = 5381
+	for i = 1, #s do h = (h * 33 + s:byte(i)) % 2147483647 end
+	return h
+end
+-- the table: "<on> <default> <n> (<player> <open>)... <m> (<depot> <open>)...", players and depots sorted
+function E.maintTable(reg)
+	if not (E.SHARED_MAINT and type(reg) == "table" and reg.mode == "separate") then return "0 1 0 0" end
+	if E.sharingOff(reg) then return "1 1 0 0" end
+	local co = {}
+	for _, c in ipairs(reg.list or {}) do
+		if type(c.ent) == "number" then co[#co + 1] = { c.ent, E.depotCoRule(reg, c).rule ~= "private" and 1 or 0 } end
+	end
+	table.sort(co, function(a, b) return a[1] < b[1] end)
+	local dep, seen = {}, {}
+	for _, r in pairs(reg.depots or {}) do
+		if type(r) == "table" and type(r.ents) == "table" then
+			local c = r.co and findCo(reg, r.co) or nil
+			-- (as E.depotRule: a gone company's depots are open, whatever their setting)
+			local open = r.rule ~= "private" or (E.OPEN_DEFAULT and c ~= nil and c.gone ~= nil and c.gone ~= false)
+			for _, e in ipairs(r.ents) do
+				if type(e) == "number" and not seen[e] then seen[e] = true; dep[#dep + 1] = { e, open and 1 or 0 } end
+			end
+		end
+	end
+	table.sort(dep, function(a, b) return a[1] < b[1] end)
+	local out = { "1", E.OPEN_DEFAULT and "1" or "0", tostring(#co) }
+	for _, x in ipairs(co) do out[#out + 1] = string.format("%d %d", x[1], x[2]) end
+	out[#out + 1] = tostring(#dep)
+	for _, x in ipairs(dep) do out[#out + 1] = string.format("%d %d", x[1], x[2]) end
+	return table.concat(out, " ")
+end
+
+-- every step of the simulation (the bridge's update): the table to the native module when it is not the one in use there (it
+-- changed, or a game was loaded). getenv: os.getenv (tests: a function of their own). Returns what the module answered last.
+function E.maintSync(reg, getenv)
+	getenv = getenv or os.getenv
+	local payload = E.maintTable(reg)
+	if payload ~= E.mtPayload then
+		E.mtPayload = payload
+		E.mtTok = maintHash(payload)
+		E.mtAsk = "\1MPFMT " .. E.mtTok
+	end
+	local ans = getenv(E.mtAsk)
+	if ans == "send" then
+		ans = getenv("\1MPFMD " .. E.mtTok .. " " .. payload)
+		if ans ~= "ok" and not E.mtBadSaid and E.env and E.env.log then
+			E.mtBadSaid = true
+			E.env.log("companies: shared maintenance: the native module refused the table (" .. tostring(ans) .. ")")
+		end
+	end
+	return ans
+end
+
+-- (every 50 steps, the same steps on every game) the depot entities of the depots with a setting of their own: kept with the
+-- setting (r.ents). A setting whose depot was rebuilt or removed is looked for again among the depots (a removed one every 1500
+-- steps). Returns true when the registry changed.
+function E.maintResolve(reg, stepNo)
+	if not (E.SHARED_MAINT and type(reg) == "table" and reg.mode == "separate" and type(reg.depots) == "table") then return false end
+	if stepNo % 50 ~= 0 then return false end
+	local keys = {}
+	for k, r in pairs(reg.depots) do if type(r) == "table" then keys[#keys + 1] = k end end
+	if #keys == 0 then return false end
+	table.sort(keys)
+	local need = {}
+	for _, k in ipairs(keys) do
+		local r = reg.depots[k]
+		local ok = type(r.ents) == "table" and #r.ents > 0
+		if ok then
+			for _, e in ipairs(r.ents) do
+				local good = false
+				pcall(function() good = api.engine.entityExists(e) and depotKey(E.depotCon(e)) == k end)
+				if not good then ok = false; break end
+			end
+		elseif type(r.ents) == "table" and stepNo % 1500 ~= 0 then
+			ok = true   -- (no depot found last time: looked for again every 1500 steps)
+		end
+		if not ok then need[#need + 1] = k end
+	end
+	if #need == 0 then return false end
+	local byKey = {}
+	pcall(function()
+		local all = {}
+		api.engine.forEachEntityWithComponent(function(e) all[#all + 1] = e end, api.type.ComponentType.VEHICLE_DEPOT)
+		table.sort(all)
+		for _, e in ipairs(all) do
+			local k = depotKey(E.depotCon(e))
+			local l = byKey[k] or {}
+			l[#l + 1] = e
+			byKey[k] = l
+		end
+	end)
+	local changed = false
+	for _, k in ipairs(need) do
+		local r = reg.depots[k]
+		local now = byKey[k] or {}
+		local was = type(r.ents) == "table" and table.concat(r.ents, ",") or nil
+		if was ~= table.concat(now, ",") then r.ents = now; changed = true end
+	end
+	return changed
+end
+
+-- the depot entities of a construction (a depot's setting: E.maintResolve finds them again if the depot is rebuilt)
+function E.depotEntsOf(con)
+	local out = {}
+	pcall(function()
+		local c = api.engine.getComponent(con, api.type.ComponentType.CONSTRUCTION)
+		for i = 1, #c.depots do out[#out + 1] = c.depots[i] end
+	end)
+	table.sort(out)
+	return out
+end
+
+-- (each new month, the same step on every game) the toll of the maintenance: a vehicle maintained at a depot of another company
+-- whose rule is « toll » pays that company the toll once a month, booked as the purchase's toll (vehicle maintenance for the
+-- vehicle's company, revenue for the depot's). Nothing is looked at while no company asks a toll for its depots.
+function E.maintTolls(st, env)
+	local reg = st.co
+	if not (E.SHARED_MAINT and type(reg) == "table" and reg.mode == "separate") or E.sharingOff(reg) then return false end
+	local any = false
+	for _, c in ipairs(reg.list or {}) do
+		local r = E.depotCoRule(reg, c)
+		if r.rule == "toll" and (tonumber(r.toll) or 0) > 0 then any = true end
+	end
+	for _, r in pairs(reg.depots or {}) do if type(r) == "table" and r.rule == "toll" and (tonumber(r.toll) or 0) > 0 then any = true end end
+	if not any then return false end
+	local CT = api.type.ComponentType
+	local function owner(e)
+		local p = nil
+		pcall(function() local po = api.engine.getComponent(e, CT.PLAYER_OWNED); if po and po.player >= 0 then p = po.player end end)
+		return p
+	end
+	local depots = {}
+	pcall(function() api.engine.forEachEntityWithComponent(function(e) depots[#depots + 1] = e end, CT.VEHICLE_DEPOT) end)
+	table.sort(depots)
+	local owed, order = {}, {}
+	for _, d in ipairs(depots) do
+		local oc = env.CO.idOfEntity(reg, owner(d))
+		if oc then
+			local r = E.depotRule(reg, depotKey(E.depotCon(d)), oc)
+			local fee = r.rule == "toll" and math.floor(tonumber(r.toll) or 0) or 0
+			if fee > 0 then
+				local okV, vs = pcall(api.engine.system.transportVehicleSystem.getVehiclesForMaintenanceStation, d)
+				local list = {}
+				for _, v in ipairs(okV and vs or {}) do list[#list + 1] = v end
+				table.sort(list)
+				for _, v in ipairs(list) do
+					local vc = env.CO.idOfEntity(reg, owner(v))
+					if vc and vc ~= oc then
+						local k = vc .. ">" .. oc
+						if not owed[k] then owed[k] = { from = vc, to = oc, fee = 0, n = 0 }; order[#order + 1] = k end
+						owed[k].fee = owed[k].fee + fee
+						owed[k].n = owed[k].n + 1
+					end
+				end
+			end
+		end
+	end
+	if #order == 0 then return false end
+	local JE = api.type.JournalEntry
+	reg.tollIncome = reg.tollIncome or {}
+	reg.tollExpense = reg.tollExpense or {}
+	for _, k in ipairs(order) do
+		local o = owed[k]
+		local from, to = env.CO.find(reg, o.from), env.CO.find(reg, o.to)
+		if from and to and from.ent and to.ent then
+			book(from.ent, -o.fee, function(x)
+				x.category.type = JE.Type.MAINTENANCE
+				x.category.maintenance = JE.Maintenance.VEHICLE_MAINTENANCE
+				x.category.carrier = JE.Carrier.OTHER
+			end)
+			book(to.ent, o.fee, function(x)
+				x.category.type = JE.Type.INCOME
+				x.category.carrier = JE.Carrier.OTHER
+			end)
+			reg.tollIncome[tostring(o.to)] = (reg.tollIncome[tostring(o.to)] or 0) + o.fee
+			reg.tollExpense[tostring(o.from)] = (reg.tollExpense[tostring(o.from)] or 0) + o.fee
+			E.notePaid(reg, o.from, o.to, "d", o.fee)
+			env.log("companies: maintenance: company " .. o.from .. " pays company " .. o.to .. " " .. o.fee .. " for " .. o.n .. " vehicle(s) maintained at its depots")
+		end
+	end
+	return true
 end
 
 -- ---------------------------------------------------------------- merging
@@ -1658,8 +1859,8 @@ function E.event(st, name, param, env)
 		local rule = tostring(param.rule)
 		if rule ~= "private" and rule ~= "open" and rule ~= "toll" and rule ~= "co" then return refuse("rule " .. rule) end
 		-- (only its own depots)
-		local ownerOk = false
-		for _, d in ipairs(depotsOf(env, mine.ent)) do if depotKey(d) == param.key then ownerOk = true end end
+		local ownerOk, ents = false, nil
+		for _, d in ipairs(depotsOf(env, mine.ent)) do if depotKey(d) == param.key then ownerOk = true; ents = ents or E.depotEntsOf(d) end end
 		if not ownerOk then return refuse("not its depot") end
 		reg.depots = reg.depots or {}
 		-- (0.5.2: "co" takes the depot's own setting away, it follows its company's rule; private is a setting of its own, since
@@ -1667,7 +1868,9 @@ function E.event(st, name, param, env)
 		if rule == "co" or (rule == "private" and not E.OPEN_DEFAULT) then
 			reg.depots[tostring(param.key)] = nil
 		else
-			reg.depots[tostring(param.key)] = { rule = rule, toll = math.max(0, math.floor(tonumber(param.toll) or E.TOLL_DEFAULT)), co = mine.id }
+			-- ((0.8.15) with its depot entities, for the shared maintenance: see E.maintTable)
+			reg.depots[tostring(param.key)] = { rule = rule, toll = math.max(0, math.floor(tonumber(param.toll) or E.TOLL_DEFAULT)), co = mine.id,
+				ents = E.SHARED_MAINT and ents or nil }
 		end
 		env.log("companies: company " .. mine.id .. " depot " .. tostring(param.key) .. ": " .. rule)
 	elseif name == "co_depot_default" then

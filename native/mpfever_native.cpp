@@ -1263,9 +1263,11 @@ static u32 StepOf(u8* gs);
 static bool BatchLog() { if (g_batchLog < 0) g_batchLog = GetEnvironmentVariableA("MPFEVER_BATCHLOG", 0, 0) > 0 ? 1 : 0; return g_batchLog > 0; }
 
 static void DriftPoll();   // (0.8.2, the drift diagnostic, see InstallDriftDiag)
+static void MaintIterStart();   // (0.8.15, the shared maintenance's table, see InstallSharedMaint)
 extern "C" u64 PreIterDetour(void* a)
 {
     g_iter++;
+    MaintIterStart();
     g_simTid = (long)GetCurrentThreadId();
     if (g_entWatch) { static long it = 0; if (++it % 250 == 0) EntFlush(); }
     if (g_iter == 1) { Buf t; t.str("simulation thread ").dec(GetCurrentThreadId()).str(", interface thread ").dec(g_mainTid); LogLine(t); }
@@ -5591,6 +5593,166 @@ static void InstallFastSave()
     LogLine(b);
 }
 
+// ---------------------------------------------------------------- shared maintenance (0.8.15, Discord 2026-11-15)
+// One company per player: the engine gives a maintenance depot only the vehicles of the depot's own company. Its maintenance
+// update (TransportVehicleSystem, 40425 0xb872e0) lists each depot's candidates in 0xb83470 (40420 0xb7e290): for each vehicle
+// record, "the depot has no PlayerOwned || (vehicle's owner >= 0 && vehicle's owner == depot's owner)", then the carrier mask and
+// the catchment distance. A depot another company opened (its rule "open" or "toll"; the host's lobby setting "Open depots
+// usable by the other companies") now takes the vehicles of every company: for that depot's call, the PlayerOwned pointer the
+// check reads (r12) is cleared, as for a depot without an owner (the carrier mask, the distance and the depot's capacity are the
+// engine's own). Private depots, and every depot while the table says off, stay the engine's own rule.
+// Which depots are open is a simulation rule, so every game must decide with the same table at the same step: the simulation's
+// script (mpfever_eco.lua E.maintTable, from the companies' registry the savegame keeps) gives it at every step through
+// os.getenv, whose engine wrapper calls the C runtime's getenv (40425 0x30658c0): names "\1MPFMT <token>" (is that table the one
+// in use? nil yes, "send" no) and "\1MPFMD <token> <on> <default> <n> (<player> <open>)... <m> (<depot> <open>)..." (the table,
+// depots sorted). A table given before the last load is not used (the engine's own rule until the script gives it again).
+#define MT_CO 64
+#define MT_DEP 8192
+struct MaintTable { u32 tok; long loads; i32 on, def, nCo, nDep; i32 co[MT_CO][2]; i32 dep[MT_DEP][2]; };
+static MaintTable g_mt[2];
+static volatile long g_mtCur = 0, g_mtHave = 0;
+// (0.8.15) a table given goes into the buffer not in use (g_mtPend set) and is put in use at the start of the next simulation
+// iteration (MaintIterStart, from the pre-iteration): the engine's depot lists of an iteration came before the script's call of
+// that iteration in one session and after it in another (runs g15frx and m15a), so a table used at once would depend on that
+// order; at the iteration's start, every game uses the table of the iteration before, whatever the order
+static volatile long g_mtPend = 0;
+static volatile long g_mtCalls = 0, g_mtLet = 0, g_mtKept = 0, g_mtAsks = 0, g_mtSends = 0, g_mtShown = 0, g_mtSeq = 0;
+static volatile long g_mtStepShown = 0;
+static volatile u32 g_mtLastStep = 0xFFFFFFFFu;
+static volatile long g_mtAskIter = -1;      // (the simulation iteration of the script's last call: see MaintCandidates)
+static volatile long g_mtBefore = 0, g_mtAfter = 0;
+static bool g_mtSplice = false;
+typedef char* (*GetenvF)(const char*);
+static GetenvF g_getenvOrig = 0;
+static const char* MtSysName() { long s = g_curSys; return (s > 0 && s < g_sysN) ? g_sysName[s] : "none"; }
+static long MtNum(const char*& p)
+{
+    while (*p == ' ') p++;
+    bool neg = *p == '-';
+    if (neg) p++;
+    long v = 0;
+    while (*p >= '0' && *p <= '9') v = v * 10 + (*p++ - '0');
+    return neg ? -v : v;
+}
+// (where the table's use and its delivery happen within the steps: said for the first steps, to check that the script's call
+// comes before the engine's use in every step, or else that a table is only used from the step after it was given)
+static void MtOrder(const char* what, long n)
+{
+    if (g_mtShown >= 40) return;
+    if (_InterlockedIncrement(&g_mtShown) > 40) return;
+    Buf b; b.str("shared maintenance: ").str(what).str(" ").dec(n).str(", step ").dec((i64)g_diagStep).str(", thread ").dec((long)GetCurrentThreadId())
+        .str((long)GetCurrentThreadId() == g_simTid ? " (simulation)" : " (another)").str(", engine system ").str(MtSysName()).str(", order ").dec(_InterlockedIncrement(&g_mtSeq));
+    LogLine(b);
+}
+static bool MtOpen(const MaintTable& t, i32 depot, i32 owner)
+{
+    long lo = 0, hi = t.nDep - 1;
+    while (lo <= hi) {
+        long mid = (lo + hi) >> 1;
+        if (t.dep[mid][0] == depot) return t.dep[mid][1] != 0;
+        if (t.dep[mid][0] < depot) lo = mid + 1; else hi = mid - 1;
+    }
+    for (long i = 0; i < t.nCo; i++) if (t.co[i][0] == owner) return t.co[i][1] != 0;
+    return t.def != 0;
+}
+static char* MaintGetenv(const char* s)
+{
+    if (s[0] == 'T' && s[1] == ' ') {
+        const char* p = s + 2;
+        u32 tok = (u32)MtNum(p);
+        g_mtAskIter = g_iter;
+        long n = _InterlockedIncrement(&g_mtAsks);
+        // (the table given last: the one waiting for the next iteration, else the one in use)
+        const MaintTable& t = g_mt[g_mtPend ? 1 - g_mtCur : g_mtCur];
+        bool same = (g_mtHave || g_mtPend) && t.tok == tok && t.loads == g_ctlLoads;
+        if (n <= 3 || !same) MtOrder(same ? "the script's table is the one in use, asked" : "the script's table is not the one in use, asked", n);
+        if (n % 3000 == 0) {
+            Buf b; b.str("shared maintenance: ").dec(g_mtCalls).str(" depot lists, ").dec(g_mtLet).str(" open to every company, ").dec(g_mtKept)
+                .str(" kept to their own; ").dec(n).str(" steps asked, ").dec(g_mtSends).str(" table(s) given; the engine's lists came after the script's call of their iteration ")
+                .dec(g_mtBefore).str(" time(s), before it ").dec(g_mtAfter);
+            LogLine(b);
+        }
+        return same ? 0 : (char*)"send";
+    }
+    if (s[0] == 'S' && s[1] == 0) return (char*)(g_mtSplice ? "on" : "off");   // "\1MPFMS": is the engine's check hooked?
+    if (s[0] == 'D' && s[1] == ' ') {
+        const char* p = s + 2;
+        long next = 1 - g_mtCur;
+        MaintTable& t = g_mt[next];
+        t.tok = (u32)MtNum(p);
+        t.on = (i32)MtNum(p);
+        t.def = (i32)MtNum(p);
+        long nc = MtNum(p);
+        if (nc < 0 || nc > MT_CO) return (char*)"bad";
+        for (long i = 0; i < nc; i++) { t.co[i][0] = (i32)MtNum(p); t.co[i][1] = (i32)MtNum(p); }
+        long nd = MtNum(p);
+        if (nd < 0 || nd > MT_DEP) return (char*)"bad";
+        for (long i = 0; i < nd; i++) { t.dep[i][0] = (i32)MtNum(p); t.dep[i][1] = (i32)MtNum(p); }
+        for (long i = 1; i < nd; i++) if (t.dep[i - 1][0] >= t.dep[i][0]) return (char*)"bad";
+        t.nCo = (i32)nc; t.nDep = (i32)nd; t.loads = g_ctlLoads;
+        g_mtPend = 1;   // (in use from the next iteration: MaintIterStart)
+        long k = _InterlockedIncrement(&g_mtSends);
+        if (k <= 20) {
+            Buf b; b.str("shared maintenance: table ").dec((i64)t.tok).str(" from the simulation's script: ").str(t.on ? "on" : "OFF (the engine's own rule)")
+                .str(", ").dec(nc).str(" company rule(s), ").dec(nd).str(" depot(s) with their own setting, the others ").str(t.def ? "open" : "private");
+            LogLine(b);
+        }
+        MtOrder("table given", k);
+        return (char*)"ok";
+    }
+    return 0;
+}
+// at the start of each simulation iteration (PreIterDetour, the simulation's thread): the table given since goes in use
+static void MaintIterStart()
+{
+    if (!g_mtPend) return;
+    _InterlockedExchange(&g_mtCur, 1 - g_mtCur);
+    g_mtPend = 0;
+    g_mtHave = 1;
+}
+static char* GetenvHook(const char* name)
+{
+    if (name && name[0] == 1 && name[1] == 'M' && name[2] == 'P' && name[3] == 'F' && name[4] == 'M') return MaintGetenv(name + 5);
+    return g_getenvOrig ? g_getenvOrig(name) : 0;
+}
+static void MaintCandidates(SavedRegs* r)
+{
+    _InterlockedIncrement(&g_mtCalls);
+    u32 step = g_diagStep;
+    if (step != g_mtLastStep) {
+        // (which comes first within a simulation iteration: the script's call, or the engine's lists; counted at each first list
+        // of an iteration, said in the summary)
+        g_mtLastStep = step;
+        if (g_mtAskIter == g_iter) _InterlockedIncrement(&g_mtBefore); else _InterlockedIncrement(&g_mtAfter);
+        if (g_mtStepShown < 12) {
+            _InterlockedIncrement(&g_mtStepShown);
+            MtOrder(g_mtAskIter == g_iter ? "the engine's depot lists, after the script's call of this iteration," : "the engine's depot lists, before the script's call of this iteration,", g_iter - g_mtAskIter);
+        }
+    }
+    if (!r->r12 || !g_mtHave) return;
+    const MaintTable& t = g_mt[g_mtCur];
+    if (!t.on || t.loads != g_ctlLoads) return;
+    if (MtOpen(t, (i32)r->rbx, *(i32*)r->r12)) { r->r12 = 0; _InterlockedIncrement(&g_mtLet); }
+    else _InterlockedIncrement(&g_mtKept);
+}
+static void InstallSharedMaint()
+{
+    // mov edx,ebx / call PlayerOwned / mov r12,rax / jmp / mov r12,r15 / vpxor xmm0 / vmovdqu [rsp+28h],xmm0 ... the loop's
+    // test r12,r12 / je / mov eax,[rdi+4] / test eax,eax / js / cmp eax,[r12] / jne (40425 at 0xb834fb, 40420 at 0xb7e31b)
+    u32 at = FindSigRva("8B D3 E8 ?? ?? ?? ?? 4C 8B E0 EB 03 4D 8B E7 C5 F9 EF C0 C5 FA 7F 44 24 28 4D 8B D7 4C 89 7D B7 4C 89 7D 8F C5 FA 7F 45 97 4D 8B DF 4C 89 7D AF 4C 89 7D A7 48 8B 47 08 48 8B 70 08 48 89 75 BF 48 8B 38 4C 8B 75 9F 48 3B FE 48 8B 75 87 0F 84 ?? ?? ?? ?? 90 4D 85 E4 74 15 8B 47 04 85 C0 0F 88 ?? ?? ?? ?? 41 3B 04 24 0F 85 ?? ?? ?? ??");
+    // (a table goes in use at the start of an iteration: without the pre-iteration hook, none ever would, so nothing is hooked)
+    u8* mem = (at && g_preIterOn) ? AllocNear(0x200) : 0;
+    // (spliced where both paths join, after r12 is set: vpxor xmm0,xmm0,xmm0 / vmovdqu [rsp+28h],xmm0, 10 bytes)
+    g_mtSplice = mem && Splice(mem, at + 15, 10, MaintCandidates);
+    g_getenvOrig = (GetenvF)PatchImport(g_base, "api-ms-win-crt-environment-l1-1-0.dll", "getenv", (void*)&GetenvHook);
+    Buf b; b.str("shared maintenance: ").str(g_mtSplice ? "the engine's owner check of the maintenance depots hooked at "
+        : (g_preIterOn ? "OFF (the engine's owner check of the maintenance depots was not found)" : "OFF (the simulation's iterations are not hooked)"));
+    if (g_mtSplice) b.hex(at + 15);
+    b.str(g_getenvOrig ? ", the script's table through getenv" : ", NO way for the script's table (getenv not hooked)");
+    LogLine(b);
+    if (!g_getenvOrig) g_mtSplice = false;
+}
+
 static void InstallVehicleWear()
 {
     { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_ALLWEAR", v, 3) > 0 && v[0] == '0') { Buf b; b.str("vehicle wear: the savegame's company only (MPFEVER_ALLWEAR=0)"); LogLine(b); return; } }
@@ -6492,6 +6654,7 @@ static DWORD WINAPI Init(void*)
     if (g_layout) InstallStopSnap();
     if (g_layout) InstallOpenNet();
     InstallVehicleWear();
+    InstallSharedMaint();
     InstallFastSpan();
     InstallFastSave();
     { Buf b; b.str(g_luaSeedFixed ? "Lua string hash seed: fixed (same table order on every game)" : "Lua string hash seed: NOT fixed"); LogLine(b); }

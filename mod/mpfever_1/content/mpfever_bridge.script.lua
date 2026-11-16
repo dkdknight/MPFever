@@ -3110,6 +3110,26 @@ local function update(userParams, state, dt)
 		if st and st.co and st.co.mode == "separate" and dt and dt > 0 and C.eco() then
 			if C.eco().tick(st, SIM.ecoEnv()) then state:set(st) end
 		end
+		-- (0.8.15) the depots open to the other companies' vehicles for their maintenance, to the native module (mpfever_eco.lua
+		-- E.maintSync: nothing is sent while the table is the one in use there). At every step, after the step's events and
+		-- actions, from the registry this step saves; also when the companies are not separate (the table then says off; a game
+		-- without a registry sends nothing, and the module never uses a table given before the last load)
+		local eco = st and st.co and C.eco()
+		if eco and eco.maintSync then
+			eco.env = eco.env or SIM.ecoEnv()
+			-- (its cost, said every 500 calls of this Lua state: the simulation's updates go through several states, each with
+			-- its own counters)
+			local t0 = os.clock()
+			eco.maintSync(st.co)
+			local dt0 = os.clock() - t0
+			SIM.mtN = (SIM.mtN or 0) + 1
+			SIM.mtSum = (SIM.mtSum or 0) + dt0
+			if dt0 > (SIM.mtMax or 0) then SIM.mtMax = dt0 end
+			if SIM.mtN % 500 == 0 then
+				log(string.format("companies: shared maintenance: the table's check took %.1f us per step (at most %.1f us)", SIM.mtSum / SIM.mtN * 1e6, SIM.mtMax * 1e6))
+				SIM.mtSum, SIM.mtMax, SIM.mtN = 0, 0, 0
+			end
+		end
 	end)
 	if not oke then log("companies: economy failed: " .. tostring(erre)) end
 	-- (0.6) the game options' modules, their month and their tick (mpfever_feat.lua): nothing while no option is on
@@ -17514,6 +17534,104 @@ end
 -- host opens its tracks for a toll; the client asks to join company 1 (the host's chief accepts), leaves it (a new company),
 -- offers to merge it into company 1 (accepted), leaves again; then company 1 goes bankrupt (its first two lots at auction): the
 -- client bids on the first, nobody on the second. The checks then say whether every game did the same.
+-- (0.8.15) autotest maintshare (one company per player, Test Gameplay: the host's company has the save's lines, depots and
+-- vehicles). The host: its depots' rule a toll (MPFEVER_MAINTSHARE_TOLL, 777 per vehicle and month). The client: a line of its
+-- own with the stops of a line of the host's, MPFEVER_MAINTSHARE_N (3) copies of one of that line's vehicles bought in the host's
+-- depot of that vehicle and put on the new line; MPFEVER_MAINTSHARE_WAIT frames later (3000), where each of them is maintained:
+-- at the host's depots with the shared maintenance, at none without it (MPFEVER_SHAREDMAINT=0 on both games). The session's
+-- checks say whether both games did the same; the months' tolls are in the logs ("companies: maintenance: company ...").
+H.maintshare = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST maintshare: " .. t); AUTO.results[#AUTO.results + 1] = "maintshare " .. tostring(C.ROLE) .. ": " .. t end
+	local ok, err = pcall(function()
+		if not (G.co and G.myCo) then say("not in the companies mode"); return autoFinish() end
+		if C.ROLE == "host" then
+			local toll = tonumber(os.getenv("MPFEVER_MAINTSHARE_TOLL") or "") or 777
+			uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "co_depot_default", [4] = { rule = "toll", toll = toll } })
+			say("the host's depots: a toll of " .. toll)
+			G.waits[#G.waits + 1] = { at = G.frames + 200, fn = autoFinish }
+			return
+		end
+		local me = api.engine.util.getPlayer()
+		local CT = api.type.ComponentType
+		local pick = nil
+		-- (a road vehicle first: a train costs more than the client's company has, one bought out of three in the first run)
+		local road = nil
+		pcall(function() road = api.type.enum.Carrier.ROAD end)
+		for pass = 1, 2 do
+			for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
+				local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
+				local o = R.ownerOf(v)
+				if not pick and tv and o and o ~= me and type(tv.line) == "number" and tv.line >= 0 and type(tv.depot) == "number" and tv.depot >= 0
+					and api.engine.entityExists(tv.depot) and R.ownerOf(tv.depot) == o and (pass == 2 or road == nil or tv.carrier == road) then
+					local lc = api.engine.getComponent(tv.line, CT.LINE)
+					if lc and #lc.stops >= 2 then pick = { v = v, tv = tv, line = tv.line, lc = lc } end
+				end
+			end
+		end
+		if not pick then say("no vehicle of another company on a line with a depot of its company"); return autoFinish() end
+		local known = {}
+		for _, l in ipairs(R.entitiesWith("LINE")) do known[l] = true end
+		uiRequest("makeLineCreateCmd", { n = 4, [1] = "MPF maint", [2] = C.marshal(api.type.Vec3f.new(0.2, 0.7, 0.3)), [3] = me, [4] = C.marshal(pick.lc) })
+		say("a line with the " .. #pick.lc.stops .. " stops of line " .. pick.line .. ", vehicles of " .. pick.v .. " bought in depot " .. pick.tv.depot)
+		local n = tonumber(os.getenv("MPFEVER_MAINTSHARE_N") or "") or 3
+		-- (the line looked for every 120 frames, 20 times at most: a game drawing many frames came to it before its step, run g15frx)
+		local lineTries = 0
+		local function afterLine()
+			lineTries = lineTries + 1
+			local newLine = nil
+			for _, l in ipairs(R.entitiesWith("LINE")) do if not known[l] and R.ownerOf(l) == me then newLine = l end end
+			if not newLine and lineTries < 20 then G.waits[#G.waits + 1] = { at = G.frames + 120, fn = afterLine } return end
+			if not newLine then say("the line was not made"); return autoFinish() end
+			local mine0 = {}
+			for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do if R.ownerOf(v) == me then mine0[v] = true end end
+			for _ = 1, n do uiRequest("makeVehicleBuyCmd", { n = 3, [1] = me, [2] = pick.tv.depot, [3] = C.marshal(pick.tv.transportVehicleConfig) }) end
+			-- (the purchases looked for every 120 frames until one is there, 20 times at most, then 120 frames more for the others)
+			local buyTries, seenOne = 0, false
+			local function afterBuy()
+				buyTries = buyTries + 1
+				local bought = {}
+				for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do if R.ownerOf(v) == me and not mine0[v] then bought[#bought + 1] = v end end
+				if (#bought == 0 or not seenOne) and buyTries < 20 then
+					seenOne = #bought > 0
+					G.waits[#G.waits + 1] = { at = G.frames + 120, fn = afterBuy }
+					return
+				end
+				table.sort(bought)
+				say(#bought .. " vehicle(s) bought, put on line " .. newLine)
+				for _, v in ipairs(bought) do uiRequest("makeVehicleSetLineCmd", { n = 3, [1] = v, [2] = newLine, [3] = 0 }) end
+				-- (looked at every MPFEVER_MAINTSHARE_WAIT frames, MPFEVER_MAINTSHARE_TRIES times at most, until every one is maintained
+				-- at another company's depot: the engine's maintenance runs every 20 steps, a vehicle must first leave the depot)
+				local wait = tonumber(os.getenv("MPFEVER_MAINTSHARE_WAIT") or "") or 1200
+				local tries = tonumber(os.getenv("MPFEVER_MAINTSHARE_TRIES") or "") or 6
+				local k = 0
+				local function look()
+					k = k + 1
+					local atOthers, atNone, list = 0, 0, {}
+					for _, v in ipairs(bought) do
+						local st = -1
+						pcall(function() st = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE).maintenanceStation end)
+						local o = (type(st) == "number" and st >= 0) and R.ownerOf(st) or nil
+						if o and o ~= me then atOthers = atOthers + 1 elseif not o then atNone = atNone + 1 end
+						local okS, ms = pcall(api.engine.util.vehicle.getVehicleMaintenanceState, v)
+						list[#list + 1] = v .. "@" .. tostring(st) .. (okS and string.format(" %.3f", tonumber(ms) or -1) or "")
+					end
+					if (atOthers < #bought or #bought == 0) and k < tries then G.waits[#G.waits + 1] = { at = G.frames + wait, fn = look } return end
+					say(atOthers .. " of " .. #bought .. " maintained at another company's depot, " .. atNone .. " at none, look " .. k .. " (" .. table.concat(list, ", ") .. ")")
+					autoFinish()
+				end
+				G.waits[#G.waits + 1] = { at = G.frames + wait, fn = look }
+			end
+			G.waits[#G.waits + 1] = { at = G.frames + 120, fn = afterBuy }
+		end
+		G.waits[#G.waits + 1] = { at = G.frames + 120, fn = afterLine }
+	end)
+	if not ok then say("error " .. tostring(err)); autoFinish() end
+end
+
 -- (0.8.3) autotest loantest (one company per player): the host's company asks the client's for a loan of 100000 over 2 months at
 -- 10 % (scenario by host), the client's accepts it (scenario by client), then each game reads both balances: the lender 100000
 -- less, the borrower 100000 more, the same on both games (the session's checks then compare them)
