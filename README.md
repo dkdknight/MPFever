@@ -70,6 +70,7 @@ Players can also join a game already running, and a lost connection reconnects b
   - Each player picks their company's colour in the lobby; the map's icons show who owns what, and a dot of their colour can float over the other companies' vehicles (off by default: tick it in the Settings tab).
   - What belongs to another company can't be sold, edited or used.
   - Tracks, stations and depots are open to the other companies by default. Each company sets its rules in the Rules tab of the MPFever window: private, open, or with a toll (per passage, per stop, per vehicle). A station's or depot's own setting comes first.
+  - An open depot (or one with a toll) also works for the other companies: they buy vehicles there, and it maintains their vehicles within its range and capacity. A toll depot charges its toll at each purchase and once a month for each vehicle of another company it maintains. The host can turn this off in the lobby (« Open depots usable by the other companies »).
   - Several players can run one company together: ask to join another company (its chief accepts), leave yours, or merge two companies.
   - **Game rules**, chosen by the host in the lobby ("Game settings...") and kept in the savegame; everybody sees them in the Game tab of the MPFever window, where the host can change them: the start money of a new company (2 million by default; the host's company gets it too at the start of a new game), the sharing rules on or off (off: every track, station, stop and depot is open and free for everybody), and the bankruptcy rule.
   - A company in debt for too long (3 to 24 months, set by the host in the lobby) goes bankrupt: its lines, stations and depots are auctioned to the others, and its players start again.
@@ -122,7 +123,8 @@ See [SERVER](docs/SERVER.txt).
 
 A player can host through a Linux relay so everyone joins one address and the host needs no inbound port.
 See the [Linux relay setup guide](docs/LINUX-RELAY.md) and look for the Linux x64 relay and its SHA-256 checksum in the
-[release assets](https://github.com/dkdknight/MPFever/releases/latest). Host migration is experimental and off by default.
+[release assets](https://github.com/dkdknight/MPFever/releases/latest) (`mpfever-relay-linux-x64`). Host migration is experimental and off by default.
+The Linux relay is written and looked after by [ampynjord](https://github.com/ampynjord).
 
 ### And also
 
@@ -155,7 +157,7 @@ The mods tested so far are listed in [MODS](docs/MODS.md).
 ## Known limitations
 
 - **One company per player:** a merger into the savegame's company leaves the merged company's loans behind (they are the game's own loans).
-- **Windows only** (Steam, GOG and Epic copies). Linux and Steam Deck players report that it runs through Proton (see INSTALL.txt; untested by us).
+- **Windows only** (Steam, GOG and Epic copies). Linux and Steam Deck players report that it runs through Proton (see INSTALL.txt; I haven't tested it).
 - **One company per player: the game's achievements** are counted for the savegame's company only (the game's own scripts see that company alone).
 - **Small drifts of vehicles and passengers** can happen. They are repaired by a reload if they last.
 - **Two players changing the same place within about two seconds**: the build made second is left out on every game when it no longer fits the place, and has to be made again (with one company per player, the chat tells its player).
@@ -263,6 +265,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
   - the translations into 13 languages;
   - the in-game window and the chat.
 - **[Steelworm](https://github.com/Steelworm)**: build timing fixes, the builder lead, in-depth issue analyses.
+- **[ampynjord](https://github.com/ampynjord)**: the Linux session server (mpfever-relay) and hosting through it (PR #334).
 - **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures, the company rules, the industries' demand fix, the faster industry connection, the faster saves and the Mod Hub folders (MIT).
 - **DubstepDude-hub, Kev1505in (keviK), AMD and hschi**: long sessions sent with the logs of every player, which showed
   that players with different DLCs desynchronise (0.6.9).
@@ -274,7 +277,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
 
 Written about MPFever: [PCGamesN](https://www.pcgamesn.com/transport-fever-3/multiplayer-mod), [PC Games](https://www.pcgames.de/Transport-Fever-3-Spiel-75226/News/Multiplayer-Mod-Koop-Kompetitiv-Unternehmen-1558055/) (German), [PlayNews](https://www.playnews.gg/en/news/transport-fever-3-multiplayer-mpfever-adds-co-op-and-competition-all-for-free) and an [interview on Spielemagazin.de](https://www.spielemagazin.de/spiele/interviews/mpfever-multiplayer-fuer-transport-fever-3/45494) (German).
 
-MPFever is free and open source, under the [GNU General Public License v3](LICENSE) (GPL-3.0-or-later): you may use, study, change and share it, and a project that includes MPFever's code must be shared under the same license. Versions up to 0.4.5 were published under the MIT License and stay so; see [NOTICE.txt](NOTICE.txt). Come and talk with us on the [Discord](https://discord.gg/DfMxFUQZCR), or give your feedback in the [Discussions](https://github.com/dkdknight/MPFever/discussions). If you enjoy MPFever, you can support its development on [Ko-fi](https://ko-fi.com/knighthd) or leave a comment on [Nexus](https://www.nexusmods.com/transportfever3/mods/4?tab=posts).
+MPFever is free and open source, under the [GNU General Public License v3](LICENSE) (GPL-3.0-or-later): you may use, study, change and share it, and a project that includes MPFever's code must be shared under the same license. Versions up to 0.4.5 were published under the MIT License and stay so; see [NOTICE.txt](NOTICE.txt). Come and talk on the [Discord](https://discord.gg/DfMxFUQZCR), or give your feedback in the [Discussions](https://github.com/dkdknight/MPFever/discussions). If you enjoy MPFever, you can support its development on [Ko-fi](https://ko-fi.com/knighthd) or leave a comment on [Nexus](https://www.nexusmods.com/transportfever3/mods/4?tab=posts).
 
 [![Support MPFever on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/knighthd)
 
