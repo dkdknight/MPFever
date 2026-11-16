@@ -101,11 +101,14 @@ end
 -- Decide what to do with a command a mod's interface sends.
 -- f: { auto = bool (sent by itself, not in answer to this player), mod = bool (from a mod's file), strict = name or nil,
 --      role = "host"/"client"/other, separate = bool, owner = "mine"/"theirs"/nil (the company owning arg 1),
---      idle = seconds since this player's own last action (nil: none yet) }
+--      idle = seconds since this player's own last action (nil: none yet), declared = the mod declared it decides itself }
 -- returns "send" or "drop", and the reason
 function M.decide(f)
 	if not f.auto or not f.mod then return "send", "not automatic" end
 	if f.role ~= "host" and f.role ~= "client" then return "send", "no session" end
+	-- (0.8.17) a mod that declared, with MPFever's API (mpfever_api.lua, docs/MOD-API.md), that it decides itself which game
+	-- sends its automatic commands (mp.shouldSend): sent as it is sent, none of the rules below
+	if f.declared then return "send", "the mod decides itself (MPFever API)" end
 	if not f.strict and f.idle ~= nil and f.idle <= M.WINDOW then return "send", "this player's own job" end
 	if f.separate and f.owner == "mine" then return "send", "this player's company owns it" end
 	if f.separate and f.owner == "theirs" then return "drop", "another company owns it: its game sends it" end

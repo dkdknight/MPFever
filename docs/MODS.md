@@ -130,4 +130,6 @@ A few things help your mod work in multiplayer:
 - With one company per player, `api.engine.util.getPlayer()` in the simulation is the savegame's first company on every PC: use the owner of the entity (`PLAYER_OWNED`) instead.
 - Avoid the debug commands (`api.cmd.debug`) for game logic.
 
+Since 0.8.17 your mod can also ask MPFever directly (is a session running, which company, which PC should send a command your interface sends by itself) and tell it that it handles this itself: see **[MOD-API.md](MOD-API.md)**.
+
 Get in touch through the [issues](https://github.com/dkdknight/MPFever/issues).

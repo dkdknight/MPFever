@@ -1426,6 +1426,26 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             Check(Mods.Judge("stombor_zoning", Mods.Sim).Level == "caution", "mods: Town Zoning still to check");
             Check(Mods.Judge("some_unknown_mod", Mods.Sim).Level == "caution" && Mods.Judge("some_unknown_mod", Mods.Assets).Level == "ok", "mods: an unknown mod judged by its files, as before");
             Check(Mods.Judge("urbangames_no_costs_1", Mods.Load).Level == "fixed", "mods: the game's No costs made compatible");
+            // (0.8.17) a script mod that uses MPFever's public API (docs/MOD-API.md) is made for MPFever; a known verdict still wins
+            Check(Mods.Judge("some_unknown_mod", Mods.Sim, true).Level == "ok" && Mods.Judge("some_unknown_mod", Mods.Ui, true).Level == "ok", "mods: a script mod using the mod API is made for MPFever");
+            Check(Mods.Judge("tpf3mp_1", Mods.Sim, true).Level == "bad" && Mods.Judge("some_unknown_mod", Mods.Assets, true).Level == "ok", "mods: a known verdict still wins over the API");
+            Check(Mods.ApiUse.IsMatch("local mp = package.loaded[\"mpfever\"]") && Mods.ApiUse.IsMatch("local mp = package.loaded['mpfever']") && Mods.ApiUse.IsMatch("if package.loaded.mpfever then end")
+                && !Mods.ApiUse.IsMatch("package.loaded[\"mpfever_gs_hook\"]") && !Mods.ApiUse.IsMatch("package.loaded.mpfever_skyspeed"), "mods: the API's use found in a mod's file, not MPFever's own keys");
+            {
+                var tmp = Path.Combine(Path.GetTempPath(), "mpfever_apitest_" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Directory.CreateDirectory(Path.Combine(tmp, "my_mod_1", "res", "scripts"));
+                    File.WriteAllText(Path.Combine(tmp, "my_mod_1", "res", "scripts", "a.lua"), "local mp = package.loaded[\"mpfever\"]");
+                    Directory.CreateDirectory(Path.Combine(tmp, "other_1"));
+                    File.WriteAllText(Path.Combine(tmp, "other_1", "b.lua"), "return 1");
+                    Directory.CreateDirectory(Path.Combine(tmp, "mpfever_1"));
+                    File.WriteAllText(Path.Combine(tmp, "mpfever_1", "c.lua"), "package.loaded[\"mpfever\"] = mp");
+                    Check(Mods.UsesApi(Path.Combine(tmp, "my_mod_1")) && !Mods.UsesApi(Path.Combine(tmp, "other_1")) && !Mods.UsesApi(Path.Combine(tmp, "mpfever_1")) && !Mods.UsesApi(null),
+                        "mods: a folder using the API found; another, MPFever's own and none not");
+                }
+                finally { try { Directory.Delete(tmp, true); } catch { } }
+            }
             var roots = Mods.LocalRoots(@"C:\x\local");
             Check(roots.Contains(Path.Combine(@"C:\x\local", "mods")) && roots.Contains(Path.Combine(@"C:\x\local", "staging_area")), "mods: local\\mods and local\\staging_area searched");
             return ok;

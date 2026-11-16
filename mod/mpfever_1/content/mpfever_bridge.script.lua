@@ -997,6 +997,29 @@ end
 local SIM = { subscribed = false }
 -- (0.8.1) the functions written above SIM read it through this reference (see REFUND.book)
 REFUND.sim = SIM
+-- (0.8.17) The public API for other mods (mpfever_api.lua, docs/MOD-API.md): package.loaded["mpfever"] of this state, the
+-- simulation's (SIM.installApi, from update) or the game scripts' interface half's (G.installApi, from guiUpdate). The same
+-- module for both. MPFEVER_MODAPI=0: none
+pcall(function()
+	local okA, A = pcall(ug_require, "mpfever_api.lua")
+	if not (okA and type(A) == "table") then okA, A = pcall(ug_require, "mpfever_1::/mpfever_api.lua") end
+	if okA and type(A) == "table" then SIM.MPAPI = A end
+end)
+SIM.installApi = function()
+	if SIM.api ~= nil or not SIM.MPAPI then return end
+	SIM.api = false
+	local okD, dbg = pcall(function() return debug end)
+	SIM.api = SIM.MPAPI.install({
+		half = "simulation", version = C.MODVERSION, log = log,
+		getinfo = okD and type(dbg) == "table" and dbg.getinfo or nil,
+		role = function() return C.ACTIVE and C.ROLE or "solo" end,
+		server = function() return C.SERVER end,
+		mode = function() return SIM.coRegistry and SIM.coRegistry.mode end,
+		companyOf = function(e) return CO.idOfEntity(SIM.coRegistry, e) end,
+		entityOf = function(n) return CO.entityOf(SIM.coRegistry, n) end,
+		gamePlayer = function() return api.engine.util.getPlayer() end,
+	}) or false
+end
 
 -- ================================================================== action execution
 
@@ -2984,6 +3007,7 @@ SIM.cbTest = function()
 end
 
 local function update(userParams, state, dt)
+	if SIM.api == nil then pcall(SIM.installApi) end
 	if not C.ACTIVE then return end
 	if SIM.ksoQueue then
 		local okK, errK = pcall(SIM.keepStreetFlush)
@@ -9116,8 +9140,29 @@ G.asbTest = function()
 end
 -- what to do with a game script's command (tag: { name, args }; mods: the mods' files on the stack; ctx: this bridge's facts;
 -- MA: mpfever_modauto.lua; idle: seconds since this player's own last build): "send", "drop" or "resync", and why
+-- (0.8.17) the public API in the game scripts' interface half (see SIM.installApi): this game's company, the host, the game that
+-- should send a mod's automatic command
+G.installApi = function()
+	if G.api ~= nil or not SIM.MPAPI then return end
+	G.api = false
+	local okD, dbg = pcall(function() return debug end)
+	G.api = SIM.MPAPI.install({
+		half = "interface", version = C.MODVERSION, log = log,
+		getinfo = okD and type(dbg) == "table" and dbg.getinfo or nil,
+		role = function() return C.ACTIVE and C.ROLE or "solo" end,
+		server = function() return C.SERVER end,
+		mode = function() return type(R.CO) == "table" and R.CO.mode end,
+		companyOf = function(e) return CO.idOfEntity(R.CO, e) end,
+		entityOf = function(n) return CO.entityOf(R.CO, n) end,
+		myCompany = function() return G.myCo end,
+		ownerCompany = function(e) return CO.idOfEntity(R.CO, e) or CO.idOfEntity(R.CO, R.ownerOf(e)) end,
+		gamePlayer = function() return api.engine.util.getPlayer() end,
+	}) or false
+end
 G.gsVerdict = function(tag, mods, ctx, MA, idle)
 	local facts = { auto = true, mod = true, role = ctx.role, separate = ctx.separate, strict = MA.strictOf(mods), idle = idle }
+	-- (0.8.17) a mod that declared it decides itself which game sends (MPFever API, G.installApi)
+	pcall(function() if SIM.MPAPI and G.api then facts.declared = SIM.MPAPI.declaredOf(G.api, mods) ~= nil end end)
 	if ctx.separate and ctx.reg and ctx.myCo then
 		pcall(function()
 			local co = nil
@@ -23607,6 +23652,7 @@ H.permstest = function(from, p)
 end
 
 local function guiUpdate(userParams, state, guiState)
+	if G.api == nil then pcall(G.installApi) end
 	if not C.ACTIVE then return end
 	G.frames = G.frames + 1
 	-- ((0.7.15, #174) this frame, for the builds an interface sends in one frame, see executeActionOnce)

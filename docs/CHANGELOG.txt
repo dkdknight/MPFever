@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.8.17 - (in progress): a player joining no longer starts the shared maintenance one moment early on his game
+0.8.17 - (in progress): a player joining no longer starts the shared maintenance one moment early on his game; an API for mod authors
   - FIX (#388: Andy, berni1212, dedicated server, vehicles drifting 20 minutes after a join): one company per player, when a
     player joined, his game began to load the session's save while the script of the game he had before still ran for a moment;
     that script gave its table of the depots open for maintenance just after the load was counted, so the table was taken as the
@@ -11,6 +11,13 @@ MPFever - Changelog
     two states of that copy); the loaded game's script then gives the table at the same step on every game. MPFEVER_MTLOADBLOCK=0:
     as before. MPFEVER_MTSTALETEST=1 (tests) gives the table of the game before again at the load, as Andy's game did.
     Test: tests/test_maintload0817.py.
+  - NEW (for mod authors): MPFever's public API. Until now each mod that drifted needed its own rule in MPFever, guessed from the
+    outside (a rule made for one mod could catch another). A mod can now ask MPFever through package.loaded["mpfever"]: whether
+    a session runs, the company mode, the company of a player entity (the same number on every game) and this game's entity of a
+    company; in the interface, whether this game is the host's or a dedicated server's, its own company, and which game should
+    send a command the mod sends by itself (mp.shouldSend). A mod that declares mp.declare{ autoCommands = "self" } has its
+    automatic commands sent as it sends them, none of MPFever's rules for mods. The questions that would differ between games
+    answer nil in the simulation. Guide: docs/MOD-API.md. MPFEVER_MODAPI=0: no API. Test: tests/test_modapi0817.py.
 
 0.8.16 - 2026-11-16: no more freeze from a mod's burst of commands, an old native module is told to everyone
   - FIX (#385: CowboyPilot and FlungPooPanda, vehicles drifting every 3 minutes, 5 resyncs): MPFever updated itself while the

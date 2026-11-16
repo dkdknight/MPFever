@@ -235,9 +235,12 @@ namespace MPFever
             return T("DLC différents : ", "Different DLCs: ") + string.Join(T(" ; ", "; "), d) + T(". Des désynchronisations sont possibles.", ". Desynchronisations may happen.") + DlcAdvice();
         }
 
-        public static Verdict Judge(string id, string kind)
+        public static Verdict Judge(string id, string kind, bool usesApi = false)
         {
             if (id != null && Known.TryGetValue(id, out var k)) return k();
+            // (0.8.17) a script mod that asks MPFever itself (its public API, docs/MOD-API.md): made by its author for MPFever
+            if (usesApi && (kind == Sim || kind == Ui) && Environment.GetEnvironmentVariable("MPFEVER_MODAPI") != "0")
+                return new Verdict { Level = "ok", Note = T("Fait pour MPFever : il utilise son API pour les mods.", "Made for MPFever: it uses its mod API.") };
             var c = id != null ? Checked(id) : null;
             if (c != null) return c;
             if (kind == Sim) return new Verdict { Level = "caution", Note = T("Script qui agit sur la partie : pas encore testé avec MPFever.", "Script acting on the game: not tested with MPFever yet.") };
@@ -594,6 +597,40 @@ namespace MPFever
             catch { return ""; }
         }
 
+        // (0.8.17) a mod's Lua file that reads MPFever's public API (package.loaded["mpfever"] or package.loaded.mpfever)
+        internal static readonly Regex ApiUse = new Regex(@"package\.loaded\s*(\[\s*[""']mpfever[""']\s*\]|\.mpfever\b)");
+
+        /// <summary>(0.8.17) Whether a mod's folder uses MPFever's public API (docs/MOD-API.md): one of its Lua files reads
+        /// package.loaded["mpfever"]. MPFever's own folder never counts.</summary>
+        public static bool UsesApi(string dir)
+        {
+            try
+            {
+                if (dir == null || Path.GetFileName(dir.TrimEnd('\\', '/')).StartsWith("mpfever", StringComparison.OrdinalIgnoreCase)) return false;
+                foreach (var f in Directory.GetFiles(dir, "*.lua", SearchOption.AllDirectories))
+                    if (new FileInfo(f).Length < 4000000 && ApiUse.IsMatch(File.ReadAllText(f))) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        static readonly Dictionary<string, bool> apiCache = new Dictionary<string, bool>();
+
+        /// <summary>UsesApi of an installed mod, once per folder and date (false when it is not installed here).</summary>
+        static bool ApiOf(string id)
+        {
+            var d = Dir(id);
+            if (d == null) return false;
+            string key = Stamp(d);
+            lock (apiCache)
+            {
+                if (apiCache.TryGetValue(key, out var b)) return b;
+                b = UsesApi(d);
+                apiCache[key] = b;
+                return b;
+            }
+        }
+
         static readonly Dictionary<string, Tuple<string, string, string>> infoCache = new Dictionary<string, Tuple<string, string, string>>();
 
         /// <summary>(0.8.1, MODFPSTAMP) What tells that a mod's folder changed: its files' count, sizes and dates. Before, the
@@ -891,7 +928,7 @@ namespace MPFever
                     else if (e.Fp != "" && mine.Item1 != "") { here = mine.Item1 == e.Fp ? "ok" : "differs"; if (here == "differs" && personal == "") c.Differs.Add(DiffersName(e.Name, DuplicateLocal(e.Id))); }
                     if (kind == "") kind = mine.Item2;
                 }
-                var v = Judge(e.Id, kind);
+                var v = Judge(e.Id, kind, !BuiltIn(e) && ApiOf(e.Id));
                 if (v.Level == "bad") c.Bad.Add(e.Name);
                 // (0.8.1, MODOLDCOPY) another version because of a copy in this player's own mods: "hub" or "local" (see OldCopyFix)
                 string fix = here == "differs" && personal == "" ? OldCopyFix(e.Id, e.Fp) : "";

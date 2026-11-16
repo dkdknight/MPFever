@@ -25857,6 +25857,19 @@
       "ko": "이 게임은 이전 MPFever 네이티브 모듈로 실행 중입니다(업데이트 중에 게임이 열려 있었습니다): 다른 게임과 어긋나게 됩니다. 게임을 닫은 다음 MPFever를 다시 시작하세요.",
       "zh-CN": "此游戏正在使用旧的 MPFever 原生模块（更新时游戏处于打开状态）：会与其他游戏产生偏差。请关闭游戏，然后重新启动 MPFever。",
       "zh-TW": "此遊戲正在使用舊的 MPFever 原生模組（更新時遊戲處於開啟狀態）：會與其他遊戲產生偏差。請關閉遊戲，然後重新啟動 MPFever。"
+    },
+    "Made for MPFever: it uses its mod API.": {
+      "de": "Für MPFever gemacht: nutzt dessen Mod-API.",
+      "es": "Hecho para MPFever: usa su API para mods.",
+      "it": "Fatto per MPFever: usa la sua API per i mod.",
+      "nl": "Gemaakt voor MPFever: gebruikt de mod-API ervan.",
+      "pl": "Stworzony dla MPFever: używa jego API dla modów.",
+      "pt-BR": "Feito para o MPFever: usa a API de mods dele.",
+      "ru": "Сделан для MPFever: использует его API для модов.",
+      "ja": "MPFever 用に作成：MPFever の Mod API を使用しています。",
+      "ko": "MPFever용으로 제작됨: MPFever의 모드 API를 사용합니다.",
+      "zh-CN": "为 MPFever 制作：使用其模组 API。",
+      "zh-TW": "為 MPFever 製作：使用其模組 API。"
     }
   }
 }

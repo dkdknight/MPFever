@@ -42,6 +42,10 @@ end
 local okMA, MA = pcall(ug_require, "mpfever_modauto.lua")
 if not (okMA and type(MA) == "table") then okMA, MA = pcall(ug_require, "mpfever_1::/mpfever_modauto.lua") end
 if not (okMA and type(MA) == "table") then MA = nil end
+-- (0.8.17) the public API for other mods (mpfever_api.lua, installed by U.installApi below)
+local okAPI, MPAPI = pcall(ug_require, "mpfever_api.lua")
+if not (okAPI and type(MPAPI) == "table") then okAPI, MPAPI = pcall(ug_require, "mpfever_1::/mpfever_api.lua") end
+if not (okAPI and type(MPAPI) == "table") then MPAPI = nil end
 -- (MPFEVER_MODAUTO=0: every game sends what its mods send, as before)
 U.modAutoOn = MA ~= nil and C.ACTIVE and os.getenv("MPFEVER_MODAUTO") ~= "0"
 -- > 0 while a react.onStep / onStepTimer callback or a mod's guiUpdate runs (see the wrappers below)
@@ -100,6 +104,8 @@ U.autoVerdict = function(tag)
 	facts.role = C.ROLE
 	facts.separate = st ~= nil and st.mode == "separate"
 	facts.strict = MA.strictOf(sf.mods)
+	-- (0.8.17) a mod that declared it decides itself which game sends (MPFever API)
+	if MPAPI and U.api then facts.declared = MPAPI.declaredOf(U.api, sf.mods) ~= nil end
 	if facts.separate then facts.owner = U.ownerOf(tag) end
 	-- (this player's own last action: a command of theirs, or a build of their tools, see the bridge's guiHandleEvent)
 	local last = U.lastLocal
@@ -108,6 +114,36 @@ U.autoVerdict = function(tag)
 	facts.idle = last and (os.clock() - last) or nil
 	local verdict, why = MA.decide(facts)
 	return verdict, why, facts
+end
+
+-- ---------------------------------------------------------------- the public API for other mods (0.8.17, mpfever_api.lua)
+-- package.loaded["mpfever"] of this interface state: the session, the companies, the game that should send a mod's command
+-- (docs/MOD-API.md). MPFEVER_MODAPI=0: none
+U.installApi = function()
+	if not MPAPI then return end
+	local okD, dbg = pcall(function() return debug end)
+	U.api = MPAPI.install({
+		half = "interface", version = C.MODVERSION, log = log,
+		getinfo = okD and type(dbg) == "table" and dbg.getinfo or nil,
+		role = function() return C.ACTIVE and C.ROLE or "solo" end,
+		server = function() return C.SERVER end,
+		mode = function() return U.status and U.status.mode end,
+		companyOf = function(e) return U.coMap and U.coMap[e] end,
+		entityOf = function(n)
+			for e, co in pairs(U.coMap or {}) do if co == n then return e end end
+			return nil
+		end,
+		myCompany = function() return U.myCo end,
+		ownerCompany = function(e)
+			local co = U.coMap and U.coMap[e]
+			if co == nil then
+				local po = api.engine.getComponent(e, api.type.ComponentType.PLAYER_OWNED)
+				if po and po.player then co = U.coMap and U.coMap[po.player] end
+			end
+			return co
+		end,
+		gamePlayer = function() return api.engine.util.getPlayer() end,
+	})
 end
 
 U.autoLog = function(tag, facts, why, dropped)
@@ -6800,6 +6836,9 @@ end
 local M = {}
 
 M.doReplace = function(replacementApi)
+	-- (0.8.17) the public API for other mods, with or without a session (they then read "no session")
+	local okA, errA = pcall(U.installApi)
+	if not okA then log("mod API: " .. tostring(errA)) end
 	if not C.ACTIVE then return end
 	local ok, err = pcall(install)
 	if not ok then log("UI interception FAILED: " .. tostring(err)) end

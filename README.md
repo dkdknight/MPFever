@@ -150,7 +150,7 @@ The Linux relay is written and looked after by [ampynjord](https://github.com/am
 | **Other mods with a script that changes the game by itself** | ⚠️ Shown as « untested script ». They may make the games drift apart. |
 | **Other multiplayer mods** | ❌ Incompatible: turn them off. |
 
-The mods tested so far are listed in [MODS](docs/MODS.md).
+The mods tested so far are listed in [MODS](docs/MODS.md). Mod authors: see [MOD-API](docs/MOD-API.md) to make a mod work with MPFever.
 
 **Mod authors:** if your mod breaks a session, open an [issue](https://github.com/dkdknight/MPFever/issues). We can work together on a simple way for your mod to know it runs in MPFever and to act on the host only.
 
