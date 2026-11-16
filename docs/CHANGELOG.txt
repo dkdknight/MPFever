@@ -1,6 +1,17 @@
 MPFever - Changelog
 ===================
 
+0.8.17 - (in progress): a player joining no longer starts the shared maintenance one moment early on his game
+  - FIX (#388: Andy, berni1212, dedicated server, vehicles drifting 20 minutes after a join): one company per player, when a
+    player joined, his game began to load the session's save while the script of the game he had before still ran for a moment;
+    that script gave its table of the depots open for maintenance just after the load was counted, so the table was taken as the
+    new game's and in use from its first iteration, and never given again (the same table). The other games used none until their
+    new game's script gave it, about 50 steps later: the maintenance differed in between. From a load's first copy, the native
+    module now drops its tables, refuses the game before's and uses none until an iteration of the loaded game itself (one of the
+    two states of that copy); the loaded game's script then gives the table at the same step on every game. MPFEVER_MTLOADBLOCK=0:
+    as before. MPFEVER_MTSTALETEST=1 (tests) gives the table of the game before again at the load, as Andy's game did.
+    Test: tests/test_maintload0817.py.
+
 0.8.16 - 2026-11-16: no more freeze from a mod's burst of commands, an old native module is told to everyone
   - FIX (#385: CowboyPilot and FlungPooPanda, vehicles drifting every 3 minutes, 5 resyncs): MPFever updated itself while the
     host's game was open, the game's winhttp.dll could not be replaced (said in the launcher's log only) and the host's game went

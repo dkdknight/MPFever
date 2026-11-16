@@ -1276,7 +1276,8 @@ function E.maintSync(reg, getenv)
 	local ans = getenv(E.mtAsk)
 	if ans == "send" then
 		ans = getenv("\1MPFMD " .. E.mtTok .. " " .. payload)
-		if ans ~= "ok" and not E.mtBadSaid and E.env and E.env.log then
+		-- ((0.8.17, #388) "wait": a load under way, the game before's table is not taken: asked again by the loaded game's script)
+		if ans ~= "ok" and ans ~= "wait" and not E.mtBadSaid and E.env and E.env.log then
 			E.mtBadSaid = true
 			E.env.log("companies: shared maintenance: the native module refused the table (" .. tostring(ans) .. ")")
 		end

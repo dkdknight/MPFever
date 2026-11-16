@@ -54,7 +54,7 @@ def main():
           " ".join(toks).endswith("4D 85 E4 74 15 8B 47 04 85 C0 0F 88 ?? ?? ?? ?? 41 3B 04 24 0F 85 ?? ?? ?? ??"), tail)
     check("the splice clears r12 only for an open depot", "if (MtOpen(t, (i32)r->rbx, *(i32*)r->r12)) { r->r12 = 0;" in cand)
     check("  never without a table, nor with one of another load, nor when it says off",
-          "if (!r->r12 || !g_mtHave) return;" in cand and "if (!t.on || t.loads != g_ctlLoads) return;" in cand
+          ("if (!r->r12 || !g_mtHave) return;" in cand or "if (!r->r12 || !g_mtHave || g_mtBlock) return;" in cand) and "if (!t.on || t.loads != g_ctlLoads) return;" in cand
           and cand.index("t.loads != g_ctlLoads") < cand.index("MtOpen("))
     check("the getenv names start with \\1MPFM", "name[0] == 1 && name[1] == 'M' && name[2] == 'P' && name[3] == 'F' && name[4] == 'M'" in hook
           and "return g_getenvOrig ? g_getenvOrig(name) : 0;" in hook)
@@ -65,7 +65,7 @@ def main():
     start = block(src, "static void MaintIterStart()")
     check("  put in use only at the start of the next simulation iteration (the engine's lists came before the script's call in one "
           "session, after it in another)", "_InterlockedExchange(&g_mtCur, 1 - g_mtCur);" in start and "g_mtPend = 0;" in start
-          and "    g_iter++;" + chr(10) + "    MaintIterStart();" + chr(10) in src)
+          and re.search(r"    g_iter\+\+;\n(    MaintIterGs\([^\n]*\n)?    MaintIterStart\(\);\n", src) is not None)
     check("  nothing hooked without the pre-iteration hook (no table would ever go in use)", "u8* mem = (at && g_preIterOn) ? AllocNear(0x200) : 0;" in inst)
     check("  the question answers \"send\" for a table of another load, and \"same\" for the one given last (waiting or in use)",
           "const MaintTable& t = g_mt[g_mtPend ? 1 - g_mtCur : g_mtCur];" in parse and "bool same = (g_mtHave || g_mtPend) && t.tok == tok && t.loads == g_ctlLoads;" in parse)

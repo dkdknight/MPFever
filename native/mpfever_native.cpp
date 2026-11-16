@@ -1274,9 +1274,11 @@ static bool BatchLog() { if (g_batchLog < 0) g_batchLog = GetEnvironmentVariable
 
 static void DriftPoll();   // (0.8.2, the drift diagnostic, see InstallDriftDiag)
 static void MaintIterStart();   // (0.8.15, the shared maintenance's table, see InstallSharedMaint)
+static void MaintIterGs(void* gs);   // (0.8.17, #388: the first iteration of a game just loaded, see MaintAtLoad)
 extern "C" u64 PreIterDetour(void* a)
 {
     g_iter++;
+    MaintIterGs(a ? *(void**)((u8*)a + 8) : 0);
     MaintIterStart();
     g_simTid = (long)GetCurrentThreadId();
     if (g_entWatch) { static long it = 0; if (++it % 250 == 0) EntFlush(); }
@@ -1963,6 +1965,7 @@ static void DropAtLoad()
 
 static void DecisionCopy(void* src, void* dst);
 static bool g_replOn = false;
+static void MaintAtLoad(void* src, void* dst);   // (0.8.17, #388, see InstallSharedMaint)
 extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
 {
     u32 before = dst ? *(u32*)((u8*)dst + 0x20c) : 0;
@@ -1987,6 +1990,7 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
         // of player 108734, the user's crash of 2026-10-28, autotests ts2, ts3 and ts4 of 2026-11-07). The mod says them again
         // within seconds in a session of companies. MPFEVER_LOADKEEPLOCAL=1: kept, as before
         if (!LoadKeepLocal()) DropAtLoad();
+        MaintAtLoad(src, dst);
     }
     u64 r = g_replOrig(src, dst, flag);
     if (dst && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) g_uiWord = (long)*(u32*)((u8*)dst + 0x20c);
@@ -5632,6 +5636,22 @@ static volatile long g_mtCur = 0, g_mtHave = 0;
 // that iteration in one session and after it in another (runs g15frx and m15a), so a table used at once would depend on that
 // order; at the iteration's start, every game uses the table of the iteration before, whatever the order
 static volatile long g_mtPend = 0;
+// (0.8.17, #388: Andy joined a dedicated server's session; his game began to load the session's save, and the script of the game
+// he had before, still running for a moment, gave its table right after the load was counted (DropAtLoad): taken as the new
+// game's, in use from its first iteration, and as the same table it was never given again. The other games used none until their
+// new game's script gave it, about 50 steps later: their maintenance differed in between, 3 vehicles drifted 20 minutes later.)
+// From a load's first copy (MaintAtLoad) the tables are dropped and none is taken nor used (g_mtBlock) until an iteration of the
+// new game's own states (the two of that copy: every iteration alternates between them), so its script gives the table at the same
+// step on every game. MPFEVER_MTLOADBLOCK=0: as before. MPFEVER_MTSTALETEST=1 (tests): at the load, the table in use is given
+// again as the game before's script did
+static volatile long g_mtBlock = 0, g_mtBlockIters = 0, g_mtLetLoad = -1, g_mtLoadGiveSaid = 1, g_mtStaleSaid = 0;
+static void* volatile g_mtNewGs[2] = { 0, 0 };
+static long MtLoadBlockOn()
+{
+    static long v = -1;
+    if (v < 0) { char e[4]; v = (GetEnvironmentVariableA("MPFEVER_MTLOADBLOCK", e, 3) == 1 && e[0] == '0') ? 0 : 1; }
+    return v;
+}
 static volatile long g_mtCalls = 0, g_mtLet = 0, g_mtKept = 0, g_mtAsks = 0, g_mtSends = 0, g_mtShown = 0, g_mtSeq = 0;
 static volatile long g_mtStepShown = 0;
 static volatile u32 g_mtLastStep = 0xFFFFFFFFu;
@@ -5677,6 +5697,8 @@ static char* MaintGetenv(const char* s)
         const char* p = s + 2;
         u32 tok = (u32)MtNum(p);
         g_mtAskIter = g_iter;
+        // (a load under way: the script asking is the game before's, nothing is taken from it, see g_mtBlock)
+        if (g_mtBlock) return 0;
         long n = _InterlockedIncrement(&g_mtAsks);
         // (the table given last: the one waiting for the next iteration, else the one in use)
         const MaintTable& t = g_mt[g_mtPend ? 1 - g_mtCur : g_mtCur];
@@ -5692,6 +5714,10 @@ static char* MaintGetenv(const char* s)
     }
     if (s[0] == 'S' && s[1] == 0) return (char*)(g_mtSplice ? "on" : "off");   // "\1MPFMS": is the engine's check hooked?
     if (s[0] == 'D' && s[1] == ' ') {
+        if (g_mtBlock) {
+            if (!g_mtStaleSaid) { g_mtStaleSaid = 1; Buf b; b.str("shared maintenance: a table given by the game before the load, refused"); LogLine(b); }
+            return (char*)"wait";
+        }
         const char* p = s + 2;
         long next = 1 - g_mtCur;
         MaintTable& t = g_mt[next];
@@ -5714,6 +5740,12 @@ static char* MaintGetenv(const char* s)
             LogLine(b);
         }
         MtOrder("table given", k);
+        if (!g_mtLoadGiveSaid) {
+            g_mtLoadGiveSaid = 1;
+            Buf b; b.str("shared maintenance: the first table of this load given at step ").dec((i64)g_diagStep).str("; depot lists opened since the load before it: ")
+                .dec(g_mtLetLoad >= 0 ? g_mtLet - g_mtLetLoad : -1);
+            LogLine(b);
+        }
         return (char*)"ok";
     }
     return 0;
@@ -5725,6 +5757,50 @@ static void MaintIterStart()
     _InterlockedExchange(&g_mtCur, 1 - g_mtCur);
     g_mtPend = 0;
     g_mtHave = 1;
+}
+// a game being loaded (ReplDetour, its first copy into a fresh state): see g_mtBlock
+static void MaintAtLoad(void* src, void* dst)
+{
+    g_mtLetLoad = g_mtLet;
+    g_mtLoadGiveSaid = 0;
+    bool block = MtLoadBlockOn() != 0;
+    if (block) {
+        g_mtNewGs[0] = src; g_mtNewGs[1] = dst;
+        g_mtPend = 0; g_mtHave = 0;
+        g_mtBlockIters = 0; g_mtStaleSaid = 0;
+        g_mtBlock = 1;
+        Buf b; b.str("shared maintenance: a game is being loaded (states ").hex((u64)src).str(", ").hex((u64)dst).str("): no table until its own script gives one");
+        LogLine(b);
+    }
+    char e[4] = {};
+    if (GetEnvironmentVariableA("MPFEVER_MTSTALETEST", e, 3) == 1 && e[0] == '1') {
+        // (the table in use given again now, as Andy's game before did: refused while blocked, else taken for this load)
+        const MaintTable& cur = g_mt[g_mtCur];
+        if (block) { Buf b; b.str("shared maintenance: stale test: the table of the game before (").dec((i64)cur.tok).str(") given again at the load: refused"); LogLine(b); }
+        else {
+            MaintTable& nx = g_mt[1 - g_mtCur];
+            nx = cur;
+            nx.loads = g_ctlLoads;
+            g_mtPend = 1;
+            Buf b; b.str("shared maintenance: stale test: the table of the game before (").dec((i64)cur.tok).str(") given again at the load: taken"); LogLine(b);
+        }
+    }
+}
+// at the start of each iteration: the first one of the game just loaded ends the block (see g_mtBlock)
+static void MaintIterGs(void* gs)
+{
+    if (!g_mtBlock) return;
+    if (gs && (gs == g_mtNewGs[0] || gs == g_mtNewGs[1])) {
+        g_mtBlock = 0;
+        Buf b; b.str("shared maintenance: the loaded game's first iteration (state ").hex((u64)gs).str(", ").dec(g_mtBlockIters).str(" iteration(s) of the game before since the load): its script's table taken from now");
+        LogLine(b);
+        return;
+    }
+    if (_InterlockedIncrement(&g_mtBlockIters) == 600) {
+        g_mtBlock = 0;
+        Buf b; b.str("shared maintenance: WARNING no iteration of the loaded game's states in 600 iterations (state ").hex((u64)gs).str("): tables taken again");
+        LogLine(b);
+    }
 }
 static char* GetenvHook(const char* name)
 {
@@ -5745,7 +5821,7 @@ static void MaintCandidates(SavedRegs* r)
             MtOrder(g_mtAskIter == g_iter ? "the engine's depot lists, after the script's call of this iteration," : "the engine's depot lists, before the script's call of this iteration,", g_iter - g_mtAskIter);
         }
     }
-    if (!r->r12 || !g_mtHave) return;
+    if (!r->r12 || !g_mtHave || g_mtBlock) return;
     const MaintTable& t = g_mt[g_mtCur];
     if (!t.on || t.loads != g_ctlLoads) return;
     if (MtOpen(t, (i32)r->rbx, *(i32*)r->r12)) { r->r12 = 0; _InterlockedIncrement(&g_mtLet); }
@@ -5768,6 +5844,7 @@ static void InstallSharedMaint()
     LogLine(b);
     if (!g_getenvOrig) g_mtSplice = false;
     if (g_mtSplice) Fx("sharedmaint");
+    if (g_mtSplice && MtLoadBlockOn()) Fx("maintload");
 }
 
 static void InstallVehicleWear()
