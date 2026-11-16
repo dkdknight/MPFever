@@ -62,7 +62,8 @@ SSA = grab(r"^H\.samestep_at = function\(from, p\)\n.*?^end\n", "H.samestep_at")
 TWO = grab(r"^function replayTwoStep\(a\)\n.*?^end\n", "replayTwoStep")
 
 print("the code")
-line = [l for l in RUN.split("\n") if l.startswith("\t\telseif ((now >= r.at and (gameSpeed() == 0")]
+# ((0.8.14, #337) a guard for the builds of a pause comes first on that line, see test_ptedgeturn0814.py)
+line = [l for l in RUN.split("\n") if l.startswith("\t\telseif ") and "((now >= r.at and (gameSpeed() == 0" in l]
 check(len(line) == 1 and line[0].endswith("and not G.sameStepWait(r.at, G.me) and not G.ownWaitsReplay(r) then"),
       "the release of a held build (not paused, not BUILDLEAD) checks G.ownWaitsReplay last")
 check("\t\t\tlocal busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or (G.stopsAfterBusy ~= nil and os.getenv(\"MPFEVER_OWNAFTERREPLAY\") ~= \"0\")\n" in RUN,

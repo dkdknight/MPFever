@@ -6818,6 +6818,18 @@ end
 -- on a street with stops, the tool takes them away and re-creates them on the new pieces of that street. All of them on new
 -- segments of the build that are not the construction's own (an airport's signs are on its runways: not these), each with its
 -- model and its segment's geometry, as G.eoDryRun needs. MPFEVER_CONSTOPS=0: never (the host's game reloaded, as before)
+-- (0.8.14) Also the signals and stops on the construction's own TRACKS (G.conTrackObjOk): a rail depot laid over a signalled track,
+-- a modular station's edit with signals on its tracks. The engine's conversion of the construction has none of them, and they
+-- were never replayed: "construction edge objects (airport signs)", a resynchronisation each (#364, #374, #380: 5 builds on
+-- 2026-11-15, From-Hellscream's modular_station.con, Holzi's rail_depot.con), and the host's game, left without the signal,
+-- crashed on the builder's next signal on that track before the resynchronisation ('it != components.end()',
+-- GetComponentDataIndex, #364 and #381). An airport's signs on its runways stay out: the engine's conversion makes them itself.
+G.conTrackObjOk = function(sg)
+	if os.getenv("MPFEVER_CONEDGEOBJ") == "0" then return false end
+	if type(sg) ~= "table" or sg.type ~= 1 then return false end
+	local tpl = tostring(sg.comp and sg.comp.roadTemplate or "")
+	return tpl:find("/street/airport/", 1, true) == nil and tpl:find("airfield", 1, true) == nil
+end
 G.conStopsOk = function(m)
 	if os.getenv("MPFEVER_CONSTOPS") == "0" then return false end
 	local st = type(m) == "table" and m.proposal
@@ -6829,7 +6841,7 @@ G.conStopsOk = function(m)
 	for _, o in ipairs(st.edgeObjectsToAdd) do
 		local sg = type(o) == "table" and type(o.model) == "string" and seg[o.segmentEntity] or nil
 		local c = sg and sg.comp
-		if type(c) ~= "table" or isConstructionSegment(sg) or type(c.position0) ~= "table" or type(c.position1) ~= "table"
+		if type(c) ~= "table" or (isConstructionSegment(sg) and not G.conTrackObjOk(sg)) or type(c.position0) ~= "table" or type(c.position1) ~= "table"
 			or type(c.tangent0) ~= "table" or type(c.tangent1) ~= "table" then return false end
 	end
 	return true
@@ -7054,7 +7066,7 @@ local function replayNativeConstruction(a)
 				if nEO > 0 and not withObjects then
 					log("NATIVE REPLAY " .. tostring(a.uid) .. " native construction: " .. nEO
 						.. " edge object(s) of the build not replayed (signals or stops on the construction's own tracks, an airport's signs): resynchronisation")
-					replayFailed(a, "construction edge objects (airport signs)")
+					replayFailed(a, "construction edge objects (on its own tracks or runways)")
 				end
 				pcall(function()
 					local st = res2.proposal.proposal
@@ -10110,7 +10122,13 @@ local function runNativeRelease()
 			else
 				keep[#keep + 1] = r
 			end
-		elseif ((now >= r.at and (gameSpeed() == 0 or (now == r.at and G.nstopStanding()))) or (now < r.at and G.nstopWillStand(r.at))) and not (G.eoHoldOwn and G.frames < (G.replayQuiet or 0)) and not (not r.paused and G.terrainEarlyFirst and G.terrainEarlyFirst(r.at, G.me)) and not G.sameStepWait(r.at, G.me) and not G.ownWaitsReplay(r) then
+		-- ((0.8.14, #337: Peter's bulldozer as the pause began, 2026-11-15 10:46:16) A build of the pause (r.paused, a turn from the
+		-- host) only goes in its turn, by the branch above. Made as the pause begins (G.pauseEdge), it is stamped at the pause's time
+		-- while this game's clock is still before it, and this branch released it early, the simulation about to stand there
+		-- (G.nstopWillStand), without marking its turn done: Peter's next two builds waited 30 s for turn 2 and the turn was skipped
+		-- ("never applied here in 30 s: skipped (desync risk)"), the games applied the builds in other orders and Jakob's game could
+		-- not reproduce Peter:93. MPFEVER_PTEDGETURN=0: as before)
+		elseif not (r.paused and G.ptOn and now < r.at and os.getenv("MPFEVER_PTEDGETURN") ~= "0") and ((now >= r.at and (gameSpeed() == 0 or (now == r.at and G.nstopStanding()))) or (now < r.at and G.nstopWillStand(r.at))) and not (G.eoHoldOwn and G.frames < (G.replayQuiet or 0)) and not (not r.paused and G.terrainEarlyFirst and G.terrainEarlyFirst(r.at, G.me)) and not G.sameStepWait(r.at, G.me) and not G.ownWaitsReplay(r) then
 			-- (0.7.13, #161 #166: not while a replay of another player's build is in the engine's hands, see G.ownWaitsReplay)
 			-- (the simulation about to stand at its time: released for that time, see G.nstopWillStand)
 			local at = math.max(now, r.at)
@@ -10288,8 +10306,11 @@ function G.brokenSkip(a)
 	if hb and C.ROLE == "host" then
 		if os.clock() - hb.at > G.BROKEN_HOLD then
 			G.hostBroken = nil
+		-- ((0.8.14, #364 and #381: Holzi's rail depot rebuilt on the host without the signal on its own track, then his next build, a
+		-- signal on that track, no construction in it, applied and the host's game crashed, 'it != components.end()'. Every native
+		-- build of that player is left out now. MPFEVER_HOSTFAILHOLDALL=0: only his edits of constructions, as 0.8.9 to 0.8.13)
 		elseif a.origin == hb.origin and a.native and type(a.args) == "table" and type(a.args[1]) == "table"
-			and (#(a.args[1].toRemove or {}) > 0 or #(a.args[1].toAdd or {}) > 0) then
+			and (os.getenv("MPFEVER_HOSTFAILHOLDALL") ~= "0" or #(a.args[1].toRemove or {}) > 0 or #(a.args[1].toAdd or {}) > 0) then
 			log("NATIVE REPLAY " .. tostring(a.uid) .. ": an edit of a construction by the player whose " .. hb.uid .. " this game could not reproduce ("
 				.. hb.why .. "): not built here before the resynchronisation")
 			pcall(send, "replay_failed", { uid = tostring(a.uid), why = "construction edit after " .. hb.uid })
@@ -11736,6 +11757,18 @@ G.preshipOwn = function(m)
 	end
 	return n
 end
+-- (0.8.14, #372) the first town building a build's copy takes away (a construction whose file is a town's building), or nil
+G.preTownBuildings = function(m)
+	for _, e in ipairs(type(m) == "table" and (m.toRemove or m.constructionsToRemove) or {}) do
+		local id = type(e) == "table" and e.id or e
+		if type(id) == "number" and id >= 0 then
+			local ok, c = pcall(api.engine.getComponent, id, api.type.ComponentType.CONSTRUCTION)
+			local f = ok and c and tostring(c.fileName) or ""
+			if f:find("^:*/*buildings/") or f:find("/buildings/", 1, true) then return id end
+		end
+	end
+	return nil
+end
 -- the references a build's shipped arguments hold to what already stands (nodes, segments, constructions...; not the companies),
 -- each once, sorted by kind and the builder's id: what its proposal was computed on
 G.preRefsOf = function(args)
@@ -12113,6 +12146,19 @@ G.preship = function(r)
 				log("PRESHIP native build " .. tostring(r.id) .. ": trees, plants or rocks (a construction without a file): shipped the usual way")
 				return false
 			end
+		end
+	end
+	-- (0.8.14, #372: Erik's modular harbour on beule's server, 2026-11-15 20:01) A copy that takes town buildings away: shipped the
+	-- usual way. The towns rebuild their buildings by themselves at any step: the check at the release (G.preCleanAt, on the
+	-- interface's state, a few steps behind the simulation) found the 3 buildings there, and at the build's step Erik's engine refused
+	-- its own tool's command ("Apply: invalid entity: 223560", one of them), while beule's game, which bulldozes such buildings in a
+	-- form of its own, built the harbour: a resynchronisation. The usual way ships what the builder's engine really did (nothing,
+	-- there). MPFEVER_PRESHIPTOWN=1: at the click, as in 0.7.4 to 0.8.13
+	if os.getenv("MPFEVER_PRESHIPTOWN") ~= "1" then
+		local okT, tb = pcall(G.preTownBuildings, r.copy)
+		if okT and tb then
+			log("PRESHIP native build " .. tostring(r.id) .. ": takes town building " .. tostring(tb) .. " away (the town may rebuild it before the build's step): shipped the usual way")
+			return false
 		end
 	end
 	-- (0.7.17, the autotests x1/x6/b1 of 2026-11-10: a street upgrade made by a script, "built here otherwise than shipped at the
@@ -16384,6 +16430,111 @@ H.stationedit = function(from, p)
 		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = round }
 	end
 	G.waits[#G.waits + 1] = { at = G.frames + 300, fn = function() f0, t0 = G.frames, os.clock(); G.waits[#G.waits + 1] = { at = G.frames + 300, fn = round } end }
+end
+
+-- (0.8.14) A train station's edit that carries a signal on one of the station's own new tracks, as the module tool's build of a
+-- station whose tracks have signals (From-Hellscream:235, 2026-11-15) and the rail depot laid over a signalled track (Holzi#1:137)
+-- (MPFEVER_SCENARIO=conedgeobj; MPFEVER_CONEO_ROLE=client: the client builds and the host replays, else the host builds;
+-- MPFEVER_CONEO_N rounds, 2, 10 s apart, the second on the station the first left). The station's replacement is the engine's own
+-- (createProposalReplaceConstruction, as H.stationedit); the signal is the engine's conversion of a script's signal on a copy of
+-- that track (a script cannot write a native object's model), put on the track by the tool's placeholder. Every game must build it
+-- with the signal ("edge objects here 1, originator 1" on the replaying game) and stay in sync.
+H.conedgeobj = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST conedgeobj " .. t); AUTO.results[#AUTO.results + 1] = t end
+	local role = os.getenv("MPFEVER_CONEO_ROLE") or "host"
+	if C.ROLE ~= role then say("not this game's turn (" .. role .. " builds)"); return autoFinish() end
+	local rounds = tonumber(os.getenv("MPFEVER_CONEO_N") or "") or 2
+	local k = 0
+	local function round()
+		if k >= rounds then return autoFinish() end
+		k = k + 1
+		local ok, err = pcall(function()
+			local pick, pc, best = nil, nil, -1
+			for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+				local okc, c = pcall(function() return api.engine.getComponent(e, api.type.ComponentType.CONSTRUCTION) end)
+				if okc and c and tostring(c.fileName):find("stations/rail/", 1, true) then
+					local n = 0
+					pcall(function() for _ in pairs(c.params.modules) do n = n + 1 end end)
+					if n > best then pick, pc, best = e, c, n end
+				end
+			end
+			if not pick then error("no train station") end
+			local params = C.plain(C.marshal(pc.params))
+			local P = api.engine.util.proposal.createProposalReplaceConstruction(pick, params)
+			local st = P.proposal
+			local segs, bi, blen = {}, nil, -1
+			for i = 1, #st.addedSegments do
+				segs[i] = st.addedSegments[i]
+				local s = segs[i]
+				local t = s.comp.tangent0
+				local len = math.sqrt(t.x * t.x + t.y * t.y + t.z * t.z)
+				if s.type == 1 and #s.comp.objects == 0 and len > blen then bi, blen = i, len end
+			end
+			if not bi then error("no track among the station's " .. #st.addedSegments .. " new segments") end
+			local sid = segs[bi].entity
+			-- (the station's own tracks as the module tool's build names them, Holzi#1:137 and From-Hellscream:235: the template
+			-- infrastructure/track/simple/simple.street_template, which makes them the construction's own segments; the engine's
+			-- replacement names them otherwise. MPFEVER_CONEO_KEEPTPL=1: its own template)
+			local tpl0 = tostring(segs[bi].comp.roadTemplate)
+			if os.getenv("MPFEVER_CONEO_KEEPTPL") ~= "1" then
+				local s0 = segs[bi]
+				local c0 = s0.comp
+				c0.roadTemplate = "::/infrastructure/track/simple/simple.street_template"
+				s0.comp = c0
+				segs[bi] = s0
+			end
+			say("round " .. k .. ": the track's template " .. tpl0 .. " -> " .. tostring(segs[bi].comp.roadTemplate))
+			-- the engine's own signal: a script's signal on a copy of that track, converted by a dry run the engine refuses
+			-- (G.eoDryRun, as the replays do), the track and its nodes as plain tables
+			local mst = { addedSegments = { C.marshal(segs[bi]) }, addedNodes = {} }
+			for i = 1, #st.addedNodes do mst.addedNodes[i] = C.marshal(st.addedNodes[i]) end
+			mst.edgeObjectsToAdd = { { model = "infrastructure/signal/signal_path_a.con", segmentEntity = sid, param = 0.5, left = true, oneWay = false } }
+			local okD, dry = pcall(G.eoDryRun, { proposal = mst })
+			if not (okD and dry) then
+				local keys = {}
+				pcall(function() for kk in pairs(mst.addedSegments[1]) do keys[#keys + 1] = tostring(kk) end end)
+				error("dry run not made (" .. shortErr(dry) .. "; the track's fields: " .. table.concat(keys, ",") .. ")")
+			end
+			local kk = k
+			G.gateDryNext = true
+			replaySend(dry, function(res, success)
+				if success then say("round " .. kk .. ": the dry run was built instead of refused"); return end
+				local okB, errB = pcall(function()
+					local conv = res.proposal.proposal
+					if #conv.edgeObjectsToAdd < 1 then error("the engine converted no signal") end
+					local eo = conv.edgeObjectsToAdd[1]
+					local side = 2
+					pcall(function() side = conv.addedSegments[1].comp.objects[1][2] end)
+					eo.segmentEntity = sid
+					pcall(function() eo.resultEntity = -400000000 end)
+					pcall(function() eo.playerEntity = api.engine.util.getPlayer() end)
+					local s = segs[bi]
+					local c = s.comp
+					c.objects = { { -400000000, side } }
+					s.comp = c
+					segs[bi] = s
+					st.addedSegments = segs
+					st.edgeObjectsToAdd = { eo }
+					P.proposal = st
+					say("round " .. kk .. ": station " .. pick .. " '" .. tostring(pc.fileName) .. "' (" .. best .. " modules) edited with a signal on its new track " .. sid .. " of " .. #segs)
+					local keep = res   -- (the converted signal lives in that result until the build is made)
+					deferredSend(G.wbp(P, playerContext(), false, true), function(res2, success2)
+						local why = ""
+						if not success2 then pcall(function() why = C.ser(C.marshal(res2.resultProposalData.errorState.messages)) end) end
+						say("round " .. kk .. " build: " .. (success2 and "BUILT" or ("refused " .. why)) .. (keep and "" or ""))
+					end)
+				end)
+				if not okB then say("round " .. kk .. " failed after the dry run: " .. shortErr(errB)) end
+			end)
+		end)
+		if not ok then say("round " .. k .. " failed: " .. shortErr(err)) end
+		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = round }
+	end
+	G.waits[#G.waits + 1] = { at = G.frames + 300, fn = round }
 end
 
 -- The edit of a construction sent by a window, as the Drive-in Warehouses mod sends a warehouse's goods (MPFEVER_SCENARIO=uiedit,

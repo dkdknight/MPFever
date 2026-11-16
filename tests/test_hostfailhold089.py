@@ -8,7 +8,8 @@ was applied on that state 3 s later and the host's game crashed ('it != componen
   - replayFailed on the host with "construction edge objects" marks G.hostBroken (the uid, its builder); other reasons do not;
     a player's game is unchanged (G.replayBroken, issue #113); MPFEVER_HOSTFAILHOLD=0: nothing marked;
   - G.brokenSkip on the host: the same player's native build that adds or removes constructions is left out (true), said in the
-    log, told to the launcher (replay_failed) and in the chat; a street of the same player, another player's edit: applied;
+    log, told to the launcher (replay_failed) and in the chat; (0.8.14, #364/#381) his street or signal too (MPFEVER_HOSTFAILHOLDALL=0:
+    applied, as before); another player's edit: applied;
   - after G.BROKEN_HOLD seconds, or when the build turns out refused everywhere (replay_alike): applied again.
 Run: python tests/test_hostfailhold089.py
 """
@@ -69,7 +70,11 @@ function edit(origin, uid, cons) return { origin = origin, uid = uid, native = t
     check(skip(edit("Brumaren#1", "Brumaren#1:6", True)) is True, "the same player's next construction edit: left out")
     check(len(list(g.SENT.values())) == n0 + 1 and list(g.SENT.values())[-1] == "replay_failed", "  told to the launcher (replay_failed)")
     check(len(list(g.SAID.values())) == 1 and "make it again" in list(g.SAID.values())[0], "  and in the chat (make it again)")
-    check(skip(edit("Brumaren#1", "Brumaren#1:7", False)) is False, "the same player's street (no construction): applied")
+    # (0.8.14, #364/#381: the same player's signal on the construction's track, no construction in it, crashed the host)
+    check(skip(edit("Brumaren#1", "Brumaren#1:7", False)) is True, "the same player's street or signal (no construction): left out too (0.8.14)")
+    g.ENV.MPFEVER_HOSTFAILHOLDALL = "0"
+    check(skip(edit("Brumaren#1", "Brumaren#1:7b", False)) is False, "  MPFEVER_HOSTFAILHOLDALL=0: applied, as 0.8.9 to 0.8.13")
+    g.ENV.MPFEVER_HOSTFAILHOLDALL = None
     check(skip(edit("seaso", "seaso:9", True)) is False, "another player's construction edit: applied")
     g.CLOCK = 100 + 46
     check(skip(edit("Brumaren#1", "Brumaren#1:8", True)) is False and g.G.hostBroken is None, "after G.BROKEN_HOLD seconds: applied again")

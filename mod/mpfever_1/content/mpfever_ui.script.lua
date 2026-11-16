@@ -916,6 +916,75 @@ local function installShareSelect()
 	log("companies: the line tool can pick the stations shared by the other companies")
 end
 
+-- (0.8.14) Whether this company may use depot e of ANOTHER company (buy a vehicle there): the depot's own setting, else its company's
+-- rule (mpfever_eco.lua E.depotRule: open or a toll yes, private no; open when nothing was set), everything when the host turned the
+-- sharing rules off. False for this company's own depots, outside the companies mode, and for a maintenance building without a depot.
+U.depotOpenToMe = function(e)
+	if not U.coMap or not U.myCo or type(e) ~= "number" or e < 0 then return false end
+	local owner = ownerOf(e)
+	if not owner then
+		-- (the depot's owner may be on its construction)
+		pcall(function()
+			local c = api.engine.system.streetConnectorSystem.getConstructionEntityForDepot(e)
+			if type(c) == "number" and c >= 0 then owner = ownerOf(c) end
+		end)
+	end
+	local co = owner and U.coMap[owner]
+	if not co or co == U.myCo then return false end
+	pcall(U.pollRules)
+	if U.rules and U.rules.off then return true end
+	if U.rules and U.rules.gone and U.rules.gone[co] then return true end
+	local info = U.depotInfo(e, owner)
+	if not info then return false end
+	pcall(U.pollEco)
+	local d = U.eco and U.eco.depots and U.eco.depots[info.key]
+	local rule = (d and d.rule ~= "co" and d.rule) or (U.rules and U.rules.depotCo and U.rules.depotCo[co] and U.rules.depotCo[co].rule)
+		or (os.getenv("MPFEVER_OPENDEFAULT") ~= "0" and "open" or "private")
+	return rule == "open" or rule == "toll"
+end
+
+-- (0.8.14, Discord 2026-11-14/15: Chris P. Bacon in #general, Getriebesand in #bug-reports) One company per player: the vehicle
+-- manager lists only this company's depots (manager_window.tl: api.engine.getEntitiesWithComponent(VEHICLE_DEPOT,
+-- { requireOwnedByPlayer = me })), so a depot another company opened (open or a toll, since 0.5.0) could never be chosen to buy a
+-- vehicle there. That list now also has the other companies' depots open to this one (U.depotOpenToMe); the purchase goes as
+-- before, its toll booked by the simulation (E.depotUse). Every other use of that function is unchanged. MPFEVER_SHAREDDEPOTS=0: off
+local function installSharedDepots()
+	if U.sharedDepotsInstalled then return end
+	U.sharedDepotsInstalled = true
+	if os.getenv("MPFEVER_SHAREDDEPOTS") == "0" then log("companies: the other companies' open depots are not listed (MPFEVER_SHAREDDEPOTS=0)") return end
+	local eng = api.engine
+	local orig = eng.getEntitiesWithComponent
+	-- (an engine function may be a callable object rather than a Lua function)
+	if orig == nil or U.sharedDepotsOrig then log("companies: the other companies' depots not listed (no getEntitiesWithComponent: " .. type(orig) .. ")") return end
+	U.sharedDepotsOrig = orig
+	local okW, errW = pcall(function()
+		eng.getEntitiesWithComponent = function(ct, opts, ...)
+			local r = orig(ct, opts, ...)
+			if ct ~= api.type.ComponentType.VEHICLE_DEPOT or type(opts) ~= "table" or opts.requireOwnedByPlayer == nil or not U.coMap or type(r) ~= "table" then return r end
+			local okx, extra = pcall(function()
+				if opts.requireOwnedByPlayer ~= api.engine.util.getPlayer() then return {} end
+				local o2 = {}
+				for k, v in pairs(opts) do if k ~= "requireOwnedByPlayer" then o2[k] = v end end
+				local have, out = {}, {}
+				for _, e in ipairs(r) do have[e] = true end
+				for _, e in ipairs(orig(ct, o2)) do
+					if not have[e] and U.depotOpenToMe(e) then out[#out + 1] = e end
+				end
+				return out
+			end)
+			if okx then
+				for _, e in ipairs(extra) do r[#r + 1] = e end
+				if #extra > 0 and not U.sharedDepotsSaid then U.sharedDepotsSaid = true; log("companies: " .. #extra .. " depot(s) of the other companies listed for this one") end
+			elseif not U.sharedDepotsErr then
+				U.sharedDepotsErr = true
+				log("companies: the other companies' depots not listed: " .. tostring(extra):sub(1, 160))
+			end
+			return r
+		end
+	end)
+	log(okW and "companies: the vehicle manager lists the depots the other companies opened" or ("companies: the other companies' depots cannot be listed (" .. tostring(errW):sub(1, 120) .. ")"))
+end
+
 -- a depot's rule (0.5.0): its construction's key, as mpfever_eco.lua knows it ("D:<file>@x,y"), and whether this company owns it
 U.depotInfo = function(e, owner)
 	local con = e
@@ -7173,6 +7242,20 @@ local function tick(pendingState)
 	if U.coMap and not U.shareSelectInstalled then
 		local oks, errs = pcall(installShareSelect)
 		if not oks then U.shareSelectInstalled = true; log("companies: share pick not installed: " .. tostring(errs)) end
+	end
+	if U.coMap and not U.sharedDepotsInstalled then
+		local okd, errd = pcall(installSharedDepots)
+		if not okd then U.sharedDepotsInstalled = true; log("companies: shared depots not installed: " .. tostring(errd)) end
+	end
+	-- (once this company is known: what the vehicle manager's list of depots now holds, for the reports and the tests)
+	if U.sharedDepotsOrig and U.myCo and not U.sharedDepotsProbed then
+		U.sharedDepotsProbed = true
+		pcall(function()
+			local ct, me = api.type.ComponentType.VEHICLE_DEPOT, api.engine.util.getPlayer()
+			local own = #U.sharedDepotsOrig(ct, { requireOwnedByPlayer = me })
+			local listed = #api.engine.getEntitiesWithComponent(ct, { requireOwnedByPlayer = me })
+			log("companies: depots in the vehicle manager: " .. own .. " of this company, " .. (listed - own) .. " of the others open to it")
+		end)
 	end
 	if U.coMap and not U.stopFeesInstalled then
 		local okf, errf = pcall(installStopFees)

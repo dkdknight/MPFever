@@ -118,12 +118,15 @@ def main():
     m_seg = re.search(r"^local function isConstructionSegment\(sg\)\n.*?^end\n", src, re.S | re.M)
     m_ok = re.search(r"^G\.conStopsOk = function\(m\)\n.*?^end\n", src, re.S | re.M)
     m_rep = re.search(r"^local function replayNativeConstruction\(a\)\n.*?^end\n", src, re.S | re.M)
-    if not (m_seg and m_ok and m_rep):
+    # (0.8.14: a construction's own tracks, see test_contrackobj0814.py)
+    m_tr = re.search(r"^G\.conTrackObjOk = function\(sg\)\n.*?^end\n", src, re.S | re.M)
+    if not (m_seg and m_ok and m_rep and m_tr):
         print("FAIL: isConstructionSegment, G.conStopsOk or replayNativeConstruction not found in the bridge")
         return 1
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
     L.execute(MOCK)
     L.execute(m_seg.group(0).replace("local function isConstructionSegment", "function isConstructionSegment", 1))
+    L.execute(m_tr.group(0))
     L.execute(m_ok.group(0))
     L.execute(m_rep.group(0).replace("local function replayNativeConstruction", "function replayNativeConstruction", 1))
     L.execute(SETUP)
@@ -146,8 +149,10 @@ def main():
     check("an airport's signs on its runways: no", run("return G.conStopsOk(airport())") is False)
     check("an object on a segment the build does not add: no",
           run("local m = depot(); m.proposal.edgeObjectsToAdd[2].segmentEntity = 4711; return G.conStopsOk(m)") is False)
-    check("an object on the depot's own track: no",
+    check("an object on the tram depot's own street (not a track): no",
           run("local m = depot(); m.proposal.edgeObjectsToAdd[2].segmentEntity = -3; return G.conStopsOk(m)") is False)
+    check("(0.8.14) an object on a rail depot's own TRACK: yes, the dry run (see test_contrackobj0814.py)",
+          run("local m = depot(); m.proposal.addedSegments[3].type = 1; m.proposal.addedSegments[3].comp.roadTemplate = '::/track/rail_depot.street_template'; m.proposal.edgeObjectsToAdd[2].segmentEntity = -3; return G.conStopsOk(m)") is True)
     check("an object without model: no",
           run("local m = depot(); m.proposal.edgeObjectsToAdd[1].model = nil; return G.conStopsOk(m)") is False)
     check("no edge object: no", run("local m = depot(); m.proposal.edgeObjectsToAdd = {}; return G.conStopsOk(m)") is False)

@@ -1,6 +1,37 @@
 MPFever - Changelog
 ===================
 
+0.8.14 - 2026-11-16: signals on stations' and depots' own tracks replayed, fewer crashes and resyncs, open depots usable by others
+  - FIX (#364, #374, #380, #381: 5 builds of 2026-11-15, From-Hellscream's modular station edits, Holzi's rail depots laid over a
+    signalled track): the signals and stops on a construction's own TRACKS were never replayed (the engine's conversion of the
+    construction has none of them): "construction edge objects (airport signs)", a resynchronisation each. They are now converted
+    by the engine from a dry run and built with the construction, as the stops of a street a construction cuts (#109). An
+    airport's signs stay as before (the engine converts them itself). MPFEVER_CONEDGEOBJ=0: as before. New autotest scenario
+    conedgeobj (a station's edit with a signal on its own new track, built by the host or by the client).
+    Test: tests/test_contrackobj0814.py.
+  - FIX (#364, #381: the host's game crashed, 'it != components.end()', GetComponentDataIndex): after the host's game could not
+    rebuild such a construction, the builder's next build, a signal on that track (no construction in it), was applied on the
+    differing state before the resynchronisation. Every native build of that player is now left out until the resynchronisation
+    (0.8.9 left out his edits of constructions only); he is told to make it again. MPFEVER_HOSTFAILHOLDALL=0: as 0.8.9 to 0.8.13.
+    Test: tests/test_hostfailhold089.py.
+  - FIX (#372: Erik's modular harbour on beule's server): a build whose copy takes town buildings away was shipped at the click;
+    the town rebuilt one of them before the build's step, the builder's engine refused its own command ("Apply: invalid entity")
+    while the other game built the harbour, a resynchronisation. Such a build goes the usual way now (what the builder's engine
+    really did). MPFEVER_PRESHIPTOWN=1: at the click as before. Test: tests/test_pretown0814.py.
+  - FIX (#337: Jakob and Peter): a build made as the pause begins (a build of the pause since 0.8.8) was released early by the
+    "simulation about to stand there" branch without marking its turn done; the next builds of the pause waited 30 s, the turn
+    was skipped and the games applied the builds in other orders. It now goes in its turn only. MPFEVER_PTEDGETURN=0: as before.
+    Test: tests/test_ptedgeturn0814.py.
+  - NEW (Discord, Chris P. Bacon and Getriebesand): one company per player, the vehicle manager now also lists the depots the
+    other companies opened to this one (open, or a toll per vehicle; private ones not; all of them when the host turned the
+    sharing rules off): a vehicle can be bought there, the toll booked as before (0.5.0). MPFEVER_SHAREDDEPOTS=0: off.
+    Test: tests/test_shareddepots0814.py.
+  - NEW (PR #334 by ampynjord, who looks after it): a Linux session server (server-linux/, mpfever-relay): a host can host
+    through it ("server=host:port" in mpfever_settings.txt), the players join its address, no port to open; with --migration
+    (experimental, off by default) the next player takes over when the host leaves. The relay checks its own protocol number,
+    not MPFever's version. Players without such a server: nothing changes (a host never relays a player's "tun_" message).
+    Guide: docs/LINUX-RELAY.md.
+
 0.8.13 - 2026-11-15: dedicated servers "without display" no longer crash when vehicles are replaced
   - FIX (#354, #361, the reports of 2026-11-15, MPFeverServerTest and DEOKCHEON's server): a server started without display
     skipped the drawing of the world since 0.5.8 (CRenderer::Render), but the game releases the graphics resources of removed
