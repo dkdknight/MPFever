@@ -31,8 +31,9 @@ mc = read("launcher", "ModCopies.cs")
 mf = read("launcher", "MainForm.cs")
 
 i = br.index('send("hello", { name = C.NAME')
-blk = br[i - 900:i + 400]
-check("the hello carries nat", "nat = nat })" in blk)
+# ((0.8.16) the native fixes' list and the old module's check come between the nat block and the hello)
+blk = br[br.index('local nat = "none"') - 600:i + 600]
+check("the hello carries nat", "nat = nat, fx = fx," in blk)
 check("  'on' when native_state.txt exists (written once the module's fixes went in)", '"native_state.txt"' in blk and 'nat = "on"' in blk)
 check("  'off' when the module started (native.log) but wrote no state; 'none' otherwise", '"native.log"' in blk and 'nat = "off"' in blk and 'local nat = "none"' in blk)
 check("  read under pcall (the hello is never lost to it)", "pcall(function()" in blk)

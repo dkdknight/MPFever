@@ -1508,9 +1508,10 @@ end
 -- a skipped paused action was never reported (issue #12)
 -- (0.8.11, #331) A burst of one game script's commands shipped as one action ("mpfBatch", see G.gsBatch): each command applied in
 -- its order, as its own action would have been (the same checks, skipped the same way on every game), with one line in mod.log
--- for the whole burst. No callback per command: G.gsBatch only puts in a batch the commands sent without one.
+-- for the whole burst. (0.8.16, #369) The batch's result lists each command's id and whether it was applied (itemIds, itemOk):
+-- the game that sent them gives each one its answer, as a command shipped alone gets it (G.reportResult -> G.gsAnswer).
 local function executeBatch(a, sendCommand, bind)
-	local result = { tok = a.tok, id = a.id, uid = a.uid, fn = a.fn, success = true }
+	local result = { tok = a.tok, id = a.id, uid = a.uid, fn = a.fn, success = true, itemIds = {}, itemOk = {} }
 	local list = type(a.args) == "table" and type(a.args[1]) == "table" and a.args[1] or {}
 	local ok, skipped, kinds = 0, 0, {}
 	for k, item in ipairs(list) do
@@ -1519,6 +1520,8 @@ local function executeBatch(a, sendCommand, bind)
 				at = a.at, paused = a.paused, ep = a.ep, batchQuiet = true }
 			local okE, r = pcall(executeActionOnce, sub, sendCommand, false, bind, nil)
 			if okE and type(r) == "table" and r.success then ok = ok + 1 else skipped = skipped + 1 end
+			result.itemIds[#result.itemIds + 1] = item.id
+			result.itemOk[#result.itemOk + 1] = (okE and type(r) == "table" and r.success) and true or false
 			kinds[item.fn] = (kinds[item.fn] or 0) + 1
 		else
 			skipped = skipped + 1
@@ -6590,8 +6593,13 @@ G.replayFailedFn = replayFailed
 -- is missing here means the games already differ, so the host's game is reloaded at once (issue #12: the next action
 -- of the same player crashed the game before the next state check)
 function G.reportResult(r)
-	-- (0.7.1: the answer to a mod's game script command shipped from this game, see G.installGsMods)
-	pcall(G.gsAnswer, r)
+	-- (0.7.1: the answer to a mod's game script command shipped from this game, see G.installGsMods; (0.8.16, #369) a batch's:
+	-- each of its commands its own answer)
+	if r.fn == "mpfBatch" and type(r.itemIds) == "table" then
+		for i, id in ipairs(r.itemIds) do pcall(G.gsAnswer, { tok = r.tok, id = id, success = type(r.itemOk) == "table" and r.itemOk[i] == true }) end
+	else
+		pcall(G.gsAnswer, r)
+	end
 	if r.success then return end
 	-- (0.7.13, #148: a purchase's reason and figures too, in the launcher's log and the reports; none without them)
 	send("act_refused", { uid = r.uid, fn = r.fn, err = r.err, why = r.why, price = r.price, balance = r.balance })
@@ -11499,8 +11507,11 @@ G.GSBATCH_MIN, G.GSBATCH_MAX = 16, 2000
 G.gsBatchable = function(p)
 	if os.getenv("MPFEVER_GSBATCH") == "0" or type(p) ~= "table" or type(p.tok) ~= "string" or p.tok:sub(1, 6) ~= "gsmod-" then return false end
 	if p.fn == "makeWorldBuildProposalCmd" or p.fn == "mpfBatch" or type(p.fn) ~= "string" then return false end
+	-- ((0.8.16, #369) a command waiting for its answer goes in a batch too: the batch gives each command's answer back, see
+	-- executeBatch and G.reportResult. Industry Brands sends thousands of them at a load, each with a callback: shipped one by one,
+	-- 13137 actions froze Henrik's session and its resynchronisation. MPFEVER_GSBATCHCB=0: never in a batch, as in 0.8.11)
 	local h = package.loaded["mpfever_gs_hook"]
-	if type(h) == "table" and type(h.pending) == "table" and h.pending[p.id] ~= nil then return false end
+	if os.getenv("MPFEVER_GSBATCHCB") == "0" and type(h) == "table" and type(h.pending) == "table" and h.pending[p.id] ~= nil then return false end
 	return true
 end
 local function stampHeld()
@@ -14637,7 +14648,9 @@ end
 -- (0.8.11, #331) A game script's burst (MPFEVER_SCENARIO=gsburst): MPFEVER_GSBURST_N (300) renames of one line (else station, else
 -- town) of the savegame in one frame, written as a game script's commands are ("gsmod-" token, see G.installGsMods): they go as
 -- "mpfBatch" actions (G.gsBatchable), every game applies them in order and ends with the last name; the checks' "names" must stay
--- alike. With MPFEVER_GSBATCH=0 the same burst goes as 300 actions, as before.
+-- alike. With MPFEVER_GSBATCH=0 the same burst goes as 300 actions, as before. (0.8.16, #369) MPFEVER_GSBURST_CB=1: each command
+-- waits for its answer, as Industry Brands' (a callback in the game scripts' hook, its token): they go in batches all the same and
+-- every one is answered; with MPFEVER_GSBATCHCB=0, one action each as in 0.8.11 to 0.8.15.
 H.gsburst = function(from, p)
 	if p.role ~= C.ROLE or AUTO.running then return end
 	AUTO.running = true
@@ -14654,16 +14667,23 @@ H.gsburst = function(from, p)
 		end
 		if not target then say("no named entity"); return autoFinish() end
 		local n = tonumber(os.getenv("MPFEVER_GSBURST_N") or "300") or 300
-		local tok = "gsmod-auto-" .. C.ROLE
+		local tok, base = "gsmod-auto-" .. C.ROLE, 0
+		local h = package.loaded["mpfever_gs_hook"]
+		local withCb = os.getenv("MPFEVER_GSBURST_CB") == "1" and type(h) == "table" and type(h.tok) == "string" and type(h.pending) == "table"
+		local answered, applied = 0, 0
+		if withCb then tok = h.tok; base = h.seq or 0; h.seq = base + n end
 		local lines = {}
 		for k = 1, n do
-			lines[#lines + 1] = C.line("act_req", { tok = tok, id = k, fn = "makeEntitySetNameCmd", args = { n = 2, target, "MPF burst " .. C.ROLE .. " " .. k } })
+			if withCb then
+				h.pending[base + k] = { cb = function(_, success) answered = answered + 1; if success then applied = applied + 1 end end, at = os.clock(), name = "makeEntitySetNameCmd" }
+			end
+			lines[#lines + 1] = C.line("act_req", { tok = tok, id = base + k, fn = "makeEntitySetNameCmd", args = { n = 2, target, "MPF burst " .. C.ROLE .. " " .. k } })
 		end
 		C.appendFile(C.DIR .. BS .. "ui.log", table.concat(lines))
-		say(n .. " renames of " .. kind .. " " .. target .. " written in one frame")
+		say(n .. " renames of " .. kind .. " " .. target .. " written in one frame" .. (withCb and ", each waiting for its answer" or ""))
 		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
 			local nm = api.engine.getComponent(target, api.type.ComponentType.NAME)
-			say("name now: " .. tostring(nm and nm.name))
+			say("name now: " .. tostring(nm and nm.name) .. (withCb and (", answers " .. answered .. " of " .. n .. " (" .. applied .. " applied)") or ""))
 			autoFinish()
 		end }
 	end)
@@ -17550,6 +17570,18 @@ H.maintshare = function(from, p)
 		if not (G.co and G.myCo) then say("not in the companies mode"); return autoFinish() end
 		if C.ROLE == "host" then
 			local toll = tonumber(os.getenv("MPFEVER_MAINTSHARE_TOLL") or "") or 777
+			-- ((0.8.16) MPFEVER_MAINTSHARE_DEPOT=<depot>: the host's company private, that one depot open by its own setting: the
+			-- client's vehicles may be maintained there only, the depot's entities found from its setting, see E.maintTable)
+			local only = tonumber(os.getenv("MPFEVER_MAINTSHARE_DEPOT") or "")
+			if only then
+				uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "co_depot_default", [4] = { rule = "private", toll = 0 } })
+				local eco = C.eco()
+				local key = eco and eco.depotKey(eco.depotCon(only)) or nil
+				uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "co_depot_rule", [4] = { key = key, rule = "open", toll = 0 } })
+				say("the host's company private, its depot " .. only .. " (" .. tostring(key) .. ") open by its own setting")
+				G.waits[#G.waits + 1] = { at = G.frames + 200, fn = autoFinish }
+				return
+			end
 			uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "mpfever", [2] = "mpfever", [3] = "co_depot_default", [4] = { rule = "toll", toll = toll } })
 			say("the host's depots: a toll of " .. toll)
 			G.waits[#G.waits + 1] = { at = G.frames + 200, fn = autoFinish }
@@ -17561,12 +17593,14 @@ H.maintshare = function(from, p)
 		-- (a road vehicle first: a train costs more than the client's company has, one bought out of three in the first run)
 		local road = nil
 		pcall(function() road = api.type.enum.Carrier.ROAD end)
+		local onlyDepot = tonumber(os.getenv("MPFEVER_MAINTSHARE_DEPOT") or "")
 		for pass = 1, 2 do
 			for _, v in ipairs(R.entitiesWith("TRANSPORT_VEHICLE")) do
 				local tv = api.engine.getComponent(v, CT.TRANSPORT_VEHICLE)
 				local o = R.ownerOf(v)
 				if not pick and tv and o and o ~= me and type(tv.line) == "number" and tv.line >= 0 and type(tv.depot) == "number" and tv.depot >= 0
-					and api.engine.entityExists(tv.depot) and R.ownerOf(tv.depot) == o and (pass == 2 or road == nil or tv.carrier == road) then
+					and api.engine.entityExists(tv.depot) and R.ownerOf(tv.depot) == o and (pass == 2 or road == nil or tostring(tv.carrier) == tostring(road))
+					and (onlyDepot == nil or tv.depot == onlyDepot) then
 					local lc = api.engine.getComponent(tv.line, CT.LINE)
 					if lc and #lc.stops >= 2 then pick = { v = v, tv = tv, line = tv.line, lc = lc } end
 				end
@@ -23526,8 +23560,31 @@ local function guiUpdate(userParams, state, guiState)
 			local l = C.IO.open(C.DIR .. BS .. "native.log", "rb")
 			if l then l:close(); nat = "off" end
 		end)
+		-- ((0.8.16) and the native fixes that change the simulation, in place on this game (native_fx.txt, see the native module's
+		-- g_fx): the host compares every game's with its own, see MainForm.WarnNativeFx)
+		local fx, natver = nil, nil
+		pcall(function()
+			local f = C.IO.open(C.DIR .. BS .. "native_fx.txt", "rb")
+			if f then
+				local t = f:read("*a") or ""
+				f:close()
+				natver = t:match("^version=([^%s]+)")
+				fx = natver and (t:match("^version=[^" .. NL .. "]*" .. NL .. "(.*)$") or "") or t
+			end
+		end)
+		-- ((0.8.16, #385) a native module older than this mod: MPFever updated itself while the game was running, the game's
+		-- winhttp.dll could not be replaced, and the game went on with the old one (CowboyPilot's host: no shared maintenance,
+		-- the vehicles drifted every 3 minutes). Said here in the chat, and to the host (natold). A module before 0.8.16 writes no
+		-- native_fx.txt: its version is unknown, it is older)
+		local natold = nat == "on" and natver ~= C.MODVERSION and os.getenv("MPFEVER_NATVERCHECK") ~= "0"
+		if natold then
+			log("native module: version " .. tostring(natver or "older than 0.8.16") .. ", this mod " .. tostring(C.MODVERSION) .. ": the game kept an old one")
+			pcall(G.featChat, C.T("Ce jeu tourne avec l'ancien module natif de MPFever (le jeu était ouvert pendant la mise à jour) : il va dériver des autres. Fermez le jeu, puis relancez MPFever.",
+				"This game runs MPFever's old native module (the game was open during the update): it will drift from the others. Close the game, then start MPFever again."))
+		end
 		send("hello", { name = C.NAME, role = C.ROLE, build = getBuildVersion and getBuildVersion() or "?", time = gameTime(), mv = C.MODVERSION,
-			personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil, nat = nat })
+			personserial = os.getenv("MPFEVER_PERSONSERIAL") == "1" or nil, vehserial = os.getenv("MPFEVER_VEHSERIAL") == "1" or nil, nat = nat, fx = fx,
+			natver = natver, natold = natold or nil })
 	end
 	-- the native module holds the tools' builds while this script runs, and hears from it here from its first frame on
 	-- (bridge_alive.txt, a counter rewritten every 2 s). A game loaded with MPFever disabled while a lobby was open has no such

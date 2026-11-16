@@ -14,7 +14,9 @@ set "LIB=%VC%\lib\x64"
 cd /d "%~dp0"
 if not exist out mkdir out
 lib /nologo /def:kernel32.def /out:out\kernel32.lib /machine:x64 || exit /b 1
-cl /nologo /c /WX /O2 /GS- /Zl /EHs-c- /GR- /std:c++17 mpfever_native.cpp /Fo:out\mpfever_native.obj || exit /b 1
+rem (0.8.16) the module knows its release's version (native_fx.txt: the mod finds a module older than itself)
+if not defined VERSION set "VERSION=0.0.0"
+cl /nologo /c /WX /O2 /GS- /Zl /EHs-c- /GR- /std:c++17 /DMPF_VERSION=\"%VERSION%\" mpfever_native.cpp /Fo:out\mpfever_native.obj || exit /b 1
 cl /nologo /c /WX /O2 /GS- /Zl /EHs-c- /GR- /std:c++17 winhttp_proxy.cpp /Fo:out\winhttp_proxy.obj || exit /b 1
 rem Steam networking: MPFever's connections carried by Steam inside the game (see mpf_steamnet.cpp)
 cl /nologo /c /WX /O2 /GS- /Zl /EHs-c- /GR- /std:c++17 mpf_steamnet.cpp /Fo:out\mpf_steamnet.obj || exit /b 1

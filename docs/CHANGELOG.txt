@@ -1,6 +1,33 @@
 MPFever - Changelog
 ===================
 
+0.8.16 - 2026-11-16: no more freeze from a mod's burst of commands, an old native module is told to everyone
+  - FIX (#385: CowboyPilot and FlungPooPanda, vehicles drifting every 3 minutes, 5 resyncs): MPFever updated itself while the
+    host's game was open, the game's winhttp.dll could not be replaced (said in the launcher's log only) and the host's game went
+    on with the old native module: no shared maintenance there, while the other game had it. The native module now knows its
+    release's version; a game whose module is older than its mod says it in its chat and in its hello, and the host says it to
+    everyone (close the game, then start MPFever again). MPFEVER_NATVERCHECK=0: not checked. Test: tests/test_natold0816.py.
+  - FIX (#369: Henrik and Julian, the mod Industry Brands): at the load, the mod sent thousands of commands (custom entities taken
+    away and made again, renames), each with a callback. The batch of 0.8.11 (#331) left out every command waiting for its answer,
+    so 13137 actions went one by one: the host's game time never moved again and its resynchronisation failed ("the games did not
+    stop"). Such commands now go in the batch too, and the batch gives each one its answer when it is applied (its id and whether
+    it was applied, in the batch's result). MPFEVER_GSBATCHCB=0: as in 0.8.11 to 0.8.15. Autotest gsburst with
+    MPFEVER_GSBURST_CB=1. Test: tests/test_gsbatchcb0816.py.
+  - FIX (#359, for #150): a report over the report service's limit cut its largest text files to their last half, the drift
+    dumps first; Kasper and Eier's first-drift dumps lost their start (the towns), alike on both games, so the first difference
+    could not be found. The drift dumps (sdump_drift*, drift_*, native_drift.txt) are now cut last, after every other log.
+    MPFEVER_REPORTKEEPDRIFT=0: as before. Tests: tests/test_reportkeepdrift0816.py and the launcher's selftest.
+  - Linux session server: its published file trims the .NET runtime to what the relay uses and is compressed: 71 MB -> 13 MB
+    (the trimmed file passes the relay's 120 self-test checks; the CI now also tests the published file). Test:
+    tests/test_relaytrim0816.py.
+  - NEW: the host compares every game's MPFever native fixes that change the simulation with its own (the order fixes, the account
+    changes, the industries' demand, the fresh ids, the aircraft figures, the vehicles' wear, the shared maintenance...) and says
+    in the chat which ones a game lacks or has on top: such a game drifts from the others (before, only a native module that did
+    not run at all was told, #268). MPFEVER_NATIVEFXCHECK=0: not compared. Tests: tests/test_nativefx0816.py, launcher selftest.
+  - NEW: a depot's window says how many vehicles of the other companies it maintains, and its toll's label says it is charged per
+    purchase and per month for each vehicle maintained there (translated). MPFEVER_DEPOTMAINTLINE=0: not shown.
+    Test: tests/test_depotmaintline0816.py.
+
 0.8.15 - 2026-11-16: one company per player, vehicles maintained at the other companies' open depots
   - NEW (Discord, Chris P. Bacon and Getriebesand, design approved by the maintainer): one company per player, the depots another
     company opened (its rule « open » or « toll », the depot's own setting or its company's) now maintain this company's

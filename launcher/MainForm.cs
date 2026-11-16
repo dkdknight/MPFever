@@ -139,7 +139,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.8.15";
+        public const string Version = "0.8.16";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -1386,6 +1386,7 @@ namespace MPFever
         void InitFinish()
         {
             if (!autotest) WarnNativeMissing();
+            if (!autotest) WarnNativeBusy();
             if (!autotest) WarnSmartAppControl();
             OfferStaleMods();
             if (ServerMode)
@@ -1431,6 +1432,25 @@ namespace MPFever
             MessageBox.Show(this, T("Le fichier winhttp.dll de MPFever manque à côté de MPFever.exe : MPFever a été copié sans les autres fichiers de l'archive.\n\nSans lui, le module natif du jeu reste ancien ou absent, et les parties avec les autres joueurs se resynchronisent sans cesse (mesure « ages »).\n\nFermez MPFever, extrayez toute l'archive MPFever-x.y.z.zip (tous ses fichiers) dans le même dossier, puis relancez-le.",
                                     "MPFever's file winhttp.dll is missing next to MPFever.exe: MPFever was copied without the other files of the archive.\n\nWithout it, the game's native module stays an old one or missing, and the sessions with the other players resynchronise again and again (the \"ages\" measure).\n\nClose MPFever, extract the whole archive MPFever-x.y.z.zip (all its files) into the same folder, then start it again."),
                             "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        /// <summary>(0.8.16, #385) The game's native module could not be updated: Transport Fever 3 was still open (an update of
+        /// MPFever while the game ran). The game would go on with the old module and drift from the others (CowboyPilot's host: no
+        /// shared maintenance, 5 resyncs in 15 minutes); before, only a line of the log said it. Asked plainly, with a retry once
+        /// the game is closed; a dedicated server: in its log. MPFEVER_NATIVEWARN=0: the log line only, as before.</summary>
+        void WarnNativeBusy()
+        {
+            if (GameInstall.NativeStatus != "busy" || Environment.GetEnvironmentVariable("MPFEVER_NATIVEWARN") == "0") return;
+            Log.Err(T("Le module natif de MPFever n'a pas pu être mis à jour : Transport Fever 3 est encore ouvert. Fermez le jeu, puis relancez MPFever.",
+                      "MPFever's native module could not be updated: Transport Fever 3 is still open. Close the game, then start MPFever again."));
+            if (ServerMode || gameDir == null) return;
+            while (MessageBox.Show(this, T("MPFever vient d'être mis à jour, mais Transport Fever 3 est encore ouvert : son module natif (winhttp.dll) n'a pas pu être remplacé.\n\nAvec l'ancien module, votre jeu va dériver de celui des autres joueurs.\n\nFermez complètement Transport Fever 3, puis cliquez sur « Réessayer ».",
+                                           "MPFever was just updated, but Transport Fever 3 is still open: its native module (winhttp.dll) could not be replaced.\n\nWith the old module, your game will drift from the other players'.\n\nClose Transport Fever 3 completely, then click « Retry »."),
+                                   "MPFever", MessageBoxButtons.RetryCancel, MessageBoxIcon.Warning) == DialogResult.Retry)
+            {
+                GameInstall.InstallNative(gameDir);
+                if (GameInstall.NativeStatus != "busy") { Log.Ok(T("Module natif mis à jour.", "Native module updated.")); return; }
+            }
         }
 
         /// <summary>(0.6.4) Windows' Smart App Control is on: it blocks MPFever's winhttp.dll and the game shows nothing but
@@ -4774,6 +4794,7 @@ namespace MPFever
                     lock (players) players.Add(m.From);
                     WarnModVersion(m.From, m.Payload);
                     WarnNative(m.From, m.Payload);
+                    WarnNativeFx(m.From, m.Payload);
                     // (0.7.4, MODRETRY: the server's world is loaded, its mods were all there)
                     if (m.From == hostName) serverModRetries = 0;
                     Log.W(F("{0} : jeu prêt {1}", "{0}: game ready {1}", m.From, m.Payload));

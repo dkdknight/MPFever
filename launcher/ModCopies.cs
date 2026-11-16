@@ -157,6 +157,70 @@ namespace MPFever
                 "MPFever's native module does not run on {0}'s game (MPFever.exe started away from its archive's folder?): that game will drift away from the others. {0}, please extract the whole MPFever archive into one folder and start MPFever.exe from there.", who);
         }
 
+        /// <summary>(0.8.16) The native fixes that change the simulation (the hello's "fx", native_fx.txt: names separated by ';'),
+        /// a player's compared with the host's: the names the host's game has and that game has not, and the reverse. Null when
+        /// they are the same (or one is unknown: an older mod). A game without one of them drifts from the others (the shared
+        /// maintenance on one game only, an order fix of one game build only).</summary>
+        internal static string NativeFxProblem(string who, string fx, string hostFx)
+        {
+            if (fx == null || hostFx == null) return null;
+            var mine = new HashSet<string>(fx.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries));
+            var host = new HashSet<string>(hostFx.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries));
+            var missing = host.Where(x => !mine.Contains(x)).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            var extra = mine.Where(x => !host.Contains(x)).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            if (missing.Count == 0 && extra.Count == 0) return null;
+            var parts = new List<string>();
+            if (missing.Count > 0) parts.Add(F("sans {0}", "without {0}", string.Join(", ", missing)));
+            if (extra.Count > 0) parts.Add(F("avec en plus {0}", "with {0} on top", string.Join(", ", extra)));
+            return F("Les correctifs natifs de MPFever du jeu de {0} ne sont pas ceux de l'hôte ({1}) : ce jeu va dériver des autres. Tout le monde doit avoir la même version de MPFever et du jeu.",
+                "The MPFever native fixes of {0}'s game are not the host's ({1}): that game will drift from the others. Everybody needs the same MPFever version and the same game version.", who, string.Join("; ", parts));
+        }
+
+        /// <summary>(0.8.16, #385) A game that runs an older native module than its mod (natold in its hello).</summary>
+        internal static string NativeOldProblem(string who, string natver)
+        {
+            return F("Le jeu de {0} tourne avec un ancien module natif de MPFever ({1}) : le jeu était ouvert pendant la mise à jour, et ce jeu va dériver des autres. {0}, fermez le jeu puis relancez MPFever.",
+                "{0}'s game runs an old MPFever native module ({1}): the game was open during the update, and that game will drift from the others. {0}, please close the game, then start MPFever again.",
+                who, natver ?? L.T("avant la 0.8.16", "before 0.8.16"));
+        }
+
+        readonly Dictionary<string, string> nativeFx = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readonly HashSet<string> nativeFxWarned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>(0.8.16) The host: every game's native fixes from its hello, compared with the host's own game's (said once per
+        /// player and difference). MPFEVER_NATIVEFXCHECK=0: not compared.</summary>
+        void WarnNativeFx(string who, string payload)
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_NATIVEFXCHECK") == "0") return;
+            try
+            {
+                var h = LuaLit.Parse(payload) as Dictionary<object, object>;
+                // ((0.8.16, #385) a game whose native module is older than its mod: MPFever updated while the game was open)
+                if (h != null && h.TryGetValue("natold", out var old) && old is bool ob && ob)
+                {
+                    var t0 = NativeOldProblem(BaseName(who ?? ""), h.TryGetValue("natver", out var nv) ? nv as string : null);
+                    bool first; lock (nativeFx) first = nativeFxWarned.Add("old|" + BaseName(who ?? ""));
+                    if (first) { Log.Err(t0); HostChat("msg", "MPFever", t0); }
+                }
+                var fx = h != null && h.TryGetValue("fx", out var v) ? v as string : null;
+                if (fx == null) return;
+                var texts = new List<string>();
+                lock (nativeFx)
+                {
+                    nativeFx[BaseName(who ?? "")] = fx;
+                    if (!nativeFx.TryGetValue(BaseName(hostName ?? ""), out var hostFx)) return;
+                    foreach (var kv in nativeFx)
+                    {
+                        if (string.Equals(kv.Key, BaseName(hostName ?? ""), StringComparison.OrdinalIgnoreCase)) continue;
+                        var text = NativeFxProblem(kv.Key, kv.Value, hostFx);
+                        if (text != null && nativeFxWarned.Add(kv.Key + "|" + kv.Value + "|" + hostFx)) texts.Add(text);
+                    }
+                }
+                foreach (var t in texts) { Log.Err(t); HostChat("msg", "MPFever", t); }
+            }
+            catch { }
+        }
+
         readonly HashSet<string> nativeWarned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         void WarnNative(string who, string payload)

@@ -319,6 +319,17 @@ namespace MPFever
             return cuts;
         }
 
+        /// <summary>(0.8.16, #359) The drift dumps (sdump_drift*, drift_*, native_drift.txt): what the first drift looked like, read
+        /// from their start (the towns come first). Cut last: every other text is cut before them (Kasper/Eier's #359 report kept only
+        /// the end of both games' first-drift dumps, alike, the towns' part gone). MPFEVER_REPORTKEEPDRIFT=0: cut as any text.</summary>
+        internal static bool DriftDump(string name)
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_REPORTKEEPDRIFT") == "0") return false;
+            string n = name.Replace((char)92, '/');
+            n = n.Substring(n.LastIndexOf('/') + 1).ToLowerInvariant();
+            return n.StartsWith("sdump_drift") || n.StartsWith("drift_") || n == "native_drift.txt";
+        }
+
         internal static bool TrimmableText(string name) =>
             Regex.IsMatch(name, @"\.(log|txt)$", RegexOptions.IgnoreCase) && !name.EndsWith("report.txt", StringComparison.OrdinalIgnoreCase)
             && !name.EndsWith("players.txt", StringComparison.OrdinalIgnoreCase);
@@ -334,21 +345,27 @@ namespace MPFever
         {
             string best = null, bestInner = null;
             long bestLen = 0;
-            using (var ms = new MemoryStream(zipBytes))
-            using (var z = new ZipArchive(ms, ZipArchiveMode.Read))
-                foreach (var e in z.Entries)
-                {
-                    if (TrimmableText(e.FullName) && e.CompressedLength > bestLen) { best = e.FullName; bestInner = null; bestLen = e.CompressedLength; }
-                    if (e.FullName.EndsWith("report.zip", StringComparison.OrdinalIgnoreCase))
-                        try
-                        {
-                            using (var im = new MemoryStream(ReadEntry(e)))
-                            using (var inner = new ZipArchive(im, ZipArchiveMode.Read))
-                                foreach (var ie in inner.Entries)
-                                    if (TrimmableText(ie.FullName) && ie.CompressedLength > bestLen) { best = e.FullName; bestInner = ie.FullName; bestLen = ie.CompressedLength; }
-                        }
-                        catch { }
-                }
+            // (0.8.16, #359) first every text but the drift dumps; those only when nothing else is left to cut
+            for (int pass = 0; pass < 2 && (best == null || bestLen < 64 * 1024); pass++)
+            {
+                best = null; bestInner = null; bestLen = 0;
+                bool dumpsToo = pass == 1;
+                using (var ms = new MemoryStream(zipBytes))
+                using (var z = new ZipArchive(ms, ZipArchiveMode.Read))
+                    foreach (var e in z.Entries)
+                    {
+                        if (TrimmableText(e.FullName) && (dumpsToo || !DriftDump(e.FullName)) && e.CompressedLength > bestLen) { best = e.FullName; bestInner = null; bestLen = e.CompressedLength; }
+                        if (e.FullName.EndsWith("report.zip", StringComparison.OrdinalIgnoreCase))
+                            try
+                            {
+                                using (var im = new MemoryStream(ReadEntry(e)))
+                                using (var inner = new ZipArchive(im, ZipArchiveMode.Read))
+                                    foreach (var ie in inner.Entries)
+                                        if (TrimmableText(ie.FullName) && (dumpsToo || !DriftDump(ie.FullName)) && ie.CompressedLength > bestLen) { best = e.FullName; bestInner = ie.FullName; bestLen = ie.CompressedLength; }
+                            }
+                            catch { }
+                    }
+            }
             if (best == null || bestLen < 64 * 1024) return null;
             string note;
             using (var ms = new MemoryStream())

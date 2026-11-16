@@ -31,7 +31,7 @@ check(a > 0 and b > a, "the joining players are those the game is sent to who ar
 check(c > b and d > c, "they are added to the players waited for, before the wait")
 check('Environment.GetEnvironmentVariable("MPFEVER_WAITJOINERS") != "0"' in body, "MPFEVER_WAITJOINERS=0: as before")
 h = SRC.index('case "hello":')
-check("resyncWaiting.RemoveWhere(w => w == m.From || BaseName(w) == BaseName(m.From));" in SRC[h:h + 1500],
+check("resyncWaiting.RemoveWhere(w => w == m.From || BaseName(w) == BaseName(m.From));" in SRC[h:h + 1800],
       "a joining player's game saying it is ready ends its wait (by its name without the number)")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")

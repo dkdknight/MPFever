@@ -71,6 +71,10 @@ jobs:
       - name: Publish (linux-x64)
         run: dotnet publish server-linux/MPFeverRelay.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o artifacts/linux
 
+      # (0.8.16) the published file is trimmed: its own self-test, as the Release workflow does
+      - name: Self-test (published, trimmed)
+        run: artifacts/linux/mpfever-relay --selftest
+
       - name: Binary
         uses: actions/upload-artifact@v4
         with:

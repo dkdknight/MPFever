@@ -145,7 +145,7 @@ send(L7, [ASB])
 check(len(L7.eval("NATIVE")) == 1 and any("no debug library" in s for s in L7.eval("LOG").values()), "no debug library: not watched, said in the log")
 
 i = bridge.find("function G.reportResult(r)")
-check("pcall(G.gsAnswer, r)" in bridge[i:i + 300], "every result goes by G.gsAnswer")
+check("pcall(G.gsAnswer, r)" in bridge[i:i + 800], "every result goes by G.gsAnswer (a batch's: each of its commands, 0.8.16)")
 check("local okGs, errGs = pcall(G.installGsMods)" in bridge, "installed when the bridge's interface half starts")
 
 print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")

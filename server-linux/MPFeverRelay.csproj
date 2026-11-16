@@ -19,6 +19,13 @@
          reached here, and some of its fields are only assigned by the launcher -->
     <NoWarn>$(NoWarn);CS0649;CS0169;CS0414;CA1416;IL3000</NoWarn>
   </PropertyGroup>
+  <!-- (0.8.16) the published single file: the .NET runtime trimmed to what the relay uses, and compressed (68 MB -> about 11 MB;
+       the self-test passes on the trimmed file, and trim warnings are errors here: a use the trimmer can't see fails the build).
+       Pass -p:PublishTrimmed=false to publish the whole runtime as before. -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <PublishTrimmed Condition="'$(PublishTrimmed)' == ''">true</PublishTrimmed>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\launcher\Core.cs" Link="shared\Core.cs" />
     <!-- the host's side of a session through this server: used by the self-test, and by the launcher itself -->

@@ -68,6 +68,7 @@ namespace MPFever
             ok &= RunServerJoin074();
             ok &= RunSharedLog075();
             ok &= RunModRoot086();
+            ok &= RunNativeFx0816();
             ok &= RunServer076();
             ok &= RunReport077();
             ok &= RunReport079();
@@ -230,6 +231,21 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 File.Copy(zip, small);
                 C(Reporter.Shrink(small, 1L << 40).Count == 0, "a report that fits: nothing cut");
                 C(Reporter.HalfTail(Encoding.ASCII.GetBytes("a\nb\nc\nd\n")).Length > 0 && Encoding.ASCII.GetString(Reporter.HalfTail(Encoding.ASCII.GetBytes("aa\nbb\ncc\ndd\n"))).EndsWith("cc\ndd\n"), "the half kept from a line's start");
+                // (0.8.16, #359) a drift dump, larger than the logs, is cut last: the logs first
+                var dz = Path.Combine(dir, "d.zip");
+                using (var z = System.IO.Compression.ZipFile.Open(dz, System.IO.Compression.ZipArchiveMode.Create))
+                {
+                    using (var w = new StreamWriter(z.CreateEntry("session/h/sdump_drift_first.txt").Open())) w.Write("towns first\r\n" + Noise(60000));
+                    using (var w = new StreamWriter(z.CreateEntry("session/h/mod.log").Open())) w.Write(Noise(40000));
+                }
+                long dBefore = new FileInfo(dz).Length;
+                var dCuts = Reporter.Shrink(dz, dBefore * 3 / 4);
+                using (var z = System.IO.Compression.ZipFile.OpenRead(dz))
+                {
+                    string dump; using (var r = new StreamReader(z.GetEntry("session/h/sdump_drift_first.txt").Open())) dump = r.ReadToEnd();
+                    C(dCuts.Count > 0 && dCuts.All(c => c.Contains("mod.log")) && dump.StartsWith("towns first"),
+                        "0.8.16: a drift dump keeps its start, the logs are cut first (" + string.Join("; ", dCuts) + ")");
+                }
             }
             catch (Exception e) { C(false, e.Message); }
             finally { try { Directory.Delete(dir, true); } catch { } }
@@ -899,6 +915,22 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
 
         /// <summary>(0.8.6, #280) A mod whose resources are at its own root, without a content/ folder ("Canadian Names":
         /// names/canada_wp/canada_wp.names.lua), is not an interface mod: the game loads them. MPFEVER_MODROOTFILES=0: as before.</summary>
+        /// <summary>(0.8.16) Every game's native fixes compared with the host's (MainForm.NativeFxProblem).</summary>
+        static bool RunNativeFx0816()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + "0.8.16 native fixes: " + what); ok &= cond; }
+            Check(MainForm.NativeFxProblem("Bob", "wear;sharedmaint;", "sharedmaint;wear;") == null, "the same fixes in another order: nothing said");
+            var t = MainForm.NativeFxProblem("Bob", "wear;", "wear;sharedmaint;tick epochs;") ?? "";
+            Check(t.Contains("Bob") && t.Contains("sharedmaint") && t.Contains("tick epochs"), "the fixes a player's game lacks are named: " + t);
+            var t2 = MainForm.NativeFxProblem("Bob", "wear;sharedmaint;", "wear;") ?? "";
+            Check(t2.Contains("sharedmaint"), "and those it has on top");
+            Check(MainForm.NativeFxProblem("Bob", null, "wear;") == null && MainForm.NativeFxProblem("Bob", "wear;", null) == null, "an older mod (no list): nothing said");
+            var t3 = MainForm.NativeOldProblem("Cowboy", null) ?? "";
+            Check(t3.Contains("Cowboy") && t3.Length > 40, "an old native module named: " + t3);
+            return ok;
+        }
+
         static bool RunModRoot086()
         {
             bool ok = true;

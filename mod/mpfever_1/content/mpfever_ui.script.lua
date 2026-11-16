@@ -992,16 +992,36 @@ U.depotInfo = function(e, owner)
 		local c = api.engine.system.streetConnectorSystem.getConstructionEntityForDepot(e)
 		if type(c) == "number" and c >= 0 then con = c end
 	end)
+	local ents = {}
 	local ok, key = pcall(function()
 		local c = api.engine.getComponent(con, api.type.ComponentType.CONSTRUCTION)
 		if not (c and c.depots and #c.depots > 0) then return nil end
+		for i = 1, #c.depots do ents[#ents + 1] = c.depots[i] end
 		local t = c.transf
 		return "D:" .. tostring(c.fileName) .. "@" .. string.format("%.0f,%.0f", t[13], t[14])
 	end)
 	if not (ok and key) then return nil end
 	local mine = U.myCo ~= nil and owner ~= nil and U.coMap and U.coMap[owner] == U.myCo
-	-- (co: the depot's company, whose rule for its depots applies when the depot has no setting of its own, 0.5.2)
-	return { key = key, canEdit = mine, co = owner ~= nil and U.coMap and U.coMap[owner] or nil }
+	-- (co: the depot's company, whose rule for its depots applies when the depot has no setting of its own, 0.5.2; ents and
+	-- owner (0.8.16): its depot entities and its company's player, for the vehicles of the others it maintains, see U.depotMaintOthers)
+	return { key = key, canEdit = mine, co = owner ~= nil and U.coMap and U.coMap[owner] or nil, ents = ents, owner = owner }
+end
+
+-- (0.8.16) how many vehicles of the other companies a depot's entities maintain now (the shared maintenance of 0.8.15):
+-- api.engine.system.transportVehicleSystem.getVehiclesForMaintenanceStation, their owner another player than the depot's
+U.depotMaintOthers = function(ents, owner)
+	local n = 0
+	for _, d in ipairs(ents or {}) do
+		local okV, vs = pcall(api.engine.system.transportVehicleSystem.getVehiclesForMaintenanceStation, d)
+		if okV and vs then
+			for i = 1, #vs do
+				local o = nil
+				pcall(function() local po = api.engine.getComponent(vs[i], api.type.ComponentType.PLAYER_OWNED); o = po and po.player end)
+				if o ~= nil and o >= 0 and o ~= owner then n = n + 1 end
+			end
+		end
+	end
+	return n
 end
 
 -- a station's setting (the bridge's 'share' event, 0.5.2): rule "co" (its company's rule), "open", "private" or "toll" (fee)
@@ -1299,8 +1319,14 @@ local function installOwnerLine(react, builtin)
 		end, 0.5)
 		-- a depot's rule: its company's rule (0.5.2), private, open, open for a toll per vehicle (mpfever_eco.lua)
 		local depotNow = react.useState(nil)
+		local maintNow = react.useState(nil)
 		react.onStepTimer(function()
 			if not p.depotKey then return end
+			-- ((0.8.16) the other companies' vehicles it maintains, MPFEVER_DEPOTMAINTLINE=0: not shown)
+			if p.depotEnts and os.getenv("MPFEVER_DEPOTMAINTLINE") ~= "0" then
+				local okM, m = pcall(U.depotMaintOthers, p.depotEnts, p.depotOwner)
+				if okM and maintNow:old() ~= m then maintNow:set(m) end
+			end
 			pcall(U.pollEco)
 			local d = U.eco and U.eco.depots and U.eco.depots[p.depotKey]
 			local v = d and (d.rule == "toll" and ("toll:" .. tostring(d.toll)) or d.rule) or "co"
@@ -1383,7 +1409,7 @@ local function installOwnerLine(react, builtin)
 				if v == "private" then return T("Privé : vos véhicules seulement", "Private: your vehicles only") end
 				if v == "open" then return T("Ouvert aux autres entreprises, gratuit", "Open to the other companies, free") end
 				local n = tonumber(v:match("^toll:(%d+)$"))
-				return C.Tf("Ouvert, péage de %s par véhicule acheté ou envoyé ici", "Open, a toll of %s per vehicle bought or sent here", money(n or 0))
+				return C.Tf("Ouvert, péage de %s par véhicule acheté ici et par mois pour chaque véhicule entretenu ici", "Open, a toll of %s per vehicle bought here and per month for each vehicle maintained here", money(n or 0))
 			end
 			if p.depotEdit then
 				local items = {}
@@ -1405,6 +1431,11 @@ local function installOwnerLine(react, builtin)
 				} }
 			else
 				children[#children + 1] = builtin.TextView { meta = { class = "font-scale-body" }, text = label(cur) }
+			end
+			local mn = maintNow:old()
+			if type(mn) == "number" and mn > 0 then
+				children[#children + 1] = builtin.TextView { meta = { class = "font-scale-body" },
+					text = C.Tf("Entretient %d véhicule(s) d'autres entreprises.", "Maintains %d vehicle(s) of other companies.", mn) }
 			end
 		end
 		children[#children + 1] = inner
@@ -1442,6 +1473,7 @@ local function installOwnerLine(react, builtin)
 			shareText = share and share.text or nil, shareKey = share and share.key or nil, shareFee = share and share.fee or nil,
 			shareEdit = share and share.canEdit or nil, shareCo = share and share.co or nil, shareMine = share and share.mine or nil,
 			depotKey = depot and depot.key or nil, depotEdit = depot and depot.canEdit or nil, depotCo = depot and depot.co or nil,
+			depotEnts = depot and depot.ents or nil, depotOwner = depot and depot.owner or nil,
 			keyEntity = type(r.param) == "table" and r.param.keyEntity or nil, meta = type(r.param) == "table" and r.param.meta or nil }
 		return w
 	end

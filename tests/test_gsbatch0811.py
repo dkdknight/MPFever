@@ -68,7 +68,10 @@ try:
         return L.table_from(k)
 
     check(f(T(tok="gsmod-1-a", id=1, fn="makeCustomEntityDestroyCmd")) is True, "run: a game script's destroy is batchable")
-    check(f(T(tok="gsmod-1-a", id=7, fn="makeCustomEntityDestroyCmd")) is False, "run: not one waiting for its answer")
+    check(f(T(tok="gsmod-1-a", id=7, fn="makeCustomEntityDestroyCmd")) is True, "run: one waiting for its answer too (0.8.16, #369: the batch answers each)")
+    L.execute('ENV.MPFEVER_GSBATCHCB = "0"')
+    check(f(T(tok="gsmod-1-a", id=7, fn="makeCustomEntityDestroyCmd")) is False, "run: MPFEVER_GSBATCHCB=0: not one waiting for its answer (0.8.11)")
+    L.execute("ENV.MPFEVER_GSBATCHCB = nil")
     check(f(T(tok="gsmod-1-a", id=2, fn="makeWorldBuildProposalCmd")) is False, "run: not a build")
     check(f(T(tok="ui-1", id=3, fn="makeEntitySetNameCmd")) is False, "run: not a player's command")
     L.execute('ENV.MPFEVER_GSBATCH = "0"')

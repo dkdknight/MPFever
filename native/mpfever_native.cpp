@@ -34,6 +34,16 @@ struct Buf {
     Buf& dec2(int v) { s[n++] = (char)('0' + v / 10 % 10); s[n++] = (char)('0' + v % 10); return *this; }
 };
 
+// (0.8.16) The native fixes that change what the simulation computes, each named here once it is in place, written to
+// native_fx.txt when the module's fixes are all in: the mod sends the list in its hello and the host compares every game's with
+// its own (a game without one of them drifts from the others: the shared maintenance on one game only, an order fix found on
+// one build only). Only the fixes in place are named; one missing means off on that game.
+#ifndef MPF_VERSION
+#define MPF_VERSION "0.0.0"
+#endif
+static Buf g_fx;
+static void Fx(const char* k) { g_fx.str(k).str(";"); }
+
 static void LogLine(Buf& b)
 {
     if (!g_log) return;
@@ -4485,6 +4495,7 @@ static void InstallOrderFixes()
         }
         bool ok = at && layout && Splice(mem, at + f.offset, f.steal, f.fn);
         if (i == 10) tickOn = ok;
+        if (ok) Fx(f.name);
         b.str(" ").str(f.name).str(ok ? " on" : " OFF").str(i + 1 < ORDER_N ? "," : "");
     }
     b.str(", road entries").str(InstallRoadOrder(mem) ? " on" : " OFF");
@@ -4740,6 +4751,7 @@ static void InstallClearSame()
     u8* mem = shape ? AllocNear(0x100) : 0;
     bool ok = mem && Splice(mem, (u32)((u64)f + 0x8e - g_base), (int)sizeof(site), ClearPosSeen);
     g_clearSame = ok ? 1 : 0;
+    if (ok) Fx("clearsame");
     if (ok) b.str("account changes: the same on every game (every company emptied in one order, this machine's figures put back), ClearPositions at ").hex((u64)f - g_base);
     else b.str("account changes: ClearPositions ").str(f ? (shape ? "not spliced" : "of another shape") : "not found").str(": this machine's company kept out of the clear, as before");
     LogLine(b);
@@ -4905,6 +4917,7 @@ static void InstallAirCache()
             ok = true;
         }
     }
+    if (ok) Fx("aircache");
     if (ok) b.str("aircraft figures: made again at every step (AircraftMoveSystem's update at ").hex(at).str(", its vtable's slot at ").hex(slot - g_base)
         .str(g_airPos0On ? "; the place at the start of the batch not read by the update" : "; the place at the start of the batch read as before, MPFEVER_AIRPOS0=0").str("): the same on every game whatever its batches");
     else b.str("aircraft figures: AircraftMoveSystem's update ").str(!at ? "NOT found" : (slots == 1 ? "found, its vtable of another shape" : "found, its vtable's slot not (")).dec((long)slots)
@@ -5043,6 +5056,7 @@ static void InstallIndustryDemand()
     if (miss) { b.str("industry demand: OFF (").str(miss).str("), the game's two histories"); LogLine(b); return; }
     g_indSchedOrig = (IndSchedF)t;
     g_ind.on = off ? 0 : 1;
+    if (!off) Fx("industrydemand");
     if (off) b.str("industry demand: the game's two histories (MPFEVER_INDUSTRYDEMAND=0), each active call logged (MPFEVER_INDUSTRYLOG)");
     else b.str("industry demand (from TPF3-MP): one history for the two game states, scheduler at ").hex(sched).str(", histories made at ").hex(setup + 0x822)
         .str(g_indLog ? ", each active call logged (MPFEVER_INDUSTRYLOG)" : "");
@@ -5157,6 +5171,7 @@ static void InstallDecisionSync()
     if (miss) { b.str("decision flags: OFF (").str(miss).str("), each game state keeps its own"); LogLine(b); return; }
     g_dsGet = (MovePathF)getter;
     g_dsOn = true;
+    Fx("decisionsync");
     b.str("decision flags (after TPF3-MP): each vehicle's platform-decision flag copied after the simulation loop's Replicate, read at ").hex(at + 21)
         .str(", MovePath's getter at ").hex((u32)(getter - g_base));
     LogLine(b);
@@ -5352,6 +5367,7 @@ static void InstallFreshIds()
     Buf b;
     if (miss) { b.str("fresh ids: OFF (").str(miss).str("), the commands' entities take the queue's ids"); LogLine(b); return; }
     g_freshOn = true;
+    Fx("freshids");
     b.str("fresh ids: the vehicles and lines that commands make (AddEntity returning to ").hex(g_freshSite[0]).str(" or ").hex(g_freshSite[1])
         .str(", the loop's commands and the scripts', Apply returning to ").hex(RVA_SCRIPT_APPLY_RET).str(") get fresh ids, AddEntity at ").hex(RVA_ADDENTITY)
         .str(", the copy's replay at ").hex(rep);
@@ -5751,6 +5767,7 @@ static void InstallSharedMaint()
     b.str(g_getenvOrig ? ", the script's table through getenv" : ", NO way for the script's table (getenv not hooked)");
     LogLine(b);
     if (!g_getenvOrig) g_mtSplice = false;
+    if (g_mtSplice) Fx("sharedmaint");
 }
 
 static void InstallVehicleWear()
@@ -5769,6 +5786,7 @@ static void InstallVehicleWear()
             ok = true;
         }
     }
+    if (ok) Fx("wear");
     Buf b; b.str("vehicle wear: ").str(ok ? "every company's vehicles (owner filter taken out at " : "the savegame's company only (the owner filter was not found)");
     if (ok) b.hex(at + 21).str(")");
     LogLine(b);
@@ -6657,6 +6675,10 @@ static DWORD WINAPI Init(void*)
     InstallSharedMaint();
     InstallFastSpan();
     InstallFastSave();
+    // (0.8.16) the list of the fixes in place, for the host's comparison (see g_fx)
+    // (first line: the release this module comes from, see MPF_VERSION; then the fixes)
+    { Buf f; f.str("version=").str(MPF_VERSION); f.s[f.n++] = (char)10; for (int i = 0; i < g_fx.n && f.n < 1000; i++) f.s[f.n++] = g_fx.s[i]; WriteSessionFile("native_fx.txt", f.s, f.n); }
+    { Buf b; b.str("native fixes that change the simulation, in place: ").str(g_fx.n ? "" : "none"); for (int i = 0; i < g_fx.n && b.n < 1000; i++) b.s[b.n++] = g_fx.s[i]; LogLine(b); }
     { Buf b; b.str(g_luaSeedFixed ? "Lua string hash seed: fixed (same table order on every game)" : "Lua string hash seed: NOT fixed"); LogLine(b); }
     if (g_layout && RVA_MONEYCHECK) InstallDetour(RVA_MONEYCHECK, P_MONEYCHECK, sizeof(P_MONEYCHECK), (void*)&MoneyCheckDetour, (void**)&g_moneyOrig);
     if (g_layout && RVA_LINES) InstallDetour(RVA_LINES, P_LINES, sizeof(P_LINES), (void*)&LinesDetour, (void**)&g_linesOrig);
