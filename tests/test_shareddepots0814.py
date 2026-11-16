@@ -33,6 +33,9 @@ m1 = re.search(r"^U\.depotOpenToMe = function\(e\)\n.*?^end\n", src, re.S | re.M
 m2 = re.search(r"^local function installSharedDepots\(\)\n.*?^end\n", src, re.S | re.M)
 check(m1 and m2, "U.depotOpenToMe and installSharedDepots found")
 check("pcall(installSharedDepots)" in src, "installed with the other companies' tools (U.coMap)")
+opts = open(os.path.join(HERE, "..", "launcher", "Options.cs"), encoding="utf-8").read()
+check('Key = "MPFEVER_SHAREDDEPOTS", Session = true, DefaultOn = true, OffValue = "0"' in opts,
+      "the host's session setting (lobby), on by default, off = MPFEVER_SHAREDDEPOTS=0 on every game")
 if not (m1 and m2):
     sys.exit(1)
 

@@ -25701,6 +25701,32 @@
       "ko": "이 서버에는 아직 호스트가 없습니다. 먼저 누군가 호스트해야 합니다.",
       "zh-CN": "此服务器上还没有人主持：需要先有人主持。",
       "zh-TW": "此伺服器上還沒有人主持：需要先有人主持。"
+    },
+    "Open depots usable by the other companies": {
+      "de": "Offene Depots für die anderen Firmen nutzbar",
+      "es": "Depósitos abiertos utilizables por las otras empresas",
+      "it": "Depositi aperti utilizzabili dalle altre aziende",
+      "nl": "Open depots bruikbaar voor de andere bedrijven",
+      "pl": "Otwarte zajezdnie dostępne dla innych firm",
+      "pt-BR": "Depósitos abertos utilizáveis pelas outras empresas",
+      "ru": "Открытые депо доступны другим компаниям",
+      "ja": "開放した車庫を他の会社も使用可能",
+      "ko": "개방된 차고를 다른 회사도 사용 가능",
+      "zh-CN": "开放的车库可供其他公司使用",
+      "zh-TW": "開放的車庫可供其他公司使用"
+    },
+    "One company per player: a depot set to « open » or « toll » also shows for the other players, to buy vehicles there (the toll is paid to its owner).": {
+      "de": "Eine Firma pro Spieler: Ein Depot auf « offen » oder « Maut » erscheint auch bei den anderen Spielern, um dort Fahrzeuge zu kaufen (die Maut geht an seinen Besitzer).",
+      "es": "Una empresa por jugador: un depósito configurado como « abierto » o « peaje » también aparece para los demás jugadores, para comprar vehículos allí (el peaje se paga a su propietario).",
+      "it": "Un'azienda per giocatore: un deposito impostato su « aperto » o « pedaggio » compare anche per gli altri giocatori, per acquistarvi veicoli (il pedaggio va al suo proprietario).",
+      "nl": "Eén bedrijf per speler: een depot op « open » of « tol » verschijnt ook bij de andere spelers om er voertuigen te kopen (de tol gaat naar de eigenaar).",
+      "pl": "Jedna firma na gracza: zajezdnia ustawiona na « otwarta » lub « opłata » pojawia się też u innych graczy, aby kupować w niej pojazdy (opłata trafia do jej właściciela).",
+      "pt-BR": "Uma empresa por jogador: um depósito definido como « aberto » ou « pedágio » também aparece para os outros jogadores, para comprar veículos ali (o pedágio é pago ao seu dono).",
+      "ru": "Одна компания на игрока: депо с настройкой « открыто » или « плата » видно и другим игрокам, чтобы покупать там транспорт (плата идёт владельцу).",
+      "ja": "プレイヤーごとに1社：「開放」または「有料」に設定した車庫は他のプレイヤーにも表示され、そこで車両を購入できます（料金は所有者に支払われます）。",
+      "ko": "플레이어당 회사 하나: 「개방」 또는 「통행료」로 설정한 차고는 다른 플레이어에게도 표시되어 차량을 구매할 수 있습니다(통행료는 소유자에게 지급됨).",
+      "zh-CN": "每位玩家一家公司：设置为「开放」或「收费」的车库也会显示给其他玩家，可在那里购买车辆（费用支付给其所有者）。",
+      "zh-TW": "每位玩家一家公司：設定為「開放」或「收費」的車庫也會顯示給其他玩家，可在那裡購買車輛（費用支付給其所有者）。"
     }
   }
 }

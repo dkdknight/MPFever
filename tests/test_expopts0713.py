@@ -67,7 +67,7 @@ check("All.Where(o => o.Native && !o.Session && IsOn(o) && o.OnValue != \"\")" i
       and "foreach (var kv in Options.NativeEnv()) psi.EnvironmentVariables[kv.Key] = kv.Value;" in core,
       "(a) the native module's settings path (Options.NativeEnv) kept as it was")
 keys = re.findall(r'Key = "([^"]+)"', op) + re.findall(r'Fix\("(MPFEVER_[A-Z0-9_]+)"', op)
-want = ["MPFEVER_BUILDLEAD", "MPFEVER_NOWAIT", "MPFEVER_NOSTOP", "MPFEVER_NOREFUND", "MPFEVER_REPLACEFREE", "MPFEVER_PREVIEWS", "MPFEVER_SMOOTH", "MPFEVER_ADAPTAHEAD",
+want = ["MPFEVER_BUILDLEAD", "MPFEVER_NOWAIT", "MPFEVER_NOSTOP", "MPFEVER_NOREFUND", "MPFEVER_REPLACEFREE", "MPFEVER_PREVIEWS", "MPFEVER_SHAREDDEPOTS", "MPFEVER_SMOOTH", "MPFEVER_ADAPTAHEAD",
         "MPFEVER_STEPLOG", "autoupdate", "upnp", "automods", "lookupip", "MPFEVER_JUNCTIONCON", "MPFEVER_TOWNNATIVE",
         "MPFEVER_TOWNUPGRADE", "MPFEVER_STOPCLEANUP", "MPFEVER_CONBYFILE", "MPFEVER_EDITFORMS", "MPFEVER_REPLAYUNUSED",
         "MPFEVER_RANK1OWN", "MPFEVER_MODHOST", "MPFEVER_MODEVENTS"]

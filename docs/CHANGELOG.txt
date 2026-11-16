@@ -24,7 +24,8 @@ MPFever - Changelog
     Test: tests/test_ptedgeturn0814.py.
   - NEW (Discord, Chris P. Bacon and Getriebesand): one company per player, the vehicle manager now also lists the depots the
     other companies opened to this one (open, or a toll per vehicle; private ones not; all of them when the host turned the
-    sharing rules off): a vehicle can be bought there, the toll booked as before (0.5.0). MPFEVER_SHAREDDEPOTS=0: off.
+    sharing rules off): a vehicle can be bought there, the toll booked as before (0.5.0). A session setting of the host,
+    « Open depots usable by the other companies », on by default (MPFEVER_SHAREDDEPOTS=0: off).
     Test: tests/test_shareddepots0814.py.
   - NEW (PR #334 by ampynjord, who looks after it): a Linux session server (server-linux/, mpfever-relay): a host can host
     through it ("server=host:port" in mpfever_settings.txt), the players join its address, no port to open; with --migration

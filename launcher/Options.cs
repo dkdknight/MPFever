@@ -56,6 +56,12 @@ namespace MPFever
             new Opt { Key = "MPFEVER_PREVIEWS", Session = true, DefaultOn = true, OffValue = "0",
                 Name = () => T("Voir ce que les autres construisent", "See what the others are building"),
                 Help = () => T("Ce que l'outil d'un autre joueur montre avant son clic s'affiche au sol chez vous, à sa couleur.", "What another player's tool shows before their click shows on the ground in your game, in their colour.") },
+            // (0.8.14, Discord 2026-11-15: the user's choice, on by default) One company per player: the depots another company opened
+            // (open, or a toll per vehicle) are listed in this company's vehicle manager, to buy a vehicle there (mpfever_ui.script.lua,
+            // installSharedDepots). Off: each company sees only its own depots, as before
+            new Opt { Key = "MPFEVER_SHAREDDEPOTS", Session = true, DefaultOn = true, OffValue = "0",
+                Name = () => T("Dépôts ouverts utilisables par les autres entreprises", "Open depots usable by the other companies"),
+                Help = () => T("Une entreprise par joueur : un dépôt réglé sur « ouvert » ou « péage » apparaît aussi chez les autres joueurs pour y acheter des véhicules (le péage est payé à son propriétaire).", "One company per player: a depot set to « open » or « toll » also shows for the other players, to buy vehicles there (the toll is paid to its owner).") },
             // ---- this player's own
             new Opt { Key = "MPFEVER_SMOOTH", DefaultOn = true, OffValue = "0",
                 Name = () => T("Défilement fluide", "Smooth pacing"),
