@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -322,6 +322,22 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             C(MainForm.ConnCard(true, null), "  developer mode (--dev, the autotests): the old card and its buttons");
             C(MainForm.ConnCard(false, "1") && !MainForm.ConnCard(false, "0") && !MainForm.ConnCard(false, ""), "  MPFEVER_CONNCARD=1: the old card, as before");
             C(MainForm.PortSetting(null) == 28090 && MainForm.PortSetting("") == 28090, "port: 28090 without port= in mpfever_settings.txt, as before");
+            // hosting through a server (and taking over as the host): the address as the player typed it, with or without its port
+            {
+                string sh; int sp;
+                MainForm.ParseServer("my.server.example", out sh, out sp);
+                C(sh == "my.server.example" && sp == 28090, "server address without a port: 28090");
+                MainForm.ParseServer("203.0.113.7:28091", out sh, out sp);
+                C(sh == "203.0.113.7" && sp == 28091, "  with its port: that port");
+                MainForm.ParseServer("[2001:db8::1]:28092", out sh, out sp);
+                C(sh == "2001:db8::1" && sp == 28092, "  an IPv6 address in brackets with its port");
+                MainForm.ParseServer(NetAddr.First("203.0.113.7:28090", 28090), out sh, out sp);
+                C(sh == "203.0.113.7" && sp == 28090, "  the address of a join, as the takeover reuses it (the port is not added twice)");
+                MainForm.ParseServer(NetAddr.First("203.0.113.7", 28090), out sh, out sp);
+                C(sh == "203.0.113.7" && sp == 28090, "  the same without a port in what was typed");
+                C(MainForm.InviteConnect("203.0.113.7:28090") == "+mpfever_connect 203.0.113.7:28090", "a Steam invitation of a host that uses a server names the server");
+                C(NetAddr.First(MainForm.InviteConnect("203.0.113.7:28090").Substring("+mpfever_connect".Length).Trim(), 28090) == "203.0.113.7:28090", "  and the friend's game reads it back as the address to join");
+            }
             C(MainForm.PortSetting(" 28100 ") == 28100 && MainForm.PortSetting("1024") == 1024 && MainForm.PortSetting("65535") == 65535, "  port=28100: that port");
             C(MainForm.PortSetting("80") == 28090 && MainForm.PortSetting("70000") == 28090 && MainForm.PortSetting("abc") == 28090 && MainForm.PortSetting("-5") == 28090, "  out of 1024-65535 or not a number: 28090");
             // (a hardening of the review: port= is the port of this player's own lobby, not of a friend's)
@@ -1839,6 +1855,25 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                   && c.Owner == "Lena" && c.StartSpeed == 1 && c.WatchdogSeconds == 30 && c.StartMoney == 2000000 && !c.PauseWhenEmpty && !c.ShareRules && problems.Count == 3,
                   "settings: values, " + problems.Count + " line(s) ignored");
             try { Directory.Delete(dir, true); } catch { }
+
+            // The regular host and Windows dedicated server read the same fields when a launcher also supports the Linux relay.
+            foreach (var version in new[] { MainForm.Version, "0.0.1" })
+            foreach (var password in new[] { c.Password, "wrong" })
+            foreach (var others in new[] { 0, c.MaxPlayers })
+            {
+                string join = "{[\"v\"]=" + LuaLit.Quote(version) + ",[\"pw\"]=" + LuaLit.Quote(password);
+                string plain = join + "}";
+                string extra = join + ",[\"rp\"]=" + RelayProtocol.Number + ",[\"mig\"]=true}";
+                Check(MainForm.VersionAdmit(plain) == MainForm.VersionAdmit(extra), "host admission ignores rp and mig");
+                string expected = c.Admission(plain, others, out var expectedReason);
+                string actual = c.Admission(extra, others, out var actualReason);
+                Check(expected == actual && expectedReason == actualReason, "dedicated admission ignores rp and mig");
+            }
+
+            // the relay's own kinds are never a player's: a host does not pass them on (OnHostMessage), the relay drops them
+            Check(RelayProtocol.IsReserved("tun_host") && RelayProtocol.IsReserved("tun_join") && RelayProtocol.IsReserved("tun_"), "reserved kinds: tun_*");
+            Check(!RelayProtocol.IsReserved("hash") && !RelayProtocol.IsReserved("welcome") && !RelayProtocol.IsReserved("Tun_host") && !RelayProtocol.IsReserved(null) && !RelayProtocol.IsReserved(""), "reserved kinds: the game's kinds are not");
+            Check(RelayProtocol.IsRouting("@Bob#2:tun_host") && RelayProtocol.IsRouting("!Bob#2:chat") && !RelayProtocol.IsRouting("@") && !RelayProtocol.IsRouting("chat") && !RelayProtocol.IsRouting(null), "routing prefixes: @name: and !name:");
 
             // 2. who comes in
             int port = 28192;

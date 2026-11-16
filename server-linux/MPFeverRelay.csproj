@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- MPFever relay server for Linux (see docs/LINUX-RELAY.md). It is built from the launcher's own protocol sources
+       (Core.cs: Msg, NetReader, LuaLit, SessionLink, Relay...), so it speaks exactly the protocol of the launcher it is built with. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>mpfever-relay</AssemblyName>
+    <RootNamespace>MPFever.LinuxServer</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>0.1.0</Version>
+    <Company>dkdknight</Company>
+    <Product>MPFever</Product>
+    <Copyright>Copyright (C) 2026 dkdknight and the MPFever contributors. GPL-3.0-or-later</Copyright>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Core.cs is shared with the Windows launcher: its Windows-only code (registry, Steam, the game link) is compiled but never
+         reached here, and some of its fields are only assigned by the launcher -->
+    <NoWarn>$(NoWarn);CS0649;CS0169;CS0414;CA1416;IL3000</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\launcher\Core.cs" Link="shared\Core.cs" />
+    <!-- the host's side of a session through this server: used by the self-test, and by the launcher itself -->
+    <Compile Include="..\launcher\RemoteRelay.cs" Link="shared\RemoteRelay.cs" />
+  </ItemGroup>
+</Project>

@@ -1045,7 +1045,7 @@ namespace MPFever
 
         /// <summary>Who may come in: the same MPFever version, the password, a free place (a player reconnecting keeps
         /// its own). Returns null, or the payload of the "denied" message.</summary>
-        string ServerAdmit(Relay r, Peer p, Msg m)
+        string ServerAdmit(IRelay r, Peer p, Msg m)
         {
             var refused = server.Admission(m.Payload, OthersConnected(r, p), out var reason);
             if (refused != null) Log.Warn(F("{0} ({1}) refusé : {2}", "{0} ({1}) refused: {2}", BaseName(p.Name), p.Address, reason));
@@ -1053,7 +1053,7 @@ namespace MPFever
         }
 
         /// <summary>The players connected besides p (its own older connection, closed when it comes back, not counted).</summary>
-        internal static int OthersConnected(Relay r, Peer p)
+        internal static int OthersConnected(IRelay r, Peer p)
         {
             var me = BaseName(p.Name);
             return r.Admitted().Count(o => o != p && !string.Equals(BaseName(o.Name), me, StringComparison.OrdinalIgnoreCase));
@@ -1101,6 +1101,9 @@ namespace MPFever
                     if (game) return T("L'hôte vous a exclu de la partie.", "The host kicked you from the game.");
                     return T("Vous avez été exclu du serveur.", "You were kicked from the server.");
                 case "stopped": return T("Le serveur a été arrêté.", "The server was stopped.");
+                case "relay": return T("Ce serveur parle un autre protocole de relais : mettez MPFever à jour ou utilisez un serveur qui correspond.", "This server speaks another relay protocol: update MPFever or use a server that matches.");
+                case "nohost": return T("Personne n'héberge encore sur ce serveur : quelqu'un doit héberger d'abord.", "Nobody hosts on this server yet: somebody must host first.");
+                case "hosted": return T("Quelqu'un héberge déjà sur ce serveur : rejoignez-le.", "Somebody already hosts on this server: join it instead.");
                 case "banned": return T("L'hôte vous a banni de ses parties.", "The host banned you from their games.");
                 case "refused": return T("L'hôte n'a pas accepté votre arrivée.", "The host did not let you in.");
             }

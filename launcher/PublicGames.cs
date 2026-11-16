@@ -279,7 +279,7 @@ namespace MPFever
         bool PublicHosting() => !PublicOff && (menuMode || autotest) && server == null && hostGame != null && relay != null && hostName != null;
 
         /// <summary>Relay.Admit of a player's own game, after the version check (see StartHost).</summary>
-        string PublicAdmit(Relay r, Peer p)
+        string PublicAdmit(IRelay r, Peer p)
         {
             if (PublicOff || server != null) return null;
             return Gate.Admit(p, () => OthersConnected(r, p), q => r.TrySend(q, Msg.Make("admitwait", "MPFever", "{}")));

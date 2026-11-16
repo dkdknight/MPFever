@@ -81,10 +81,13 @@ namespace MPFever
                 return 0;
             }
             bool auto = args.Length > 0 && args[0] == "--autotest";
-            MainForm.Dev = auto || args.Contains("--dev");
+            bool autoClient = args.Length > 1 && args[0] == "--autoclient";
+            if (autoClient) { MainForm.AutoClientAddr = args[1]; if (args.Length > 3) MainForm.AutoClientName = args[3]; }
+            MainForm.Dev = auto || autoClient || args.Contains("--dev");
             // default: the game starts at once and the session is set up from its main menu (MPFever window)
             MainForm.MenuModeDefault = !MainForm.Dev;
             if (auto) GameLink.AutoSave = args.Length > 1 ? args[1] : "test multi";
+            if (autoClient) GameLink.AutoSave = args.Length > 2 ? args[2] : "test multi";
             // started by the game from a Steam invitation: join that host at once
             int j = Array.IndexOf(args, "--join");
             if (j >= 0 && j + 1 < args.Length) MainForm.JoinAtStart = args[j + 1];
@@ -141,9 +144,17 @@ namespace MPFever
         public static bool Dev;
         public static bool MenuModeDefault;
         public static string JoinAtStart;
+        /// <summary>(tests) MPFever.exe --autoclient host[:port] [savegame] [name]: a launcher that is only a player of a local test (the host is another MPFever.exe).</summary>
+        public static string AutoClientAddr;
+        public static string AutoClientName = "Client";
         /// <summary>Started by the previous MPFever.exe after an update (--updated).</summary>
         public static bool JustUpdated;
         string steamConnect, lastSteamJoin;
+        /// <summary>(hosting through a server) the server's address as friends join it: "host:port", or null.</summary>
+        string remoteAddress;
+
+        /// <summary>The Steam invitation's connect string for a server (the friend's game starts MPFever with it, OnMenuRequest "join").</summary>
+        internal static string InviteConnect(string serverAddress) => "+mpfever_connect " + serverAddress;
         int steamSeq;
         bool menuMode;
 
@@ -151,6 +162,9 @@ namespace MPFever
         GameLink menuGame;
         string menuPhase = "idle", menuText = "", menuLoad = "", menuLoadSeq = "", lastMenuReq;
         volatile bool joinPending;
+        /// <summary>(host migration) set by StartClient: this player's launcher stops acting as a client (its game and its connection are taken over by PromoteToHost).</summary>
+        Action detachGuest;
+        int promoting;   // (host migration) 1 while this launcher takes over as the host
         // (0.7.0, the host) the players who look at the game's mods and DLCs before joining a game already running (see the join
         // review): they get the game once they say so (joinready). MPFEVER_JOINREVIEW=0: a player gets the game at once, as before
         readonly HashSet<string> reviewing = new HashSet<string>();
@@ -169,6 +183,7 @@ namespace MPFever
         // the host and sent with the lobby; a player who joins sees them as lobbyColors ("name:index,...") and the host's mode
         readonly Dictionary<string, int> lobbyColorOf = new Dictionary<string, int>();
         string lobbyColors = "", lobbyMode = "";
+        int hostSessionSpeed = 1;      // (a player) the speed the host last set, from its "session" messages: kept for a host change
         string hostCompanyMode = "";   // (a player) the host's company mode, from its "session" messages: see ReportCompanyMode
         // one company per player: the computer companies of the host's lobby (experimental, 0.5.12), by number n of their key
         // "ai:<n>" in the companies' registry: their colour (palette index) and name (a savegame's, "" for a new one). Those of the
@@ -281,7 +296,7 @@ namespace MPFever
         bool statusFailed;
 
         string gameDir;
-        Relay relay;
+        IRelay relay;
         readonly List<GameLink> games = new List<GameLink>();
         readonly List<Client> clients = new List<Client>();
         string hostName;
@@ -1395,6 +1410,12 @@ namespace MPFever
                 Guard(StartLocalTest);
                 new Thread(AutoTest) { IsBackground = true, Name = "Autotest" }.Start();
             }
+            else if (AutoClientAddr != null)
+            {
+                ParseServer(AutoClientAddr, out string acHost, out int acPort);
+                // (the address as typed in the game's join page, with its port: what a takeover must handle)
+                Guard(() => StartClient(AutoClientName, AutoClientAddr, acPort, true, null, Environment.GetEnvironmentVariable("MPFEVER_SERVERPW")));
+            }
         }
 
         /// <summary>(0.6.5, #111) MPFever.exe copied alone, without winhttp.dll next to it: the native module in the game folder
@@ -2322,6 +2343,18 @@ namespace MPFever
                 // Steam: friends can join from their friends list or an invitation
                 new Thread(() =>
                 {
+                    // (hosting through a server: friends join the server's address; there is no port of this PC to give and no address to look up.
+                    // A server with a password asks the friend for it on the Multiplayer page, as for any join)
+                    var viaServer = remoteAddress;
+                    if (relay is RemoteRelay && viaServer != null)
+                    {
+                        lobbyPublic = viaServer; lobbyLocal = "";
+                        steamConnect = InviteConnect(viaServer);
+                        SteamCtl("presence", steamConnect);
+                        Log.Ok(T("Steam : invitations possibles par le serveur (", "Steam: invitations enabled through the server (") + steamConnect + ")");
+                        MenuStatus();
+                        return;
+                    }
                     // the public IPv4 and, when this PC has one, its IPv6 (behind DS-Lite only the IPv6 reaches it)
                     var v6 = LoadSettings().TryGetValue("ipv6", out var i6) && i6.Trim() == "0" ? new List<string>() : NetAddr.PublicIPv6List();
                     var pub = PublicAddress();
@@ -2800,6 +2833,7 @@ namespace MPFever
             lock (modIssues) modIssues.Clear();
             lock (dlcIssues) dlcIssues.Clear();
             joinedAddr = null;
+            remoteAddress = null;
             if (steamConnect != null) { steamConnect = null; SteamCtl("clear", null); }
             if (menuGame != null)
             {
@@ -3119,6 +3153,19 @@ namespace MPFever
             return string.Join(", ", l);
         }
 
+        /// <summary>(tests of a host's migration) The host runs for a while, then leaves the session: the server asks the next player to take
+        /// over (MPFever.exe --autoclient launchers are the players; their logs say how it went).</summary>
+        void RunMigrateHost()
+        {
+            AutoLine("migrate: the host runs for 20 s, then leaves the session");
+            SetSpeed(1, "test");
+            Thread.Sleep(20000);
+            var rr = relay as RemoteRelay;
+            if (rr == null) { AutoLine("FAILED: not hosting through a server"); return; }
+            AutoLine("migrate: the host leaves now");
+            rr.Dispose();
+        }
+
         void AutoTest()
         {
             try
@@ -3145,6 +3192,7 @@ namespace MPFever
                 StartSession();
                 Thread.Sleep(8000);
                 var scenarios = (Environment.GetEnvironmentVariable("MPFEVER_SCENARIO") ?? "newroad,upgrade").Split(',');
+                if (scenarios[0] == "migrate") { RunMigrateHost(); return; }
                 if (scenarios[0] == "recplay")
                 {
                     RunRecPlay();
@@ -3446,11 +3494,148 @@ namespace MPFever
         internal static Func<Peer, Msg, string> HostAdmit(bool anyVersion, Func<Msg, string> version, Func<Peer, string> pub)
             => (p, m) => (anyVersion ? null : version(m)) ?? pub(p);
 
-        void StartHost(string name, bool launch, GameLink existing = null)
+        // ---------------------------------------------------------------- host migration (server-linux --migration, docs/LINUX-RELAY.md)
+
+        /// <summary>The server asks this player to take over as the host: the host before it is gone. {migrate = true, prev}.</summary>
+        void OnTunHost(Msg m, GameLink game, string name, string host, int port, string password, string oldName)
+        {
+            var t = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+            bool migrate = t != null && t.TryGetValue("migrate", out var mv) && mv is bool mb && mb;
+            if (!migrate) return;
+            string prev = t.TryGetValue("prev", out var pv) ? pv as string : "";
+            string token = t.TryGetValue("token", out var tv) ? tv as string : null;
+            if (string.IsNullOrEmpty(token)) return;          // (a server that sends none is not asking: nothing to reconnect with)
+            if (hostGame != null || relay != null) return;   // (already a host)
+            // (a message sent twice, or a second one while the first runs, must not start a second promotion)
+            if (Interlocked.CompareExchange(ref promoting, 1, 0) != 0) return;
+            Log.Warn(F("L'hôte {0} est parti : ce joueur reprend l'hébergement.", "The host {0} left: this player takes over as the host.", BaseName(prev)));
+            new Thread(() => { try { PromoteToHost(game, name, host, port, password, prev, oldName, token); } finally { Interlocked.Exchange(ref promoting, 0); } }) { IsBackground = true, Name = "Promotion" }.Start();
+        }
+
+        /// <summary>This player's launcher and game go from player to host of the session, through the same server. The session's world is
+        /// kept: the game is reloaded with the host's role by the host's own resynchronisation, which every other player's game takes as
+        /// it takes any resynchronisation (no one reconnects). The other players are announced by the server one by one (each is a new
+        /// arrival for the host's code, which starts that resynchronisation by itself, see joinPending).</summary>
+        void PromoteToHost(GameLink game, string name, string host, int port, string password, string prev, string oldName, string token)
+        {
+            try
+            {
+                Client[] gone; lock (clients) gone = clients.ToArray();
+                detachGuest?.Invoke();
+                // what this player knows of the session, as the host's code reads it
+                var mode = hostCompanyMode;
+                if (mode == "separate" || mode == "shared") companyMode = mode;
+                lock (sessionGate) { started = true; speed = Math.Max(1, hostSessionSpeed); pauseAt = null; }   // (the games run until the resynchronisation pauses them)
+                game.SetIdentity(name, "host");   // (read when the game loads: the resynchronisation reloads it as the host)
+                try { File.Delete(Path.Combine(game.Dir, "load_mods.txt")); } catch { }
+                // (the address the player typed: "ip", "ip:port" or several, each with or without its port)
+                StartHost(name, false, game, NetAddr.First(host, port), password, token);
+                Log.Ok(T("Hébergement repris : les autres joueurs vont recevoir la partie de cet hôte.", "Hosting taken over: the other players will receive this host's game."));
+                if (remoteAddress != null && menuGame != null && SteamNet.Enabled) { steamConnect = InviteConnect(remoteAddress); SteamCtl("presence", steamConnect); }
+                // the host that left is no longer a player: every game forgets its clock (else it stays the barrier and nothing runs on)
+                if (!string.IsNullOrEmpty(prev)) HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(BaseName(prev)) + "}"));
+                // and this player's own clock under the name the old host knew it by ("Name#n"): from now on it is sent as the host's
+                if (!string.IsNullOrEmpty(oldName) && oldName != hostName) HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(oldName) + "}"));
+                // the connection to the host that left goes (the server does not count it as a player any more)
+                foreach (var c in gone) { try { c.Leave(); } catch { } }
+                // the other players are announced by the server right after this connection; once they are there, the world is sent to
+                // them (and the host's own game reloaded as the host). From the main menu's sessions the host's loop does it by itself
+                // (joinPending); here it is asked for explicitly, once: a resynchronisation under way counts for all of them.
+                var r0 = relay;
+                new Thread(() =>
+                {
+                    // the server says when it has announced every player that was there (tun_players): no guess about how long that takes.
+                    // On a timeout (a server older than tun_players, which says nothing) it goes on, as the first version did: a player announced
+                    // later is a new arrival for the host's code, which sends it the host's game by itself (joinPending). The connection to a
+                    // live server cannot lose the message: if it were broken the host connection would be gone and a new migration would start.
+                    if (r0 is RemoteRelay rr0 && !rr0.WaitPlayersAnnounced(15000)) Log.Warn(T("Changement d'hôte : la liste des joueurs n'est pas arrivée en 15 s, on continue.", "Host change: the list of players did not arrive within 15 s, going on."));
+                    if (relay != r0 || resyncing) return;
+                    joinPending = false;
+                    resyncing = true;
+                    Log.W(T("Changement d'hôte : resynchronisation de tous les joueurs", "Host change: resynchronising every player"));
+                    Resync(T("changement d'hôte", "host change"));
+                }) { IsBackground = true, Name = "Host change resync" }.Start();
+            }
+            catch (Exception e)
+            {
+                Log.Err(F("Reprise de l'hébergement impossible : {0}", "Taking over as the host failed: {0}", e.Message));
+                try { EndSession(T("=== Reprise de l'hébergement impossible : fin de la session ===", "=== Taking over as the host failed: the session ends ===")); } catch { }
+            }
+        }
+
+        // ---------------------------------------------------------------- hosting through a server (server-linux/, docs/LINUX-RELAY.md)
+
+        /// <summary>The server this player hosts through ("server=host[:port]" in mpfever_settings.txt, MPFEVER_SERVER for the tests), and
+        /// its password ("serverpw="); null: this player listens itself, as always.</summary>
+        static string ServerSetting(out string password)
+        {
+            var s = LoadSettings();
+            password = (s.TryGetValue("serverpw", out var pw) ? pw : "").Trim();
+            var v = Environment.GetEnvironmentVariable("MPFEVER_SERVER");
+            if (string.IsNullOrWhiteSpace(v)) v = s.TryGetValue("server", out var sv) ? sv : null;
+            return string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+        }
+
+        /// <summary>"host", "host:28090", "[::1]:28090" -> host and port (28090 without one).</summary>
+        internal static void ParseServer(string spec, out string host, out int port)
+        {
+            host = spec.Trim(); port = 28090;
+            string rest = null;
+            if (host.StartsWith("[", StringComparison.Ordinal))
+            {
+                int close = host.IndexOf(']');
+                if (close > 0) { rest = host.Substring(close + 1).TrimStart(':'); host = host.Substring(1, close - 1); }
+            }
+            else if (host.IndexOf(':') >= 0 && host.IndexOf(':') == host.LastIndexOf(':'))
+            {
+                int c = host.IndexOf(':');
+                rest = host.Substring(c + 1); host = host.Substring(0, c);
+            }
+            if (!string.IsNullOrEmpty(rest) && int.TryParse(rest, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 1 && n <= 65535) port = n;
+        }
+
+        string ServerWhy(Exception e)
+        {
+            switch (e.Message)
+            {
+                case "hosted": return T("Quelqu'un héberge déjà sur ce serveur : rejoignez-le.", "Somebody already hosts on this server: join it instead.");
+                case "password": return T("Mot de passe du serveur refusé (serverpw= dans mpfever_settings.txt).", "The server's password was refused (serverpw= in mpfever_settings.txt).");
+                case "version": return T("Le serveur utilise une autre version de MPFever.", "The server runs another MPFever version.");
+                case "relay": return DeniedText(new Dictionary<object, object> { ["reason"] = "relay" });
+                case "full": return T("Le serveur est plein.", "The server is full.");
+                default: return e.Message;
+            }
+        }
+
+        void ConnectRemote(RemoteRelay remote, string spec, string password, string name, string migrationToken = null)
+        {
+            ParseServer(spec, out string srvHost, out int srvPort);
+            Log.W(F("Hébergement par le serveur {0}:{1}...", "Hosting through the server {0}:{1}...", srvHost, srvPort));
+            try { remote.Connect(srvHost, srvPort, name, password, migrationToken); }
+            catch (Exception e)
+            {
+                var r = relay; relay = null; hostName = null;
+                try { r?.Dispose(); } catch { }
+                throw new InvalidOperationException(ServerWhy(e));
+            }
+            remote.Lost += why => { try { BeginInvoke((Action)(() => { if (relay == remote) EndSession(T("=== Connexion au serveur perdue : fin de la session ===", "=== Connection to the server lost: the session ends ===")); })); } catch { } };
+            remoteAddress = NetAddr.Show(srvHost, srvPort);
+            Log.Ok(F("Hébergement par le serveur {0}:{1} : les joueurs rejoignent à cette adresse.", "Hosting through the server {0}:{1}: players join at that address.", srvHost, srvPort));
+        }
+
+        void StartHost(string name, bool launch, GameLink existing = null) => StartHost(name, launch, existing, null, null, null);
+
+        /// <summary>serverOverride / serverPasswordOverride: host through that server instead of the one of mpfever_settings.txt (a takeover, see PromoteToHost).</summary>
+        void StartHost(string name, bool launch, GameLink existing, string serverOverride, string serverPasswordOverride, string migrationToken)
         {
             leftSession = null;   // (a report describes this session now)
             hostName = name;
-            relay = new Relay();
+            // (a host that has a server in mpfever_settings.txt hosts through it: no port to open, one address for everybody)
+            string serverPw = null;
+            string serverSpec = server == null ? ServerSetting(out serverPw) : null;
+            if (serverOverride != null) { serverSpec = serverOverride; serverPw = serverPasswordOverride ?? ""; }
+            RemoteRelay remote = serverSpec != null ? new RemoteRelay() : null;
+            relay = remote != null ? (IRelay)remote : new Relay();
             // a dedicated server lets in only the players with its password and its version, up to its number of players
             if (server != null) { var r = relay; relay.Admit = (p, m) => ServerAdmit(r, p, m); }
             // a player's own game lets in only the players with its version: a guest on another version replays the builds its
@@ -3540,9 +3725,12 @@ namespace MPFever
             };
             relay.Received += (p, m) => OnHostMessage(m, p);
             int listenPort = server != null ? server.Port : (int)portBox.Value;
-            relay.Start(listenPort);
+            // (through a server the players may be announced as soon as the connection is made: the game is known before)
+            if (remote != null && existing != null) { hostGame = existing; if (!games.Contains(hostGame)) games.Add(hostGame); }
+            if (remote != null) ConnectRemote(remote, serverSpec, serverPw, name, migrationToken);
+            else relay.Start(listenPort);
             // the port opened on the router by itself (UPnP / NAT-PMP), not for a local test
-            if (!autotest && !Dev) PortMap.OpenAsync(listenPort, r =>
+            if (remote == null && !autotest && !Dev) PortMap.OpenAsync(listenPort, r =>
             {
                 if (!lobbyOpen) return;
                 // (0.6.7: the method used, and no claim the Internet reaches this PC when the router's address says it cannot; a
@@ -3573,7 +3761,7 @@ namespace MPFever
             if (launch) hostGame.Launch(gameDir);
             // players can come through Steam (no port to open): once the host's game's module is ready, it listens on Steam and
             // tunnels each connection to the Relay with this session's secret
-            if (SteamNet.Enabled)
+            if (SteamNet.Enabled && remote == null)
             {
                 var steamGame = hostGame; var steamRelay = relay;
                 new Thread(() =>
@@ -3677,6 +3865,13 @@ namespace MPFever
                     else if (CanResume() && waiting.Count < 100000) waiting.Add(m);   // (cut: kept for the host, see AddUnlessLeft)
                 }
             };
+            bool detached = false;
+            detachGuest = () =>
+            {
+                detached = true;
+                lock (waiting) { current = null; waiting.Clear(); }
+                game.FromGame -= clientFromGame; clientFromGame = null;
+            };
             Action<Client> wire = null;
             wire = client =>
             {
@@ -3717,8 +3912,14 @@ namespace MPFever
                 };
                 client.Received += m =>
                 {
+                    // (host migration: the server asks this player to take over as the host, see PromoteToHost)
+                    if (m.Kind == "tun_host") { OnTunHost(m, game, name, host, port, password, myId); return; }
                     // (0.6.12, #125: the host's company mode, for this player's problem reports; the message goes on to the game)
-                    if (m.Kind == "session") { var cm = SessionMode(m.Payload); if (cm != "") hostCompanyMode = cm; }
+                    if (m.Kind == "session")
+                    {
+                        var cm = SessionMode(m.Payload); if (cm != "") hostCompanyMode = cm;
+                        if (LuaLit.Parse(m.Payload) is Dictionary<object, object> sd && sd.TryGetValue("speed", out var spv) && spv is double spd && spd >= 1) hostSessionSpeed = (int)spd;
+                    }
                     // (0.7.7: who plays and whether the game runs, for this player's reports)
                     try { NoteFromHost(m, name); } catch { }
                     // (0.7.7) the DLCs off for this session, before the host's savegame comes (see ApplyDlcOff)
@@ -3899,6 +4100,7 @@ namespace MPFever
                     // on: dickj on the user's server, 2026-11-06 23:17, a new connection every 5 s for two minutes. Now a superseded
                     // connection does not reconnect, and only one reconnection runs at a time. MPFEVER_RECONNECTOLD=1: as before
                     bool oldWay = Environment.GetEnvironmentVariable("MPFEVER_RECONNECTOLD") == "1";
+                    if (detached) { lock (clients) clients.Remove(client); return; }   // (this player became the host: not a lost connection)
                     bool superseded = current != null && current != client;
                     lock (clients) clients.Remove(client);
                     if (current == client) current = null;   // nothing is sent until reconnected
@@ -3947,7 +4149,7 @@ namespace MPFever
                                 try
                                 {
                                     wire(c);
-                                    c.Connect(Targets(), port, name, password, claim);
+                                    c.Connect(Targets(), port, name, password, claim, false, true);
                                     if (!AddUnlessLeft(c)) return;
                                     Log.Ok(F("[{0}] reconnecté à l'hôte", "[{0}] reconnected to the host", name));
                                     if (!claim) { menuPhase = "connected"; menuText = T("Reconnecté. L'hôte renvoie sa partie...", "Reconnected. The host sends its game again..."); MenuStatus(); }
@@ -3970,7 +4172,7 @@ namespace MPFever
             Interlocked.Increment(ref clientJoins);
             try
             {
-                first.Connect(host, port, name, password);
+                first.Connect(host, port, name, password, false, false, true);
                 added = AddUnlessLeft(first);
             }
             finally { Interlocked.Decrement(ref clientJoins); }
@@ -4000,6 +4202,8 @@ namespace MPFever
         void StartLocalTest()
         {
             StartHost("Host", true);
+            // (tests of a host's migration: the players are launchers of their own, MPFever.exe --autoclient)
+            if (Environment.GetEnvironmentVariable("MPFEVER_NOLOCALCLIENT") == "1") return;
             Log.W(T("Lancement du second jeu dans 20 s...", "Starting the second game in 20 s..."));
             var t = new System.Windows.Forms.Timer { Interval = autotest ? 8000 : 20000 };
             t.Tick += (s, e) =>
@@ -4536,6 +4740,18 @@ namespace MPFever
                 {
                     hostOnlyWarned = DateTime.UtcNow;
                     Log.Warn(F("{0} a envoyé un message « {1} » que seul l'hôte envoie : ignoré.", "{0} sent a « {1} » message only the host sends: ignored.", m.From, m.Kind));
+                }
+                return;
+            }
+            // A player's message that is the relay's own is never passed on: "tun_..." kinds tell a launcher who hosts (a "tun_host" with
+            // migrate=true makes everybody that receives it take over as the host), and through a relay "@name:" and "!name:" would aim one at
+            // another player. The default below passes on what it does not know.
+            if (from != null && (RelayProtocol.IsReserved(m.Kind) || (relay is RemoteRelay && RelayProtocol.IsRouting(m.Kind))))
+            {
+                if (DateTime.UtcNow - hostOnlyWarned > TimeSpan.FromSeconds(10))
+                {
+                    hostOnlyWarned = DateTime.UtcNow;
+                    Log.W(from.Name + " sent a reserved message (" + m.Kind + "): dropped");
                 }
                 return;
             }
