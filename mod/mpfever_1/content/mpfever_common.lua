@@ -920,7 +920,33 @@ function C.nodeConfigs(list)
 		pcall(function() cfg.doubleSlipSwitch = mc.doubleSlipSwitch == true end)
 		pcall(function() cfg.userModifiedLaneConnections = mc.userModifiedLaneConnections == true end)
 		-- (0.6.9: a junction's traffic light phases, the engine's own object when the caller has it, see C.keptNodeConfigs)
-		if m.tlc ~= nil then pcall(function() cfg.trafficLightConfig = m.tlc end) end
+		if m.tlc ~= nil then pcall(function() cfg.trafficLightConfig = m.tlc end)
+		elseif mc.userModifiedTrafficLightStates == true and type(mc.trafficLightConfig) == "table" and os.getenv("MPFEVER_TLCSHIP") ~= "0" then
+			-- ((0.8.16, Discord: yöyö "can't change any traffic lights phase") phases a player changed in a junction's window
+			-- (the game's createTrafficLightProposal, userModifiedTrafficLightStates): rebuilt from the shipped copy, as the base
+			-- game's own window makes them (api.type.TrafficLightState.new). Before, they were left out: every game, the player's
+			-- own too, built the junction with its phases as they were. Junctions whose phases nobody changed: as before.
+			-- MPFEVER_TLCSHIP=0: left out as before)
+			pcall(function()
+				local src = mc.trafficLightConfig
+				local tl = api.type.TrafficLightConfig.new()
+				if type(src.trafficLightType) == "number" then tl.trafficLightType = src.trafficLightType end
+				local states = {}
+				for k, s in ipairs(type(src.states) == "table" and src.states or {}) do
+					local st = api.type.TrafficLightState.new()
+					local locked = {}
+					for j, x in ipairs(type(s.lockedLanes) == "table" and s.lockedLanes or {}) do locked[j] = x end
+					st.lockedLanes = locked
+					if type(s.duration) == "number" then st.duration = s.duration end
+					if type(s.minDuration) == "number" then st.minDuration = s.minDuration end
+					if s.canSkip ~= nil then st.canSkip = s.canSkip == true end
+					states[k] = st
+				end
+				tl.states = states
+				cfg.trafficLightConfig = tl
+				cfg.userModifiedTrafficLightStates = true
+			end)
+		end
 		if m.noCrosswalks then cfg.crosswalks = {} end
 		o.comp = cfg
 		cfgs[i] = o

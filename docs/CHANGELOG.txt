@@ -27,6 +27,11 @@ MPFever - Changelog
   - NEW: a depot's window says how many vehicles of the other companies it maintains, and its toll's label says it is charged per
     purchase and per month for each vehicle maintained there (translated). MPFEVER_DEPOTMAINTLINE=0: not shown.
     Test: tests/test_depotmaintline0816.py.
+  - FIX (Discord: yöyö, "can't change any traffic lights phase"): a junction's traffic light phases changed in its window were
+    shipped but left out when the junction was rebuilt (only its lanes, crosswalks and preference were): every game, the player's
+    own too, kept the old phases. Phases a player changed are now rebuilt from the shipped copy, as the game's window makes them;
+    junctions whose phases nobody changed are rebuilt as before. MPFEVER_TLCSHIP=0: as before. New autotest scenario tlphase
+    (before: 27.09 s asked to 37, unchanged on both games). Test: tests/test_tlcship0816.py.
 
 0.8.15 - 2026-11-16: one company per player, vehicles maintained at the other companies' open depots
   - NEW (Discord, Chris P. Bacon and Getriebesand, design approved by the maintainer): one company per player, the depots another

@@ -125,6 +125,7 @@ with its cause and the test that now guards it.
 | A report over the service's limit cuts the **drift dumps last** (they are read from their start), every other log first. | 0.8.16 | Reporter.DriftDump, CutLargest (MPFEVER_REPORTKEEPDRIFT) | test_reportkeepdrift0816.py, launcher selftest |
 | Every **native fix that changes the simulation** names itself (Fx) once in place; the host compares every game's list with its own and says the difference. A new sim-changing native fix must call Fx, or a game without it drifts unseen. | 0.8.16 | native g_fx / native_fx.txt, hello "fx", MainForm.WarnNativeFx (MPFEVER_NATIVEFXCHECK) | test_nativefx0816.py, launcher selftest |
 | A game running a **native module older than its mod** (updated while the game was open) is told in its chat and to the whole session by the host. The module's version comes from build.bat (MPF_VERSION); keep it there. | 0.8.16 | native_fx.txt version line, hello natold/natver, MainForm.NativeOldProblem (MPFEVER_NATVERCHECK) | test_natold0816.py, launcher selftest |
+| A junction's **traffic light phases changed by a player** (userModifiedTrafficLightStates) are rebuilt from the shipped copy; phases nobody changed are left to the engine as before (never send every replay's phases). | 0.8.16 | C.nodeConfigs (MPFEVER_TLCSHIP) | test_tlcship0816.py, scenario tlphase |
 
 ## Regressions found
 

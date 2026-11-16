@@ -16346,6 +16346,97 @@ H.cfgjunction = function(from, p)
 	G.waits[#G.waits + 1] = { at = G.frames + 120, fn = later }
 end
 
+-- (0.8.16, Discord: yöyö "can't change any traffic lights phase") A junction's traffic light phases changed as its window does
+-- (MPFEVER_SCENARIO=tlphase): the host takes the first junction with traffic lights (lights put on a street junction first when
+-- there is none), sets its first phase's duration to MPFEVER_TLPHASE_DURATION (37) with the game's own proposal
+-- (createTrafficLightProposal, userModifiedTrafficLightStates), and reads it back; the client reads the same junction's first
+-- phase. Both games must read the new duration (the session's checks then compare the rest).
+H.tlphase = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local CT = api.type.ComponentType
+	local want = tonumber(os.getenv("MPFEVER_TLPHASE_DURATION") or "") or 37
+	local function say(t) log("AUTOTEST tlphase: " .. t); AUTO.results[#AUTO.results + 1] = "tlphase " .. C.ROLE .. ": " .. t end
+	local function lights()
+		local l = R.entitiesWith("BASE_NODE_TRAFFIC_LIGHT")
+		if #l == 0 then
+			for _, nd in ipairs(R.allNodes()) do
+				pcall(function() if api.engine.getComponent(nd, CT.BASE_NODE_TRAFFIC_LIGHT) then l[#l + 1] = nd end end)
+			end
+		end
+		table.sort(l)
+		return l
+	end
+	local function phaseOf(nd)
+		local d, n = nil, 0
+		pcall(function()
+			local cfg = api.engine.getComponent(nd, CT.BASE_NODE_CONFIG)
+			n = #cfg.trafficLightConfig.states
+			d = cfg.trafficLightConfig.states[1].duration
+		end)
+		return d, n
+	end
+	local ok, err = pcall(function()
+		local l = lights()
+		if C.ROLE ~= "host" then
+			if #l == 0 then say("no junction with traffic lights here"); return autoFinish() end
+			local d, n = phaseOf(l[1])
+			say("junction " .. l[1] .. ": " .. n .. " phase(s), the first lasts " .. tostring(d))
+			return autoFinish()
+		end
+		local function edit(nd)
+			local cfg = api.engine.getComponent(nd, CT.BASE_NODE_CONFIG)
+			local tl = cfg.trafficLightConfig:clone()
+			local states = tl.states
+			if #states == 0 then error("no phase") end
+			local s1 = states[1]
+			local before = s1.duration
+			s1.duration = want
+			states[1] = s1
+			tl.states = states
+			local prop = api.engine.util.proposal.createTrafficLightProposal(nd, tl, api.type.enum.TrafficLightPreference.YES)
+			uiRequest("makeWorldBuildProposalCmd", { n = 4, C.marshal(prop), nil, false, true })
+			say("junction " .. nd .. ": first phase " .. tostring(before) .. " -> " .. want .. " asked (" .. #states .. " phases)")
+			G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
+				local d, n = phaseOf(nd)
+				say("junction " .. nd .. ": " .. n .. " phase(s), the first lasts " .. tostring(d))
+				autoFinish()
+			end }
+		end
+		if #l > 0 then return edit(l[1]) end
+		-- (none: lights put on a street junction of three plain streets first, as the node window does)
+		local segmap = api.engine.system.streetSystem.getNode2SegmentMap()
+		local nodes = {}
+		for nd, segs in pairs(segmap) do if #segs >= 3 then nodes[#nodes + 1] = nd end end
+		table.sort(nodes)
+		for _, nd in ipairs(nodes) do
+			local okL = pcall(function()
+				local cfg = api.engine.getComponent(nd, CT.BASE_NODE_CONFIG)
+				local prop = api.engine.util.proposal.createTrafficLightProposal(nd, cfg.trafficLightConfig:clone(), api.type.enum.TrafficLightPreference.YES)
+				uiRequest("makeWorldBuildProposalCmd", { n = 4, C.marshal(prop), nil, false, true })
+			end)
+			if okL then
+				say("no junction with traffic lights: lights asked on " .. nd)
+				local tries = 0
+				local function later()
+					tries = tries + 1
+					local okT, has = pcall(function() return api.engine.getComponent(nd, CT.BASE_NODE_TRAFFIC_LIGHT) ~= nil end)
+					if okT and has then return edit(nd) end
+					if tries >= 20 then say("the lights never came on " .. nd); return autoFinish() end
+					G.waits[#G.waits + 1] = { at = G.frames + 60, fn = later }
+				end
+				G.waits[#G.waits + 1] = { at = G.frames + 120, fn = later }
+				return
+			end
+		end
+		say("no street junction for traffic lights")
+		autoFinish()
+	end)
+	if not ok then say("error " .. tostring(err)); autoFinish() end
+end
+
 -- (0.7.15, issue #174) Two pieces of one street junction replaced at once, both from the world before either (MPFEVER_SCENARIO=
 -- stalecfg, host), as Town Transit Planner puts its stops on town streets: each made by the game's replaceSegment, with its node
 -- configurations, in a SimpleProposal, both sent in the same frame. The second's configuration of the junction names the piece the
