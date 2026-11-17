@@ -79,7 +79,7 @@ jobs:
       - name: Binary
         uses: actions/upload-artifact@v4
         with:
-          name: mpfever-relay-linux-x64-${{ github.sha }}
+          name: MPFever-relay-linux-x64-${{ github.sha }}
           path: artifacts/linux/mpfever-relay
           retention-days: 14
 
@@ -109,7 +109,7 @@ jobs:
       - name: Binary
         uses: actions/upload-artifact@v4
         with:
-          name: mpfever-relay-win-x64-${{ github.sha }}
+          name: MPFever-relay-win-x64-${{ github.sha }}
           path: artifacts/windows/mpfever-relay.exe
           retention-days: 14
 
