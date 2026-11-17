@@ -1720,6 +1720,33 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 "host change: a message of another version, or that is no table, is not taken");
             Check(MainForm.TakeoverAllowedValue(null) && MainForm.TakeoverAllowedValue("1") && !MainForm.TakeoverAllowedValue("0") && !MainForm.TakeoverAllowedValue(" 0 "),
                 "host change: takeover=0 in the settings says this PC is never asked to take over");
+            // the public game's name, the players let in and the names banned
+            var r2 = HostRules.Parse(HostRules.Payload("2000000", "12", "1", "assets:5", "", "", 10, "Lena's trains", new[] { "Ann", "Bob Lee" }, new[] { "Troll", "Tr oll	X", "ok-1" }));
+            Check(r2 != null && r2.PublicName == "Lena's trains" && r2.Members.SequenceEqual(new[] { "Ann", "Bob Lee" }) && r2.Banned.SequenceEqual(new[] { "Troll", "ok-1" }),
+                "host change: the public game's name, the players let in and the names banned (names only) read back, a name with a tab left out");
+            var r3 = HostRules.Parse(HostRules.Payload("1", "12", "1", "assets:5", "", "", 10, new string('x', 41), null, null));
+            Check(r3 != null && r3.PublicName == null && r3.Members.Count == 0 && r3.Banned.Count == 0, "host change: a public name over 40 characters is not taken, no names means none");
+            // the gate of a player who took over: it does not ask again the players the host let in, refuses the names banned
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-hs-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                var gate = new PublicGate { BanFile = Path.Combine(dir, "mpfever_bans.txt"), AskSeconds = 1, Options = () => GameOpts.Canon("join_approve=1;join_bans=1") };
+                gate.InheritFromHost(new[] { "Ann", "Bob" }, new[] { "Troll" });
+                string ann = gate.Admit(new Peer { Name = "Ann#3" }, () => 1, null);
+                string troll = gate.Admit(new Peer { Name = "Troll#4" }, () => 1, null);
+                string stranger = gate.Admit(new Peer { Name = "Eve#5" }, () => 1, null);
+                Check(ann == null, "host change: a player the host before had let in is not asked again (every player is announced to the new host as an arrival)");
+                Check(troll != null && troll.Contains("banned"), "host change: a name the host before had banned is refused");
+                Check(stranger != null && stranger.Contains("refused"), "host change: a stranger is still asked (and refused when nobody answers)");
+                var list = gate.Bans();
+                Check(list.Count == 1 && list[0].Date == "session" && !File.Exists(gate.BanFile), "host change: the inherited ban is listed (\"session\") and never written to this host's own file");
+                Check(gate.RemoveBan("Troll") && gate.BannedAs("Troll", "", "") == null && gate.Bans().Count == 0, "host change: the host can unban an inherited name");
+                gate.InheritFromHost(new string[0], new[] { "Troll2" });
+                gate.ForgetInherited();
+                Check(gate.Bans().Count == 0, "host change: the names inherited are forgotten when the session ends");
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
             return ok;
         }
 
