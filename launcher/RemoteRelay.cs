@@ -37,6 +37,9 @@ namespace MPFever
         public Func<Peer, Msg, string> Admit { get; set; }
         public string SteamSecret { get; set; }
 
+        /// <summary>The host wants the session to end with it: no player takes over ("handover=0", told to the relay in the join).</summary>
+        public bool NoHandover;
+
         /// <summary>The host's name on the relay ("Name#n").</summary>
         public string Me { get; private set; }
         public int Epoch { get; private set; }
@@ -60,6 +63,7 @@ namespace MPFever
             client.Received += OnRelayMessage;
             client.Denied += d => { denied = d.TryGetValue("reason", out var r) ? r as string : "?"; hosted.Set(); };
             client.Closed += () => { if (!stop) { Lose("connection to the relay closed"); } hosted.Set(); };
+            client.NoHandover = NoHandover;
             client.Connect(host, port, name, password, false, true, false, migrationToken);
             hosted.Wait(TimeSpan.FromSeconds(15));
             if (denied != null) throw new InvalidOperationException(denied);

@@ -151,6 +151,8 @@ namespace MPFever
         /// <summary>(a player) may this PC be asked to take over as the host? "takeover=0" in mpfever_settings.txt (the settings window's box)
         /// says no: a slow PC, a weak connection.</summary>
         static bool TakeoverAllowed() => TakeoverAllowedValue(LoadSettings().TryGetValue("takeover", out var v) ? v : null);
+        /// <summary>(the host) "handover=0": when this host leaves, no player takes over, the session ends (the relay is told in the join).</summary>
+        internal static bool HandoverAllowed() => TakeoverAllowedValue(LoadSettings().TryGetValue("handover", out var v) ? v : null);
         internal static bool TakeoverAllowedValue(string setting) => !(setting != null && setting.Trim() == "0");
     }
 }

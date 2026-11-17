@@ -1692,6 +1692,9 @@ namespace MPFever
         /// then names the other attempts first and ends with one short note on IPv6 (issue #31).
         /// The password is the one of a dedicated server (none: null); the join also tells this MPFever's version
         /// (a dedicated server only lets in its own).</summary>
+        /// <summary>(a host through a relay) the host does not want a player to take over when it leaves: the relay ends the session then (host migration, docs/RELAY.md).</summary>
+        public bool NoHandover;
+
         public void Connect(string host, int port, string name, string password = null, bool resume = false, bool tunnelHost = false, bool canTakeOver = false, string migrationToken = null)
         {
             // "steam:<id>" entries: through the host's Steam (the game's module, SteamNet), tried at the same time as the
@@ -1762,7 +1765,7 @@ namespace MPFever
             else Link.Reset(null);   // (a new player: the host counts from this join; what waited is dropped)
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
-                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
+                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (tunnelHost && NoHandover ? ",[\"nomig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
             viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             usedDirect = viaSteam ? null : used;
             gotAny = false;

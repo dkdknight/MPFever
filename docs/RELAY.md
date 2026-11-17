@@ -114,6 +114,7 @@ In `mpfever_settings.txt` next to `MPFever.exe` (or in the **Relay** window of t
 | `relaypw=SECRET` | The relay's password. (`MPFEVER_RELAYPW` gives it to a `--autoclient` test player.) |
 | `relaykey=KEY` | The owner key or the recovery key, for [keeping the save](#keeping-the-save-on-the-relay-experimental). (`MPFEVER_RELAYKEY`.) |
 | `takeover=0` | This PC is never asked to take over as the host when the host leaves ([host migration](#host-migration-experimental)). The Settings window has a box for it, "Take over hosting if the host leaves", on by default. |
+| `handover=0` | When this PC is the host and leaves, no player takes over: the session ends with it, even on a relay that allows migration. The Settings window has a box, "Let a player take over if I leave", on by default. |
 
 The first versions wrote `server=`, `serverpw=` and `serverkey=`: they are still read while the new names are not set, and the Relay window empties them when it saves.
 The relay program's own variables (`MPFEVER_RELAY_PASSWORD` and the others, see [Settings](#secrets-from-the-environment)) are another thing: they are for `mpfever-relay`, not for the launcher.
@@ -165,7 +166,8 @@ players stay connected and see a resynchronisation. The loading screen took abou
 
 How it goes (`relay/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` in `launcher/MainForm.cs`):
 
-1. The relay only considers players that advertised takeover support in their join (`mig`; the launcher says it unless `takeover=0`).
+1. The relay only considers players that advertised takeover support in their join (`mig`; the launcher says it unless `takeover=0`). A host that
+   asked for the session to end with it (`nomig` in its join, `handover=0`) is not replaced: the session ends when it leaves.
 2. The host's connection ends. The relay asks the oldest player that can take over (`tun_host { migrate, prev, epoch, token }`). The token
    is random (128 bits), made for this attempt and this player, and valid once.
 3. The successor's launcher stops acting as a client (its game and its connection stay), sets the host state it knows (session started,
@@ -193,8 +195,16 @@ lists the values it kept (rules, options, autosave interval, chat, players let i
 relay, so a host that listens itself, and a dedicated server, send and change nothing. A value that is not valid is ignored (the successor's own
 is used then) and a player cannot send these messages (they are the host's only, like the savegame).
 
-**Choosing who may take over.** In the launcher's Settings window the box **"Take over hosting if the host leaves"** (on by default; `takeover=0` in
-`mpfever_settings.txt`) says whether this PC may be asked. Untick it on a slow PC or a weak connection: the relay then asks the next player.
+**What the players read.** When the new host is there, its launcher puts a line in the game's chat (the place of MPFever's other notices): who left, who
+hosts now, that the rules are kept and that the game is about to resynchronise. A player that joins later finds it with the chat so far.
+
+**Choosing who may take over.** Two boxes in the launcher's Settings window, both on by default, so nothing has to be set up:
+
+- **"Take over hosting if the host leaves"** (`takeover=0` in `mpfever_settings.txt`): says whether *this PC* may be asked when somebody else
+  hosts. Untick it on a slow PC or a weak connection: the relay then asks the next player.
+- **"Let a player take over if I leave"** (`handover=0`): for *this PC as the host*. Unticked, the session ends with it: the host's launcher says
+  so in its join (`nomig`) and the relay disconnects the players instead of asking one. A relay older than this option ignores the field and
+  migrates as usual.
 
 If the successor does not connect within `--migration-timeout` seconds or leaves, it is not asked again for this migration and the next
 player is; when nobody is left, the session ends and every player is disconnected. If the new host's connection drops later, a new migration

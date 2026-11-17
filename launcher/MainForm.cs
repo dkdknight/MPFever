@@ -3630,6 +3630,8 @@ namespace MPFever
                 InheritFromHost();   // (the host's rules and chat: HostState.cs)
                 StartHost(name, false, game, NetAddr.First(host, port), password, token);
                 Log.Ok(T("Hébergement repris : les autres joueurs vont recevoir la partie de cet hôte.", "Hosting taken over: the other players will receive this host's game."));
+                // (every player reads it in the game's chat, where the other notices of MPFever are; a player that joins later gets it with the chat)
+                HostChat("msg", "MPFever", F("{0} a quitté la partie : {1} reprend l'hébergement, les règles sont conservées. La partie va se resynchroniser.", "{0} left: {1} takes over as the host, the rules are kept. The game is about to resynchronise.", BaseName(prev), BaseName(name)));
                 if (remoteAddress != null && menuGame != null && SteamNet.Enabled) { steamConnect = InviteConnect(remoteAddress); SteamCtl("presence", steamConnect); }
                 // the host that left is no longer a player: every game forgets its clock (else it stays the barrier and nothing runs on)
                 if (!string.IsNullOrEmpty(prev)) HostSend(Msg.Make("peerleft", hostName, "{[\"name\"]=" + LuaLit.Quote(BaseName(prev)) + "}"));
@@ -3710,6 +3712,7 @@ namespace MPFever
         {
             ParseRelayAddress(spec, out string relayHost, out int relayPort);
             Log.W(F("Hébergement par le relais {0}:{1}...", "Hosting through the relay {0}:{1}...", relayHost, relayPort));
+            remote.NoHandover = !HandoverAllowed();
             try { remote.Connect(relayHost, relayPort, name, password, migrationToken); }
             catch (Exception e)
             {

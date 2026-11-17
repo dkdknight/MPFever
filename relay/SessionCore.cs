@@ -157,7 +157,7 @@ namespace MPFever.StandaloneRelay
             {
                 lock (hostGate)
                 {
-                    if (WantsHost(t)) { hostJoins.Add(p); if (HasHost) presentedTokens[p] = S("mtok"); }
+                    if (WantsHost(t)) { hostJoins.Add(p); if (HasHost) presentedTokens[p] = S("mtok"); if (NoHandover(t)) noHandover.Add(p); }
                     if (CanTakeOver(t)) capable.Add(p);
                     joinVersions[p] = S("v");
                 }

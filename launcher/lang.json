@@ -26313,6 +26313,45 @@
       "zh-CN": "主机已更换：会话的规则、选项、电脑公司和聊天记录均已保留。",
       "zh-TW": "主機已更換：工作階段的規則、選項、電腦公司和聊天記錄均已保留。"
     },
+    "Let a player take over if I leave": {
+      "de": "Einen Spieler übernehmen lassen, wenn ich gehe",
+      "es": "Dejar que un jugador asuma el alojamiento si me voy",
+      "it": "Lascia che un giocatore subentri se me ne vado",
+      "nl": "Een speler laten overnemen als ik weggaat",
+      "pl": "Pozwól graczowi przejąć, gdy odejdę",
+      "pt-BR": "Deixar um jogador assumir se eu sair",
+      "ru": "Позволить другому игроку взять игру, если я уйду",
+      "ja": "自分が退出したら他のプレイヤーに引き継がせる",
+      "ko": "내가 나가면 다른 플레이어가 넘겨받게 하기",
+      "zh-CN": "我离开时让其他玩家接管",
+      "zh-TW": "我離開時讓其他玩家接手"
+    },
+    "To host with a relay: if you leave, the game goes on with another player. Unticked, the session ends with you.": {
+      "de": "Beim Hosten über ein Relay: Wenn Sie gehen, läuft das Spiel bei einem anderen Spieler weiter. Abgewählt, endet die Sitzung mit Ihnen.",
+      "es": "Al alojar con un retransmisor: si usted se va, la partida continúa con otro jugador. Desmarcada, la sesión termina con usted.",
+      "it": "Per ospitare con un relay: se te ne vai, la partita continua con un altro giocatore. Disattivata, la sessione termina con te.",
+      "nl": "Bij hosten via een relay: als u weggaat, gaat het spel verder bij een andere speler. Uitgeschakeld eindigt de sessie met u.",
+      "pl": "Przy hostowaniu przez przekaźnik: gdy odejdziesz, gra toczy się dalej u innego gracza. Wyłączone: sesja kończy się razem z Tobą.",
+      "pt-BR": "Ao hospedar com um retransmissor: se você sair, o jogo continua com outro jogador. Desmarcada, a sessão termina com você.",
+      "ru": "При размещении через ретранслятор: если вы уйдёте, игра продолжится у другого игрока. Если снять флажок, сеанс завершится вместе с вами.",
+      "ja": "中継を使ってホストする場合：あなたが退出しても、ゲームは別のプレイヤーのもとで続きます。オフにすると、セッションはあなたと共に終了します。",
+      "ko": "릴레이로 호스트할 때: 내가 나가도 게임은 다른 플레이어에게서 계속됩니다. 끄면 세션이 나와 함께 종료됩니다.",
+      "zh-CN": "通过中继主持时：您离开后，游戏会在另一位玩家那里继续。取消勾选则会话随您结束。",
+      "zh-TW": "透過中繼主持時：您離開後，遊戲會在另一位玩家那裡繼續。取消勾選則工作階段隨您結束。"
+    },
+    "{0} left: {1} takes over as the host, the rules are kept. The game is about to resynchronise.": {
+      "de": "{0} hat das Spiel verlassen: {1} übernimmt als Host, die Regeln bleiben erhalten. Das Spiel wird gleich neu synchronisiert.",
+      "es": "{0} se ha ido: {1} asume el alojamiento, las reglas se conservan. La partida se va a resincronizar.",
+      "it": "{0} se n'è andato: {1} subentra come host, le regole sono conservate. La partita sta per risincronizzarsi.",
+      "nl": "{0} is weggegaan: {1} neemt het hosten over, de regels blijven behouden. Het spel wordt zo opnieuw gesynchroniseerd.",
+      "pl": "{0} odszedł: {1} przejmuje hostowanie, reguły zostają zachowane. Gra za chwilę się zsynchronizuje.",
+      "pt-BR": "{0} saiu: {1} assume a hospedagem, as regras foram mantidas. O jogo vai ressincronizar.",
+      "ru": "{0} вышел: {1} берёт на себя роль хоста, правила сохранены. Игра сейчас пересинхронизируется.",
+      "ja": "{0} が退出しました：{1} がホストを引き継ぎ、ルールは維持されます。まもなくゲームが再同期されます。",
+      "ko": "{0}님이 나갔습니다: {1}님이 호스트를 넘겨받고, 규칙은 유지됩니다. 곧 게임이 다시 동기화됩니다.",
+      "zh-CN": "{0} 已离开：{1} 接管主持，规则已保留。游戏即将重新同步。",
+      "zh-TW": "{0} 已離開：{1} 接手主持，規則已保留。遊戲即將重新同步。"
+    },
     "Relay...": {
       "de": "Relay...",
       "es": "Retransmisor...",

@@ -32,6 +32,7 @@ namespace MPFever.StandaloneRelay
         readonly List<Peer> order = new List<Peer>();             // connected players, oldest first
         readonly HashSet<Peer> hostJoins = new HashSet<Peer>();   // the connections that asked to host (join { host = true })
         readonly HashSet<Peer> capable = new HashSet<Peer>();     // the players that can take over (join { mig = true })
+        readonly HashSet<Peer> noHandover = new HashSet<Peer>();  // the hosts that want the session to end with them (join { host = true, nomig = true })
         readonly HashSet<Peer> failed = new HashSet<Peer>();      // asked during this migration and not there in time
         readonly Dictionary<Peer, string> presentedTokens = new Dictionary<Peer, string>();   // what a host join showed as its token
         readonly Dictionary<Peer, string> joinVersions = new Dictionary<Peer, string>();      // the MPFever version each player said (for the host)
@@ -52,6 +53,7 @@ namespace MPFever.StandaloneRelay
 
         static bool WantsHost(Dictionary<object, object> join) => join.TryGetValue("host", out var h) && h is bool b && b;
         static bool CanTakeOver(Dictionary<object, object> join) => join.TryGetValue("mig", out var h) && h is bool b && b;
+        static bool NoHandover(Dictionary<object, object> join) => join.TryGetValue("nomig", out var h) && h is bool b && b;
 
         /// <summary>This join is the successor's: a migration waits for a player of this name and the token is the one given to it.</summary>
         bool IsAwaitedSuccessor(string baseName, string presented)
@@ -115,13 +117,14 @@ namespace MPFever.StandaloneRelay
 
         void HostLeft(Peer p)
         {
-            bool wasHost, wasCandidate; Peer h; int atEpoch;
+            bool wasHost, wasCandidate, noHand; Peer h; int atEpoch;
             lock (hostGate)
             {
                 atEpoch = epoch;
                 order.Remove(p);
                 hostJoins.Remove(p);
                 capable.Remove(p);
+                noHand = noHandover.Remove(p);
                 presentedTokens.Remove(p);
                 joinVersions.Remove(p);
                 wasHost = host == p;
@@ -133,8 +136,8 @@ namespace MPFever.StandaloneRelay
             }
             if (wasHost)
             {
-                if (opt.Migration) Migrate(p.Name, atEpoch);
-                else EndSession("The host " + p.Name + " left");
+                if (opt.Migration && !noHand) Migrate(p.Name, atEpoch);
+                else EndSession("The host " + p.Name + " left" + (noHand ? " (it asked for the session to end with it)" : ""));
             }
             else if (wasCandidate) Migrate(p.Name, atEpoch);
             else if (h != null && !SameName(p, h)) ToHost(h, Msg.Make("tun_left", p.Name, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));

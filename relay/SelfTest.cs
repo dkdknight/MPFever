@@ -19,8 +19,9 @@ namespace MPFever.StandaloneRelay
             public readonly List<Msg> Got = new List<Msg>();
             public string DeniedReason;
             public volatile bool Closed;
-            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null)
+            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null, bool noHandover = false)
             {
+                C.NoHandover = noHandover;
                 C.Received += m => { lock (Got) Got.Add(m); };
                 C.Denied += d => { DeniedReason = d.TryGetValue("reason", out var r) ? r as string : "?"; };
                 C.Closed += () => Closed = true;
@@ -1087,6 +1088,26 @@ namespace MPFever.StandaloneRelay
                     dan.Dispose();
                 }
                 finally { a.Dispose(); b.Dispose(); c.Dispose(); nb?.Dispose(); }
+            }
+
+            Console.WriteLine("a host that does not want a player to take over (handover=0)");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 30 });
+                relay.Start(0);
+                int port = relay.Port;
+                var a = new Player(port, "Ann", null, true, false, null, true);
+                a.Wait(() => a.Of("tun_host").Length == 1);
+                var b = new Player(port, "Bob", null, false, true);
+                try
+                {
+                    b.Wait(() => a.Of("tun_join").Length >= 1);
+                    a.C.Leave();
+                    Check("the session ends with a host that asked for it, even if the relay allows migration", b.Wait(() => core.SessionEnded) && !core.Migrating);
+                    Check("and the players still there are disconnected", b.Wait(() => b.Closed));
+                    Check("and nobody was asked to take over", b.Of("tun_host").Length == 0);
+                }
+                finally { a.Dispose(); b.Dispose(); }
             }
 
             Console.WriteLine("several migrations one after the other, and a successor that does not come");
