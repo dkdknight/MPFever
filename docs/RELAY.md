@@ -199,7 +199,7 @@ about how long a resynchronisation may take; left for a later change.
 On the launcher side, if `tun_players` does not arrive within 15 s (a relay older than this message), the takeover goes on, as the first
 version did: a player announced later is a new arrival for the host's code, which sends it the host's game by itself.
 
-Tested with real games on the 0.8.15 launcher and mod, through a relay on a remote VPS with a password (`--migration`): the host left, the
+Tested with real games on the 0.8.17 launcher and mod, through a relay on a remote VPS with a password (`--migration`): the host left, the
 relay asked the oldest player, which became the host; both players ended `sync=ok`, `desyncs=0`, with one resynchronisation.
 
 The test: `MPFEVER_SERVER=127.0.0.1:28090 MPFEVER_NOLOCALCLIENT=1 MPFEVER_CLIENT2=1 MPFEVER_SCENARIO=migrate MPFever.exe --autotest <save>`
@@ -237,9 +237,10 @@ from the kept save.
 - **Tested** by `mpfever-relay --selftest` (storage, protocol, and the launcher's side against the relay) and with real games on one PC: the
   host's autosave and its last save at close reach the relay byte for byte, the relay keeps them across a restart, `MPFever.exe --fetch-save`
   gets them back (also with the recovery key), and a game hosted from the fetched save and joined by a second game stayed in sync (`IN SYNC`,
-  0 desyncs, 0 refused), on the 0.8.15 launcher and mod too, through a relay on a remote VPS with a password. The button of the Relay server
+  0 desyncs, 0 refused; a game hosted from the save fetched with the recovery key ended `SYNC ~` with a slight drift on money, which the same
+  save gives with no relay at all), on the 0.8.17 launcher and mod, through a relay on a remote VPS with a password. The button of the Relay server
   window was clicked in the running launcher and fetched the save, byte for byte. A host that closes its launcher during a resynchronisation
-  sends nothing (the relay keeps what it had). **Not
+  sends nothing (the relay keeps what it had, same size and date). **Not
   tested** between two PCs.
 
 ### Setting up the keys
@@ -412,14 +413,18 @@ example in `compose.yaml` shows it). For arm64: `docker buildx build --platform 
 Docker publishes it itself, past the host's `ufw`, so check what is really reachable.
 
 What is tested: the image builds, `--selftest` passes inside it (read-only, no capabilities), and it starts with the password from the
-environment and a mounted save directory. The arm64 image builds and passes `--selftest` under emulation. Not tested: an ARM machine, and
-Compose beyond its configuration.
+environment and a mounted save directory. A host and a client played through the container (read-only, no capabilities, not root) and ended
+`SYNCHRONE`, 0 desyncs; the kept save was written to the volume and, after a restart of the container, `--fetch-save` returned it byte for
+byte. The arm64 image builds and passes `--selftest` under emulation. Not tested: an ARM machine, and Compose beyond its configuration.
 
 ### On Windows
 
 The relay is the same program: the Release build workflow also produces `MPFever-<version>-relay-win-x64.zip`, a folder `MPFever-Relay` with
 `mpfever-relay.exe` and this guide (self-contained, nothing to install; unsigned, so SmartScreen may ask for confirmation). To build it
 from source, run `dotnet publish server-linux -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`.
+
+Tested: the archive's `mpfever-relay.exe` passes `--selftest`, and a host and a client played through it on one PC (with `--migration` and
+the kept save): `SYNCHRONE`, 0 desyncs; after a restart of the relay, `--fetch-save` returned the kept save byte for byte.
 
 ```powershell
 # check the download against the SHA-256 given with the release, then unpack it
