@@ -26053,19 +26053,6 @@
       "zh-CN": "服务器未保存存档：{0}",
       "zh-TW": "伺服器未保存存檔：{0}"
     },
-    "Cannot resume: server= and serverkey= must be set in mpfever_settings.txt.": {
-      "de": "Fortsetzen nicht möglich: server= und serverkey= müssen in mpfever_settings.txt stehen.",
-      "es": "No se puede reanudar: server= y serverkey= deben estar en mpfever_settings.txt.",
-      "it": "Impossibile riprendere: server= e serverkey= devono essere in mpfever_settings.txt.",
-      "nl": "Hervatten niet mogelijk: server= en serverkey= moeten in mpfever_settings.txt staan.",
-      "pl": "Nie można wznowić: server= i serverkey= muszą być w mpfever_settings.txt.",
-      "pt-BR": "Não é possível retomar: server= e serverkey= devem estar em mpfever_settings.txt.",
-      "ru": "Невозможно продолжить: server= и serverkey= должны быть указаны в mpfever_settings.txt.",
-      "ja": "再開できません：mpfever_settings.txt に server= と serverkey= が必要です。",
-      "ko": "이어 하기 불가: mpfever_settings.txt에 server= 와 serverkey= 가 있어야 합니다.",
-      "zh-CN": "无法继续：mpfever_settings.txt 中必须设置 server= 和 serverkey=。",
-      "zh-TW": "無法繼續：mpfever_settings.txt 中必須設定 server= 和 serverkey=。"
-    },
     "Resume: reading the save kept by {0}:{1}...": {
       "de": "Fortsetzen: Der von {0}:{1} gehaltene Spielstand wird gelesen...",
       "es": "Reanudar: leyendo la partida guardada por {0}:{1}...",
@@ -26130,6 +26117,19 @@
       "ko": "서버의 저장된 게임 이어 하기 (실험적)",
       "zh-CN": "继续服务器上保存的游戏（实验性）",
       "zh-TW": "繼續伺服器上保存的遊戲（實驗性）"
+    },
+    "server= and serverkey= must be set in mpfever_settings.txt": {
+      "de": "server= und serverkey= müssen in mpfever_settings.txt stehen",
+      "es": "server= y serverkey= deben estar en mpfever_settings.txt",
+      "it": "server= e serverkey= devono essere in mpfever_settings.txt",
+      "nl": "server= en serverkey= moeten in mpfever_settings.txt staan",
+      "pl": "server= i serverkey= muszą być w mpfever_settings.txt",
+      "pt-BR": "server= e serverkey= devem estar em mpfever_settings.txt",
+      "ru": "server= и serverkey= должны быть указаны в mpfever_settings.txt",
+      "ja": "mpfever_settings.txt に server= と serverkey= が必要です",
+      "ko": "mpfever_settings.txt에 server= 와 serverkey= 가 있어야 합니다",
+      "zh-CN": "mpfever_settings.txt 中必须设置 server= 和 serverkey=",
+      "zh-TW": "mpfever_settings.txt 中必須設定 server= 和 serverkey="
     }
   }
 }

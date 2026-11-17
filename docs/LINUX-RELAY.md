@@ -132,7 +132,7 @@ player, who has that key, fetch the save and host from it.
   replaces the old one only when the new one is complete: an interrupted or corrupt upload leaves the previous save in place. A host whose
   PC crashes loses only what happened since the last autosave. There is no extra send when the host leaves normally yet.
 - **Resuming.** A player with `server=` and `serverkey=` (the owner key or the recovery key) gets a button, "Resume the server's saved game
-  (experimental)". It fetches the save into the game's savegames as "MPFever relay save" (nothing hosts yet on the server: it connects as
+  (experimental)". It fetches the save into the game's savegames as "MPFever relay save" (`MPFever.exe --fetch-save` does the same without a window) (nothing hosts yet on the server: it connects as
   the host for that, then leaves). The player then clicks "Host a game" and loads that save as usual. The world is paused while nobody plays,
   and the new host needs the mods and DLCs the save uses.
 - **Who may do what.** The server's password lets a player join, nothing more. Storing needs the owner key or the recovery key; reading needs

@@ -80,6 +80,7 @@ namespace MPFever
                 }
                 return 0;
             }
+            if (args.Contains("--fetch-save")) return MainForm.FetchSaveCli(args);
             bool auto = args.Length > 0 && args[0] == "--autotest";
             bool autoClient = args.Length > 1 && args[0] == "--autoclient";
             if (autoClient) { MainForm.AutoClientAddr = args[1]; if (args.Length > 3) MainForm.AutoClientName = args[3]; }
