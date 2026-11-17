@@ -3590,7 +3590,7 @@ namespace MPFever
         internal static Func<Peer, Msg, string> HostAdmit(bool anyVersion, Func<Msg, string> version, Func<Peer, string> pub)
             => (p, m) => (anyVersion ? null : version(m)) ?? pub(p);
 
-        // ---------------------------------------------------------------- host migration (server-linux --migration, docs/RELAY.md)
+        // ---------------------------------------------------------------- host migration (relay --migration, docs/RELAY.md)
 
         /// <summary>The server asks this player to take over as the host: the host before it is gone. {migrate = true, prev}.</summary>
         void OnTunHost(Msg m, GameLink game, string name, string host, int port, string password, string oldName)
@@ -3659,7 +3659,7 @@ namespace MPFever
             }
         }
 
-        // ---------------------------------------------------------------- hosting through a server (server-linux/, docs/RELAY.md)
+        // ---------------------------------------------------------------- hosting through a server (relay/, docs/RELAY.md)
 
         /// <summary>The server this player hosts through ("server=host[:port]" in mpfever_settings.txt, MPFEVER_SERVER for the tests), and
         /// its password ("serverpw="); null: this player listens itself, as always.</summary>

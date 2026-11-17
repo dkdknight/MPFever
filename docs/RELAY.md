@@ -14,7 +14,7 @@ Contents: [What it is](#what-it-is) · [Relay or dedicated server](#relay-or-ded
 
 ## What it is
 
-`server-linux/` holds `mpfever-relay`: a small program (.NET, no game, a few MB of RAM) that players connect to. **The first player in hosts
+`relay/` holds `mpfever-relay`: a small program (.NET, no game, a few MB of RAM) that players connect to. **The first player in hosts
 through it**: that player's MPFever and game are the host exactly as before (the host's code in the launcher is unchanged), but its
 connection to the players goes through the relay instead of a port of its own. Everybody else joins the relay's address like any host.
 
@@ -126,7 +126,7 @@ An MPFever release by itself requires no change to the relay protocol number.
 
 ## How it works
 
-The wire format is in the comment of `server-linux/SessionCore.cs`. In short: the host's launcher is one connection to the relay
+The wire format is in the comment of `relay/SessionCore.cs`. In short: the host's launcher is one connection to the relay
 (`RemoteRelay`, `launcher/RemoteRelay.cs`, the same surface as `Relay` through `IRelay`). The relay tells it which players came in and left
 (`tun_join`, `tun_left`) and forwards what they send; the host's messages go back through it: to everybody, to everybody but one
 (`!name:kind`, the host's `Broadcast(m, except)`) or to one player (`@name:kind`). A savegame sent to a player is a binary message and goes
@@ -156,7 +156,7 @@ host that uses a relay.
 Host migration is experimental and off by default. Enable it with `mpfever-relay --migration`. When a successor takes over, the remaining
 players stay connected and see a resynchronisation. The loading screen took about 25 s on the test save.
 
-How it goes (`server-linux/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` in `launcher/MainForm.cs`):
+How it goes (`relay/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` in `launcher/MainForm.cs`):
 
 1. The relay only considers players that advertised takeover support in their join (`mig`).
 2. The host's connection ends. The relay asks the oldest player that can take over (`tun_host { migrate, prev, epoch, token }`). The token
@@ -367,7 +367,7 @@ sha256sum MPFever-<version>-relay-linux-x64.tar.gz
 tar -xzf MPFever-<version>-relay-linux-x64.tar.gz
 ```
 
-To build from source, run `dotnet publish server-linux -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true`.
+To build from source, run `dotnet publish relay -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true`.
 The relay writes nothing to disk, unless `--checkpoint-dir` is set ("Keeping the save on the server"): then it also needs write access to
 that directory (with the unit below, add `ReadWritePaths=/var/lib/mpfever-relay`). An example systemd service follows.
 
@@ -390,12 +390,12 @@ Open the TCP port configured with `--port` in the firewall. Use launchers that s
 ### With Docker (optional)
 
 Not needed: the program above runs as it is. If you prefer a container (a VPS that only has Docker, an ARM machine such as a Raspberry Pi), the
-repository has a `server-linux/Dockerfile` and a `server-linux/compose.yaml`. The image holds only the relay (self-contained, no shell, not
+repository has a `relay/Dockerfile` and a `relay/compose.yaml`. The image holds only the relay (self-contained, no shell, not
 root, about 40 MB); it is not the dedicated server and runs no game. It is a Linux image (x64, or arm64 with `buildx`): on Windows, Docker
 Desktop runs it in a Linux virtual machine, or use the Windows archive below. There is no Windows image. From the root of the repository:
 
 ```sh
-docker build -f server-linux/Dockerfile -t mpfever-relay .
+docker build -f relay/Dockerfile -t mpfever-relay .
 docker run -d --name mpfever-relay --restart unless-stopped -p 28090:28090 \
   --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -e MPFEVER_RELAY_PASSWORD=SECRET mpfever-relay --max-players 6
@@ -404,7 +404,7 @@ docker run -d --name mpfever-relay --restart unless-stopped -p 28090:28090 \
 or, with Compose (it stops if the password is not set):
 
 ```sh
-MPFEVER_RELAY_PASSWORD=SECRET docker compose -f server-linux/compose.yaml up -d --build
+MPFEVER_RELAY_PASSWORD=SECRET docker compose -f relay/compose.yaml up -d --build
 ```
 
 **A published image.** The Release build workflow can also push the image to the GitHub container registry, only when "docker" is ticked at
@@ -426,7 +426,7 @@ byte. The arm64 image builds and passes `--selftest` under emulation. Not tested
 
 The relay is the same program: the Release build workflow also produces `MPFever-<version>-relay-win-x64.zip`, a folder `MPFever-Relay` with
 `mpfever-relay.exe` and this guide (self-contained, nothing to install; unsigned, so SmartScreen may ask for confirmation). To build it
-from source, run `dotnet publish server-linux -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`.
+from source, run `dotnet publish relay -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`.
 
 Tested: the archive's `mpfever-relay.exe` passes `--selftest`, and a host and a client played through it on one PC (with `--migration` and
 the kept save): `SYNCHRONE`, 0 desyncs; after a restart of the relay, `--fetch-save` returned the kept save byte for byte.

@@ -11,7 +11,7 @@ Run: python tests/test_relaytrim0816.py
 import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-proj = open(os.path.join(HERE, "..", "server-linux", "MPFeverRelay.csproj"), encoding="utf-8").read()
+proj = open(os.path.join(HERE, "..", "relay", "MPFeverRelay.csproj"), encoding="utf-8").read()
 rel = open(os.path.join(HERE, "..", ".github", "workflows", "release.yml"), encoding="utf-8").read()
 fails = []
 

@@ -130,7 +130,7 @@ stops, unless the experimental options below are on.
 |---|---|---|
 | Runs the game and the world | yes (Windows, the game installed) | no: the hosting player's PC does |
 | The world goes on when nobody plays | yes | no (experimental migration or kept save, off by default) |
-| Download | `MPFever-<version>-server.zip` | `MPFever-<version>-relay-linux-x64.tar.gz`, `MPFever-<version>-relay-win-x64.zip`, or (optional) a Docker image built from `server-linux/Dockerfile` |
+| Download | `MPFever-<version>-server.zip` | `MPFever-<version>-relay-linux-x64.tar.gz`, `MPFever-<version>-relay-win-x64.zip`, or (optional) a Docker image built from `relay/Dockerfile` |
 
 See the [relay setup guide](docs/RELAY.md); the archives are in the [release assets](https://github.com/dkdknight/MPFever/releases/latest)
 (SHA-256 on the release). Host migration and keeping the session's save on the server (so the game can go on without its last host) are experimental and off by default; the **Relay server...** button of the launcher's Settings window sets the address, password and save key.
@@ -208,7 +208,7 @@ The savegames are in `Steam\userdata\<number>\3493540\local\save\` (Steam) or `%
 | Launcher | `launcher/` (C#, .NET Framework 4.8) | Hosts or joins over TCP, starts the game, installs the mod and the native module. It relays actions, compares the games' state and runs the resyncs. With `--server`, it is the dedicated server. |
 | Game mod | `mod/mpfever_1/` (Lua) | Captures player actions and replays them in every game at the same game time (barrier lockstep). It computes the state checksums and manages the companies. It also draws the multiplayer page and the in-game windows. It does nothing unless the game was started by the launcher. |
 | Native module | `native/` (C++, no CRT) | `winhttp.dll` in the game folder, a pass-through proxy. In a session, it holds construction commands until the shared step, copies terrain edits, separates each player's company, and fixes the game's sources of randomness and its pacing. |
-| Relay (`mpfever-relay`) | `server-linux/` (C#, .NET 9) | Not the dedicated server: an optional meeting point that runs on any small Linux or Windows machine, with no game on it: the first player in hosts through it (no port to open, one address for everybody) and, with experimental `--migration`, an eligible player can take over when the host leaves. See [RELAY](docs/RELAY.md). |
+| Relay (`mpfever-relay`) | `relay/` (C#, .NET 9) | Not the dedicated server: an optional meeting point that runs on any small Linux or Windows machine, with no game on it: the first player in hosts through it (no port to open, one address for everybody) and, with experimental `--migration`, an eligible player can take over when the host leaves. See [RELAY](docs/RELAY.md). |
 | Tests | `tests/` (Python + lupa) | Language files and a simulated lockstep. |
 
 The launcher and the game talk through files in `%TEMP%\mpfever\<session>\`. No process injection is used.
@@ -275,7 +275,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
   - the translations into 13 languages;
   - the in-game window and the chat.
 - **[Steelworm](https://github.com/Steelworm)**: build timing fixes, the builder lead, in-depth issue analyses.
-- **[ampynjord](https://github.com/ampynjord)**: the relay (mpfever-relay, `server-linux/`) and hosting through it (PR #334).
+- **[ampynjord](https://github.com/ampynjord)**: the relay (mpfever-relay, `relay/`) and hosting through it (PR #334).
 - **[Juliansgith](https://github.com/Juliansgith)**: several order fixes, the smooth pacing, the signatures, the company rules, the industries' demand fix, the faster industry connection, the faster saves and the Mod Hub folders (MIT).
 - **DubstepDude-hub, Kev1505in (keviK), AMD and hschi**: long sessions sent with the logs of every player, which showed
   that players with different DLCs desynchronise (0.6.9).

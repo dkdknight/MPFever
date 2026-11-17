@@ -20,6 +20,6 @@ dev-test - Server.bat
 serverlist/obj/
 
 # Linux relay server (docs/RELAY.md)
-server-linux/bin/
-server-linux/obj/
+relay/bin/
+relay/obj/
 artifacts/

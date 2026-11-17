@@ -1109,7 +1109,7 @@ namespace MPFever
         public readonly List<BulkLink> Bulk = new List<BulkLink>();
     }
 
-    /// <summary>The version of the relay protocol: what a launcher and the Linux relay (server-linux/) must agree on, whatever their MPFever
+    /// <summary>The version of the relay protocol: what a launcher and the Linux relay (relay/) must agree on, whatever their MPFever
     /// versions. A launcher sends it in its join ("rp"); the relay refuses another number. Raise it only when the message format, the
     /// admission, the reconnection or the tun_ messages change (docs/RELAY.md). The "same MPFever version between players" rule is
     /// the host's, as with a host that listens itself.</summary>
@@ -1128,7 +1128,7 @@ namespace MPFever
     }
 
     /// <summary>What the host's code (MainForm.OnHostMessage and the session around it) needs from the place its players connect to:
-    /// a Relay (the host's own TCP listener) or a RemoteRelay (a server the host and the players all connect to, server-linux/).</summary>
+    /// a Relay (the host's own TCP listener) or a RemoteRelay (a server the host and the players all connect to, relay/).</summary>
     interface IRelay : IDisposable
     {
         event Action<Peer, Msg> Received;
@@ -1183,7 +1183,7 @@ namespace MPFever
         public Func<Peer, Msg, string> Admit { get; set; }
         /// <summary>True: a connection that is not let in yet (it has an Admit that has not said yes) may only send a short text line
         /// (64 KB), no binary message, so that anybody on the Internet cannot make this process hold megabytes for nothing. False (the
-        /// default): nothing is limited, as it always was. Only the Linux relay (server-linux/) sets it; a launcher's host, a dedicated
+        /// default): nothing is limited, as it always was. Only the Linux relay (relay/) sets it; a launcher's host, a dedicated
         /// server and public games never do.</summary>
         public bool StrictBeforeAdmission { get; set; }
         /// <summary>With Admit: seconds a connection may stay without being let in before it is cut (0: no limit, as before). A host that
@@ -2250,7 +2250,7 @@ namespace MPFever
             {
                 c.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
 #if NET
-                // (the Linux relay, server-linux/: no IOControl there, the same values as socket options)
+                // (the Linux relay, relay/: no IOControl there, the same values as socket options)
                 if (!OperatingSystem.IsWindows())
                 {
                     c.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 15);

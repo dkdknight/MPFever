@@ -1,5 +1,5 @@
 # The relay with Docker Compose (docs/RELAY.md, "With Docker"). From the root of the repository:
-#   MPFEVER_RELAY_PASSWORD=SECRET docker compose -f server-linux/compose.yaml up -d --build
+#   MPFEVER_RELAY_PASSWORD=SECRET docker compose -f relay/compose.yaml up -d --build
 # or put the line in a file named .env next to this one. The relay is not the dedicated server: it runs no game.
 name: mpfever-relay
 
@@ -7,7 +7,7 @@ services:
   relay:
     build:
       context: ..
-      dockerfile: server-linux/Dockerfile
+      dockerfile: relay/Dockerfile
     image: mpfever-relay
     restart: unless-stopped
     ports:

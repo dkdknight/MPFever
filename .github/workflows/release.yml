@@ -142,7 +142,7 @@ jobs:
         run: echo "version=$(sed -n 's/^set "VERSION=\([^"]*\)".*/\1/p' build.bat | tr -d '\r')" >> "$GITHUB_OUTPUT"
 
       - name: Publish Linux relay (x64)
-        run: dotnet publish server-linux/MPFeverRelay.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o artifacts/linux
+        run: dotnet publish relay/MPFeverRelay.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o artifacts/linux
 
       - name: Test the published relay
         run: artifacts/linux/mpfever-relay --selftest
@@ -166,7 +166,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # (optional, off unless "docker" is ticked when the workflow is started: the relay's image, the same as server-linux/Dockerfile, for x64
+  # (optional, off unless "docker" is ticked when the workflow is started: the relay's image, the same as relay/Dockerfile, for x64
   # and arm64, on GitHub's container registry under the owner of the repository. It is built after the Linux relay passed its self-test,
   # and the image is self-tested once pushed. The package's visibility is set on its page on GitHub)
   docker-relay:
@@ -200,7 +200,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: server-linux/Dockerfile
+          file: relay/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -236,7 +236,7 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Publish Windows relay (x64)
-        run: dotnet publish server-linux/MPFeverRelay.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o artifacts/windows
+        run: dotnet publish relay/MPFeverRelay.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o artifacts/windows
 
       - name: Test the published relay
         run: artifacts/windows/mpfever-relay.exe --selftest
