@@ -213,6 +213,19 @@ namespace MPFever.LinuxServer
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
             CheckpointThroughRemoteRelay();
+            // a server started without --checkpoint-dir says it keeps nothing (the launcher does not wait for an answer that never comes)
+            using (var srv = new Relay())
+            {
+                var core = new SessionCore(srv, new ServerOptions());
+                srv.Start(0);
+                using (var a = new RemoteRelay())
+                {
+                    a.Connect("127.0.0.1", srv.Port, "Alice", null);
+                    var t0 = Environment.TickCount64;
+                    string status = a.UploadCheckpoint("anything", new byte[] { 1, 2, 3 });
+                    Check("a server without --checkpoint-dir answers that it keeps no save, at once", status == "empty" && Environment.TickCount64 - t0 < 5000);
+                }
+            }
         }
 
         /// <summary>The launcher's own side (RemoteRelay.UploadCheckpoint / DownloadCheckpoint) against the relay, with a 2.5 MB save.</summary>

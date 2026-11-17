@@ -64,7 +64,7 @@ namespace MPFever
             MainForm.JustUpdated = updated;
             // --thanks: the thanks window alone (to look at it)
             // --settings: the settings window alone (to look at it)
-            if (args.Length > 0 && args[0] == "--settings") { using (var t = new OptionsDialog(args.Contains("--guest"))) { t.StartPosition = FormStartPosition.CenterScreen; t.ShowInTaskbar = true; t.ShowDialog(); } return 0; }
+            if (args.Length > 0 && args[0] == "--settings") { using (var t = new OptionsDialog(args.Contains("--guest"))) { t.StartPosition = FormStartPosition.CenterScreen; t.ShowInTaskbar = true; t.ShowDialog(); if (OptionsDialog.TakeResume()) return MainForm.FetchSaveCli(new[] { "--fetch-save" }); } return 0; }
             if (args.Length > 0 && args[0] == "--thanks") { using (var t = new ThanksDialog()) { t.StartPosition = FormStartPosition.CenterScreen; t.ShowInTaskbar = true; t.ShowDialog(); } return 0; }
             // --serversettings [file] [--shots <folder>]: the dedicated server's settings window alone (0.7.0, to look at it): the settings
             // file given (else mpfever_server.properties here); --shots saves a picture of each of its pages there and closes it
@@ -712,11 +712,9 @@ namespace MPFever
         {
             var card = new Card();
             var settingsBtn = new ModernButton(ButtonKind.Primary) { Text = T("⚙ Réglages", "⚙ Settings") };
-            var relayBtn = new ModernButton(ButtonKind.Secondary) { Text = T("Serveur relais", "Relay server") };
             var supportBtn = new ModernButton(ButtonKind.Secondary) { Text = T("♥ Soutenir MPFever", "♥ Support MPFever") };
             var discordBtn = new ModernButton(ButtonKind.Secondary) { Text = "Discord" };
             settingsBtn.Click += (s, e) => OpenSettings();
-            relayBtn.Click += (s, e) => OpenRelaySettings();
             supportBtn.Click += (s, e) => ThanksDialog.Open(ThanksDialog.KofiUrl);
             discordBtn.Click += (s, e) => ThanksDialog.Open(ThanksDialog.DiscordUrl);
             var tips = new ToolTip();
@@ -725,7 +723,7 @@ namespace MPFever
             var where = new Label { Text = PlayWhereText(), AutoSize = false, ForeColor = Theme.Muted, Font = Theme.Ui(9f) };
             // (as high as its lines need at the card's width: the left column's, less its margin and the card's padding)
             where.Height = TextRenderer.MeasureText(where.Text, where.Font, new Size(Theme.S(340 - 16 - 36), int.MaxValue), TextFormatFlags.WordBreak).Height + Theme.S(4);
-            Ui.StackTop(card, Ui.Caption(T("Réglages et communauté", "Settings and community")), settingsBtn, Ui.Gap(8), relayBtn, Ui.Gap(8), supportBtn, Ui.Gap(8), discordBtn, Ui.Gap(12), where);
+            Ui.StackTop(card, Ui.Caption(T("Réglages et communauté", "Settings and community")), settingsBtn, Ui.Gap(8), supportBtn, Ui.Gap(8), discordBtn, Ui.Gap(12), where);
             Ui.FitHeight(card);
             return card;
         }
@@ -734,15 +732,6 @@ namespace MPFever
         static string PlayWhereText() => T("Pour héberger ou rejoindre une partie : la page « Multijoueur (MPFever) » du menu principal du jeu, la liste des serveurs ou une invitation Steam.",
             "To host or join a game: the « Multiplayer (MPFever) » page of the game's main menu, the server list or a Steam invitation.");
 
-        /// <summary>The relay server window (RelayDialog): the address, password and key of a server this player hosts through, and the
-        /// button that resumes the game the server keeps.</summary>
-        void OpenRelaySettings()
-        {
-            bool resume;
-            using (var d = new RelayDialog()) { d.ShowDialog(this); resume = d.ResumeAsked; }
-            if (resume) ResumeFromServer();
-        }
-
         /// <summary>The settings window (the session settings read only for a guest once joined), then every game gets them: the
         /// bottom bar's « ⚙ Settings » and (0.7.13) a player's left card.</summary>
         void OpenSettings()
@@ -750,6 +739,8 @@ namespace MPFever
             bool guest = relay == null && clients.Count > 0 && Options.HostSession != null;
             using (var d = new OptionsDialog(guest)) d.ShowDialog(this);
             foreach (var g in games.ToList()) g.WriteSettings();
+            // ("Resume the server's saved game" of the relay server window, opened from the settings window: Checkpoint.cs)
+            if (OptionsDialog.TakeResume()) ResumeFromServer();
         }
 
         // ---------------------------------------------------------------- language

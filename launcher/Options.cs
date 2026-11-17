@@ -228,6 +228,10 @@ namespace MPFever
     /// player's own, and the expert ones (the switches of recent fixes), hidden until asked for.</summary>
     sealed class OptionsDialog : Form
     {
+        /// <summary>"Resume the server's saved game" was pressed in the relay server window opened from here (the caller fetches the save).</summary>
+        static bool resumeAsked;
+        public static bool TakeResume() { bool r = resumeAsked; resumeAsked = false; return r; }
+
         public OptionsDialog(bool guest)
         {
             var S = (Func<int, int>)Theme.S;
@@ -313,8 +317,14 @@ namespace MPFever
                 foreach (var kv in boxes)
                     if (kv.Value.Enabled) { kv.Value.Checked = kv.Key.DefaultOn; Options.Set(kv.Key, kv.Key.DefaultOn); }
             };
+            // (a player hosting through a relay server: its address, password and save key, RelayDialog.cs)
+            var relayBtn = new ModernButton(ButtonKind.Secondary) { Text = T("Serveur relais...", "Relay server...") };
+            relayBtn.Fit();
+            relayBtn.Margin = new Padding(0, 0, S(10), 0);
+            relayBtn.Click += (s, e) => { using (var d = new RelayDialog()) { d.ShowDialog(this); if (d.ResumeAsked) { resumeAsked = true; Close(); } } };
             buttons.Controls.Add(close);
             buttons.Controls.Add(reset);
+            buttons.Controls.Add(relayBtn);
             var note = new Label { Dock = DockStyle.Bottom, Height = S(24), TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(8.5f), ForeColor = Theme.Faint,
                 Text = T("Les réglages s'appliquent au prochain chargement d'une partie.", "The settings apply from the next time a game loads.") };
 

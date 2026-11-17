@@ -26260,6 +26260,19 @@
       "ko": "다음에 호스팅하는 게임부터 적용됩니다.",
       "zh-CN": "适用于您下次主持的游戏。",
       "zh-TW": "適用於您下次主持的遊戲。"
+    },
+    "Relay server...": {
+      "de": "Relay-Server...",
+      "es": "Servidor de retransmisión...",
+      "it": "Server relay...",
+      "nl": "Relayserver...",
+      "pl": "Serwer przekaźnikowy...",
+      "pt-BR": "Servidor de retransmissão...",
+      "ru": "Сервер-ретранслятор...",
+      "ja": "リレーサーバー...",
+      "ko": "릴레이 서버...",
+      "zh-CN": "中继服务器...",
+      "zh-TW": "中繼伺服器..."
     }
   }
 }

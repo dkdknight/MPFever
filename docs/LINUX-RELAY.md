@@ -29,8 +29,8 @@ server=my.server.example:28090
 serverpw=SECRET
 ```
 
-or, without editing the file, in the launcher's **Relay server** window (the button of the "Settings and community" card, next to
-"Settings"), which writes the same lines. The player then hosts from the game's Multiplayer page as usual. The players join `my.server.example:28090` and enter the password as for any host.
+or, without editing the file, in the launcher's **Relay server** window (the "Relay server..." button of the Settings window), which
+writes the same lines. The player then hosts from the game's Multiplayer page as usual. The players join `my.server.example:28090` and enter the password as for any host.
 Without `server=` the player hosts directly. The Windows dedicated server listens directly and uses its own admission settings.
 
 ## Relay protocol
@@ -130,9 +130,10 @@ player, who has that key, fetch the save and host from it.
 
 - **Sending.** A host that has `server=` and `serverkey=KEY` in `mpfever_settings.txt` sends the session's autosave to the server after each
   one (every N minutes, see the host's autosave setting). The server checks the size and the SHA-256, writes the file next to the old one and
-  replaces the old one only when the new one is complete: an interrupted or corrupt upload leaves the previous save in place. A host whose
-  PC crashes loses only what happened since the last autosave. There is no extra send when the host leaves normally yet.
-- **Resuming.** A player with `server=` and `serverkey=` (the owner key or the recovery key) opens the **Relay server** window and clicks
+  replaces the old one only when the new one is complete: an interrupted or corrupt upload leaves the previous save in place. When the host
+  closes its launcher it makes one last autosave and sends it (40 s at most), so a normal departure loses nothing. A host whose PC crashes
+  loses only what happened since the last autosave.
+- **Resuming.** A player with `server=` and `serverkey=` (the owner key or the recovery key) opens the **Relay server** window (Settings, "Relay server...") and clicks
   "Resume the server's saved game" (it saves the three fields first). The launcher fetches the save into the game's savegames as "MPFever relay save" (`MPFever.exe --fetch-save` does the same without a window) (nothing hosts yet on the server: it connects as
   the host for that, then leaves). The player then clicks "Host a game" and loads that save as usual. The world is paused while nobody plays,
   and the new host needs the mods and DLCs the save uses.
@@ -142,7 +143,26 @@ player, who has that key, fetch the save and host from it.
 - **Limits.** One save (the latest), at most 1 GB, written to `--checkpoint-dir` only (two servers cannot share a directory: it is locked).
   The server does not read the save. Messages `tun_checkpoint`, `tun_checkpoint_bin` (host to server) and `tun_checkpoint_reply` (server to
   host) are the server's own and a player's are dropped. Tested by `mpfever-relay --selftest` (storage, protocol, and the launcher's side
-  against the server); not yet tested with a real game.
+  against the server) and with real games on one PC: the host's autosave and its last save at close reach the server byte for byte, the server
+  keeps them across a restart, `MPFever.exe --fetch-save` gets them back, and a game hosted from the fetched save and joined by a second game
+  stayed in sync (`IN SYNC`, 0 desyncs, 0 refused). Not tested between two PCs.
+
+### Setting up the keys
+
+1. Make one key per role, long and random (they are typed in a file or a window, not remembered), for instance
+   `openssl rand -hex 16` on Linux or `[guid]::NewGuid().ToString('N')` in PowerShell. The owner key is for the player who usually hosts; the
+   recovery key is for a trusted friend who may resume the game when the owner is away. Do not reuse the server's password.
+2. Start the server with a directory for the save, which the server's user must be able to write (with the systemd unit of "Deploying", add
+   `ReadWritePaths=/var/lib/mpfever-relay`, and create that directory owned by that user):
+
+   ```
+   mpfever-relay --port 28090 --password SECRET --checkpoint-dir /var/lib/mpfever-relay \
+                 --checkpoint-owner-key OWNERKEY --resume-without-host RECOVERYKEY
+   ```
+3. Each player enters the server's address, its password and its key in the launcher's **Relay server** window (the "Relay server..." button of the Settings window),
+   or as `server=`, `serverpw=` and `serverkey=` in `mpfever_settings.txt`. The window also has the "Resume the server's saved game" button.
+
+Without `--checkpoint-dir` the server keeps nothing and a launcher with a `serverkey=` logs that the server keeps no save.
 
 ## Why a tunnel, and what it is not
 
@@ -172,7 +192,10 @@ limited on purpose (each point has a test in `mpfever-relay --selftest`):
 - **The host role:** only the first player that asks, or the successor with its one-time token, can be the host.
 - **The text parser** (`LuaLit`, shared with the launcher) no longer loops on text that starts nothing known and no longer follows nested
   tables without a limit (a line of braces overflowed the stack, which cannot be caught). This also protects a launcher that hosts itself.
-- A savegame part announced and never sent no longer reserves its size in memory (past 1 MB it is kept as it arrives).
+- A binary message announced and never sent no longer reserves its size in memory on the server (past 1 MB it is kept as it arrives; the
+  launcher's own reader is unchanged).
+- **The kept save:** only a host connection can store or read it, and only with the owner key or the recovery key (constant-time compare); one
+  upload at a time, size and SHA-256 checked, the previous save replaced only by a complete one; the directory is locked against a second server.
 
 **Not done: encryption.** The protocol is plain TCP, as it always was: the password and the session are readable on the way. Adding TLS means
 a change on every player's side (the launcher's `Client`) and a certificate, which is a compatibility decision for the maintainer. Until then:
