@@ -5,9 +5,9 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
-    /// <summary>mpfever-relay --selftest: real clients (the launcher's own Client class) against the server, no game. Exit code 0 when
+    /// <summary>mpfever-relay --selftest: real clients (the launcher's own Client class) against the relay, no game. Exit code 0 when
     /// every check passes.</summary>
     static class SelfTest
     {
@@ -79,15 +79,15 @@ namespace MPFever.LinuxServer
                 ["MPFEVER_RELAY_PASSWORD"] = "from-env", ["MPFEVER_RELAY_CHECKPOINT_OWNER_KEY"] = "owner-env", ["MPFEVER_RELAY_RESUME_WITHOUT_HOST"] = "resume-env"
             };
             Func<string, string> get = k => env.TryGetValue(k, out var v) ? v : null;
-            var o = new ServerOptions();
+            var o = new RelayOptions();
             Program.ApplyEnvironment(o, get);
             Check("the password, the owner key and the recovery key can come from the environment",
                 o.Password == "from-env" && o.CheckpointOwnerKey == "owner-env" && o.CheckpointRecoveryKey == "resume-env" && o.ResumeWithoutHost);
-            var none = new ServerOptions();
+            var none = new RelayOptions();
             Program.ApplyEnvironment(none, k => null);
             Check("without them the settings are as before (no password, no recovery)",
                 none.Password == "" && none.CheckpointOwnerKey == "" && none.CheckpointRecoveryKey == "" && !none.ResumeWithoutHost);
-            var empty = new ServerOptions { Password = "kept" };
+            var empty = new RelayOptions { Password = "kept" };
             Program.ApplyEnvironment(empty, k => "");
             Check("an empty variable changes nothing", empty.Password == "kept" && !empty.ResumeWithoutHost);
         }
@@ -173,7 +173,7 @@ namespace MPFever.LinuxServer
             string sha = Convert.ToHexString(SHA256.HashData(save)).ToLowerInvariant();
             try
             {
-                var opt = new ServerOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
+                var opt = new RelayOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
                 using (var srv = new Relay())
                 {
                     var core = new SessionCore(srv, opt);
@@ -235,17 +235,17 @@ namespace MPFever.LinuxServer
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
             CheckpointThroughRemoteRelay();
-            // a server started without --checkpoint-dir says it keeps nothing (the launcher does not wait for an answer that never comes)
+            // a relay started without --checkpoint-dir says it keeps nothing (the launcher does not wait for an answer that never comes)
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions());
+                var core = new SessionCore(srv, new RelayOptions());
                 srv.Start(0);
                 using (var a = new RemoteRelay())
                 {
                     a.Connect("127.0.0.1", srv.Port, "Alice", null);
                     var t0 = Environment.TickCount64;
                     string status = a.UploadCheckpoint("anything", new byte[] { 1, 2, 3 });
-                    Check("a server without --checkpoint-dir answers that it keeps no save, at once", status == "empty" && Environment.TickCount64 - t0 < 5000);
+                    Check("a relay without --checkpoint-dir answers that it keeps no save, at once", status == "empty" && Environment.TickCount64 - t0 < 5000);
                 }
             }
         }
@@ -259,7 +259,7 @@ namespace MPFever.LinuxServer
             new Random(11).NextBytes(save);
             try
             {
-                var opt = new ServerOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
+                var opt = new RelayOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
                 using (var srv = new Relay())
                 {
                     var core = new SessionCore(srv, opt);
@@ -288,7 +288,7 @@ namespace MPFever.LinuxServer
         static void Tunnel()
         {
             Console.WriteLine("admission");
-            var opt = new ServerOptions { Password = "pw", MaxPlayers = 3 };
+            var opt = new RelayOptions { Password = "pw", MaxPlayers = 3 };
             using (var relay = new Relay())
             {
                 var core = new SessionCore(relay, opt);
@@ -320,7 +320,7 @@ namespace MPFever.LinuxServer
                     Check("a player gets nothing until the host speaks", b.Of("welcome").Length == 0 && b.Of("tun_join").Length == 0);
 
                     using (var d = new Player(port, "Dan", "pw"))
-                        Check("a fourth player is refused when the server is full", d.Wait(() => d.DeniedReason != null) && d.DeniedReason == "full");
+                        Check("a fourth player is refused when the relay is full", d.Wait(() => d.DeniedReason != null) && d.DeniedReason == "full");
 
                     Console.WriteLine("messages to the host");
                     b.C.Send(Msg.Make("hello", "x", "{[\"role\"]=\"client\"}"));
@@ -331,7 +331,7 @@ namespace MPFever.LinuxServer
                     for (int i = 1; i <= 5; i++) c.C.Send(Msg.Make("act", "x", "{[\"i\"]=" + i + "}"));
                     Check("actions reach the host in order", h.Wait(() => h.Of("act").Length == 5) && h.Of("act").Select(m => Field(m, "i")).SequenceEqual(new[] { "1", "2", "3", "4", "5" }));
                     Pause();
-                    Check("and are not sent to the other players by the server", b.Of("act").Length == 0);
+                    Check("and are not sent to the other players by the relay", b.Of("act").Length == 0);
 
                     Console.WriteLine("messages from the host");
                     h.C.Send(Msg.Make("@" + bn + ":welcome", "x", "{[\"you\"]=\"" + bn + "\",[\"role\"]=\"client\",[\"rtok\"]=\"\"}"));
@@ -339,7 +339,7 @@ namespace MPFever.LinuxServer
                     Pause();
                     Check("and nobody else", c.Of("welcome").Length == 0);
                     Check("with the host's name as sender, without its #n", b.Of("welcome").Length > 0 && b.Of("welcome")[0].From == "Hank");
-                    Check("a welcome carries the player's own link with the server", b.Of("welcome").Length > 0 && (Field(b.Of("welcome")[0], "rtok") ?? "").Length > 5);
+                    Check("a welcome carries the player's own link with the relay", b.Of("welcome").Length > 0 && (Field(b.Of("welcome")[0], "rtok") ?? "").Length > 5);
                     h.C.Send(Msg.Make("session", "x", "{[\"started\"]=true,[\"speed\"]=1}"));
                     Check("a message to everybody reaches every player", b.Wait(() => b.Of("session").Length == 1) && c.Wait(() => c.Of("session").Length == 1));
                     Pause();
@@ -366,13 +366,13 @@ namespace MPFever.LinuxServer
         }
 
 
-        /// <summary>The launcher's side: a RemoteRelay (what MainForm uses as its relay) against the server, with ordinary clients as the players.</summary>
+        /// <summary>The launcher's side: a RemoteRelay (what MainForm uses as its relay) against the relay, with ordinary clients as the players.</summary>
         static void Remote()
         {
             Console.WriteLine("remote relay (the host's launcher side)");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions { Password = "pw" });
+                var core = new SessionCore(srv, new RelayOptions { Password = "pw" });
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -433,7 +433,7 @@ namespace MPFever.LinuxServer
             public Raw(int port) { T.Connect("127.0.0.1", port); T.NoDelay = true; }
             public void Send(byte[] b) { T.GetStream().Write(b, 0, b.Length); }
             public void Send(string s) { Send(System.Text.Encoding.UTF8.GetBytes(s)); }
-            /// <summary>True when the server closed the connection (within ms).</summary>
+            /// <summary>True when the relay closed the connection (within ms).</summary>
             public bool ClosedBy(int ms)
             {
                 var end = Environment.TickCount64 + ms;
@@ -457,7 +457,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("the version rule between players stays with the host");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions());
+                var core = new SessionCore(srv, new RelayOptions());
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -500,7 +500,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: messages a player must not be able to send");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions());
+                var core = new SessionCore(srv, new RelayOptions());
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -522,13 +522,13 @@ namespace MPFever.LinuxServer
                         Pause(); Pause();
                         Check("a player cannot make the host forget another player (tun_left)", host.Find(cat) != null);
                         Check("a player cannot make the host believe in a player that is not there (tun_join)", host.Find("Ghost#99") == null);
-                        Check("a player's control messages are dropped by the server, not passed on", core.DroppedControl >= 3);
+                        Check("a player's control messages are dropped by the relay, not passed on", core.DroppedControl >= 3);
                         // (through a host that passes on what it does not know, "@Victim:tun_host" would reach Victim as a "tun_host")
                         int before = core.DroppedControl;
                         b.C.Send(Msg.Make("@" + cat + ":tun_host", "x", "{[\"you\"]=\"Cat#1\",[\"migrate\"]=true,[\"token\"]=\"x\"}"));
                         b.C.Send(Msg.Make("!" + cat + ":tun_host", "x", "{[\"migrate\"]=true}"));
                         Pause(); Pause();
-                        Check("a player's routing prefixes are dropped by the server, not passed on", core.DroppedControl >= before + 2 && !host.Find(cat).Equals(null));
+                        Check("a player's routing prefixes are dropped by the relay, not passed on", core.DroppedControl >= before + 2 && !host.Find(cat).Equals(null));
                         Check("so no player receives a tun_host from another player", c.Of("tun_host").Length == 0 && b.Of("tun_host").Length == 0);
                         // (and a host's message that would deliver a reserved kind is not delivered either)
                         host.Broadcast(Msg.Make("@" + cat + ":tun_host", "Hank", "{[\"migrate\"]=true,[\"token\"]=\"x\"}"));
@@ -540,10 +540,10 @@ namespace MPFever.LinuxServer
                 finally { host.Dispose(); }
             }
 
-            Console.WriteLine("hardening: the successor is the one the server asked");
+            Console.WriteLine("hardening: the successor is the one the relay asked");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 30 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 30 });
                 relay.Start(0);
                 int port = relay.Port;
                 var a = new Player(port, "Ann", null, true);
@@ -556,10 +556,10 @@ namespace MPFever.LinuxServer
                 {
                     a.C.Leave();
                     Check("the successor is asked", b.Wait(() => b.Of("tun_host").Length == 1));
-                    // another player of the server, with the successor's name, connects as the host without having been asked
+                    // another player of the relay, with the successor's name, connects as the host without having been asked
                     evil = new Player(port, "Bob", null, true);
                     Check("a connection that only has the successor's name is refused", evil.Wait(() => evil.DeniedReason != null || evil.Of("tun_host").Length > 0) && evil.DeniedReason == "hosted");
-                    Check("and the server still waits for the successor", core.Migrating && core.HostPlayer != null && core.HostPlayer.StartsWith("Bob#"));
+                    Check("and the relay still waits for the successor", core.Migrating && core.HostPlayer != null && core.HostPlayer.StartsWith("Bob#"));
                     var token = Field(b.Of("tun_host")[0], "token");
                     Check("the successor's request carries a token", !string.IsNullOrEmpty(token) && token.Length >= 16);
                     real = new Player(port, "Bob", null, true, false, token);
@@ -573,7 +573,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: a migration does not go on for ever");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
                 relay.Start(0);
                 int port = relay.Port;
                 var a = new Player(port, "Ann", null, true);
@@ -597,7 +597,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: a connection that is not let in");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { UnadmittedTimeoutSeconds = 2, MaxConnections = 4 });
+                var core = new SessionCore(relay, new RelayOptions { UnadmittedTimeoutSeconds = 2, MaxConnections = 4 });
                 relay.Start(0);
                 int port = relay.Port;
                 using (var r1 = new Raw(port))
@@ -622,13 +622,13 @@ namespace MPFever.LinuxServer
                     Check("connections beyond the limit are refused", extra);
                 }
                 finally { foreach (var r in raws) r.Dispose(); }
-                Check("the server still works after all that", new Func<bool>(() => { using (var h = new Player(port, "Hank", null, true)) return h.Wait(() => h.Of("tun_host").Length == 1); })());
+                Check("the relay still works after all that", new Func<bool>(() => { using (var h = new Player(port, "Hank", null, true)) return h.Wait(() => h.Of("tun_host").Length == 1); })());
             }
 
             Console.WriteLine("hardening: wrong passwords");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { Password = "right", MaxPlayers = 4 });
+                var core = new SessionCore(relay, new RelayOptions { Password = "right", MaxPlayers = 4 });
                 relay.Start(0);
                 int port = relay.Port;
                 for (int i = 0; i < 6; i++) using (var bad = new Player(port, "Eve" + i, "wrong")) bad.Wait(() => bad.DeniedReason != null);
@@ -639,7 +639,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: a guest that drops is waited for");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Grace = 10 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Grace = 10 });
                 relay.Start(0);
                 int port = relay.Port;
                 var host = new RemoteRelay();
@@ -660,7 +660,7 @@ namespace MPFever.LinuxServer
                     t0 = Environment.TickCount64; while (string.IsNullOrEmpty(link.Token) && Environment.TickCount64 - t0 < 4000) Thread.Sleep(20);
                     guest.Dispose();   // the network drops: no goodbye
                     Thread.Sleep(1500);
-                    Check("the host is not told that the guest left (the server waits for it)", new Func<bool>(() => { lock (left) return left.Count == 0; })());
+                    Check("the host is not told that the guest left (the relay waits for it)", new Func<bool>(() => { lock (left) return left.Count == 0; })());
                     host.Send(host.Find(bob), Msg.Make("chatmsg", "Hank", "{[\"text\"]=\"while you were away\"}"));
                     var back = new Client(link);
                     back.Received += m => { lock (inbox) inbox.Add(m); };
@@ -801,7 +801,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("races: the timer of an attempt meets the successor's takeover");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
                 relay.Start(0);
                 int port = relay.Port;
                 var held = new ManualResetEventSlim(false); var release = new ManualResetEventSlim(false);
@@ -837,7 +837,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("load: 60 players, a burst of messages");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 64, MaxConnections = 200 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 64, MaxConnections = 200 });
                 relay.Start(0);
                 int port = relay.Port;
                 var host = new RemoteRelay();
@@ -872,7 +872,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("robustness: bad input does not stop the service");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions { Grace = 1 });
+                var core = new SessionCore(srv, new RelayOptions { Grace = 1 });
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -924,14 +924,14 @@ namespace MPFever.LinuxServer
                         bj.Send("join\tBad\t{not lua at all\n");
                         Check("a join that is not even a table is refused and closed", bj.ClosedBy(3000));
                     }
-                    // the host cannot speak with the server's own kinds either
+                    // the host cannot speak with the relay's own kinds either
                     using (var p2 = new Player(port, "Other"))
                     {
-                        // (the broadcast goes to the players the server has let in: wait until the host has been told of this one)
+                        // (the broadcast goes to the players the relay has let in: wait until the host has been told of this one)
                         var wait0 = Environment.TickCount64; while (!host.PeerNames().Any(n => n.StartsWith("Other#")) && Environment.TickCount64 - wait0 < 4000) Thread.Sleep(20);
                         host.Broadcast(Msg.Make("tun_join", "Hank", "{[\"name\"]=\"Zed#1\"}"));
                         host.Broadcast(Msg.Make("session", "Hank", "{[\"started\"]=true}"));
-                        Check("the server's kinds are not passed on from the host to the players", p2.Wait(() => p2.Of("session").Length == 1) && p2.Of("tun_join").Length == 0);
+                        Check("the relay's kinds are not passed on from the host to the players", p2.Wait(() => p2.Of("session").Length == 1) && p2.Of("tun_join").Length == 0);
                     }
                 }
                 finally { host.Dispose(); }
@@ -952,7 +952,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("host migration");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 30 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 30 });
                 relay.Start(0);
                 int port = relay.Port;
                 var a = new Player(port, "Ann", null, true);
@@ -989,7 +989,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("several migrations one after the other, and a successor that does not come");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 1 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 1 });
                 relay.Start(0);
                 int port = relay.Port;
                 var h = new Player(port, "Ann", null, true);

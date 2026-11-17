@@ -6,13 +6,13 @@ using static MPFever.L;
 
 namespace MPFever
 {
-    /// <summary>The relay server settings of a player, in a window instead of server=, serverpw= and serverkey= typed in
+    /// <summary>The relay settings of a player, in a window instead of relay=, relaypw= and relaykey= typed in
     /// mpfever_settings.txt (as the dedicated server's settings have theirs, ServerSettings.cs): the address, the password and the key
-    /// that lets the server keep the session's save. « Save » writes the three lines; the next game this player hosts uses them. «
-    /// Resume the server's saved game » saves them, closes the window and fetches the save the server keeps (MainForm.ResumeFromServer).</summary>
+    /// that lets the relay keep the session's save. « Save » writes the three lines; the next game this player hosts uses them. «
+    /// Resume the relay's saved game » saves them, closes the window and fetches the save the relay keeps (MainForm.ResumeFromRelay).</summary>
     sealed class RelayDialog : Form
     {
-        /// <summary>« Resume the server's saved game » was pressed (the settings were saved first).</summary>
+        /// <summary>« Resume the relay's saved game » was pressed (the settings were saved first).</summary>
         public bool ResumeAsked;
 
         readonly TextBox addressBox = new TextBox();
@@ -22,7 +22,7 @@ namespace MPFever
         public RelayDialog()
         {
             var S = (Func<int, int>)Theme.S;
-            Text = "MPFever – " + T("Serveur relais", "Relay server");
+            Text = "MPFever – " + T("Relais", "Relay");
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false; MinimizeBox = false;
             ShowInTaskbar = false;
@@ -36,46 +36,45 @@ namespace MPFever
             ClientSize = new Size(S(520), S(520));
 
             var settings = MainForm.LoadSettings();
-            string Saved(string k) => settings.TryGetValue(k, out var v) ? v : "";
-            addressBox.Text = Saved("server");
-            passwordBox.Text = Saved("serverpw");
-            keyBox.Text = Saved("serverkey");
+            addressBox.Text = MainForm.RelayConf(settings, "relay");
+            passwordBox.Text = MainForm.RelayConf(settings, "relaypw");
+            keyBox.Text = MainForm.RelayConf(settings, "relaykey");
 
             var content = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Padding = new Padding(S(24), S(20), S(24), S(8)) };
             Control Hint(string text, int lines = 2) => new Label
             {
                 Text = text, AutoSize = false, Height = S(16 * lines + 4), ForeColor = Theme.Faint, Font = Theme.Ui(8.5f),
             };
-            var title = new Label { Text = T("Serveur relais", "Relay server"), AutoSize = false, Height = S(34), Font = Theme.Semibold(12f), ForeColor = Theme.Text };
+            var title = new Label { Text = T("Relais", "Relay"), AutoSize = false, Height = S(34), Font = Theme.Semibold(12f), ForeColor = Theme.Text };
             var intro = new Label
             {
-                Text = T("Hébergez par un petit serveur toujours allumé : pas de port à ouvrir, et une seule adresse pour tous les joueurs.",
-                         "Host through a small server that is always on: no port to open, and one address for every player."),
+                Text = T("Hébergez par un petit relais toujours allumé : pas de port à ouvrir, et une seule adresse pour tous les joueurs.",
+                         "Host through a small relay that is always on: no port to open, and one address for every player."),
                 AutoSize = false, Height = S(40), ForeColor = Theme.Muted, Font = Theme.Ui(9f),
             };
             Ui.StackTop(content,
                 title, intro, Ui.Gap(10),
-                Ui.Field(T("Adresse du serveur", "Server address"), addressBox),
+                Ui.Field(T("Adresse du relais", "Relay address"), addressBox),
                 Hint(T("Laissez vide pour héberger vous-même, comme d'habitude. Les joueurs rejoignent cette adresse.", "Leave empty to host yourself, as usual. Players join this address.")),
                 Ui.Gap(6),
-                Ui.Field(T("Mot de passe du serveur", "Server password"), passwordBox),
-                Hint(T("Celui de --password du serveur ; vide s'il n'en a pas.", "The server's --password; empty if it has none."), 1),
+                Ui.Field(T("Mot de passe du relais", "Relay password"), passwordBox),
+                Hint(T("Celui de --password du relais ; vide s'il n'en a pas.", "The relay's --password; empty if it has none."), 1),
                 Ui.Gap(6),
                 Ui.Field(T("Clé de sauvegarde (expérimental)", "Save key (experimental)"), keyBox),
-                Hint(T("Le serveur garde la dernière sauvegarde de la partie : cette clé permet de l'envoyer et de la reprendre.",
-                       "The server keeps the latest save of the session: this key lets you send it and resume from it."), 3));
+                Hint(T("Le relais garde la dernière sauvegarde de la partie : cette clé permet de l'envoyer et de la reprendre.",
+                       "The relay keeps the latest save of the session: this key lets you send it and resume from it."), 3));
 
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = S(60), FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(S(14), S(11), S(14), S(11)), BackColor = Theme.Bg };
             var saveBtn = Btn(ButtonKind.Primary, T("Enregistrer", "Save"));
             saveBtn.Click += (s, e) => { Save(); DialogResult = DialogResult.OK; Close(); };
             var cancel = Btn(ButtonKind.Secondary, T("Annuler", "Cancel"));
             cancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
-            var resume = Btn(ButtonKind.Secondary, T("Reprendre la partie du serveur", "Resume the server's saved game"));
+            var resume = Btn(ButtonKind.Secondary, T("Reprendre la partie du relais", "Resume the relay's saved game"));
             resume.Click += (s, e) =>
             {
                 if (addressBox.Text.Trim() == "" || keyBox.Text.Trim() == "")
                 {
-                    MessageBox.Show(this, T("Pour reprendre, indiquez l'adresse du serveur et la clé de sauvegarde.", "To resume, enter the server address and the save key."), "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(this, T("Pour reprendre, indiquez l'adresse du relais et la clé de sauvegarde.", "To resume, enter the relay address and the save key."), "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 Save(); ResumeAsked = true; DialogResult = DialogResult.OK; Close();
@@ -106,9 +105,11 @@ namespace MPFever
 
         void Save()
         {
-            MainForm.SaveSetting("server", addressBox.Text.Trim());
-            MainForm.SaveSetting("serverpw", passwordBox.Text.Trim());
-            MainForm.SaveSetting("serverkey", keyBox.Text.Trim());
+            MainForm.SaveSetting("relay", addressBox.Text.Trim());
+            MainForm.SaveSetting("relaypw", passwordBox.Text.Trim());
+            MainForm.SaveSetting("relaykey", keyBox.Text.Trim());
+            // (the names the first versions wrote: emptied, or they would be read again when a field is cleared here)
+            foreach (var k in new[] { "relay", "relaypw", "relaykey" }) MainForm.SaveSetting(MainForm.LegacyRelayKey(k), "");
         }
 
         /// <summary>(--relaysettings --shots folder, to look at it) saves a picture of the window and closes it.</summary>

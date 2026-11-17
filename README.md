@@ -119,7 +119,7 @@ A PC of its own can run the world without anybody playing on it: download **`MPF
 
 See [SERVER](docs/SERVER.txt).
 
-### Relay (experimental): hosting through a small server
+### Relay (experimental): hosting without opening a port
 
 The relay is **not** the dedicated server above. The dedicated server runs the game and the world by itself (Windows, a PC of its own).
 The relay (`mpfever-relay`, Linux or Windows, no game, a few MB of RAM) only forwards the messages between the players and the hosting player,
@@ -133,7 +133,7 @@ stops, unless the experimental options below are on.
 | Download | `MPFever-<version>-server.zip` | `MPFever-<version>-relay-linux-x64.tar.gz`, `MPFever-<version>-relay-win-x64.zip`, or (optional) a Docker image built from `relay/Dockerfile` |
 
 See the [relay setup guide](docs/RELAY.md); the archives are in the [release assets](https://github.com/dkdknight/MPFever/releases/latest)
-(SHA-256 on the release). Host migration and keeping the session's save on the server (so the game can go on without its last host) are experimental and off by default; the **Relay server...** button of the launcher's Settings window sets the address, password and save key.
+(SHA-256 on the release). Host migration and keeping the session's save on the relay (so the game can go on without its last host) are experimental and off by default; the **Relay...** button of the launcher's Settings window sets the address, password and save key.
 The relay is written and looked after by [ampynjord](https://github.com/ampynjord).
 
 ### And also

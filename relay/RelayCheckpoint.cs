@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
     /// <summary>The relay's latest complete checkpoint. The first 32 bytes contain the expected SHA-256 of the save.</summary>
     sealed class RelayCheckpoint : IDisposable

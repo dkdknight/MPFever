@@ -347,15 +347,15 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             // hosting through a server (and taking over as the host): the address as the player typed it, with or without its port
             {
                 string sh; int sp;
-                MainForm.ParseServer("my.server.example", out sh, out sp);
+                MainForm.ParseRelayAddress("my.server.example", out sh, out sp);
                 C(sh == "my.server.example" && sp == 28090, "server address without a port: 28090");
-                MainForm.ParseServer("203.0.113.7:28091", out sh, out sp);
+                MainForm.ParseRelayAddress("203.0.113.7:28091", out sh, out sp);
                 C(sh == "203.0.113.7" && sp == 28091, "  with its port: that port");
-                MainForm.ParseServer("[2001:db8::1]:28092", out sh, out sp);
+                MainForm.ParseRelayAddress("[2001:db8::1]:28092", out sh, out sp);
                 C(sh == "2001:db8::1" && sp == 28092, "  an IPv6 address in brackets with its port");
-                MainForm.ParseServer(NetAddr.First("203.0.113.7:28090", 28090), out sh, out sp);
+                MainForm.ParseRelayAddress(NetAddr.First("203.0.113.7:28090", 28090), out sh, out sp);
                 C(sh == "203.0.113.7" && sp == 28090, "  the address of a join, as the takeover reuses it (the port is not added twice)");
-                MainForm.ParseServer(NetAddr.First("203.0.113.7", 28090), out sh, out sp);
+                MainForm.ParseRelayAddress(NetAddr.First("203.0.113.7", 28090), out sh, out sp);
                 C(sh == "203.0.113.7" && sp == 28090, "  the same without a port in what was typed");
                 C(MainForm.InviteConnect("203.0.113.7:28090") == "+mpfever_connect 203.0.113.7:28090", "a Steam invitation of a host that uses a server names the server");
                 C(NetAddr.First(MainForm.InviteConnect("203.0.113.7:28090").Substring("+mpfever_connect".Length).Trim(), 28090) == "203.0.113.7:28090", "  and the friend's game reads it back as the address to join");

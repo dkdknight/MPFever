@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
     sealed partial class SessionCore
     {
@@ -49,7 +49,7 @@ namespace MPFever.LinuxServer
                 lock (hostGate)
                 {
                     if (sender != host) return;
-                    // (a server started without --checkpoint-dir keeps nothing: it says so instead of leaving the launcher to time out)
+                    // (a relay started without --checkpoint-dir keeps nothing: it says so instead of leaving the launcher to time out)
                     if (checkpoint == null) { reply = CheckpointReply(id, "empty"); }
                     else try { reply = CheckpointRequest(message, sender, fields, id); }
                     catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)

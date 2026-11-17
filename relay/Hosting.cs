@@ -6,22 +6,22 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
     /// <summary>
-    /// Who plays the host (docs/RELAY.md). The server has no game, so one connected player's launcher and game are the host: the
+    /// Who plays the host (docs/RELAY.md). The relay has no game, so one connected player's launcher and game are the host: the
     /// reference for the world, the one that holds and sends the savegame, answers the mod and build checks and compares the games.
-    /// The first player in is the host. When it leaves, either the session ends (the default) or, with ServerOptions.Migration, a player
+    /// The first player in is the host. When it leaves, either the session ends (the default) or, with RelayOptions.Migration, a player
     /// that said it can take over ("mig" in its join) is asked, the oldest first:
     ///
-    ///   server -> successor   tun_host  { you, epoch, migrate = true, prev, token }   "take over": the token is random, made for this
+    ///   relay -> successor   tun_host  { you, epoch, migrate = true, prev, token }   "take over": the token is random, made for this
     ///                                                                                attempt and this player, and used once
-    ///   successor -> server   a new connection, join { host = true, mtok = token }    its game was reloaded as the host
-    ///   server -> new host    tun_join for every other player, then tun_players { n }  (the end of the list: it may start)
+    ///   successor -> relay   a new connection, join { host = true, mtok = token }    its game was reloaded as the host
+    ///   relay -> new host    tun_join for every other player, then tun_players { n }  (the end of the list: it may start)
     ///
     /// A successor that does not connect within MigrationTimeoutSeconds, or that leaves, is not asked again for this migration; the
     /// next one is. When nobody is left to ask, the session ends. Whether the new host has finished reloading and resynchronising the
-    /// others is up to the launchers: the server only knows that the successor is connected as the host, and if that connection drops
+    /// others is up to the launchers: the relay only knows that the successor is connected as the host, and if that connection drops
     /// a new migration starts.
     /// </summary>
     sealed partial class SessionCore

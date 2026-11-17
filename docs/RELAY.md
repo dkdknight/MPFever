@@ -1,4 +1,4 @@
-# MPFever relay (`mpfever-relay`): hosting through a small server
+# MPFever relay (`mpfever-relay`): hosting without opening a port
 
 The relay is a small program, for Linux or Windows, that runs **no game**. Players connect to it, the first player in hosts through it, and
 everybody else joins the relay's address. Nobody has to open a port, and the address never changes.
@@ -9,7 +9,7 @@ keeping the save on the relay are **experimental and off by default**.
 
 Contents: [What it is](#what-it-is) · [Relay or dedicated server](#relay-or-dedicated-server) · [Quick start](#quick-start) ·
 [Settings](#settings) · [Relay protocol](#relay-protocol) · [How it works](#how-it-works) · [Host migration](#host-migration-experimental) ·
-[Keeping the save](#keeping-the-save-on-the-server-experimental) · [Security](#security) · [Large worlds](#how-long-a-large-world-takes-to-reach-a-player) ·
+[Keeping the save](#keeping-the-save-on-the-relay-experimental) · [Security](#security) · [Large worlds](#how-long-a-large-world-takes-to-reach-a-player) ·
 [Known limits](#known-limits) · [Deploying](#deploying) (systemd, [Docker](#with-docker-optional), [Windows](#on-windows)) · [Tests](#tests)
 
 ## What it is
@@ -26,7 +26,7 @@ You get:
 
 Optionally (both experimental, both off by default): the next player can **take over the hosting** when the host leaves
 ([migration](#host-migration-experimental)), and the relay can **keep the latest save** of the session so the game can go on later
-([keeping the save](#keeping-the-save-on-the-server-experimental)).
+([keeping the save](#keeping-the-save-on-the-relay-experimental)).
 
 ## Relay or dedicated server
 
@@ -42,7 +42,7 @@ They are two different things:
 | Public server list, autosaves, restarts | Yes | No |
 
 Use the dedicated server when a Windows PC can run the game all the time. Use the relay when the host has no port to open, when you want a
-stable address, or when you want a cheap always-on meeting point on a small server. A Linux dedicated server (the game itself on Linux) does not
+stable address, or when you want a cheap always-on meeting point on a small machine. A Linux dedicated server (the game itself on Linux) does not
 exist: the relay is not that, and the game's native module (`winhttp.dll`) has no Linux version.
 
 ## Quick start
@@ -58,16 +58,16 @@ exist: the relay is not that, and the game's native module (`winhttp.dll`) has n
 2. **The host** (the player who starts the session) adds two lines to `mpfever_settings.txt`, next to `MPFever.exe`:
 
    ```
-   server=my.server.example:28090
-   serverpw=SECRET
+   relay=my.relay.example:28090
+   relaypw=SECRET
    ```
 
-   or fills the launcher's **Relay server** window (the "Relay server..." button of the Settings window), which writes the same lines. The player
+   or fills the launcher's **Relay** window (the "Relay..." button of the Settings window), which writes the same lines. The player
    then hosts from the game's Multiplayer page as usual.
 
-3. **The other players** join `my.server.example:28090` from the Multiplayer page and enter the password, as for any host.
+3. **The other players** join `my.relay.example:28090` from the Multiplayer page and enter the password, as for any host.
 
-Without `server=` a player hosts directly, as before. The Windows dedicated server listens directly and keeps its own admission settings.
+Without `relay=` a player hosts directly, as before. The Windows dedicated server listens directly and keeps its own admission settings.
 
 ## Settings
 
@@ -76,10 +76,10 @@ Without `server=` a player hosts directly, as before. The Windows dedicated serv
 | Option | Default | Meaning |
 |---|---|---|
 | `--port N` | 28090 | TCP port to listen on (1 to 65535). |
-| `--password SECRET` | none | Password to join, or to host. **Set one on a server reachable from the Internet**: without it anybody may join or host, and the relay says so in its log. |
+| `--password SECRET` | none | Password to join, or to host. **Set one on a relay reachable from the Internet**: without it anybody may join or host, and the relay says so in its log. |
 | `--max-players N` | 8 | Connected players at most, the host included (1 to 64). |
 | `--name TEXT` | `MPFever Relay` | The name the relay gives itself. |
-| `--max-connections N` | 64 | Connections accepted at once, let in or not (0: no limit, not for a public server). |
+| `--max-connections N` | 64 | Connections accepted at once, let in or not (0: no limit, not for a public relay). |
 | `--grace SECONDS` | 60 | How long a guest that drops is waited for (0: not waited for, max 3600). |
 | `--migration` | off | **Experimental.** Let a player take over when the host leaves. |
 | `--migration-timeout SECONDS` | 120 | How long a successor has to connect as the host before the next one is asked (5 to 3600). |
@@ -103,16 +103,19 @@ An option given on the command line wins over the variable.
 
 ### The launcher's side
 
-In `mpfever_settings.txt` next to `MPFever.exe` (or in the **Relay server** window of the Settings window, which writes these lines):
+In `mpfever_settings.txt` next to `MPFever.exe` (or in the **Relay** window of the Settings window, which writes these lines):
 
 | Line | Meaning |
 |---|---|
-| `server=host[:port]` | The relay this player hosts through. Without it the player hosts directly. (`MPFEVER_SERVER=host:port` does the same for a test run.) |
-| `serverpw=SECRET` | The relay's password. |
-| `serverkey=KEY` | The owner key or the recovery key, for [keeping the save](#keeping-the-save-on-the-server-experimental). (`MPFEVER_SERVERKEY`.) |
+| `relay=host[:port]` | The relay this player hosts through. Without it the player hosts directly. (`MPFEVER_RELAY=host:port` does the same for a test run.) |
+| `relaypw=SECRET` | The relay's password. (`MPFEVER_RELAYPW` gives it to a `--autoclient` test player.) |
+| `relaykey=KEY` | The owner key or the recovery key, for [keeping the save](#keeping-the-save-on-the-relay-experimental). (`MPFEVER_RELAYKEY`.) |
+
+The first versions wrote `server=`, `serverpw=` and `serverkey=`: they are still read while the new names are not set, and the Relay window empties them when it saves.
+The relay program's own variables (`MPFEVER_RELAY_PASSWORD` and the others, see [Settings](#secrets-from-the-environment)) are another thing: they are for `mpfever-relay`, not for the launcher.
 
 Other things the launcher has for the relay: `MPFever.exe --fetch-save [name]` (fetch the kept save without a window) and
-`MPFever.exe --relaysettings` (the Relay server window alone, to look at it).
+`MPFever.exe --relaysettings` (the Relay window alone, to look at it).
 
 ## Relay protocol
 
@@ -142,7 +145,7 @@ The relay's own messages all have a kind that starts with `tun_`:
 | `tun_host` | relay to a player | `you`, `epoch`, `migrate`, `prev`, `token` | Assigns the host role, or asks a player to take it over. |
 | `tun_players` | relay to host | `n` | Marks the end of the guest announcements after a takeover. |
 | `tun_kick` | host to relay | `name`, `payload` | Sends a host's refusal or kick to a guest and disconnects it. |
-| `tun_checkpoint`, `tun_checkpoint_bin` | host to relay | see [Keeping the save](#keeping-the-save-on-the-server-experimental) | Store or read the kept save. |
+| `tun_checkpoint`, `tun_checkpoint_bin` | host to relay | see [Keeping the save](#keeping-the-save-on-the-relay-experimental) | Store or read the kept save. |
 | `tun_checkpoint_reply` | relay to host | `id`, `status`, ... | The answer to a `tun_checkpoint*`. |
 
 A player can never send a `tun_*` message, nor a routing prefix (`@`, `!`) in front of one: the relay drops them, and the host's launcher
@@ -202,10 +205,10 @@ version did: a player announced later is a new arrival for the host's code, whic
 Tested with real games on the 0.8.17 launcher and mod, through a relay on a remote VPS with a password (`--migration`): the host left, the
 relay asked the oldest player, which became the host; both players ended `sync=ok`, `desyncs=0`, with one resynchronisation.
 
-The test: `MPFEVER_SERVER=127.0.0.1:28090 MPFEVER_NOLOCALCLIENT=1 MPFEVER_CLIENT2=1 MPFEVER_SCENARIO=migrate MPFever.exe --autotest <save>`
+The test: `MPFEVER_RELAY=127.0.0.1:28090 MPFEVER_NOLOCALCLIENT=1 MPFEVER_CLIENT2=1 MPFEVER_SCENARIO=migrate MPFever.exe --autotest <save>`
 for the host, then two `MPFever.exe --autoclient 127.0.0.1:28090 <save> <name>` for the players, against `mpfever-relay --migration`.
 
-## Keeping the save on the server (experimental)
+## Keeping the save on the relay (experimental)
 
 Off by default. With `--checkpoint-dir DIR --checkpoint-owner-key KEY` the relay keeps the **latest complete save** of the session on disk, so
 the game can go on later even when nobody is connected and the last host is away. Add `--resume-without-host RECOVERYKEY` to let a second
@@ -214,13 +217,13 @@ player, who has that key, fetch the save and host from it.
 This is not the dedicated server's "the world keeps running": the world is **paused** while nobody plays, and a player has to host it again
 from the kept save.
 
-- **Sending.** A host that has `server=` and `serverkey=KEY` in `mpfever_settings.txt` sends the session's autosave to the relay after each
+- **Sending.** A host that has `relay=` and `relaykey=KEY` in `mpfever_settings.txt` sends the session's autosave to the relay after each
   one (every N minutes, see the host's autosave setting). The relay checks the size and the SHA-256, writes the file next to the old one and
   replaces the old one only when the new one is complete: an interrupted or corrupt upload leaves the previous save in place. When the host
   closes its launcher it makes one last autosave and sends it (40 s at most), so a normal departure loses nothing. A host whose PC crashes
   loses only what happened since the last autosave.
-- **Resuming.** A player with `server=` and `serverkey=` (the owner key or the recovery key) opens the **Relay server** window (Settings,
-  "Relay server...") and clicks "Resume the server's saved game" (it saves the three fields first). The launcher fetches the save into the
+- **Resuming.** A player with `relay=` and `relaykey=` (the owner key or the recovery key) opens the **Relay** window (Settings,
+  "Relay...") and clicks "Resume the relay's saved game" (it saves the three fields first). The launcher fetches the save into the
   game's savegames as "MPFever relay save" (`MPFever.exe --fetch-save` does the same without a window); as nothing hosts yet on the relay, it
   connects as the host for that, then leaves. The player then clicks "Host a game" and loads that save as usual. The new host needs the mods
   and DLCs the save uses.
@@ -229,7 +232,7 @@ from the kept save.
   who may also host, so it can store the save it goes on with. Keys are compared in constant time.
 - **Limits.** One save (the latest), at most 1 GB, written to `--checkpoint-dir` only (two relays cannot share a directory: it is locked). The
   relay does not read the save. Without `--checkpoint-dir` the relay keeps nothing and answers `empty` at once, and a launcher with a
-  `serverkey=` logs that the relay keeps no save.
+  `relaykey=` logs that the relay keeps no save.
 - **The messages.** `tun_checkpoint` (a table with `id`, `op` and `key`) and `tun_checkpoint_bin` (a binary part) go from the host to
   the relay; `tun_checkpoint_reply` comes back. The operations are `begin` (size and SHA-256), `commit`, `open`, `read` (an offset) and
   `loaded`. Parts are 1 MB. A reply `status` is one of `upload`, `part`, `saved`, `download`, `ready`, `empty`, `denied`, `invalid`, `changed`
@@ -238,7 +241,7 @@ from the kept save.
   host's autosave and its last save at close reach the relay byte for byte, the relay keeps them across a restart, `MPFever.exe --fetch-save`
   gets them back (also with the recovery key), and a game hosted from the fetched save and joined by a second game stayed in sync (`IN SYNC`,
   0 desyncs, 0 refused; a game hosted from the save fetched with the recovery key ended `SYNC ~` with a slight drift on money, which the same
-  save gives with no relay at all), on the 0.8.17 launcher and mod, through a relay on a remote VPS with a password. The button of the Relay server
+  save gives with no relay at all), on the 0.8.17 launcher and mod, through a relay on a remote VPS with a password. The button of the Relay
   window was clicked in the running launcher and fetched the save, byte for byte. A host that closes its launcher during a resynchronisation
   sends nothing (the relay keeps what it had, same size and date). **Not
   tested** between two PCs.
@@ -256,8 +259,8 @@ from the kept save.
                  --checkpoint-owner-key OWNERKEY --resume-without-host RECOVERYKEY
    ```
 
-3. Each player enters the relay's address, its password and its key in the launcher's **Relay server** window, or as `server=`, `serverpw=` and
-   `serverkey=` in `mpfever_settings.txt`. The window also has the "Resume the server's saved game" button.
+3. Each player enters the relay's address, its password and its key in the launcher's **Relay** window, or as `relay=`, `relaypw=` and
+   `relaykey=` in `mpfever_settings.txt`. The window also has the "Resume the relay's saved game" button.
 
 ## Why a tunnel, and what it is not
 
@@ -368,7 +371,7 @@ tar -xzf MPFever-<version>-relay-linux-x64.tar.gz
 ```
 
 To build from source, run `dotnet publish relay -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true`.
-The relay writes nothing to disk, unless `--checkpoint-dir` is set ("Keeping the save on the server"): then it also needs write access to
+The relay writes nothing to disk, unless `--checkpoint-dir` is set ("Keeping the save on the relay"): then it also needs write access to
 that directory (with the unit below, add `ReadWritePaths=/var/lib/mpfever-relay`). An example systemd service follows.
 
 ```
@@ -458,5 +461,5 @@ forwards what the hosting player's game does. Use the dedicated server when a Wi
 - `MPFever.exe --selftest` (unchanged, passes).
 - In CI (`.github/workflows/ci.yml`): `linux-relay`, `windows-relay` and `docker-relay` build the relay, run its self-test (the Docker one
   inside the container, read-only and without capabilities) and keep the binary.
-- With a game: `set MPFEVER_SERVER=127.0.0.1:28090` and `MPFever.exe --autotest <savegame>` with the relay running (or reached through
+- With a game: `set MPFEVER_RELAY=127.0.0.1:28090` and `MPFever.exe --autotest <savegame>` with the relay running (or reached through
   `ssh -L 28090:127.0.0.1:28090 vps`): two real games build roads and upgrade streets through the relay; the verdict is `IN SYNC`.
