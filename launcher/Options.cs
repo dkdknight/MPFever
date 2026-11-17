@@ -84,6 +84,10 @@ namespace MPFever
             new Opt { Key = "automods", Launcher = true, DefaultOn = true, OnValue = "1", OffValue = "0",
                 Name = () => T("Installation automatique des mods manquants", "Install missing mods by themselves"),
                 Help = () => T("En rejoignant : le Mod Hub du jeu installe les mods de l'hôte qui vous manquent.", "When joining: the game's Mod Hub installs the host's mods you lack.") },
+            // (host migration, docs/RELAY.md) read by HostState.cs: takeover=0 and this PC is never asked to take over
+            new Opt { Key = "takeover", Launcher = true, DefaultOn = true, OnValue = "1", OffValue = "0",
+                Name = () => T("Reprendre l'hébergement si l'hôte part", "Take over hosting if the host leaves"),
+                Help = () => T("Avec un relais qui le permet : si l'hôte s'en va, ce PC peut devenir l'hôte à sa place. À décocher sur un PC lent ou une connexion fragile.", "With a relay that allows it: if the host leaves, this PC can become the host in its place. Untick on a slow PC or a weak connection.") },
             new Opt { Key = "lookupip", Launcher = true, DefaultOn = true, OnValue = "1", OffValue = "0",
                 Name = () => T("Recherche de l'adresse IP publique", "Look up the public IP address"),
                 Help = () => T("Pour héberger : affiche l'adresse à donner à vos amis.", "To host: shows the address to give to your friends.") },

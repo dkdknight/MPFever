@@ -56,6 +56,7 @@ namespace MPFever
             ok &= RunPortMap();
             ok &= RunRedact();
             ok &= RunRelaySecrets();
+            ok &= RunHostRules();
             ok &= RunGameDir();
             ok &= RunSmartAppControl();
             ok &= RunDiag();
@@ -1700,6 +1701,25 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             string r = Redact.Text("relaykey=abcdef0123456789 and MPFEVER_RELAYPW=hunter2 and serverpw=old, but relaypw= in the text stays, relay=host:28090");
             Check(!r.Contains("abcdef0123456789") && !r.Contains("hunter2") && !r.Contains("serverpw=old") && r.Contains("relaykey=<secret>") && r.Contains("relaypw= in the text") && r.Contains("relay=host:28090"),
                 "report: the relay's password and keys are never in it (" + r + ")");
+            return ok;
+        }
+
+        /// <summary>The host's rules that travel to a player who may take over (host migration): the message, and what a player accepts of it.</summary>
+        static bool RunHostRules()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            string payload = HostRules.Payload("3500000", "6", "0", "company:10", "1:5:2,2:7:3:900000", "MPFEVER_FOO=1", 15);
+            var r = HostRules.Parse(payload);
+            Check(r != null && r.Money == "3500000" && r.Bankrupt == "6" && r.Share == "0" && r.Auction == "company:10" && r.Ai == "1:5:2,2:7:3:900000" && r.AutosaveMinutes == 15,
+                "host change: the host's rules read back as sent (start money, bankruptcy, sharing, auction, computer companies, autosave)");
+            var bad = HostRules.Parse(HostRules.Payload("-5", "7", "yes", "weird:9", "1;DROP", "", 5000));
+            Check(bad != null && bad.Money == null && bad.Bankrupt == null && bad.Share == null && bad.Auction == null && bad.Ai == null && bad.AutosaveMinutes == -1,
+                "host change: a value that is not valid is left out, this player's own is used then");
+            Check(HostRules.Parse("{[\"v\"]=2}") == null && HostRules.Parse("not a table") == null && HostRules.Parse("{}") == null,
+                "host change: a message of another version, or that is no table, is not taken");
+            Check(MainForm.TakeoverAllowedValue(null) && MainForm.TakeoverAllowedValue("1") && !MainForm.TakeoverAllowedValue("0") && !MainForm.TakeoverAllowedValue(" 0 "),
+                "host change: takeover=0 in the settings says this PC is never asked to take over");
             return ok;
         }
 

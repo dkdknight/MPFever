@@ -113,6 +113,7 @@ In `mpfever_settings.txt` next to `MPFever.exe` (or in the **Relay** window of t
 | `relay=host[:port]` | The relay this player hosts through. Without it the player hosts directly. (`MPFEVER_RELAY=host:port` does the same for a test run.) |
 | `relaypw=SECRET` | The relay's password. (`MPFEVER_RELAYPW` gives it to a `--autoclient` test player.) |
 | `relaykey=KEY` | The owner key or the recovery key, for [keeping the save](#keeping-the-save-on-the-relay-experimental). (`MPFEVER_RELAYKEY`.) |
+| `takeover=0` | This PC is never asked to take over as the host when the host leaves ([host migration](#host-migration-experimental)). The Settings window has a box for it, "Take over hosting if the host leaves", on by default. |
 
 The first versions wrote `server=`, `serverpw=` and `serverkey=`: they are still read while the new names are not set, and the Relay window empties them when it saves.
 The relay program's own variables (`MPFEVER_RELAY_PASSWORD` and the others, see [Settings](#secrets-from-the-environment)) are another thing: they are for `mpfever-relay`, not for the launcher.
@@ -164,11 +165,11 @@ players stay connected and see a resynchronisation. The loading screen took abou
 
 How it goes (`relay/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` in `launcher/MainForm.cs`):
 
-1. The relay only considers players that advertised takeover support in their join (`mig`).
+1. The relay only considers players that advertised takeover support in their join (`mig`; the launcher says it unless `takeover=0`).
 2. The host's connection ends. The relay asks the oldest player that can take over (`tun_host { migrate, prev, epoch, token }`). The token
    is random (128 bits), made for this attempt and this player, and valid once.
 3. The successor's launcher stops acting as a client (its game and its connection stay), sets the host state it knows (session started,
-   the speed the host last set, the company mode), writes `role=host` in `identity.txt` and connects to the same relay again as the host,
+   the speed the host last set, the company mode, the rules and the chat the host had sent it), writes `role=host` in `identity.txt` and connects to the same relay again as the host,
    showing the token. A connection that only has the successor's name is refused, so is a second use of the token.
 4. The relay makes it the host, announces every other player to it (`tun_join`) and then says the list is complete (`tun_players`).
 5. The launcher tells every game that the old host and its own old name are gone (`peerleft`): a game that kept their last clock would wait
@@ -180,13 +181,19 @@ How it goes (`relay/Hosting.cs`; launcher: `OnTunHost`, `PromoteToHost` in `laun
 | World | The successor saves and reloads its current world as host and sends that save to the other players. This includes companies present in the save. | `PromoteToHost`, `Resync` |
 | Running state, speed, company mode | The successor marks the session started, uses the last positive speed it received (default 1), and uses the received shared or separate mode when known. Scheduled pauses and the old host's resync state are reset. | `hostSessionSpeed`, `hostCompanyMode`, `pauseAt`, `SessionPayload` |
 | Connected players and Steam invitations | The relay re-announces the guests. The successor refreshes Steam presence with the same relay address when Steam is enabled for the menu game. | `tun_join`, `tun_players`, `InviteConnect` |
-| Lobby rules and AI configuration | The old lobby's starting money, bankruptcy delay, sharing rules, auctions and AI setup are not transferred. The successor computes its own session payload. | `StartMoney`, `BankruptMonths`, `ShareRules`, `AuctionRule`, `lobbyAi`, `AiPayload` |
-| Game and launcher options | The successor computes the settings it advertises from its own launcher state. This includes the launcher settings for waiting and stopping where enabled. | `GameOptions`, `Options.SessionPayload`, `MPFEVER_NOWAIT`, `MPFEVER_NOSTOP` |
-| Autosaves, public games, reports and chat | No transfer of the old host's autosave schedule or files, public listing, approvals and ban list, report requests, or chat backlog for new arrivals. | `HostAutosaveTick`, `PublicGames.cs`, `ReportShare.cs`, `chatLog` |
+| Lobby rules and computer companies | **Kept.** The host sends its rules to every player as they change (`hoststate`, only when it hosts through a relay): the start money, the bankruptcy delay, the sharing rules, the auction, the computer companies. The successor goes on with them instead of its own settings, so a company that had six months before bankruptcy still has six. | `HostRules`, `HostState.cs` |
+| Game options of the session | **Kept.** The session's game options (the ones the host chose for everybody) go in the same message. The successor's own launcher settings are not applied to the session: they stay its own (smooth pacing, slow PC mode, detailed logs...). | `GameOptions`, `HostRules` |
+| Autosave interval and chat | **Kept.** The successor autosaves at the interval the host had (the minutes the host used) and keeps the last 50 chat messages and their numbers, so a player that joins later gets the chat so far and nobody skips a message. The old host's autosave **files** stay on its PC. | `HostAutosaveMinutes`, `KeepChat`, `InheritFromHost` |
+| Public listing, ban list, report requests | **Not kept yet.** The new host lists the game again only if its own options say so, uses its own ban list, and the reports asked for start again. | `PublicGames.cs`, `ReportShare.cs` |
 | Mods and DLCs | The save carries its own world content. The successor uses the information it built locally as a guest and does not receive the old host's mod/DLC bookkeeping. | `lobbyMods`, `lobbyModsKnown`, `lastHostDlcs`, `SessionDlcs` |
 
-Guests keep their last seen chat ID (`lastChatId`). Since the successor uses its own chat counter (`chatId`), guests may skip new chat
-messages until that counter exceeds the last ID they saw.
+**What the players see.** The new host's launcher says "Host change: the session's rules, options, computer companies and chat are kept." and its log
+lists the values it kept. Nothing has to be set up: the rules travel with the session. Only the host's own PC sends them, and only through a
+relay, so a host that listens itself, and a dedicated server, send and change nothing. A value that is not valid is ignored (the successor's own
+is used then) and a player cannot send these messages (they are the host's only, like the savegame).
+
+**Choosing who may take over.** In the launcher's Settings window the box **"Take over hosting if the host leaves"** (on by default; `takeover=0` in
+`mpfever_settings.txt`) says whether this PC may be asked. Untick it on a slow PC or a weak connection: the relay then asks the next player.
 
 If the successor does not connect within `--migration-timeout` seconds or leaves, it is not asked again for this migration and the next
 player is; when nobody is left, the session ends and every player is disconnected. If the new host's connection drops later, a new migration

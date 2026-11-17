@@ -2904,6 +2904,7 @@ namespace MPFever
             lock (clocks) clocks.Clear();
             lock (hashes) hashes.Clear();
             lock (chatLog) { chatLog.Clear(); chatId = 0; }
+            ForgetHostRules();
             lock (resyncParts) resyncParts.Clear();   // a host game half received in the session that ends
             hostSaveSha = ""; hostSaveState = ""; hostSaveLocal = null;   // (a lobby opened again is looked at again)
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
@@ -2985,6 +2986,7 @@ namespace MPFever
         string AiPayload()
         {
             if (companyMode != "separate") return "";
+            if (inherited?.Ai != null) return inherited.Ai;
             lock (lobbyAi)
             {
                 // (the tests, without a lobby: MPFEVER_AI="n:colour,..." stands for the host's choice)
@@ -3625,6 +3627,7 @@ namespace MPFever
                 game.SetIdentity(name, "host");   // (read when the game loads: the resynchronisation reloads it as the host)
                 try { File.Delete(Path.Combine(game.Dir, "load_mods.txt")); } catch { }
                 // (the address the player typed: "ip", "ip:port" or several, each with or without its port)
+                InheritFromHost();   // (the host's rules and chat: HostState.cs)
                 StartHost(name, false, game, NetAddr.First(host, port), password, token);
                 Log.Ok(T("Hébergement repris : les autres joueurs vont recevoir la partie de cet hôte.", "Hosting taken over: the other players will receive this host's game."));
                 if (remoteAddress != null && menuGame != null && SteamNet.Enabled) { steamConnect = InviteConnect(remoteAddress); SteamCtl("presence", steamConnect); }
@@ -4016,6 +4019,8 @@ namespace MPFever
                         var cm = SessionMode(m.Payload); if (cm != "") hostCompanyMode = cm;
                         if (LuaLit.Parse(m.Payload) is Dictionary<object, object> sd && sd.TryGetValue("speed", out var spv) && spv is double spd && spd >= 1) hostSessionSpeed = (int)spd;
                     }
+                    // (the host's rules, for a change of host: HostState.cs; not passed on to the game)
+                    if (m.Kind == "hoststate") { NoteHostRules(m); return; }
                     // (0.7.7: who plays and whether the game runs, for this player's reports)
                     try { NoteFromHost(m, name); } catch { }
                     // (0.7.7) the DLCs off for this session, before the host's savegame comes (see ApplyDlcOff)
@@ -4097,6 +4102,7 @@ namespace MPFever
                             string S(string k) => c.TryGetValue(k, out var v) ? Convert.ToString(v, CultureInfo.InvariantCulture) : "";
                             long.TryParse(S("t"), out long ct);
                             game.AppendChat((long)id, ct, S("kind"), S("name"), S("text"));
+                            KeepChat(m);
                         }
                         return;
                     }
@@ -4245,7 +4251,7 @@ namespace MPFever
                                 try
                                 {
                                     wire(c);
-                                    c.Connect(Targets(), port, name, password, claim, false, true);
+                                    c.Connect(Targets(), port, name, password, claim, false, TakeoverAllowed());
                                     if (!AddUnlessLeft(c)) return;
                                     Log.Ok(F("[{0}] reconnecté à l'hôte", "[{0}] reconnected to the host", name));
                                     if (!claim) { menuPhase = "connected"; menuText = T("Reconnecté. L'hôte renvoie sa partie...", "Reconnected. The host sends its game again..."); MenuStatus(); }
@@ -4268,7 +4274,7 @@ namespace MPFever
             Interlocked.Increment(ref clientJoins);
             try
             {
-                first.Connect(host, port, name, password, false, false, true);
+                first.Connect(host, port, name, password, false, false, TakeoverAllowed());
                 added = AddUnlessLeft(first);
             }
             finally { Interlocked.Decrement(ref clientJoins); }
@@ -4549,6 +4555,7 @@ namespace MPFever
         /// host's choice in the lobby (setting bankrupt=), else 12; 0: never. One of 0, 3, 6, 12, 24.</summary>
         string BankruptMonths()
         {
+            if (inherited?.Bankrupt != null) return inherited.Bankrupt;   // (a player who took over: the host's, HostState.cs)
             var v = Environment.GetEnvironmentVariable("MPFEVER_BANKRUPT");
             // (0.7.0) a dedicated server: bankruptcy-months of its settings
             if (string.IsNullOrEmpty(v) && server != null) v = server.BankruptMonths.ToString(CultureInfo.InvariantCulture);
@@ -4576,6 +4583,7 @@ namespace MPFever
         }
         string AuctionRule()
         {
+            if (inherited?.Auction != null) return inherited.Auction;
             LoadSettings().TryGetValue("auction", out var saved);
             return AuctionRuleOf(Environment.GetEnvironmentVariable("MPFEVER_AUCTION"), Environment.GetEnvironmentVariable("MPFEVER_OLDAUCTION"), saved);
         }
@@ -4584,6 +4592,7 @@ namespace MPFever
         /// mpfever_server.properties, else companystart=N in mpfever_settings.txt, else 2,000,000.</summary>
         string StartMoney()
         {
+            if (inherited?.Money != null) return inherited.Money;
             var v = Environment.GetEnvironmentVariable("MPFEVER_COMPANY_START");
             if (string.IsNullOrEmpty(v) && server != null) v = server.StartMoney.ToString(CultureInfo.InvariantCulture);
             if (string.IsNullOrEmpty(v)) LoadSettings().TryGetValue("companystart", out v);
@@ -4595,6 +4604,7 @@ namespace MPFever
         /// sharing-rules in mpfever_server.properties, else share= in mpfever_settings.txt (the host's choice), else on.</summary>
         string ShareRules()
         {
+            if (inherited?.Share != null) return inherited.Share;
             var v = Environment.GetEnvironmentVariable("MPFEVER_SHARE");
             if (string.IsNullOrEmpty(v) && server != null) v = server.ShareRules ? "1" : "0";
             if (string.IsNullOrEmpty(v)) LoadSettings().TryGetValue("share", out v);
@@ -4605,6 +4615,7 @@ namespace MPFever
         /// mpfever_server.properties, else gameopts= in mpfever_settings.txt (the host's last choice, or its savegame's), else none.</summary>
         string GameOptions()
         {
+            if (inherited?.Opts != null) return inherited.Opts;
             string v = server != null ? server.GameOptions : null;
             if (v != null) return GameOpts.Canon(v);
             var test = gameOptsTest;
@@ -4707,7 +4718,7 @@ namespace MPFever
                        (resyncDropping ? ",[\"resync\"]=true" : "") + "}";
         }
 
-        void BroadcastSession() => HostSend(Msg.Make("session", hostName ?? "Host", SessionPayload()));
+        void BroadcastSession() { HostSend(Msg.Make("session", hostName ?? "Host", SessionPayload())); SendHostRules(); }
 
         void StartSession()
         {
@@ -4839,7 +4850,7 @@ namespace MPFever
         static readonly HashSet<string> HostOnlyKinds = new HashSet<string> { "modfile", "modoffer", "resync_file", "resync_bin",
             "resync_use", "delta_bin", "lobby", "mpstatus", "chatmsg", "welcome", "session", "peerclock", "auth", "aijournal", "namesync",
             "resync_save", "resync_load", "hash", "peerleft", "solo", "det_run", "test_save", "census_now", "tomenu", "camtour", "area_dump",
-            "report_req", "report_plan" };
+            "report_req", "report_plan", "hoststate" };
         DateTime hostOnlyWarned;
 
         void OnHostMessage(Msg m, Peer from)

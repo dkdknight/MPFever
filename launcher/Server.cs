@@ -894,6 +894,7 @@ namespace MPFever
         {
             var e = Environment.GetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE");
             if (!string.IsNullOrEmpty(e)) return int.TryParse(e, out var m) ? Math.Max(0, Math.Min(1440, m)) : 0;
+            if (inheritedAutosave >= 0) return inheritedAutosave;   // (a player who took over: the host's interval, HostState.cs)
             if (Environment.GetEnvironmentVariable("MPFEVER_GAMEAUTOSAVE") == "1" || autotest) return 0;
             return GameInstall.GameAutosaveMinutes() ?? 10;
         }

@@ -26274,6 +26274,45 @@
       "zh-CN": "无法在此电脑或使用此账户读取已保存的中继密码或密钥：请在“中继”窗口中重新输入。",
       "zh-TW": "無法在此電腦或使用此帳戶讀取已儲存的中繼密碼或金鑰：請在「中繼」視窗中重新輸入。"
     },
+    "Take over hosting if the host leaves": {
+      "de": "Hosting übernehmen, wenn der Host geht",
+      "es": "Asumir el alojamiento si el anfitrión se va",
+      "it": "Subentrare come host se l'host se ne va",
+      "nl": "Het hosten overnemen als de host weggaat",
+      "pl": "Przejmij hostowanie, gdy host odejdzie",
+      "pt-BR": "Assumir a hospedagem se o anfitrião sair",
+      "ru": "Брать на себя роль хоста, если хост уйдёт",
+      "ja": "ホストが退出したらホストを引き継ぐ",
+      "ko": "호스트가 나가면 호스트 역할을 넘겨받기",
+      "zh-CN": "主机离开时接管主持",
+      "zh-TW": "主機離開時接手主持"
+    },
+    "With a relay that allows it: if the host leaves, this PC can become the host in its place. Untick on a slow PC or a weak connection.": {
+      "de": "Mit einem Relay, das es erlaubt: Wenn der Host geht, kann dieser PC an seiner Stelle Host werden. Auf einem langsamen PC oder bei schwacher Verbindung abwählen.",
+      "es": "Con un retransmisor que lo permita: si el anfitrión se va, este PC puede convertirse en el anfitrión en su lugar. Desmarque en un PC lento o con una conexión débil.",
+      "it": "Con un relay che lo consente: se l'host se ne va, questo PC può diventare l'host al suo posto. Disattiva su un PC lento o con una connessione debole.",
+      "nl": "Met een relay die het toestaat: als de host weggaat, kan deze pc zijn plaats als host innemen. Uitschakelen op een trage pc of bij een zwakke verbinding.",
+      "pl": "Z przekaźnikiem, który na to pozwala: gdy host odejdzie, ten komputer może zostać hostem w jego miejsce. Wyłącz na wolnym komputerze lub przy słabym łączu.",
+      "pt-BR": "Com um retransmissor que permita: se o anfitrião sair, este PC pode virar o anfitrião no lugar dele. Desmarque em um PC lento ou com conexão fraca.",
+      "ru": "С ретранслятором, который это разрешает: если хост уйдёт, этот ПК сможет стать хостом вместо него. Отключите на слабом ПК или при плохом соединении.",
+      "ja": "対応する中継を使う場合：ホストが退出すると、この PC が代わりにホストになれます。低速な PC や不安定な回線ではオフにしてください。",
+      "ko": "허용하는 릴레이를 사용할 때: 호스트가 나가면 이 PC가 대신 호스트가 될 수 있습니다. 느린 PC나 불안정한 연결에서는 끄세요.",
+      "zh-CN": "在允许的中继上：主机离开时，此电脑可以代替它成为主机。电脑较慢或网络不稳定时请取消勾选。",
+      "zh-TW": "在允許的中繼上：主機離開時，此電腦可以代替它成為主機。電腦較慢或網路不穩時請取消勾選。"
+    },
+    "Host change: the session's rules, options, computer companies and chat are kept.": {
+      "de": "Hostwechsel: Die Regeln, Optionen, Computergesellschaften und der Chat der Sitzung bleiben erhalten.",
+      "es": "Cambio de anfitrión: se conservan las reglas, las opciones, las empresas del ordenador y el chat de la sesión.",
+      "it": "Cambio di host: le regole, le opzioni, le compagnie del computer e la chat della sessione sono conservate.",
+      "nl": "Hostwissel: de regels, opties, computerbedrijven en chat van de sessie blijven behouden.",
+      "pl": "Zmiana hosta: reguły, opcje, firmy komputerowe i czat sesji zostają zachowane.",
+      "pt-BR": "Troca de anfitrião: as regras, as opções, as empresas do computador e o chat da sessão foram mantidos.",
+      "ru": "Смена хоста: правила, настройки, компании компьютера и чат сеанса сохранены.",
+      "ja": "ホスト交代：セッションのルール、オプション、コンピューター会社、チャットは引き継がれました。",
+      "ko": "호스트 교체: 세션의 규칙, 옵션, 컴퓨터 회사, 채팅이 유지됩니다.",
+      "zh-CN": "主机已更换：会话的规则、选项、电脑公司和聊天记录均已保留。",
+      "zh-TW": "主機已更換：工作階段的規則、選項、電腦公司和聊天記錄均已保留。"
+    },
     "Relay...": {
       "de": "Relay...",
       "es": "Retransmisor...",
