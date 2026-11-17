@@ -115,7 +115,7 @@ jobs:
 
   # The relay's optional Docker image (server-linux/Dockerfile): it builds, and the self-test passes inside it as the container
   # will run (read-only, no capabilities).
-  relay-docker:
+  docker-relay:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
