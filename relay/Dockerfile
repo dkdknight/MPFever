@@ -13,7 +13,7 @@ COPY relay/ relay/
 # (the same self-contained single file as the release archive, for the machine the image runs on)
 RUN case "$TARGETARCH" in arm64) rid=linux-arm64 ;; *) rid=linux-x64 ;; esac \
  && dotnet publish relay/MPFeverRelay.csproj -c Release -r "$rid" --self-contained -p:PublishSingleFile=true -o /out \
- && mkdir /data
+ && mkdir -m 700 /data
 
 # (no shell, no package manager, not root: user "app", 1654)
 FROM mcr.microsoft.com/dotnet/runtime-deps:9.0-noble-chiseled
