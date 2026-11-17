@@ -26287,19 +26287,6 @@
       "zh-CN": "主机离开时接管主持",
       "zh-TW": "主機離開時接手主持"
     },
-    "With a relay that allows it: if the host leaves, this PC can become the host in its place. Untick on a slow PC or a weak connection.": {
-      "de": "Mit einem Relay, das es erlaubt: Wenn der Host geht, kann dieser PC an seiner Stelle Host werden. Auf einem langsamen PC oder bei schwacher Verbindung abwählen.",
-      "es": "Con un retransmisor que lo permita: si el anfitrión se va, este PC puede convertirse en el anfitrión en su lugar. Desmarque en un PC lento o con una conexión débil.",
-      "it": "Con un relay che lo consente: se l'host se ne va, questo PC può diventare l'host al suo posto. Disattiva su un PC lento o con una connessione debole.",
-      "nl": "Met een relay die het toestaat: als de host weggaat, kan deze pc zijn plaats als host innemen. Uitschakelen op een trage pc of bij een zwakke verbinding.",
-      "pl": "Z przekaźnikiem, który na to pozwala: gdy host odejdzie, ten komputer może zostać hostem w jego miejsce. Wyłącz na wolnym komputerze lub przy słabym łączu.",
-      "pt-BR": "Com um retransmissor que permita: se o anfitrião sair, este PC pode virar o anfitrião no lugar dele. Desmarque em um PC lento ou com conexão fraca.",
-      "ru": "С ретранслятором, который это разрешает: если хост уйдёт, этот ПК сможет стать хостом вместо него. Отключите на слабом ПК или при плохом соединении.",
-      "ja": "対応する中継を使う場合：ホストが退出すると、この PC が代わりにホストになれます。低速な PC や不安定な回線ではオフにしてください。",
-      "ko": "허용하는 릴레이를 사용할 때: 호스트가 나가면 이 PC가 대신 호스트가 될 수 있습니다. 느린 PC나 불안정한 연결에서는 끄세요.",
-      "zh-CN": "在允许的中继上：主机离开时，此电脑可以代替它成为主机。电脑较慢或网络不稳定时请取消勾选。",
-      "zh-TW": "在允許的中繼上：主機離開時，此電腦可以代替它成為主機。電腦較慢或網路不穩時請取消勾選。"
-    },
     "Host change: the session's rules, options, computer companies and chat are kept.": {
       "de": "Hostwechsel: Die Regeln, Optionen, Computergesellschaften und der Chat der Sitzung bleiben erhalten.",
       "es": "Cambio de anfitrión: se conservan las reglas, las opciones, las empresas del ordenador y el chat de la sesión.",
@@ -26326,19 +26313,6 @@
       "zh-CN": "我离开时让其他玩家接管",
       "zh-TW": "我離開時讓其他玩家接手"
     },
-    "To host with a relay: if you leave, the game goes on with another player. Unticked, the session ends with you.": {
-      "de": "Beim Hosten über ein Relay: Wenn Sie gehen, läuft das Spiel bei einem anderen Spieler weiter. Abgewählt, endet die Sitzung mit Ihnen.",
-      "es": "Al alojar con un retransmisor: si usted se va, la partida continúa con otro jugador. Desmarcada, la sesión termina con usted.",
-      "it": "Per ospitare con un relay: se te ne vai, la partita continua con un altro giocatore. Disattivata, la sessione termina con te.",
-      "nl": "Bij hosten via een relay: als u weggaat, gaat het spel verder bij een andere speler. Uitgeschakeld eindigt de sessie met u.",
-      "pl": "Przy hostowaniu przez przekaźnik: gdy odejdziesz, gra toczy się dalej u innego gracza. Wyłączone: sesja kończy się razem z Tobą.",
-      "pt-BR": "Ao hospedar com um retransmissor: se você sair, o jogo continua com outro jogador. Desmarcada, a sessão termina com você.",
-      "ru": "При размещении через ретранслятор: если вы уйдёте, игра продолжится у другого игрока. Если снять флажок, сеанс завершится вместе с вами.",
-      "ja": "中継を使ってホストする場合：あなたが退出しても、ゲームは別のプレイヤーのもとで続きます。オフにすると、セッションはあなたと共に終了します。",
-      "ko": "릴레이로 호스트할 때: 내가 나가도 게임은 다른 플레이어에게서 계속됩니다. 끄면 세션이 나와 함께 종료됩니다.",
-      "zh-CN": "通过中继主持时：您离开后，游戏会在另一位玩家那里继续。取消勾选则会话随您结束。",
-      "zh-TW": "透過中繼主持時：您離開後，遊戲會在另一位玩家那裡繼續。取消勾選則工作階段隨您結束。"
-    },
     "{0} left: {1} takes over as the host, the rules are kept. The game is about to resynchronise.": {
       "de": "{0} hat das Spiel verlassen: {1} übernimmt als Host, die Regeln bleiben erhalten. Das Spiel wird gleich neu synchronisiert.",
       "es": "{0} se ha ido: {1} asume el alojamiento, las reglas se conservan. La partida se va a resincronizar.",
@@ -26351,6 +26325,45 @@
       "ko": "{0}님이 나갔습니다: {1}님이 호스트를 넘겨받고, 규칙은 유지됩니다. 곧 게임이 다시 동기화됩니다.",
       "zh-CN": "{0} 已离开：{1} 接管主持，规则已保留。游戏即将重新同步。",
       "zh-TW": "{0} 已離開：{1} 接手主持，規則已保留。遊戲即將重新同步。"
+    },
+    "With a relay: if the host leaves, this PC may become the host. Untick on a slow PC.": {
+      "de": "Mit einem Relay: Wenn der Host geht, kann dieser PC Host werden. Auf langsamem PC abwählen.",
+      "es": "Con un retransmisor: si el anfitrión se va, este PC puede ser el anfitrión. Desmarque en un PC lento.",
+      "it": "Con un relay: se l'host se ne va, questo PC può diventare host. Disattiva su un PC lento.",
+      "nl": "Met een relay: als de host weggaat, kan deze pc host worden. Uitschakelen op een trage pc.",
+      "pl": "Z przekaźnikiem: gdy host odejdzie, ten komputer może zostać hostem. Wyłącz na wolnym komputerze.",
+      "pt-BR": "Com um retransmissor: se o anfitrião sair, este PC pode virar anfitrião. Desmarque em PC lento.",
+      "ru": "С ретранслятором: если хост уйдёт, этот ПК может стать хостом. Отключите на слабом ПК.",
+      "ja": "中継利用時：ホストが退出すると、この PC がホストになれます。低速な PC ではオフに。",
+      "ko": "릴레이 사용 시: 호스트가 나가면 이 PC가 호스트가 될 수 있습니다. 느린 PC에서는 끄세요.",
+      "zh-CN": "使用中继时：主机离开后，此电脑可接管主持。电脑较慢时请取消勾选。",
+      "zh-TW": "使用中繼時：主機離開後，此電腦可接手主持。電腦較慢時請取消勾選。"
+    },
+    "With a relay: if you leave, another player takes over. Unticked, the session ends.": {
+      "de": "Mit einem Relay: Wenn Sie gehen, übernimmt ein anderer Spieler. Abgewählt endet die Sitzung.",
+      "es": "Con un retransmisor: si usted se va, otro jugador continúa. Desmarcada, la sesión termina.",
+      "it": "Con un relay: se te ne vai, un altro giocatore subentra. Disattivata, la sessione termina.",
+      "nl": "Met een relay: als u weggaat, neemt een andere speler over. Uitgeschakeld eindigt de sessie.",
+      "pl": "Z przekaźnikiem: gdy odejdziesz, przejmie inny gracz. Wyłączone: sesja się kończy.",
+      "pt-BR": "Com um retransmissor: se você sair, outro jogador assume. Desmarcada, a sessão termina.",
+      "ru": "С ретранслятором: если вы уйдёте, игру продолжит другой игрок. Без флажка сеанс завершится.",
+      "ja": "中継利用時：退出すると別のプレイヤーが引き継ぎます。オフならセッションは終了します。",
+      "ko": "릴레이 사용 시: 내가 나가면 다른 플레이어가 넘겨받습니다. 끄면 세션이 종료됩니다.",
+      "zh-CN": "使用中继时：您离开后由其他玩家接管。取消勾选则会话结束。",
+      "zh-TW": "使用中繼時：您離開後由其他玩家接手。取消勾選則工作階段結束。"
+    },
+    "Used only when you host or play through a relay (Relay... button).": {
+      "de": "Nur nützlich, wenn Sie über ein Relay hosten oder spielen (Schaltfläche Relay...).",
+      "es": "Solo útiles si aloja o juega a través de un retransmisor (botón Retransmisor...).",
+      "it": "Utili solo se ospiti o giochi tramite un relay (pulsante Relay...).",
+      "nl": "Alleen nuttig als u via een relay host of speelt (knop Relay...).",
+      "pl": "Przydatne tylko przy hostowaniu lub grze przez przekaźnik (przycisk Przekaźnik...).",
+      "pt-BR": "Úteis só se você hospeda ou joga por um retransmissor (botão Retransmissor...).",
+      "ru": "Нужны, только если вы размещаете или играете через ретранслятор (кнопка «Ретранслятор...»).",
+      "ja": "中継を使ってホストまたはプレイする場合のみ有効です（「中継...」ボタン）。",
+      "ko": "릴레이를 통해 호스트하거나 플레이할 때만 사용됩니다(릴레이... 버튼).",
+      "zh-CN": "仅在通过中继主持或游玩时有用（“中继...”按钮）。",
+      "zh-TW": "僅在透過中繼主持或遊玩時有用（「中繼...」按鈕）。"
     },
     "Relay...": {
       "de": "Relay...",

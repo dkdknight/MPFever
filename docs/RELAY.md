@@ -113,8 +113,8 @@ In `mpfever_settings.txt` next to `MPFever.exe` (or in the **Relay** window of t
 | `relay=host[:port]` | The relay this player hosts through. Without it the player hosts directly. (`MPFEVER_RELAY=host:port` does the same for a test run.) |
 | `relaypw=SECRET` | The relay's password. (`MPFEVER_RELAYPW` gives it to a `--autoclient` test player.) |
 | `relaykey=KEY` | The owner key or the recovery key, for [keeping the save](#keeping-the-save-on-the-relay-experimental). (`MPFEVER_RELAYKEY`.) |
-| `takeover=0` | This PC is never asked to take over as the host when the host leaves ([host migration](#host-migration-experimental)). The Settings window has a box for it, "Take over hosting if the host leaves", on by default. |
-| `handover=0` | When this PC is the host and leaves, no player takes over: the session ends with it, even on a relay that allows migration. The Settings window has a box, "Let a player take over if I leave", on by default. |
+| `takeover=0` | This PC is never asked to take over as the host when the host leaves ([host migration](#host-migration-experimental)). It is a box of the Settings window, in the expert settings (tick "Show the expert settings"), part "Relay": "Take over hosting if the host leaves", on by default. |
+| `handover=0` | When this PC is the host and leaves, no player takes over: the session ends with it, even on a relay that allows migration. It is a box of the Settings window, in the expert settings, part "Relay": "Let a player take over if I leave", on by default. |
 
 The first versions wrote `server=`, `serverpw=` and `serverkey=`: they are still read while the new names are not set, and the Relay window empties them when it saves.
 The relay program's own variables (`MPFEVER_RELAY_PASSWORD` and the others, see [Settings](#secrets-from-the-environment)) are another thing: they are for `mpfever-relay`, not for the launcher.
@@ -198,7 +198,7 @@ is used then) and a player cannot send these messages (they are the host's only,
 **What the players read.** When the new host is there, its launcher puts a line in the game's chat (the place of MPFever's other notices): who left, who
 hosts now, that the rules are kept and that the game is about to resynchronise. A player that joins later finds it with the chat so far.
 
-**Choosing who may take over.** Two boxes in the launcher's Settings window, both on by default, so nothing has to be set up:
+**Choosing who may take over.** Two boxes in the launcher's Settings window, both on by default, so nothing has to be set up. They are in the expert settings (tick **"Show the expert settings"**, part **"Relay"**):
 
 - **"Take over hosting if the host leaves"** (`takeover=0` in `mpfever_settings.txt`): says whether *this PC* may be asked when somebody else
   hosts. Untick it on a slow PC or a weak connection: the relay then asks the next player.
