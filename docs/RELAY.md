@@ -199,6 +199,9 @@ about how long a resynchronisation may take; left for a later change.
 On the launcher side, if `tun_players` does not arrive within 15 s (a relay older than this message), the takeover goes on, as the first
 version did: a player announced later is a new arrival for the host's code, which sends it the host's game by itself.
 
+Tested with real games on the 0.8.15 launcher and mod, through a relay on a remote VPS with a password (`--migration`): the host left, the
+relay asked the oldest player, which became the host; both players ended `sync=ok`, `desyncs=0`, with one resynchronisation.
+
 The test: `MPFEVER_SERVER=127.0.0.1:28090 MPFEVER_NOLOCALCLIENT=1 MPFEVER_CLIENT2=1 MPFEVER_SCENARIO=migrate MPFever.exe --autotest <save>`
 for the host, then two `MPFever.exe --autoclient 127.0.0.1:28090 <save> <name>` for the players, against `mpfever-relay --migration`.
 
@@ -233,8 +236,11 @@ from the kept save.
   or `io`. A player's messages of these kinds are dropped like any `tun_*`.
 - **Tested** by `mpfever-relay --selftest` (storage, protocol, and the launcher's side against the relay) and with real games on one PC: the
   host's autosave and its last save at close reach the relay byte for byte, the relay keeps them across a restart, `MPFever.exe --fetch-save`
-  gets them back, and a game hosted from the fetched save and joined by a second game stayed in sync (`IN SYNC`, 0 desyncs, 0 refused). **Not
-  tested** between two PCs, nor by a real click on the button during a game.
+  gets them back (also with the recovery key), and a game hosted from the fetched save and joined by a second game stayed in sync (`IN SYNC`,
+  0 desyncs, 0 refused), on the 0.8.15 launcher and mod too, through a relay on a remote VPS with a password. The button of the Relay server
+  window was clicked in the running launcher and fetched the save, byte for byte. A host that closes its launcher during a resynchronisation
+  sends nothing (the relay keeps what it had). **Not
+  tested** between two PCs.
 
 ### Setting up the keys
 
@@ -344,7 +350,9 @@ thread per player), and the relay forwards each copy to its player. The parallel
 - The resynchronisation after a takeover is started by one launcher: `resyncing` is set in many places of the launcher without a lock, as it
   was before this change; the takeover checks it once, after the relay has said the list of players is complete.
 - No public list: players need the relay's address. The dedicated server is the one that lists itself in the **Public servers** tab.
-- Not tested between two PCs: the kept save. Not tested: the arm64 Docker image.
+- Not tested between two PCs: the kept save. The arm64 image builds and passes `--selftest` (under emulation); it has not run on an ARM machine.
+- A player that joins a session already running, in the autotest (a third game started about 25 s after the second), ends `DESYNCHRONISED`;
+  the same test without a relay does too, so it is not the relay's doing.
 
 ## Deploying
 
@@ -404,7 +412,8 @@ example in `compose.yaml` shows it). For arm64: `docker buildx build --platform 
 Docker publishes it itself, past the host's `ufw`, so check what is really reachable.
 
 What is tested: the image builds, `--selftest` passes inside it (read-only, no capabilities), and it starts with the password from the
-environment and a mounted save directory. Not tested: arm64, and Compose beyond its configuration.
+environment and a mounted save directory. The arm64 image builds and passes `--selftest` under emulation. Not tested: an ARM machine, and
+Compose beyond its configuration.
 
 ### On Windows
 
