@@ -28,6 +28,13 @@ namespace MPFever.LinuxServer
         /// <summary>Wrong passwords from one address before it is refused for LockoutSeconds (0: never).</summary>
         public int MaxBadPasswords = 5;
         public int LockoutSeconds = 300;
+        /// <summary>Directory where the latest complete save of the session is kept (null: nothing is kept).</summary>
+        public string CheckpointDirectory;
+        /// <summary>Key of the host that may store and read the save (the owner).</summary>
+        public string CheckpointOwnerKey = "";
+        /// <summary>EXPERIMENTAL: a key that lets another player read the save and host from it when nobody hosts.</summary>
+        public string CheckpointRecoveryKey = "";
+        public bool ResumeWithoutHost;
     }
 
     /// <summary>
@@ -65,6 +72,7 @@ namespace MPFever.LinuxServer
             relay.Admit = Admit;
             relay.Joined += OnJoined;
             relay.Left += OnLeft;
+            if (!string.IsNullOrEmpty(opt.CheckpointDirectory)) checkpoint = new RelayCheckpoint(opt.CheckpointDirectory);
             relay.StrictBeforeAdmission = true;
             relay.UnadmittedTimeoutSeconds = opt.UnadmittedTimeoutSeconds;
             relay.MaxConnections = opt.MaxConnections;
@@ -180,6 +188,8 @@ namespace MPFever.LinuxServer
         void OnLeft(Peer p)
         {
             Log.W(p.Name + " left");
+            try { lock (checkpointGate) ReleaseCheckpoint(p); }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { Log.Warn("checkpoint cleanup: " + e.Message); }
             HostLeft(p);
         }
 
@@ -234,6 +244,7 @@ namespace MPFever.LinuxServer
                 if (target != null && target != host) new Thread(() => relay.Deny(target, payload ?? "{[\"reason\"]=\"kicked\"}")) { IsBackground = true }.Start();
                 return;
             }
+            if (m.Kind == CheckpointWire.Request || m.Kind == CheckpointWire.Binary) { HandleCheckpoint(m, host); return; }
             if (m.Kind.StartsWith("tun_", StringComparison.Ordinal)) return;   // (the server's own kinds are not the host's to send)
             if (m.Kind.Length > 1 && m.Kind[0] == '@')
             {

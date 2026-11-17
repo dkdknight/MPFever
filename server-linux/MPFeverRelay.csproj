@@ -30,5 +30,6 @@
     <Compile Include="..\launcher\Core.cs" Link="shared\Core.cs" />
     <!-- the host's side of a session through this server: used by the self-test, and by the launcher itself -->
     <Compile Include="..\launcher\RemoteRelay.cs" Link="shared\RemoteRelay.cs" />
+    <Compile Include="..\launcher\CheckpointWire.cs" Link="shared\CheckpointWire.cs" />
   </ItemGroup>
 </Project>

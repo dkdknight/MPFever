@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace MPFever.LinuxServer
@@ -56,6 +58,8 @@ namespace MPFever.LinuxServer
             Migration();
             Parser();
             Compat();
+            CheckpointPersistence();
+            CheckpointOverTheRelay();
             VersionBetweenPlayers();
             Hardening();
             Races();
@@ -64,6 +68,150 @@ namespace MPFever.LinuxServer
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ALL " + passed + " CHECKS PASSED" : failed + " FAILED, " + passed + " passed");
             return failed == 0 ? 0 : 1;
+        }
+
+        static void CheckpointPersistence()
+        {
+            Console.WriteLine("persistent checkpoint storage");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-checkpoint-" + Guid.NewGuid().ToString("N"));
+            var first = new byte[RelayCheckpoint.ChunkSize + 23];
+            var next = new byte[80];
+            var random = new Random(334);
+            random.NextBytes(first);
+            random.NextBytes(next);
+            byte[] firstHash = SHA256.HashData(first), nextHash = SHA256.HashData(next);
+
+            bool Matches(RelayCheckpoint store, byte[] expected, byte[] digest)
+            {
+                using var file = store.Open(out var size, out var sha);
+                if (file == null || size != expected.Length || !string.Equals(sha, Convert.ToHexString(digest), StringComparison.OrdinalIgnoreCase))
+                    return false;
+                var actual = new byte[expected.Length];
+                file.ReadExactly(actual);
+                return actual.SequenceEqual(expected);
+            }
+
+            try
+            {
+                using (var store = new RelayCheckpoint(dir))
+                {
+                    using (var missing = store.Open(out var size, out _))
+                        Check("a new store does not report a save", missing == null && size == 0);
+                    store.Begin(first.Length, firstHash);
+                    Check("a chunk larger than the transfer limit is refused", !store.Append(first));
+                    Check("a complete save can be committed from multiple chunks",
+                        store.Append(first.Take(RelayCheckpoint.ChunkSize).ToArray()) &&
+                        store.Append(first.Skip(RelayCheckpoint.ChunkSize).ToArray()) && store.Complete());
+
+                    bool locked = false;
+                    try { using var duplicate = new RelayCheckpoint(dir); }
+                    catch (IOException) { locked = true; }
+                    Check("two relays cannot write the same checkpoint directory", locked);
+
+                    store.Begin(next.Length, nextHash);
+                    store.Append(next.Take(8).ToArray());
+                    Check("an in-flight upload leaves the previous save readable", Matches(store, first, firstHash));
+                    Check("an incomplete upload cannot replace the previous save", !store.Complete() && Matches(store, first, firstHash));
+
+                    store.Begin(next.Length, firstHash);
+                    store.Append(next);
+                    Check("a checksum mismatch cannot replace the previous save", !store.Complete() && Matches(store, first, firstHash));
+                    store.Begin(next.Length, nextHash);
+                    store.Append(next.Take(8).ToArray());
+                }
+
+                // A forced process exit can leave an unfinished file in the directory.
+                var partial = Path.Combine(dir, "checkpoint.partial");
+                File.WriteAllBytes(partial, next);
+                using (var store = new RelayCheckpoint(dir))
+                {
+                    Check("restart ignores an abandoned temporary file", !File.Exists(partial) && Matches(store, first, firstHash));
+                    store.Begin(next.Length, nextHash);
+                    Check("a later verified upload replaces the previous save",
+                        store.Append(next) && store.Complete() && Matches(store, next, nextHash));
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    foreach (var name in new[] { "checkpoint.partial", "checkpoint.bin", "checkpoint.lock" })
+                        File.Delete(Path.Combine(dir, name));
+                    Directory.Delete(dir);
+                }
+            }
+        }
+
+        static void CheckpointOverTheRelay()
+        {
+            Console.WriteLine("the save kept by the relay, through the protocol");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-checkpoint-" + Guid.NewGuid().ToString("N"));
+            var save = new byte[RelayCheckpoint.ChunkSize + 500];
+            new Random(7).NextBytes(save);
+            string sha = Convert.ToHexString(SHA256.HashData(save)).ToLowerInvariant();
+            try
+            {
+                var opt = new ServerOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
+                using (var srv = new Relay())
+                {
+                    var core = new SessionCore(srv, opt);
+                    srv.Start(0);
+                    int port = srv.Port;
+                    int n = 0;
+                    string Id() => (++n).ToString("x32");
+                    Msg Reply(Player pl, string id) { Msg r = null; pl.Wait(() => (r = pl.Of(CheckpointWire.Reply).FirstOrDefault(m => Field(m, "id") == id)) != null); return r; }
+                    string Ask(Player pl, string body)
+                    {
+                        string id = Id();
+                        pl.C.Send(Msg.Make(CheckpointWire.Request, "Host", "{" + CheckpointWire.Field("id", id) + "," + body + "}"));
+                        var r = Reply(pl, id);
+                        return r == null ? "(no answer)" : Field(r, "status");
+                    }
+                    using (var host = new Player(port, "Host", null, true))
+                    {
+                        host.Wait(() => host.Of("tun_host").Length > 0);
+                        Check("a host with the wrong key cannot store a save",
+                            Ask(host, CheckpointWire.Field("op", "begin") + "," + CheckpointWire.Field("key", "nope") + "," + CheckpointWire.Field("size", save.Length) + "," + CheckpointWire.Field("sha", sha)) == "denied");
+                        Check("the owner starts an upload",
+                            Ask(host, CheckpointWire.Field("op", "begin") + "," + CheckpointWire.Field("key", "own") + "," + CheckpointWire.Field("size", save.Length) + "," + CheckpointWire.Field("sha", sha)) == "upload");
+                        bool parts = true;
+                        for (int off = 0; off < save.Length; off += RelayCheckpoint.ChunkSize)
+                        {
+                            var chunk = save.Skip(off).Take(RelayCheckpoint.ChunkSize).ToArray();
+                            string id = Id();
+                            host.C.Send(new Msg { Kind = CheckpointWire.Binary, From = "Host", Data = chunk, Payload = "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("len", chunk.Length) + "}" });
+                            var r = Reply(host, id);
+                            parts &= r != null && Field(r, "status") == "part";
+                        }
+                        Check("every chunk is accepted", parts);
+                        Check("the complete, verified save is stored", Ask(host, CheckpointWire.Field("op", "commit")) == "saved");
+                    }
+                    Thread.Sleep(300);
+                    using (var next = new Player(port, "Next", null, true))
+                    {
+                        next.Wait(() => next.Of("tun_host").Length > 0);
+                        Check("the owner's password alone does not read the save: a wrong key is denied", Ask(next, CheckpointWire.Field("op", "open") + "," + CheckpointWire.Field("key", "bad")) == "denied");
+                        string id = Id();
+                        next.C.Send(Msg.Make(CheckpointWire.Request, "Next", "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("op", "open") + "," + CheckpointWire.Field("key", "rec") + "}"));
+                        var open = Reply(next, id);
+                        Check("the recovery key opens the save, with its size and hash", open != null && Field(open, "status") == "download"
+                            && Field(open, "size") == save.Length.ToString() && Field(open, "sha") == sha);
+                        var got = new List<byte>();
+                        while (got.Count < save.Length)
+                        {
+                            string rid = Id();
+                            next.C.Send(Msg.Make(CheckpointWire.Request, "Next", "{" + CheckpointWire.Field("id", rid) + "," + CheckpointWire.Field("op", "read") + "," + CheckpointWire.Field("offset", got.Count) + "}"));
+                            Msg bin = null;
+                            next.Wait(() => (bin = next.Of(CheckpointWire.Binary).FirstOrDefault(m => Field(m, "id") == rid)) != null);
+                            if (bin == null || bin.Data == null) break;
+                            got.AddRange(bin.Data);
+                        }
+                        Check("the save comes back byte for byte", got.Count == save.Length && got.SequenceEqual(save));
+                        Check("the new host confirms it loaded it", Ask(next, CheckpointWire.Field("op", "loaded")) == "ready");
+                    }
+                }
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
         }
 
         static void Tunnel()

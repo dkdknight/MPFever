@@ -17,6 +17,9 @@ hosts through this server, so it needs no open port, and everybody reaches the s
   --migration          EXPERIMENTAL (off by default): let a player take over when the host leaves
   --max-connections N  connections accepted at once, let in or not (default 64; 0: no limit)
   --grace SECONDS      how long a guest that drops is waited for (default 60; 0: not waited for)
+  --checkpoint-dir DIR         keep the latest complete save of the session in DIR (the host sends it; it survives an empty server)
+  --checkpoint-owner-key KEY   key the host's launcher shows to store and read that save (needed with --checkpoint-dir)
+  --resume-without-host KEY    EXPERIMENTAL: a player who shows KEY may read the save and host from it when nobody hosts
   --migration-timeout SECONDS  how long a successor has to connect as the host before the next one is asked (default 120)
 Set a password (--password) on a server that is reachable from the Internet: without one anybody may join or host.
 See docs/LINUX-RELAY.md.";
@@ -29,6 +32,8 @@ See docs/LINUX-RELAY.md.";
             if (o.MaxConnections < 0 || o.MaxConnections > 100000) return "--max-connections must be between 0 and 100000";
             if (o.Grace < 0 || o.Grace > 3600) return "--grace must be between 0 and 3600 seconds";
             if (o.MigrationTimeoutSeconds < 5 || o.MigrationTimeoutSeconds > 3600) return "--migration-timeout must be between 5 and 3600 seconds";
+            if (!string.IsNullOrEmpty(o.CheckpointDirectory) && string.IsNullOrEmpty(o.CheckpointOwnerKey)) return "--checkpoint-dir needs --checkpoint-owner-key";
+            if (o.ResumeWithoutHost && string.IsNullOrEmpty(o.CheckpointDirectory)) return "--resume-without-host needs --checkpoint-dir";
             return null;
         }
 
@@ -52,6 +57,9 @@ See docs/LINUX-RELAY.md.";
                         case "--max-connections": opt.MaxConnections = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                         case "--grace": opt.Grace = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                         case "--migration-timeout": opt.MigrationTimeoutSeconds = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+                        case "--checkpoint-dir": opt.CheckpointDirectory = Next(); break;
+                        case "--checkpoint-owner-key": opt.CheckpointOwnerKey = Next(); break;
+                        case "--resume-without-host": opt.CheckpointRecoveryKey = Next(); opt.ResumeWithoutHost = true; break;
                         case "--selftest": selftest = true; break;
                         case "-h": case "--help": Console.WriteLine(Usage); return 0;
                         default: throw new ArgumentException("unknown option " + a);
