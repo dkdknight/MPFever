@@ -410,6 +410,8 @@ namespace MPFever.StandaloneRelay
                 using (var h2 = new Player(port, "Hugo", "pw", true))
                     Check("a second host is refused", h2.Wait(() => h2.DeniedReason != null) && h2.DeniedReason == "hosted");
                 var b = new Player(port, "Bob", "pw");
+                // (Bob is let in before Cat connects: two connections made at once may be let in in either order, and the checks below read them in order)
+                h.Wait(() => h.Of("tun_join").Length == 1);
                 var c = new Player(port, "Cat", "pw");
                 try
                 {
@@ -486,6 +488,7 @@ namespace MPFever.StandaloneRelay
                     host.Connect("127.0.0.1", port, "Hank", "pw");
                     Check("the host connects and learns its name", host.Me != null && host.Me.StartsWith("Hank#"));
                     var b = new Player(port, "Bob", "pw");
+                    Wait(() => { lock (joined) return joined.Count == 1; });   // (Bob first: joined[0] is Bob below)
                     var c = new Player(port, "Cat", "pw");
                     Check("players that come in raise Joined", Wait(() => { lock (joined) return joined.Count == 2; }));
                     Check("and are listed like a Relay lists them", host.AdmittedCount == 2 && host.PeerNames().Length == 2 && host.Find(joined[0].Name) == joined[0] && joined[0].Admitted);
