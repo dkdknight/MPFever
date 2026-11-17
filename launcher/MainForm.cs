@@ -3506,6 +3506,8 @@ namespace MPFever
                     AutoLine(total == 0 ? "lua: clean" : "lua: FAILED (" + total + " Lua error line(s) in the games' logs)");
                 }
                 try { File.WriteAllLines(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "autotest_result.txt"), autoReport); } catch { }
+                // (test of the last save a host sends to its server when it closes, Checkpoint.cs: the autotest does not close the window)
+                if (Environment.GetEnvironmentVariable("MPFEVER_FINALKEEP") == "1") try { FinalKeep(); } catch (Exception ex) { Log.W("final keep: " + ex.Message); }
                 foreach (var g in games) g.Kill();
                 Thread.Sleep(1000);
                 Environment.Exit(0);

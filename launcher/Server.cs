@@ -708,6 +708,8 @@ namespace MPFever
                 StopServer(true);
                 return;
             }
+            // (a player's own game hosting through a server that keeps its save: one last save is sent, Checkpoint.cs)
+            try { FinalKeep(); } catch (Exception ex) { Log.W("final keep: " + ex.Message); }
             base.OnFormClosing(e);
         }
 

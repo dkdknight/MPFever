@@ -53,7 +53,7 @@ namespace MPFever
             var remote = relay as RemoteRelay;
             string key = ServerKey();
             if (remote == null || key == "") return;
-            new Thread(() =>
+            keepThread = new Thread(() =>
             {
                 try
                 {
@@ -66,7 +66,21 @@ namespace MPFever
                     else Log.Warn(F("Le serveur n'a pas gardé la sauvegarde : {0}", "The server did not keep the save: {0}", CheckpointWhy(status)));
                 }
                 catch (Exception e) { Log.Warn(F("Le serveur n'a pas gardé la sauvegarde : {0}", "The server did not keep the save: {0}", e.Message)); }
-            }) { IsBackground = true, Name = "Keep save" }.Start();
+            }) { IsBackground = true, Name = "Keep save" };
+            keepThread.Start();
+        }
+
+        Thread keepThread;
+
+        /// <summary>(the launcher is closing) a host that keeps its save on a server makes one last session autosave and sends it, so what
+        /// happened since the last periodic one is kept too. It waits 40 s at most; nothing is done without a server and a key, when
+        /// nothing happened since the last save (HostAutosave skips it), nor during a resynchronisation.</summary>
+        void FinalKeep()
+        {
+            if (!(relay is RemoteRelay) || ServerKey() == "" || !started || hostGame == null || resyncing || server != null) return;
+            var t = new Thread(() => { HostAutosave(); keepThread?.Join(); }) { IsBackground = true, Name = "Final keep" };
+            t.Start();
+            t.Join(40000);
         }
 
         /// <summary>"Resume the saved game": fetches the save the server keeps into the game's savegames, under ResumeSaveName. The player
