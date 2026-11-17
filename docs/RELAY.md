@@ -410,7 +410,7 @@ MPFEVER_RELAY_PASSWORD=SECRET docker compose -f server-linux/compose.yaml up -d 
 **A published image.** The Release build workflow can also push the image to the GitHub container registry, only when "docker" is ticked at
 its start (off by default): `ghcr.io/<owner>/mpfever-relay`, tagged with the version and `latest`, for x64 and arm64, self-tested once pushed.
 When the project has published it, nothing has to be built: `docker pull ghcr.io/<owner>/mpfever-relay:<version>`, then the same `docker run`
-with that name instead of `mpfever-relay`. A new package is private until its owner makes it public on the package's page.
+with that name instead of `mpfever-relay`. The package's visibility is set on its page on GitHub (on the test fork it came out public, like the repository, and could be pulled without signing in).
 
 The password and the keys come from the environment (see [Settings](#secrets-from-the-environment)). The other options are the arguments of
 the container (`mpfever-relay --help` lists them). To keep the session's save, mount a volume on `/data` and add `--checkpoint-dir /data` (the

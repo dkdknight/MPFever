@@ -168,7 +168,7 @@ jobs:
 
   # (optional, off unless "docker" is ticked when the workflow is started: the relay's image, the same as server-linux/Dockerfile, for x64
   # and arm64, on GitHub's container registry under the owner of the repository. It is built after the Linux relay passed its self-test,
-  # and the image is self-tested once pushed. The package is private until its owner makes it public, on the package's page)
+  # and the image is self-tested once pushed. The package's visibility is set on its page on GitHub)
   docker-relay:
     if: ${{ inputs.docker }}
     needs: linux-relay
