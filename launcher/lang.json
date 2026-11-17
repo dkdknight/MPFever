@@ -26261,6 +26261,19 @@
       "zh-CN": "适用于您下次主持的游戏。",
       "zh-TW": "適用於您下次主持的遊戲。"
     },
+    "The relay's saved password or key cannot be read on this PC or with this account: enter it again in the Relay window.": {
+      "de": "Das gespeicherte Passwort oder der Schlüssel des Relays kann auf diesem PC oder mit diesem Konto nicht gelesen werden: Gib es im Relay-Fenster erneut ein.",
+      "es": "No se puede leer la contraseña o la clave del retransmisor guardada en este PC o con esta cuenta: vuelve a introducirla en la ventana Retransmisor.",
+      "it": "La password o la chiave del relay salvata non può essere letta su questo PC o con questo account: inseriscila di nuovo nella finestra Relay.",
+      "nl": "Het opgeslagen wachtwoord of de sleutel van de relay kan op deze pc of met dit account niet worden gelezen: voer het opnieuw in via het Relay-venster.",
+      "pl": "Zapisanego hasła lub klucza przekaźnika nie można odczytać na tym komputerze ani z tym kontem: wpisz je ponownie w oknie Przekaźnik.",
+      "pt-BR": "A senha ou a chave do retransmissor salva não pode ser lida neste PC ou com esta conta: informe-a novamente na janela Retransmissor.",
+      "ru": "Сохранённый пароль или ключ ретранслятора нельзя прочитать на этом ПК или с этой учётной записью: введите его снова в окне «Ретранслятор».",
+      "ja": "保存された中継のパスワードまたは鍵は、この PC またはこのアカウントでは読み取れません。「中継」ウィンドウで入力し直してください。",
+      "ko": "저장된 릴레이 비밀번호 또는 키를 이 PC 또는 이 계정에서 읽을 수 없습니다. \"릴레이\" 창에서 다시 입력하세요.",
+      "zh-CN": "无法在此电脑或使用此账户读取已保存的中继密码或密钥：请在“中继”窗口中重新输入。",
+      "zh-TW": "無法在此電腦或使用此帳戶讀取已儲存的中繼密碼或金鑰：請在「中繼」視窗中重新輸入。"
+    },
     "Relay...": {
       "de": "Relay...",
       "es": "Retransmisor...",

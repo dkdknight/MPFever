@@ -20,12 +20,27 @@ namespace MPFever.StandaloneRelay
 
         public RelayCheckpoint(string directory)
         {
-            Directory.CreateDirectory(directory);
+            // (a directory made here is private to the account that runs the relay, and so are its files: the save is a whole world)
+            if (OperatingSystem.IsWindows()) Directory.CreateDirectory(directory);
+            else
+            {
+                Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                if ((File.GetUnixFileMode(directory) & (UnixFileMode.GroupRead | UnixFileMode.OtherRead | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0)
+                    Log.Warn("the checkpoint directory " + directory + " can be read by other accounts: chmod 700 it");
+            }
             current = Path.Combine(directory, "checkpoint.bin");
             pending = Path.Combine(directory, "checkpoint.partial");
-            directoryLock = new FileStream(Path.Combine(directory, "checkpoint.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            directoryLock = Open(Path.Combine(directory, "checkpoint.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite);
             try { File.Delete(pending); }
             catch { directoryLock.Dispose(); throw; }
+        }
+
+        /// <summary>A file only its owner may read or write (on Unix: mode 600; Windows keeps the folder's rights).</summary>
+        static FileStream Open(string path, FileMode mode, FileAccess access)
+        {
+            var options = new FileStreamOptions { Mode = mode, Access = access, Share = FileShare.None };
+            if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            return new FileStream(path, options);
         }
 
         public void Begin(long size, byte[] hash)
@@ -33,7 +48,7 @@ namespace MPFever.StandaloneRelay
             if (size <= 0 || size > MaxSize) throw new ArgumentOutOfRangeException(nameof(size));
             if (hash?.Length != HashSize) throw new ArgumentException("Expected a SHA-256 digest", nameof(hash));
             Abort();
-            upload = new FileStream(pending, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            upload = Open(pending, FileMode.CreateNew, FileAccess.Write);
             try
             {
                 upload.Write(hash);

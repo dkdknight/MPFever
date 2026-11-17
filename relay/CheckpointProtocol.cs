@@ -69,6 +69,17 @@ namespace MPFever.StandaloneRelay
             => Msg.Make(CheckpointWire.Reply, HostName, "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("status", status) + extra + "}");
 
         bool OwnerKey(string key) => !string.IsNullOrEmpty(opt.CheckpointOwnerKey) && SamePassword(key, opt.CheckpointOwnerKey);
+        /// <summary>The key of the owner or of the trusted player. Wrong keys count like wrong passwords: after MaxBadPasswords from one
+        /// address it is refused for LockoutSeconds, even with the right key.</summary>
+        bool KeyOk(Peer sender, string key)
+        {
+            string ip = AddressOf(sender);
+            if (LockedOut(ip)) return false;
+            if (OwnerKey(key) || RecoveryKey(key)) return true;
+            NoteBadPassword(ip);
+            return false;
+        }
+
         bool RecoveryKey(string key) => opt.ResumeWithoutHost && !string.IsNullOrEmpty(opt.CheckpointRecoveryKey) && SamePassword(key, opt.CheckpointRecoveryKey);
 
         Msg CheckpointRequest(Msg m, Peer sender, Dictionary<object, object> fields, string id)
@@ -85,7 +96,7 @@ namespace MPFever.StandaloneRelay
             {
                 case "begin":
                     // (the recovery key is the key of a player trusted to host: it may store the save it goes on with, too)
-                    if (!OwnerKey(key) && !RecoveryKey(key) && checkpointRestored != sender) return CheckpointReply(id, "denied");
+                    if (checkpointRestored != sender && !KeyOk(sender, key)) return CheckpointReply(id, "denied");
                     if (!CheckpointWire.Number(fields, "size", CheckpointWire.MaxSize, out var bytes) || bytes == 0)
                         return CheckpointReply(id, "invalid");
                     string hashText = CheckpointWire.Text(fields, "sha");
@@ -101,7 +112,7 @@ namespace MPFever.StandaloneRelay
                     checkpointUpload = null;
                     return CheckpointReply(id, checkpoint.Complete() ? "saved" : "invalid");
                 case "open":
-                    if (!OwnerKey(key) && !RecoveryKey(key)) return CheckpointReply(id, "denied");
+                    if (!KeyOk(sender, key)) return CheckpointReply(id, "denied");
                     checkpointDownload = null;
                     using (var file = checkpoint.Open(out var size, out var sha))
                     {

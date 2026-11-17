@@ -106,8 +106,9 @@ namespace MPFever
         void Save()
         {
             MainForm.SaveSetting("relay", addressBox.Text.Trim());
-            MainForm.SaveSetting("relaypw", passwordBox.Text.Trim());
-            MainForm.SaveSetting("relaykey", keyBox.Text.Trim());
+            // (the password and the key are written protected by Windows: SecretStore.cs)
+            MainForm.SaveSetting("relaypw", SecretStore.Protect(passwordBox.Text.Trim()));
+            MainForm.SaveSetting("relaykey", SecretStore.Protect(keyBox.Text.Trim()));
             // (the names the first versions wrote: emptied, or they would be read again when a field is cleared here)
             foreach (var k in new[] { "relay", "relaypw", "relaykey" }) MainForm.SaveSetting(MainForm.LegacyRelayKey(k), "");
         }

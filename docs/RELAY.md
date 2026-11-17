@@ -76,7 +76,8 @@ Without `relay=` a player hosts directly, as before. The Windows dedicated serve
 | Option | Default | Meaning |
 |---|---|---|
 | `--port N` | 28090 | TCP port to listen on (1 to 65535). |
-| `--password SECRET` | none | Password to join, or to host. **Set one on a relay reachable from the Internet**: without it anybody may join or host, and the relay says so in its log. |
+| `--password SECRET`, `--password-file FILE` | none | Password to join, or to host (the file form reads it from a file). **Set one on a relay reachable from the Internet**: without it anybody may join or host, and the relay says so in its log. |
+| `--listen ADDRESS` | every address | Listen on that address only: the address of a VPN (Tailscale, WireGuard) or of a LAN, so that nothing else can reach the relay. |
 | `--max-players N` | 8 | Connected players at most, the host included (1 to 64). |
 | `--name TEXT` | `MPFever Relay` | The name the relay gives itself. |
 | `--max-connections N` | 64 | Connections accepted at once, let in or not (0: no limit, not for a public relay). |
@@ -84,8 +85,8 @@ Without `relay=` a player hosts directly, as before. The Windows dedicated serve
 | `--migration` | off | **Experimental.** Let a player take over when the host leaves. |
 | `--migration-timeout SECONDS` | 120 | How long a successor has to connect as the host before the next one is asked (5 to 3600). |
 | `--checkpoint-dir DIR` | none | **Experimental.** Keep the latest complete save of the session in `DIR`. Needs `--checkpoint-owner-key`. |
-| `--checkpoint-owner-key KEY` | none | The key that lets the usual host store and read that save. |
-| `--resume-without-host KEY` | none | **Experimental.** A recovery key: a trusted player who shows it may read the save and host from it when nobody hosts. Needs `--checkpoint-dir`. |
+| `--checkpoint-owner-key KEY`, `--checkpoint-owner-key-file FILE` | none | The key that lets the usual host store and read that save. It must differ from the password. |
+| `--resume-without-host KEY`, `--resume-without-host-file FILE` | none | **Experimental.** A recovery key: a trusted player who shows it may read the save and host from it when nobody hosts. Needs `--checkpoint-dir`. It must differ from the owner key and from the password. |
 | `--selftest` | | Run the relay's own checks (no game) and exit. |
 | `-h`, `--help` | | Print the options and the relay protocol number. |
 
@@ -99,7 +100,9 @@ The password and the two keys can be given by the environment, so that they stay
 | `MPFEVER_RELAY_CHECKPOINT_OWNER_KEY` | `--checkpoint-owner-key` |
 | `MPFEVER_RELAY_RESUME_WITHOUT_HOST` | `--resume-without-host` |
 
-An option given on the command line wins over the variable.
+Each variable also exists with `_FILE` added (`MPFEVER_RELAY_PASSWORD_FILE=/run/secrets/relay_password`): the secret is read from that file (its last line break is dropped), as Docker and Compose secrets or a systemd credential give it. The same exists as options: `--password-file`, `--checkpoint-owner-key-file` and `--resume-without-host-file`. A secret file that cannot be read or is empty stops the relay, and the message never says what the file holds.
+
+An option given on the command line wins over the variable, and the variable over its file.
 
 ### The launcher's side
 
@@ -281,10 +284,12 @@ limited on purpose (each point has a test in `mpfever-relay --selftest`):
 - **Before a player is let in:** the relay opts in to a 64 KB line limit and rejects binary messages. A connection that has not joined within
   15 s is cut; no more than 64 connections (`--max-connections`) are accepted at once; a `join` that cannot be read is refused (the Relay lets
   a player in when its admission check throws: this one refuses).
-- **Passwords:** compared in constant time; 5 wrong ones from an address refuse that address for 5 minutes, even with the right one (the table
-  of addresses is purged as entries expire and never holds more than 10 000).
+- **Passwords and keys:** compared in constant time (after a SHA-256 of both sides, so the length does not show); 5 wrong ones from an address
+  refuse that address for 5 minutes, even with the right one (the table of addresses is purged as entries expire and never holds more than
+  10 000). The wrong keys of the kept save count in that same table, so that a key cannot be guessed once the password is known.
 - **Settings** are checked at start (`--port`, `--max-players`, `--max-connections`, `--grace`, `--migration-timeout`); `--max-connections 0`
-  (no limit) and no `--password` are allowed but the relay says so in its log.
+  (no limit) and no `--password` are allowed but the relay says so in its log. A key equal to the password (every player knows it) or to the
+  other key is refused; a password shorter than 8 characters or a key shorter than 16 is said in the log (`openssl rand -hex 16` makes one).
 - **The relay's own messages** (kinds that start with `tun_`) cannot be sent by a player: they are dropped, and so are the routing prefixes
   `@name:` and `!name:` in front of one (otherwise `@Victim#3:tun_host` would be delivered to Victim as a real `tun_host`). Otherwise a player
   could make the host forget another player (`tun_left`), believe in a player that is not there (`tun_join`) or give the host role away
@@ -297,12 +302,20 @@ limited on purpose (each point has a test in `mpfever-relay --selftest`):
 - **The kept save:** only a host connection can store or read it, and only with the owner key or the recovery key (constant-time compare); one
   upload at a time, size and SHA-256 checked, the previous save replaced only by a complete one; the directory is locked against a second
   relay; every path is fixed inside `--checkpoint-dir`. The launcher checks the SHA-256 of what it fetches and writes it under a fixed name.
-- **Secrets:** the password and the keys can come from the environment instead of the command line. They are never written to the relay's log.
+  On Linux the directory is created with mode 700 and its files with 600 (the relay says so in its log when an existing directory is readable by
+  other accounts): the save is a whole world.
+- **Secrets:** the password and the keys can come from the environment or from files instead of the command line (`ps` and `docker inspect` show
+  nothing). They are never written to the relay's log. In the launcher the password and the key are written in `mpfever_settings.txt`
+  protected by Windows (DPAPI, this Windows account on this PC: `relaypw=dpapi:...`), so a copy of the file does not give them away; a value
+  typed by hand is read as it is, and one that cannot be opened (another PC or account) is empty again: the player enters it in the Relay window.
+  The launcher leaves `relaypw=`, `relaykey=` and the same words in the old names or in environment variables out of the reports it makes.
+  `--listen` keeps the relay off every other network: with the address of a VPN, only its members can even connect.
 
 **Not done: encryption.** The protocol is plain TCP, as it always was: the password, the keys and the session are readable on the way. Adding
 TLS means a change on every player's side (the launcher's `Client`) and a certificate, which is a compatibility decision for the maintainer.
-Until then: use a password, prefer a private network (Tailscale, WireGuard) between the players and the relay, or put a TLS tunnel (stunnel,
-`ssh -L`) in front. The relay's `--password` is a shared secret for a group of friends, not an account system. The keys of the kept save travel
+Until then: use a password, prefer a private network (Tailscale, WireGuard) between the players and the relay (with `--listen` on its address, the
+relay is not on the Internet at all), or put a TLS tunnel (stunnel, `ssh -L`) in front: through a tunnel on the same machine every player looks
+like the same address to the relay, so the wrong-password count then applies to all of them together. The relay's `--password` is a shared secret for a group of friends, not an account system. The keys of the kept save travel
 the same way as the password.
 
 ## How long a large world takes to reach a player

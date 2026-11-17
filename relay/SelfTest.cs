@@ -58,9 +58,11 @@ namespace MPFever.StandaloneRelay
             Migration();
             Parser();
             Environment_();
+            Secrets();
             Compat();
             CheckpointPersistence();
             CheckpointOverTheRelay();
+            CheckpointKeyLockout();
             VersionBetweenPlayers();
             Hardening();
             Races();
@@ -90,6 +92,104 @@ namespace MPFever.StandaloneRelay
             var empty = new RelayOptions { Password = "kept" };
             Program.ApplyEnvironment(empty, k => "");
             Check("an empty variable changes nothing", empty.Password == "kept" && !empty.ResumeWithoutHost);
+        }
+
+        /// <summary>The secrets from files, secrets that cannot be used or are weak, and the private files of the kept save.</summary>
+        static void Secrets()
+        {
+            Console.WriteLine("secrets");
+            using (var only = new Relay { BindTo = System.Net.IPAddress.Loopback })
+            {
+                var core = new SessionCore(only, new RelayOptions());
+                only.Start(0);
+                using (var p = new Player(only.Port, "Local", null, true))
+                    Check("a relay told to listen on one address (--listen) works on that address", p.Wait(() => p.Of("tun_host").Length > 0));
+            }
+            var env = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["MPFEVER_RELAY_PASSWORD_FILE"] = "/run/secrets/pw", ["MPFEVER_RELAY_CHECKPOINT_OWNER_KEY_FILE"] = "/run/secrets/owner",
+                ["MPFEVER_RELAY_RESUME_WITHOUT_HOST_FILE"] = "/run/secrets/rec"
+            };
+            string Files(string path) => path.EndsWith("pw") ? "file-password\n" : path.EndsWith("owner") ? "file-owner-key\r\n" : "file-recovery-key";
+            var o = new RelayOptions();
+            Program.ApplyEnvironment(o, k => env.TryGetValue(k, out var v) ? v : null, Files);
+            Check("the three secrets can come from files, without the line break at the end",
+                o.Password == "file-password" && o.CheckpointOwnerKey == "file-owner-key" && o.CheckpointRecoveryKey == "file-recovery-key" && o.ResumeWithoutHost);
+            var both = new RelayOptions();
+            Program.ApplyEnvironment(both, k => k == "MPFEVER_RELAY_PASSWORD" ? "plain" : k == "MPFEVER_RELAY_PASSWORD_FILE" ? "/x/pw" : null, Files);
+            Check("the variable wins over the file", both.Password == "plain");
+            bool empty = false, unreadable = false;
+            try { Program.ReadSecret("/x", p => "\n"); } catch (ArgumentException e) { empty = e.Message.Contains("empty"); }
+            try { Program.ReadSecret("/x", p => throw new IOException("secret-text-must-not-show")); }
+            catch (ArgumentException e) { unreadable = e.Message.Contains("cannot read") && !e.Message.Contains("secret-text-must-not-show"); }
+            Check("an empty or unreadable secret file stops the relay and says nothing of what it holds", empty && unreadable);
+            Check("a key equal to the password is refused: every player knows the password",
+                Program.Validate(new RelayOptions { Password = "same", CheckpointDirectory = "d", CheckpointOwnerKey = "same" }) != null);
+            Check("a recovery key equal to the owner key, or to the password, is refused",
+                Program.Validate(new RelayOptions { CheckpointDirectory = "d", CheckpointOwnerKey = "k", CheckpointRecoveryKey = "k", ResumeWithoutHost = true }) != null
+                && Program.Validate(new RelayOptions { Password = "p", CheckpointDirectory = "d", CheckpointOwnerKey = "k", CheckpointRecoveryKey = "p", ResumeWithoutHost = true }) != null);
+            Check("two different keys and a password are accepted",
+                Program.Validate(new RelayOptions { Password = "p", CheckpointDirectory = "d", CheckpointOwnerKey = "k1", CheckpointRecoveryKey = "k2", ResumeWithoutHost = true }) == null);
+            Check("short secrets are said at start, strong ones are not",
+                Program.WeakSecrets(new RelayOptions { Password = "abc", CheckpointOwnerKey = "short", CheckpointRecoveryKey = "short2", ResumeWithoutHost = true }).Length == 3
+                && Program.WeakSecrets(new RelayOptions { Password = "long-enough-password", CheckpointOwnerKey = "0123456789abcdef", CheckpointRecoveryKey = "fedcba9876543210", ResumeWithoutHost = true }).Length == 0);
+            if (!OperatingSystem.IsWindows())
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "mpfever-private-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    using (var c = new RelayCheckpoint(dir))
+                    {
+                        c.Begin(5, SHA256.HashData(new byte[] { 1, 2, 3, 4, 5 }));
+                        var dirMode = File.GetUnixFileMode(dir);
+                        var lockMode = File.GetUnixFileMode(Path.Combine(dir, "checkpoint.lock"));
+                        var partMode = File.GetUnixFileMode(Path.Combine(dir, "checkpoint.partial"));
+                        Check("the kept save's folder and files are private to the account that runs the relay (700, 600)",
+                            dirMode == (UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute)
+                            && lockMode == (UnixFileMode.UserRead | UnixFileMode.UserWrite) && partMode == (UnixFileMode.UserRead | UnixFileMode.UserWrite));
+                    }
+                }
+                finally { try { Directory.Delete(dir, true); } catch { } }
+            }
+        }
+
+        /// <summary>Wrong keys count like wrong passwords: from one address, after a few of them even the right key is refused.</summary>
+        static void CheckpointKeyLockout()
+        {
+            Console.WriteLine("kept save: wrong keys are counted");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-lockout-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var opt = new RelayOptions { Password = "pw", CheckpointDirectory = dir, CheckpointOwnerKey = "owner-key-0123456789", MaxBadPasswords = 3, LockoutSeconds = 60 };
+                using (var srv = new Relay())
+                {
+                    var core = new SessionCore(srv, opt);
+                    srv.Start(0);
+                    int n = 0;
+                    using (var host = new Player(srv.Port, "Host", "pw", true))
+                    {
+                        host.Wait(() => host.Of("tun_host").Length > 0);
+                        string Ask(string key)
+                        {
+                            string id = (++n).ToString("x32");
+                            host.C.Send(Msg.Make(CheckpointWire.Request, "Host", "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("op", "open") + "," + CheckpointWire.Field("key", key) + "}"));
+                            Msg r = null; host.Wait(() => (r = host.Of(CheckpointWire.Reply).FirstOrDefault(m => Field(m, "id") == id)) != null);
+                            return r == null ? "(no answer)" : Field(r, "status");
+                        }
+                        string a = Ask("wrong-1"), b = Ask("wrong-2");
+                        Check("a wrong key is denied", a == "denied" && b == "denied");
+                        Check("the right key still works before the limit", Ask("owner-key-0123456789") == "empty");
+                        Ask("wrong-3"); Ask("wrong-4");
+                        Check("after the limit the right key is refused too, for a while", Ask("owner-key-0123456789") == "denied");
+                    }
+                    Pause();
+                    using (var other = new Player(srv.Port, "Other", "pw", true))
+                    {
+                        Check("and with a password set the address cannot join any more either (the same count as the wrong passwords)", other.Wait(() => other.DeniedReason == "password"));
+                    }
+                }
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
         }
 
         static void CheckpointPersistence()

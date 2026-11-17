@@ -27,6 +27,8 @@ namespace MPFever.StandaloneRelay
         public int Grace = 60;
         /// <summary>Wrong passwords from one address before it is refused for LockoutSeconds (0: never).</summary>
         public int MaxBadPasswords = 5;
+        /// <summary>The one address to listen on (--listen): null is every address.</summary>
+        public System.Net.IPAddress Listen;
         public int LockoutSeconds = 300;
         /// <summary>Directory where the latest complete save of the session is kept (null: nothing is kept).</summary>
         public string CheckpointDirectory;

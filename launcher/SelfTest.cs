@@ -55,6 +55,7 @@ namespace MPFever
             ok &= RunUpdater();
             ok &= RunPortMap();
             ok &= RunRedact();
+            ok &= RunRelaySecrets();
             ok &= RunGameDir();
             ok &= RunSmartAppControl();
             ok &= RunDiag();
@@ -1679,6 +1680,29 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
         }
 
         /// <summary>Problem reports: what tells who and where the player is taken out of the text (see Redact).</summary>
+        /// <summary>The relay's password and key in the settings file: protected by Windows, read back, kept out of reports.</summary>
+        static bool RunRelaySecrets()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            string p = SecretStore.Protect("pa=ss word/Z");
+            Check(SecretStore.IsProtected(p) && !p.Contains("pa=ss") && SecretStore.Unprotect(p) == "pa=ss word/Z", "relay secrets: protected by Windows, then read back");
+            Check(SecretStore.Unprotect("typed-by-hand") == "typed-by-hand" && SecretStore.Protect("") == "" && SecretStore.Unprotect("") == "", "relay secrets: a value without the prefix is read as it is, an empty one stays empty");
+            Check(SecretStore.Unprotect(SecretStore.Prefix + "not-base64!!") == null && SecretStore.Unprotect(SecretStore.Prefix + Convert.ToBase64String(new byte[] { 1, 2, 3 })) == null,
+                "relay secrets: a protected value that cannot be opened here gives null, not an exception");
+            Check(SecretStore.Protect(p) == p, "relay secrets: a value already protected is not protected again");
+            var s = new Dictionary<string, string> { ["relaypw"] = p, ["relaykey"] = "plain-key", ["serverpw"] = "old-password", ["relay"] = "host:28090" };
+            Check(MainForm.RelayConf(s, "relaypw") == "pa=ss word/Z" && MainForm.RelayConf(s, "relaykey") == "plain-key" && MainForm.RelayConf(s, "relay") == "host:28090",
+                "relay settings: read protected or as typed");
+            var legacy = new Dictionary<string, string> { ["serverpw"] = "old-password", ["serverkey"] = "old-key", ["server"] = "old.example:28090" };
+            Check(MainForm.RelayConf(legacy, "relaypw") == "old-password" && MainForm.RelayConf(legacy, "relaykey") == "old-key" && MainForm.RelayConf(legacy, "relay") == "old.example:28090",
+                "relay settings: the names of the first versions are still read");
+            string r = Redact.Text("relaykey=abcdef0123456789 and MPFEVER_RELAYPW=hunter2 and serverpw=old, but relaypw= in the text stays, relay=host:28090");
+            Check(!r.Contains("abcdef0123456789") && !r.Contains("hunter2") && !r.Contains("serverpw=old") && r.Contains("relaykey=<secret>") && r.Contains("relaypw= in the text") && r.Contains("relay=host:28090"),
+                "report: the relay's password and keys are never in it (" + r + ")");
+            return ok;
+        }
+
         static bool RunRedact()
         {
             bool ok = true;

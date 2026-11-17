@@ -1213,10 +1213,20 @@ namespace MPFever
         /// <summary>(0.6, the autotest pubtest) the port it listens on; 0 before Start.</summary>
         public int Port { get { try { return (listener?.LocalEndpoint as IPEndPoint)?.Port ?? 0; } catch { return 0; } } }
 
+        /// <summary>(the standalone relay's --listen) the one address to listen on, for a relay that only a private network (a VPN, a LAN)
+        /// may reach; null: every address, as always (a host's own listener never sets it).</summary>
+        public IPAddress BindTo { get; set; }
+
         public void Start(int port)
         {
             // IPv4 and IPv6 on one socket (players behind DS-Lite, without a public IPv4 of their own, are reached over
             // IPv6); IPv4 only where the PC has no IPv6
+            if (BindTo != null)
+            {
+                listener = new TcpListener(BindTo, port);
+                listener.Start();
+            }
+            else
             try
             {
                 listener = new TcpListener(IPAddress.IPv6Any, port);

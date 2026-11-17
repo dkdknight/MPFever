@@ -26,9 +26,24 @@ namespace MPFever
         /// empties the old ones).</summary>
         internal static string RelayConf(Dictionary<string, string> s, string key)
         {
-            if (s.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)) return v;
-            return s.TryGetValue(LegacyRelayKey(key), out var old) ? old : "";
+            if (!(s.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))) v = s.TryGetValue(LegacyRelayKey(key), out var old) ? old : "";
+            if (key == "relay") return v;
+            // (the password and the key are protected by Windows in the file, SecretStore.cs; a value typed by hand is read as it is)
+            var plain = SecretStore.Unprotect(v);
+            if (plain == null)
+            {
+                if (!relaySecretWarned)
+                {
+                    relaySecretWarned = true;
+                    Log.Warn(T("Le mot de passe ou la clé du relais enregistrés ne peuvent pas être lus sur ce PC ou avec ce compte : saisissez-les à nouveau dans la fenêtre Relais.",
+                               "The relay's saved password or key cannot be read on this PC or with this account: enter it again in the Relay window."));
+                }
+                return "";
+            }
+            return plain;
         }
+
+        static bool relaySecretWarned;
 
         internal static string LegacyRelayKey(string key) => key == "relay" ? "server" : key == "relaypw" ? "serverpw" : key == "relaykey" ? "serverkey" : key;
 

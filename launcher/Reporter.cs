@@ -804,6 +804,8 @@ namespace MPFever
         static readonly Regex steam64 = new Regex(@"\b7656119\d{10}\b", RegexOptions.Compiled);
         static readonly Regex ipv4 = new Regex(@"(?<![\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\d]|\.\d)", RegexOptions.Compiled);
         static readonly Regex ipv6 = new Regex(@"(?i)(?<![0-9a-f:])[23][0-9a-f]{3}(?::[0-9a-f]{0,4}){3,7}(?![0-9a-f:])", RegexOptions.Compiled);
+        // (the relay's password and keys, in a settings line or an environment variable echoed by mistake: never in a report)
+        static readonly Regex secret = new Regex(@"(?i)\b(relaypw|relaykey|serverpw|serverkey|MPFEVER_RELAYPW|MPFEVER_RELAYKEY|MPFEVER_SERVERPW|MPFEVER_SERVERKEY|MPFEVER_RELAY_PASSWORD|MPFEVER_RELAY_CHECKPOINT_OWNER_KEY|MPFEVER_RELAY_RESUME_WITHOUT_HOST)=(?!\s)\S+", RegexOptions.Compiled);
         static readonly Regex mail = new Regex(@"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}", RegexOptions.Compiled);
 
         static void Init()
@@ -858,6 +860,7 @@ namespace MPFever
                 ? x.Value : Code("ip-", x.Value));
             s = ipv6.Replace(s, x => Code("ipv6-", x.Value.ToLowerInvariant()));
             s = mail.Replace(s, "mail");
+            s = secret.Replace(s, x => x.Value.Substring(0, x.Value.IndexOf('=') + 1) + "<secret>");
             return s;
         }
 
