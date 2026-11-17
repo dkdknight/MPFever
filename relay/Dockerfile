@@ -13,14 +13,14 @@ COPY relay/ relay/
 # (the same self-contained single file as the release archive, for the machine the image runs on)
 RUN case "$TARGETARCH" in arm64) rid=linux-arm64 ;; *) rid=linux-x64 ;; esac \
  && dotnet publish relay/MPFeverRelay.csproj -c Release -r "$rid" --self-contained -p:PublishSingleFile=true -o /out \
- && mkdir -m 700 /data
+ && mkdir /data
 
 # (no shell, no package manager, not root: user "app", 1654)
 FROM mcr.microsoft.com/dotnet/runtime-deps:9.0-noble-chiseled
 WORKDIR /app
 COPY --from=build /out/mpfever-relay /app/mpfever-relay
 # where --checkpoint-dir may point (keeping the session's save): mount a volume here
-COPY --from=build --chown=1654:1654 /data /data
+COPY --from=build --chown=1654:1654 --chmod=700 /data /data
 VOLUME /data
 ENV DOTNET_BUNDLE_EXTRACT_BASE_DIR=/tmp
 EXPOSE 28090/tcp
