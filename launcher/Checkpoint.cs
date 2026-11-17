@@ -20,9 +20,6 @@ namespace MPFever
             return (v ?? "").Trim();
         }
 
-        /// <summary>True when this launcher can keep a save on a server or fetch it (server= and serverkey= are set).</summary>
-        static bool CanKeepSave() => ServerSetting(out _) != null && ServerKey() != "";
-
         static string ServerSayWhy(Exception e)
         {
             switch (e.Message)
@@ -83,17 +80,15 @@ namespace MPFever
             t.Join(40000);
         }
 
-        /// <summary>"Resume the saved game": fetches the save the server keeps into the game's savegames, under ResumeSaveName. The player
+        /// <summary>"Resume the server's saved game" (RelayDialog): fetches the save the server keeps into the game's savegames, under ResumeSaveName. The player
         /// then hosts as usual and loads it. Refused when somebody hosts on the server already.</summary>
         void ResumeFromServer()
         {
             string name = PlayerName();
-            resumeBtn.Enabled = false;
             new Thread(() =>
             {
                 try { FetchSaveFromServer(name, out _); }
                 catch (Exception e) { Log.Err(F("Reprise impossible : {0}", "Cannot resume: {0}", e.Message)); }
-                finally { try { BeginInvoke((Action)(() => resumeBtn.Enabled = true)); } catch { } }
             }) { IsBackground = true, Name = "Resume" }.Start();
         }
 

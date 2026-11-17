@@ -29,7 +29,8 @@ server=my.server.example:28090
 serverpw=SECRET
 ```
 
-then hosts from the game's Multiplayer page as usual. The players join `my.server.example:28090` and enter the password as for any host.
+or, without editing the file, in the launcher's **Relay server** window (the button of the "Settings and community" card, next to
+"Settings"), which writes the same lines. The player then hosts from the game's Multiplayer page as usual. The players join `my.server.example:28090` and enter the password as for any host.
 Without `server=` the player hosts directly. The Windows dedicated server listens directly and uses its own admission settings.
 
 ## Relay protocol
@@ -131,8 +132,8 @@ player, who has that key, fetch the save and host from it.
   one (every N minutes, see the host's autosave setting). The server checks the size and the SHA-256, writes the file next to the old one and
   replaces the old one only when the new one is complete: an interrupted or corrupt upload leaves the previous save in place. A host whose
   PC crashes loses only what happened since the last autosave. There is no extra send when the host leaves normally yet.
-- **Resuming.** A player with `server=` and `serverkey=` (the owner key or the recovery key) gets a button, "Resume the server's saved game
-  (experimental)". It fetches the save into the game's savegames as "MPFever relay save" (`MPFever.exe --fetch-save` does the same without a window) (nothing hosts yet on the server: it connects as
+- **Resuming.** A player with `server=` and `serverkey=` (the owner key or the recovery key) opens the **Relay server** window and clicks
+  "Resume the server's saved game" (it saves the three fields first). The launcher fetches the save into the game's savegames as "MPFever relay save" (`MPFever.exe --fetch-save` does the same without a window) (nothing hosts yet on the server: it connects as
   the host for that, then leaves). The player then clicks "Host a game" and loads that save as usual. The world is paused while nobody plays,
   and the new host needs the mods and DLCs the save uses.
 - **Who may do what.** The server's password lets a player join, nothing more. Storing needs the owner key or the recovery key; reading needs

@@ -81,6 +81,18 @@ namespace MPFever
                 return 0;
             }
             if (args.Contains("--fetch-save")) return MainForm.FetchSaveCli(args);
+            // --relaysettings [--shots <folder>]: the relay server window alone (to look at it); --shots saves a picture and closes it
+            if (args.Length > 0 && args[0] == "--relaysettings")
+            {
+                int ri = Array.IndexOf(args, "--shots");
+                using (var t = new RelayDialog())
+                {
+                    t.StartPosition = FormStartPosition.CenterScreen; t.ShowInTaskbar = true;
+                    if (ri >= 0 && ri + 1 < args.Length) t.Shown += (s, e) => t.SaveShot(args[ri + 1]);
+                    t.ShowDialog();
+                }
+                return 0;
+            }
             bool auto = args.Length > 0 && args[0] == "--autotest";
             bool autoClient = args.Length > 1 && args[0] == "--autoclient";
             if (autoClient) { MainForm.AutoClientAddr = args[1]; if (args.Length > 3) MainForm.AutoClientName = args[3]; }
@@ -286,7 +298,6 @@ namespace MPFever
         readonly ModernButton hostBtn = new ModernButton(ButtonKind.Primary);
         readonly ModernButton joinBtn = new ModernButton(ButtonKind.Secondary);
         readonly ModernButton localBtn = new ModernButton(ButtonKind.Ghost);
-        readonly ModernButton resumeBtn = new ModernButton(ButtonKind.Ghost);
         readonly ModernButton startBtn = new ModernButton(ButtonKind.Primary) { Enabled = false };
         // (issue #94: shown in place of startBtn once the game is closed)
         readonly ModernButton againBtn = new ModernButton(ButtonKind.Primary) { Visible = false };
@@ -458,7 +469,6 @@ namespace MPFever
             hostBtn.Click += (s, e) => Guard(() => StartHost(PlayerName(), true));
             joinBtn.Click += (s, e) => Guard(() => StartClient(PlayerName(), hostBox.Text.Trim(), (int)portBox.Value, true));
             localBtn.Click += (s, e) => Guard(StartLocalTest);
-            resumeBtn.Click += (s, e) => ResumeFromServer();
             startBtn.Click += (s, e) => StartSession();
             againBtn.Click += (s, e) => StartAgain(updateInstalled);
             launchBtn.Click += (s, e) => LaunchFromButton();
@@ -487,7 +497,6 @@ namespace MPFever
             hostBtn.Text = T("Héberger une partie", "Host a game");
             joinBtn.Text = T("Rejoindre par IP", "Join by IP");
             localBtn.Text = T("Test local (2 jeux)", "Local test (2 games)");
-            resumeBtn.Text = T("Reprendre la partie du serveur (expérimental)", "Resume the server's saved game (experimental)");
             startBtn.Text = T("▶  Démarrer la partie", "▶  Start the game");
             againBtn.Text = T("Relancer Transport Fever 3", "Start Transport Fever 3 again");
             launchBtn.Text = T("▶  Lancer Transport Fever 3", "▶  Start Transport Fever 3");
@@ -501,7 +510,7 @@ namespace MPFever
             pauseBtn.Text = "❚❚  " + T("Pause", "Pause");
             detBtn.Text = T("Test déterminisme", "Determinism test");
             langBtn.Text = L.Name + "  ▾";
-            foreach (var b in new[] { hostBtn, joinBtn, localBtn, resumeBtn, startBtn, againBtn, launchBtn, pauseBtn, x1Btn, x2Btn, x4Btn, detBtn, langBtn }) b.ResetFont();
+            foreach (var b in new[] { hostBtn, joinBtn, localBtn, startBtn, againBtn, launchBtn, pauseBtn, x1Btn, x2Btn, x4Btn, detBtn, langBtn }) b.ResetFont();
             logBox.Font = Theme.Mono(9f);
 
             header = new HeaderBar(T("Multijoueur pour Transport Fever 3", "Multiplayer for Transport Fever 3"), "v" + Version, langBtn);
@@ -522,7 +531,6 @@ namespace MPFever
                 Ui.Caption(T("Connexion", "Connection")),
                 Ui.Field(T("Votre nom", "Your name"), nameBox),
                 Ui.Gap(8), hostRow, Ui.Gap(16), hostBtn, Ui.Gap(8), joinBtn };
-            if (CanKeepSave()) connItems.AddRange(new Control[] { Ui.Gap(8), resumeBtn });
             if (Dev) connItems.AddRange(new Control[] { Ui.Gap(8), localBtn });
             Ui.StackTop(conn, connItems.ToArray());
             Ui.FitHeight(conn);
@@ -704,9 +712,11 @@ namespace MPFever
         {
             var card = new Card();
             var settingsBtn = new ModernButton(ButtonKind.Primary) { Text = T("⚙ Réglages", "⚙ Settings") };
+            var relayBtn = new ModernButton(ButtonKind.Secondary) { Text = T("Serveur relais", "Relay server") };
             var supportBtn = new ModernButton(ButtonKind.Secondary) { Text = T("♥ Soutenir MPFever", "♥ Support MPFever") };
             var discordBtn = new ModernButton(ButtonKind.Secondary) { Text = "Discord" };
             settingsBtn.Click += (s, e) => OpenSettings();
+            relayBtn.Click += (s, e) => OpenRelaySettings();
             supportBtn.Click += (s, e) => ThanksDialog.Open(ThanksDialog.KofiUrl);
             discordBtn.Click += (s, e) => ThanksDialog.Open(ThanksDialog.DiscordUrl);
             var tips = new ToolTip();
@@ -715,7 +725,7 @@ namespace MPFever
             var where = new Label { Text = PlayWhereText(), AutoSize = false, ForeColor = Theme.Muted, Font = Theme.Ui(9f) };
             // (as high as its lines need at the card's width: the left column's, less its margin and the card's padding)
             where.Height = TextRenderer.MeasureText(where.Text, where.Font, new Size(Theme.S(340 - 16 - 36), int.MaxValue), TextFormatFlags.WordBreak).Height + Theme.S(4);
-            Ui.StackTop(card, Ui.Caption(T("Réglages et communauté", "Settings and community")), settingsBtn, Ui.Gap(8), supportBtn, Ui.Gap(8), discordBtn, Ui.Gap(12), where);
+            Ui.StackTop(card, Ui.Caption(T("Réglages et communauté", "Settings and community")), settingsBtn, Ui.Gap(8), relayBtn, Ui.Gap(8), supportBtn, Ui.Gap(8), discordBtn, Ui.Gap(12), where);
             Ui.FitHeight(card);
             return card;
         }
@@ -723,6 +733,15 @@ namespace MPFever
         /// <summary>(0.7.13) Where a player hosts and joins: a player's left card, and the help before the game starts.</summary>
         static string PlayWhereText() => T("Pour héberger ou rejoindre une partie : la page « Multijoueur (MPFever) » du menu principal du jeu, la liste des serveurs ou une invitation Steam.",
             "To host or join a game: the « Multiplayer (MPFever) » page of the game's main menu, the server list or a Steam invitation.");
+
+        /// <summary>The relay server window (RelayDialog): the address, password and key of a server this player hosts through, and the
+        /// button that resumes the game the server keeps.</summary>
+        void OpenRelaySettings()
+        {
+            bool resume;
+            using (var d = new RelayDialog()) { d.ShowDialog(this); resume = d.ResumeAsked; }
+            if (resume) ResumeFromServer();
+        }
 
         /// <summary>The settings window (the session settings read only for a guest once joined), then every game gets them: the
         /// bottom bar's « ⚙ Settings » and (0.7.13) a player's left card.</summary>
