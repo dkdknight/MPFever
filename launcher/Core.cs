@@ -2723,6 +2723,9 @@ namespace MPFever
             var src = FindModSource();
             int w = 0;
             string game = null;
+            // (0.8.17: this installation's own failure, see InstallFailed)
+            InstallFailed = null;
+            string anyFailed = null;
             try { game = FindGameDir(); } catch { }
             // (0.6.3) a copy Steam did not install (GOG): the same folder, where the game finds it too
             bool notSteam = NotSteamCopy(game);
@@ -2735,13 +2738,17 @@ namespace MPFever
                     if (rel != null && Directory.Exists(rel))
                     {
                         var dst = Path.Combine(rel, "mpfever_1");
-                        if (Directory.Exists(dst)) Directory.Delete(dst, true);
-                        CopyDir(src, dst);
+                        InstallCopy(src, dst, Path.Combine(g, "mpfever_1.install"));
                         w = 1;
                         Log.Ok(L.T("Mod installé dans ", "Mod installed in ") + dst + (notSteam ? "" : " (Wine/Proton)"));
                     }
                 }
-                catch (Exception e) { Log.W("mods\\release: " + e.Message); }
+                catch (Exception e)
+                {
+                    Log.W("mods\\release: " + e.Message);
+                    // ((0.8.17, the review) a copy Steam did not install (GOG) finds the mod there only: its failure stops the start too)
+                    if (notSteam) InstallFailed = e.Message;
+                }
             }
             var steam = SteamPath();
             if (src == null || steam == null) { if (w == 0) Log.Err(L.T("Mod ou Steam introuvable, installation du mod ignorée", "Mod or Steam not found, mod installation skipped")); return w; }
@@ -2764,12 +2771,23 @@ namespace MPFever
                 var local = Path.Combine(u, AppId, "local");
                 if (!Directory.Exists(local)) continue;
                 var dst = Path.Combine(local, "mods", "mpfever_1");
-                if (Directory.Exists(dst)) Directory.Delete(dst, true); // mirror: drop files removed from the mod
-                CopyDir(src, dst);
+                // (0.8.17, #401: see InstallCopy)
+                try { InstallCopy(src, dst, Path.Combine(local, "mpfever_1.install")); }
+                catch (Exception e)
+                {
+                    // ((0.8.17, the review) the start is stopped for the account signed in to Steam, or when no account got the mod)
+                    anyFailed = e.Message;
+                    var active = ActiveSteamUser();
+                    if (active != null && string.Equals(Path.GetFileName(u), active, StringComparison.OrdinalIgnoreCase)) InstallFailed = e.Message;
+                    Log.Err(L.T("Le mod n'a pas pu être installé dans ", "The mod could not be installed in ") + dst + " (" + e.Message + ")"
+                        + (Directory.Exists(dst) ? L.T(" : l'ancienne copie est gardée.", ": the copy there before is kept.") : ""));
+                    continue;
+                }
                 n++;
                 Log.Ok(L.T("Mod installé dans ", "Mod installed in ") + dst);
             }
             if (n == 0 && mk) Log.Err(NoInstallText());
+            if (n == 0 && anyFailed != null && InstallFailed == null) InstallFailed = anyFailed;
             // (0.6.9: the game's DLCs on this PC, which every player of a session needs alike, see Mods.InstalledDlcs)
             try { Log.W(L.T("DLC du jeu sur ce PC : ", "The game's DLCs on this PC: ") + Mods.InstalledDlcs()); } catch { }
             return n;
@@ -2976,6 +2994,54 @@ namespace MPFever
         {
             return SaveDirs().Select(d => Path.Combine(d, name + ".sav")).Where(File.Exists)
                 .OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+        }
+
+        /// <summary>(0.8.17) The last installation's error, or null.</summary>
+        public static string InstallFailed;
+
+        /// <summary>(0.8.17, #401: lgeru's disk was full: the launcher deleted the mod's copy, the new one stopped halfway ("not enough
+        /// space on the disk"), and the game started with half a mod: "File was not cached in filesystem: mpfever_1::/mpfever_auto.lua",
+        /// the game closed.) The mod is copied into a folder beside the game's mods folder first (not in it: the game would take it
+        /// for a mod), then put in place of the old copy only once whole; a failed copy leaves the old one as it was. A mirror as
+        /// before: files taken out of the mod go. MPFEVER_SAFEINSTALL=0: deleted, then copied, as before</summary>
+        internal static void InstallCopy(string src, string dst, string tmp)
+        {
+            if (Environment.GetEnvironmentVariable("MPFEVER_SAFEINSTALL") == "0")
+            {
+                if (Directory.Exists(dst)) Directory.Delete(dst, true);
+                CopyDir(src, dst);
+                return;
+            }
+            try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
+            try { CopyDir(src, tmp); }
+            catch
+            {
+                try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
+                throw;
+            }
+            // ((0.8.17, the review) a name of its own for the old copy (a leftover that cannot be deleted never blocks the next
+            // installs), a few tries for a folder briefly locked (an antivirus, an indexer), and no half step left behind)
+            var old = tmp + ".old" + DateTime.UtcNow.Ticks;
+            try { foreach (var o in Directory.GetDirectories(Path.GetDirectoryName(tmp) ?? ".", Path.GetFileName(tmp) + ".old*")) try { Directory.Delete(o, true); } catch { } } catch { }
+            void Retry(Action act)
+            {
+                for (int k = 0; ; k++)
+                {
+                    try { act(); return; }
+                    catch { if (k >= 4) throw; System.Threading.Thread.Sleep(250); }
+                }
+            }
+            try { if (Directory.Exists(dst)) Retry(() => Directory.Move(dst, old)); }
+            catch { try { Directory.Delete(tmp, true); } catch { } throw; }
+            try { Retry(() => Directory.Move(tmp, dst)); }
+            catch
+            {
+                // (the old copy back where it was)
+                try { if (!Directory.Exists(dst) && Directory.Exists(old)) Directory.Move(old, dst); } catch { }
+                try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
+                throw;
+            }
+            try { if (Directory.Exists(old)) Directory.Delete(old, true); } catch { }
         }
 
         internal static void CopyDir(string src, string dst)

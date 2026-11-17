@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -47,7 +47,11 @@ namespace MPFever
             ["urbangames_no_costs_1"] = () => new Verdict { Level = "fixed", Note = T("Constructions gratuites : MPFever ne corrige plus leur prix entre les jeux (0.6.7).", "Free building: MPFever no longer evens out its price between the games (0.6.7).") },
             // (0.7.7) the signals a mod's script adds (a script's edge objects) were refused on every game from 0.7.1 to 0.7.6: rebuilt now
             // (C.scriptEdgeObjects); the same for the other mods that put up signals or stops by script
-            ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux ajoutés sont construits sur chaque jeu (0.7.8 ; refusés partout de la 0.7.1 à la 0.7.6).", "Its added signals are built on every game (0.7.8; refused everywhere from 0.7.1 to 0.7.6).") },
+            ["auto_signals_1"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux ajoutés sont construits sur chaque jeu (0.7.8) ; un signal gardé par une nouvelle voie ne fait plus planter les autres jeux (0.8.17, #399).", "Its added signals are built on every game (0.7.8); a signal kept by a new track piece no longer crashes the other games (0.8.17, #399).") },
+            // (0.8.17, #400) its light rail stations built with a tram street: the tool's proposal with the engine's conversion
+            ["mrnickert_ultimate_metro"] = () => new Verdict { Level = "fixed", Note = T("Ses gares posées avec une rue de tram sont rejouées comme les gares du jeu (0.8.17, #400).", "Its stations built with a tram street are replayed as the game's own stations (0.8.17, #400).") },
+            // (0.8.17, #394) Town Transit Planner: its street pieces of a pause one after the other
+            ["miib_city_bus_lines"] = () => new Verdict { Level = "fixed", Note = T("En pause, ses tronçons remplacés l'un après l'autre sont tous construits (0.8.17, #394).", "In a pause, its street pieces replaced one after the other are all built (0.8.17, #394).") },
             ["advanced_station_builder"] = () => new Verdict { Level = "fixed", Note = T("Ses gares sont envoyées à chaque jeu (0.7.2), ses signaux construits sur chaque jeu (0.7.8).", "Its stations are sent to every game (0.7.2), its signals built on every game (0.7.8).") },
             // (0.7.7) #133: each of these stations, placed once, was refused on the two other games and rebuilt there otherwise (two
             // reloads). Their construction scripts draw nothing at random (read 2026-11-08): the station and the streets the tool
@@ -708,6 +712,29 @@ namespace MPFever
 
         static readonly string[] InertExt = { ".tga", ".dds", ".png", ".jpg", ".jpeg", ".ttf", ".otf", ".md", ".txt", ".json" };
         static readonly Regex ResourceDir = new Regex(@"(^|/)(construction|constructions|model|models|vehicle|vehicles|multiple_unit|street|streets|track|tracks|bridge|bridges|tunnel|tunnels|config|names|terrain|environment|industry|industries|town|towns|landuse|game_script|scripts|shaders|textures|sound|sounds|animation|ground_texture|autogroundtex|asset|assets)/", RegexOptions.IgnoreCase);
+        // (0.8.17) the game's other content folders (base/content of build 40425), see Personal
+        static readonly Regex WorldDir = new Regex(@"(^|/)(infrastructure|depots|depot|stations|station|buildings|building|cargos|cargo|landmarks|landmark|rendering|warehouses|warehouse|economy|climates|climate|characters|animal|animals|placeholders|game_mechanics|mission|missions|materials|material|vegetation|trees|edge_addons|signals|signal|airports|harbours|harbors|ports)/", RegexOptions.IgnoreCase);
+        /// <summary>(0.8.17) A Lua file named as a resource of the world: "&lt;name&gt;.&lt;kind&gt;.lua" whose kind is not an interface's
+        /// (plain Lua, .res.lua, .css.lua, .gres.lua, .lang.lua, and .script.lua: a script, judged by what it does as before, the
+        /// interface scripts of zhenya's mods are .script.lua in gui/). Fails closed: any other kind counts.</summary>
+        public static bool WorldLua(string fileName)
+        {
+            var n = (fileName ?? "").ToLowerInvariant();
+            if (!n.EndsWith(".lua")) return false;
+            var stem = n.Substring(0, n.Length - 4);
+            int dot = stem.LastIndexOf('.');
+            if (dot < 0) return false;
+            var kind = stem.Substring(dot + 1);
+            // ((0.8.17, the review) the world's kinds by name, the base game's (base/content of build 40425): a library named
+            // "dkjson.min.lua" or "ui.helpers.lua" stays an interface's file)
+            return WorldKinds.Contains(kind);
+        }
+        static readonly HashSet<string> WorldKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "con", "module", "mat", "gtex", "prog", "snd", "street_template", "track_template", "street", "track", "bridge", "tunnel",
+            "edge", "cargo", "cargoclass", "trf", "gen", "tree", "env", "clima", "eco", "node", "builder_audio", "prop", "tec", "cmf",
+            "rcr", "trl", "names", "terrain", "town", "industry", "vehicle", "model", "metacon", "multiple_unit", "animal", "climate",
+        };
         static readonly Regex Unsafe = new Regex(@"\bapi\s*\.\s*cmd\b|\bsendCommand\b|\bmake[A-Z]\w*Cmd\b|\bgame\s*\.\s*(interface|config)\b|\baddModifier\b|\b(addAsTable|setAsTable|removeAsTable|setVisible)\b|Rep\s*[.:]\s*(add|set|remove)\b|\b(loadstring|dofile|loadfile|setfenv|rawset)\b|\bload\s*\(|_ENV|_G\s*\[|\bdebug\s*\.|\bapp\s*\.\s*(loadGame|stopGame|quit|saveGame)|\b(updateScript|handleEventScript|guiUpdate|guiHandleEvent)\b");
 
         /// <summary>Whether a mod only changes its player's interface: "" when it does, else the first reason it may not (fails
@@ -750,6 +777,20 @@ namespace MPFever
                     }
                     else inner = rel.Substring(8);
                     if (ResourceDir.IsMatch("/" + inner)) return "game resources (" + inner + ")";
+                    // (0.8.17, #402 #403: BeunHaas34's "Narrow One-Way Tram Track", griese_narrow_single_tram: one street template,
+                    // content/infrastructure/griese_single_tram/narrow.street_template.lua, and its images. "infrastructure" was not
+                    // among the folders of game resources and a street template is plain Lua: taken for an interface mod, the host's
+                    // game had it and P0WeRZz's left it out; every street of it was refused there and the games were reloaded.) The
+                    // game's own content folders count too (WorldDir), and so does any Lua file named as a resource of the world
+                    // ("<name>.<kind>.lua": street_template, con, module, mat, ...): only plain Lua, .res.lua (checked below), styles
+                    // (.css.lua), interface resources (.gres.lua) and strings (.lang.lua) may be an interface's.
+                    // MPFEVER_PERSONALWORLD=0: as before
+                    if (Environment.GetEnvironmentVariable("MPFEVER_PERSONALWORLD") != "0")
+                    {
+                        // ((0.8.17, the review) not for an image or a text: an interface's icons may sit in "icons/stations/")
+                        if (!InertExt.Contains(ext) && WorldDir.IsMatch("/" + inner)) return "game resources (" + inner + ")";
+                        if (ext == ".lua" && WorldLua(name)) return "a resource of the game's world (" + inner + ")";
+                    }
                     if (ext == ".lua")
                     {
                         if (name.EndsWith(".gs.lua")) return "a game script (" + inner + ")";

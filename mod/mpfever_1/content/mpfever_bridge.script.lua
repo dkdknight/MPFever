@@ -156,6 +156,34 @@ local function flatten(v, path, out, d)
 	end
 end
 
+-- (0.8.17, #393) every segment's TICK_EPOCH (time/commandIndex/subIndex) by the places of its ends, see SDUMP.keepDrift
+function SDUMP.epochs(slot, n)
+	local CT = api.type.ComponentType
+	local ct = CT.TICK_EPOCH
+	if not ct then return end
+	local lines = {}
+	local function pos(node)
+		local okN, bn = pcall(api.engine.getComponent, node, CT.BASE_NODE)
+		local p = okN and bn and bn.position
+		return p and string.format("%.1f,%.1f,%.1f", p.x, p.y, p.z) or "?"
+	end
+	for _, e in ipairs(R.allEdges()) do
+		local okE, be = pcall(api.engine.getComponent, e, CT.BASE_EDGE)
+		local okT, t = pcall(api.engine.getComponent, e, ct)
+		if okE and be then
+			local a, b = pos(be.node0), pos(be.node1)
+			if b < a then a, b = b, a end
+			lines[#lines + 1] = a .. " " .. b .. " " .. tostring(be.type) .. " = " .. ((okT and t) and (tostring(t.time) .. "/" .. tostring(t.commandIndex) .. "/" .. tostring(t.subIndex)) or "-")
+		end
+	end
+	table.sort(lines)
+	local f = C.IO.open(C.DIR .. BS .. "sdump_epochs_" .. tostring(slot) .. ".txt", "wb")
+	if f then
+		f:write("t = " .. tostring(gameTime()) .. " check " .. tostring(n) .. " segments " .. #lines, NL, table.concat(lines, NL), NL)
+		f:close()
+	end
+end
+
 -- (0.8.2) the dump of a drift kept apart, in three slots by turn (sdump_drift_<0..2>.txt, the check's number on its first line),
 -- and the native module's rings asked for
 SDUMP.keptN = SDUMP.keptN or 0
@@ -180,6 +208,10 @@ function SDUMP.keepDrift(n, dump)
 	end
 	local w = C.IO.open(C.DIR .. BS .. "native_drift.txt", "wb")
 	if w then w:write(tostring(n), NL); w:close() end
+	-- (0.8.17, #393: beule and Erik, "ages" apart from the first check after a load: the 9308 segments' TICK_EPOCH sets differed, the
+	-- same count, and no dump said which.) Each segment's stamp, by the places of its two ends (ids may differ between games), sorted,
+	-- in sdump_epochs_<slot>.txt: the two games' files compared line by line name the segments. MPFEVER_EPOCHDUMP=0: not written
+	if os.getenv("MPFEVER_EPOCHDUMP") ~= "0" then pcall(SDUMP.epochs, slot, n) end
 	log("drift diagnostic: check " .. tostring(n) .. " kept (sdump_drift_" .. tostring(slot) .. ".txt, the native module's rings asked for)")
 end
 
@@ -633,6 +665,9 @@ function REFUND.book(st, now)
 			end
 		elseif (rc.n or 0) == 0 then
 			log("refund: build " .. tostring(rc.uid) .. " (cost " .. tostring(rc.cost) .. " for its builder) was not applied here: nothing booked")
+		elseif rc.cost == nil then
+			-- (0.8.17, #398: said, it went without a word)
+			log("refund: build " .. tostring(rc.uid) .. ": its builder's cost never came (50 steps): its replay here (" .. tostring(rc.got) .. ") not compared, nothing booked")
 		end
 	end
 	st.rcost = #keep > 0 and keep or nil
@@ -806,7 +841,12 @@ local function simHash(terrainSig, reg, n, buildIds, at)
 	if n and (rot == "1" or (rot ~= "0" and not os.getenv("MPFEVER_SAVE"))) then
 		-- (0.6.8: the segments alone, their ages with the constructions and the nodes: the heaviest check of a big world held
 		-- the simulation 0.26 s, a hitch every 30 s. MPFEVER_HASHGROUPS=0: the groups of before)
+		-- ((0.8.17, #405) seven turns: Flubi's host held the simulation 0.17 to 0.24 s at most checks, "constructions",
+		-- "nodeConfigs" and "ages" together 0.16 s of them; each one its own turn now (each part every 70 s instead of 50; the
+		-- persons' digest still meets every eighth, 7 being prime to 8). MPFEVER_HASHGROUPS7=0: the five turns of 0.7.5)
+		local seven = R.hashHalves and os.getenv("MPFEVER_HASHGROUPS7") ~= "0"
 		local groups = os.getenv("MPFEVER_HASHGROUPS") == "0" and { { "conParams" }, { "edges", "ages" }, { "constructions", "nodeConfigs" } }
+			or seven and { { "conParams" }, { "edges" }, { "constructions" }, { "nodeConfigs" }, { "conParams2" }, { "edges2", "owners" }, { "ages" } }
 			or R.hashHalves and { { "conParams" }, { "edges" }, { "constructions", "nodeConfigs", "ages" }, { "conParams2" }, { "edges2", "owners" } }
 			or { { "conParams" }, { "edges" }, { "constructions", "nodeConfigs", "ages" } }
 		-- ((0.7.13) the persons' digest takes its turn too, with the last group (with "edges2" and "owners", or the constructions
@@ -4428,13 +4468,45 @@ local function handleEvent(userParams, state, src, id, name, param)
 			-- (a shipped native build about to be replayed here, with what it cost its builder: see REFUND.book; late: a copy shipped
 			-- at the click, its builder's cost comes after, replay_cost_set)
 			st.rcost = st.rcost or {}
-			st.rcost[#st.rcost + 1] = { at = gameTime(), uid = param.uid, cost = tonumber(param.cost), co = param.co, got = 0, n = 0, kind = param.kind, late = param.late == true or nil }
+			local cost, late = tonumber(param.cost), param.late == true or nil
+			-- (0.8.17, #398: its builder's cost came before the replay, see replay_cost_set)
+			-- ((0.8.17, the review) by its uid and its copy's time: a player's uids start again after a load; and not older than 600 steps)
+			local ek = tostring(param.uid) .. "@" .. tostring(param.at)
+			local early = cost == nil and late and type(st.rcostEarly) == "table" and st.rcostEarly[ek] or nil
+			if early and gameTime() - (early.at or 0) > 600 * STEP then st.rcostEarly[ek] = nil; early = nil end
+			if early then
+				cost, late = early.cost, nil
+				st.rcostEarly[ek] = nil
+				if next(st.rcostEarly) == nil then st.rcostEarly = nil end
+				log("refund: build " .. tostring(param.uid) .. ": its builder's cost " .. tostring(cost) .. " came before its replay here, kept for it")
+			end
+			st.rcost[#st.rcost + 1] = { at = gameTime(), uid = param.uid, cost = cost, co = param.co, got = 0, n = 0, kind = param.kind, late = late }
 			-- (0.6.12: 256 kept; the oldest of a long pause's builds were dropped unbooked beyond 8)
 			while #st.rcost > (REFUND.CHECKED and 256 or 8) do table.remove(st.rcost, 1) end
 		elseif name == "replay_cost_set" then
 			-- (0.7.3: the builder's cost of a copy shipped at the click, built here before it came)
+			local found = false
 			for _, rc in ipairs(st.rcost or {}) do
-				if rc.uid == param.uid and rc.cost == nil then rc.cost = tonumber(param.cost); break end
+				if rc.uid == param.uid and rc.cost == nil then rc.cost = tonumber(param.cost); found = true; break end
+			end
+			-- (0.8.17, #398: the dedicated server, behind the others, got berni's confirmations of #3:98 and #3:104 (its builder built
+			-- them as their copies) before it replayed them: the cost had no record to go into and was lost, the replay's record came
+			-- after with none, waited 50 steps and went unbooked without a word; the server's company 3 kept 27 029 and 15 584 its
+			-- builder had paid. A cost with no record yet is now kept in the state (st.rcostEarly, not part of any check; 64 at most,
+			-- 600 steps) for the replay's record. MPFEVER_COSTEARLY=0: as before)
+			if not found and type(param.uid) == "string" and tonumber(param.cost) and os.getenv("MPFEVER_COSTEARLY") ~= "0" then
+				local now = gameTime()
+				st.rcostEarly = type(st.rcostEarly) == "table" and st.rcostEarly or {}
+				st.rcostEarly[tostring(param.uid) .. "@" .. tostring(param.at)] = { cost = tonumber(param.cost), at = now }
+				local n = 0
+				for k, e in pairs(st.rcostEarly) do
+					if now - (e.at or now) > 600 * STEP then st.rcostEarly[k] = nil else n = n + 1 end
+				end
+				if n > 64 then
+					local old, oldAt = nil, nil
+					for k, e in pairs(st.rcostEarly) do if oldAt == nil or e.at < oldAt then old, oldAt = k, e.at end end
+					if old then st.rcostEarly[old] = nil end
+				end
 			end
 		elseif name == "replay_stats" then
 			-- (a shipped native build about to be replayed here, with its builder's town statistics: see SIM.townStats)
@@ -4969,6 +5041,44 @@ G.ownHeldAt = function()
 	return m
 end
 
+-- (0.8.17, #397 #398 #405) A held build of this game is released at its time, or just before it when the simulation is about to
+-- stand there (G.nstopWillStand): the DLL puts it into the command list with the "nop" that follows, and the simulation takes that
+-- list at the next handshake and applies it at the start of its next batch. The release took the build out of G.natRelease, so the
+-- stop point moved on at once (to the barrier's), and when the simulation's batch came before the handshake that carried the list,
+-- it made its steps and the build landed a batch late: Andy's 111 for t=78435800 landed at 78436600, berni's 45 for 75418000 at
+-- 75418800 (2026-11-16), lulei's 138 two steps late; the copy shipped at the click no longer matched what the builder's game built
+-- ("built here ... otherwise than shipped at the click"), and every game was reloaded. The same race as the queued actions'
+-- (G.qHold, 0.6.4). Now a released build keeps the stop point at its time until this interface sees a handshake after the release
+-- (the copy's tickCount moves: the list went with it), at most 60 frames (no counter readable: 30 frames); not for a build released
+-- at once (BUILDLEAD: shipped with the time it really lands at), nor once the game is past its time. MPFEVER_RELHOLD=0: as before.
+G.relHoldOn = function() return os.getenv("MPFEVER_RELHOLD") ~= "0" end
+G.relHold = function(now)
+	if not G.natShipIds or #G.natShipIds == 0 or not G.relHoldOn() then return nil end
+	local tick = G.simTick and G.simTick() or nil
+	local m = nil
+	for _, e in ipairs(G.natShipIds) do
+		if not e.lead and not e.relFree and type(e.at) == "number" then
+			local age = G.frames - (e.frame or G.frames)
+			local moved = tick ~= nil and e.relTick ~= nil and tick ~= e.relTick
+			if moved or now > e.at or age > 60 or (tick == nil and age > 30) then
+				e.relFree = true
+				if age > 60 and not moved and now <= e.at then log("native build " .. tostring(e.id) .. ": no handshake seen 60 frames after its release, the stop point at t=" .. tostring(e.at) .. " given up") end
+				-- (a measure: how long the stop point stayed, the first 20 builds)
+				G.relFreedN = (G.relFreedN or 0) + 1
+				if G.relFreedN <= 20 and e.relTold then log("native build " .. tostring(e.id) .. ": the stop point let go " .. age .. " frame(s) after the release (" .. (moved and "the command taken" or "past its time") .. ")") end
+			else
+				if not e.relTold then
+					e.relTold = true
+					G.relHeldN = (G.relHeldN or 0) + 1
+					if G.relHeldN <= 20 then log("native build " .. tostring(e.id) .. " released for t=" .. tostring(e.at) .. " (now " .. tostring(now) .. "): the stop point stays there until the simulation has its command [frame " .. G.frames .. "]") end
+				end
+				if m == nil or e.at < m then m = e.at end
+			end
+		end
+	end
+	return m
+end
+
 -- the speed this game may run at: session speed, never past the slowest other player (barrier), stop points
 G.pstat = { frames = 0, barrier = 0, hold = 0 }
 local function pacing()
@@ -4998,6 +5108,10 @@ local function pacing()
 			if now >= q and G.qHoldLogged ~= q then G.qHoldLogged = q; log("queued action held at t=" .. q .. " until the simulation has it (now " .. now .. ") [frame " .. G.frames .. "]") end
 		end
 	end
+	-- (0.8.17, #397 #398 #405) this game's own held build, released for its time, keeps the stop point there until the
+	-- simulation has taken the command list it went into (see G.relHold)
+	local rh = G.relHold and G.relHold(now) or nil
+	if rh and (stopAt == nil or rh < stopAt) then stopAt = rh end
 	local barrier, exactBarrier = nil, nil
 	local mine = leadLevel()
 	for pname, pc in pairs(G.peers) do
@@ -5304,6 +5418,36 @@ G.replaceNewFile = function(old, newFile)
 	return newFile
 end
 
+-- (0.8.17, #398: Andy's 16 builds at 20:07-20:08, 12 track pieces each with their signals, sent by the interface's Lua (no tool
+-- the native module holds: no "held build" on his game), shipped as ordinary actions: every game rebuilt them by the script forms,
+-- which refuse a build that cuts segments carrying stops or signals ("native form only", the stops stranded would crash the game),
+-- so the build was lost everywhere, Andy's game too, with no word, and he made it again 16 times.) Such a build, a native proposal
+-- (its removed segments with their components) that cuts a segment with stops or signals, is replayed as a tool's build on every
+-- game, its sender's too, as the edits of constructions from a window are (G.uiEdit). MPFEVER_UIOBJBUILD=0: as before
+G.uiObjBuild = function(p)
+	if p.native or p.fn ~= "makeWorldBuildProposalCmd" or os.getenv("MPFEVER_UIOBJBUILD") == "0" then return false end
+	local m = type(p.args) == "table" and p.args[1]
+	local st = type(m) == "table" and m.proposal
+	if type(st) ~= "table" or type(st.removedSegments) ~= "table" then return false end
+	local gone = {}
+	for _, o in ipairs(st.edgeObjectsToRemove or {}) do
+		local id = type(o) == "table" and o.id or o
+		if id ~= nil then gone[id] = true end
+	end
+	for _, rm in ipairs(st.removedSegments) do
+		local objs = type(rm) == "table" and type(rm.comp) == "table" and rm.comp.objects
+		for _, o in ipairs(type(objs) == "table" and objs or {}) do
+			local e = type(o) == "table" and o[1]
+			-- (an object by reference once shipped, by its id on the sending game)
+			local id = type(e) == "table" and e.id or e
+			if (type(e) == "table" and e.__ref) or (type(e) == "number" and e >= 0) then
+				if not gone[id] then return true end
+			end
+		end
+	end
+	return false
+end
+
 -- The edit of an existing construction sent by a window of the interface (not by a tool, whose builds the native module holds):
 -- the Drive-in Warehouses mod's goods for a warehouse. Its proposal (the engine's replacement of the construction) could not be
 -- rebuilt from its pieces on any game ("Unknown exception": refused everywhere, a session of the friends). Such an edit is
@@ -5322,12 +5466,40 @@ end
 -- (0.8.3) A player's first load in a session (G.staleLid, the resynchronisation's number, see the load) also leaves out a build
 -- stamped at the savegame's very time when its builder made it before that resynchronisation's load (its a.lt is older) and not in
 -- the pause after it: the host built it, then saved (Knight-HD#2:65, 2026-11-11). And the hold of a build left out goes with it.
+-- (0.8.17, #407: Til, the host, put a signal as resynchronisation 2's pause began (Til:15, a build of that pause, stamped at its time
+-- t=86439200); his game applied it, then saved. Eric, joining, read it and built it a second time: a build of a pause was always
+-- kept, as the joins of the pause after the load are. The signal's new segment took the id the host's game had given an animal,
+-- the ids stayed apart and the vehicles drifted (resynchronisation 3). Whatever its builder's game made before that load (its lt is
+-- older) is in the savegame, or left out by every game alike (a game loaded reads from the load's order on): a build of the pause
+-- before the load is left out too, its turn with it; not a join. MPFEVER_STALEPAUSED=0: kept as before)
 G.staleDrop = function(kind, p, before)
+	-- (0.8.17, #395: mandy, kicked and invited again, loaded resynchronisation 3's save; her game read the paused checkpoint n=1 of
+	-- her connection before (t=12208000), took it after the load ("paused action nil ... applied at 12223400 (desync risk)"), and
+	-- the host's values of that checkpoint then set her money to that older moment's; the next checkpoint put it back.) A
+	-- checkpoint stamped before the savegame's time is left out too, and the host's values of it are never applied here (see
+	-- G.staleAuth). MPFEVER_STALEHASH=0: kept, as before
+	if kind == "hash" and type(p) == "table" and os.getenv("MPFEVER_STALEHASH") ~= "0" then
+		local hat = tonumber(p.at)
+		if hat and hat < before and type(p.n) == "number" then
+			G.staleHashN = G.staleHashN or {}
+			G.staleHashN[p.n] = true
+			log("after the load: checkpoint " .. p.n .. " for t=" .. hat .. " left out, the savegame loaded (t=" .. before .. ") is past it")
+			return true
+		end
+		return false
+	end
 	if (kind ~= "act" and kind ~= "nat_pending") or type(p) ~= "table" then return false end
 	local at = tonumber(p.at)
 	if not at then return false end
-	local same = at == before and type(G.staleLid) == "number" and not p.paused and type(p.lt) == "number" and p.lt < G.staleLid
+	local pausedOk = not p.paused or (p.fn ~= "mpfCoJoin" and os.getenv("MPFEVER_STALEPAUSED") ~= "0")
+	local same = at == before and type(G.staleLid) == "number" and pausedOk and type(p.lt) == "number" and p.lt < G.staleLid
 	if at >= before and not same then return false end
+	-- (its turn of the pause is not waited for here)
+	if p.paused and type(G.pt) == "table" and type(G.pt.skip) == "table" then
+		local seq = p.pseq
+		if seq == nil and type(G.pt.of) == "table" and G.ptKey then seq = G.pt.of[G.ptKey(p.origin, p.natId or p.id)] end
+		if type(seq) == "number" and seq > (G.pt.done or 0) then G.pt.skip[seq] = true end
+	end
 	G.staleDropped = (G.staleDropped or 0) + 1
 	log("after the load: " .. kind .. " " .. tostring(p.uid or p.id) .. " of " .. tostring(p.origin) .. " for t=" .. at
 		.. " left out, the savegame loaded (t=" .. before .. ") has it already")
@@ -5342,6 +5514,13 @@ G.staleDrop = function(kind, p, before)
 	return true
 end
 
+-- (0.8.17, #395) the host's values of a checkpoint left out after a load: never applied here
+G.staleAuth = function(p)
+	if type(p) ~= "table" or type(p.n) ~= "number" or not G.staleHashN or not G.staleHashN[p.n] then return false end
+	log("host authority: checkpoint " .. p.n .. " was left out after the load: its values not applied")
+	G.staleHashN[p.n] = nil
+	return true
+end
 H.act = function(from, p)
 	-- (0.7.3: the capture of a build shipped at the click, see G.prePost: dropped when its copy was built here)
 	if p.post and G.prePost then
@@ -5358,6 +5537,15 @@ H.act = function(from, p)
 		log("action " .. tostring(p.uid) .. ": the edit of a construction from a window, replayed by the engine's replacement on every game")
 		-- (in a pause: its turn among the paused builds and actions, see G.actTurn)
 		if p.paused and G.actTurns then G.ptIssue(p.origin, G.actTurnId(p)) end
+	elseif G.uiObjBuild and G.uiObjBuild(p) then
+		-- (0.8.17, #398, see G.uiObjBuild)
+		p.native, p.uiEdit = true, true
+		log("action " .. tostring(p.uid) .. ": a build of the interface that cuts segments with stops or signals, replayed as a tool's build on every game")
+		if p.paused and G.actTurns then G.ptIssue(p.origin, G.actTurnId(p)) end
+	elseif p.native and p.uiEdit and p.paused and G.actTurns and p.origin ~= G.me and not G.pt.of[G.ptKey(p.origin, G.actTurnId(p))] and os.getenv("MPFEVER_UIEDITTURN") ~= "0" then
+		-- ((0.8.17, the review of the night) its sender marked it already (a window's edit, a build of the interface, see the
+		-- act_req): the host gives its turn here too, as for any action of a pause; G.ptIssue does nothing on the other games)
+		G.ptIssue(p.origin, G.actTurnId(p))
 	end
 	if p.native then
 		G.nativeQueue[#G.nativeQueue + 1] = p
@@ -5390,6 +5578,20 @@ local function buildEffects(res, success)
 		G.dustFailed = true
 		log("build effects: no dust for replayed builds (" .. tostring(err):sub(1, 160) .. ")")
 	end
+end
+
+-- (0.8.17, #397 #398: "SEGMENT COUNT DIFFERS" for berni1212#3:4 "1/0", #3:5 "0/6", #3:6 "0/-6", Andy#1:69 "3/0", none followed
+-- by a drift) The segments of the map are counted a few frames after a replay, and another build applied meanwhile was counted
+-- with it. A count is compared only when no other build went to the engine since this replay's last command (G.worldFrame);
+-- else it is said as not compared. MPFEVER_COUNTGUARD=0: compared always, as before
+G.countSince = function(since)
+	if os.getenv("MPFEVER_COUNTGUARD") == "0" then return true end
+	return (G.worldFrame or 0) <= (since or 0)
+end
+G.countLine = function(uid, got, expected, since)
+	if got == expected then return "" end
+	if not G.countSince(since) then return " (another build went to the engine since: not compared)" end
+	return " SEGMENT COUNT DIFFERS"
 end
 
 local function replaySend(cmd, cb, noGate)
@@ -6598,7 +6800,9 @@ local function replayFailed(a, why)
 		log("PRESHIP " .. tostring(a.uid) .. ": refused here (" .. tostring(why):sub(1, 100) .. "): waiting for what its builder's engine did")
 		return
 	end
-	pcall(send, "replay_failed", { uid = tostring(a.uid), why = tostring(why):sub(1, 120) })
+	-- (0.8.17, #400: with the action's time, the launcher waits for every game's clock to pass it, see FailWaitDone)
+	local okA, at = pcall(function() return tonumber(a.at) end)
+	pcall(send, "replay_failed", { uid = tostring(a.uid), why = tostring(why):sub(1, 120), at = okA and at or nil })
 	-- (0.6.7, issue #113) a player's game that could not reproduce a build differs from the host's for sure: the next builds of
 	-- the others are left out until the host's game reloads it (see G.brokenSkip)
 	if C.ROLE ~= "host" and os.getenv("MPFEVER_FAILHOLD") ~= "0" and G.replayBroken == nil then
@@ -6645,18 +6849,43 @@ end
 -- script forms and then in two steps, and the engine asserted and the game crashed (issues #65 and #67)
 -- The road junctions of the street tool (roundabout, T, trumpet, cloverleaf, diamond... in street_construction/) too: their
 -- streets were rebuilt by the script forms and refused by the engine ("Construction impossible"), a desync each (issue #72)
+-- (0.8.17, #400: yoyo's light rail station of the mod Ultimate Light Rail, "mrnickert_ultimate_metro::/light_rail_station.con",
+-- built with a new tram street to it: no "/stations/" in its file, so the script forms rebuilt it, the engine refused every one
+-- ("Construction Not Possible", nothing in the way), the two-step replay built the street and refused the station, and the host's
+-- game was reloaded (resynchronisation 5 and both desyncs of the session). A player's construction of a mod (its file names its
+-- mod: "<id>::/...") and any construction whose file says it is a station are taken the same way: the tool's own proposal with the
+-- engine's conversion. MPFEVER_CONMOD=0: by the base game's folders only, as before)
+G.conModOn = os.getenv("MPFEVER_CONMOD") ~= "0"
 local function isTransportConstruction(ce)
 	local f = tostring(type(ce) == "table" and ce.fileName or "")
-	return f:find("/stations/", 1, true) ~= nil or f:find("depot", 1, true) ~= nil or f:find("airport", 1, true) ~= nil
+	if f:find("/stations/", 1, true) ~= nil or f:find("depot", 1, true) ~= nil or f:find("airport", 1, true) ~= nil
 		or f:find("airfield", 1, true) ~= nil or f:find("harbor", 1, true) ~= nil
-		or (f:find("/street_construction/", 1, true) ~= nil and os.getenv("MPFEVER_JUNCTIONCON") ~= "0")
+		or (f:find("/street_construction/", 1, true) ~= nil and os.getenv("MPFEVER_JUNCTIONCON") ~= "0") then return true end
+	if not G.conModOn then return false end
+	-- (a new construction only, not the edit of one standing: see hasConstructionSegments)
+	if G.conNewOnly == false then return false end
+	-- (a player's, not a town's: a town building's playerEntity is -1)
+	local pe = ce.playerEntity
+	local player = type(pe) == "table" or (type(pe) == "number" and pe >= 0)
+	if not player then return false end
+	local fl = f:lower()
+	return fl:find("station", 1, true) ~= nil or fl:match("^[%w_%-]+::/") ~= nil
 end
 
 local function hasConstructionSegments(m)
 	if type(m) ~= "table" or #(m.toAdd or {}) == 0 or type(m.proposal) ~= "table" then return false end
 	for _, sg in ipairs(m.proposal.addedSegments or {}) do if isConstructionSegment(sg) then return true end end
 	if #(m.proposal.addedSegments or {}) > 0 and os.getenv("MPFEVER_CONBYFILE") ~= "0" then
-		for _, ce in ipairs(m.toAdd) do if isTransportConstruction(ce) then return true end end
+		-- ((0.8.17) a mod's construction by its file only when it is new: the edit of an existing one keeps its way of before,
+		-- the general forms first, see isTransportConstruction)
+		-- ((0.8.17, the review) new also when what it takes away is town buildings only, as a station put in a town does)
+		G.conNewOnly = true
+		for _, r in ipairs(m.toRemove or {}) do
+			local f = type(r) == "table" and tostring(r.f or "") or ""
+			if not f:find("/buildings/", 1, true) then G.conNewOnly = false; break end
+		end
+		for _, ce in ipairs(m.toAdd) do if isTransportConstruction(ce) then G.conNewOnly = nil; return true end end
+		G.conNewOnly = nil
 	end
 	return false
 end
@@ -7143,13 +7372,18 @@ local function replayNativeConstruction(a)
 				local expected = #(m.proposal.addedSegments or {}) - #(m.proposal.removedSegments or {})
 				-- (an airport's signs are edge objects of the tool's build: are they here too?)
 				local objExpected = #(m.proposal.edgeObjectsToAdd or {}) - #(m.proposal.edgeObjectsToRemove or {})
+				local since = G.frames
 				G.waits[#G.waits + 1] = { at = G.frames + 10 + 30 * #(a.stopsAfter or {}) + 30, fn = function()
 					local got = #R.allEdges() - edgesBefore
 					local objs = 0
 					pcall(function() for _ in pairs(api.engine.system.streetSystem.getEdgeObject2EdgeMap()) do objs = objs + 1 end end)
-					log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. (got == expected and "" or " SEGMENT COUNT DIFFERS")
+					-- (0.8.17: the stops it placed again after it went to the engine too: counted with it, as before)
+					local alone = G.countSince(since + 10 + 30 * #(a.stopsAfter or {}))
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. G.countLine(a.uid, got, expected, since + 10 + 30 * #(a.stopsAfter or {}))
 						.. (objExpected ~= 0 and (", edge objects here " .. (objs - objsBefore) .. ", originator " .. objExpected
-							.. (objs - objsBefore == objExpected and "" or " EDGE OBJECT COUNT DIFFERS")) or ""))
+							.. (objs - objsBefore == objExpected and "" or (alone and " EDGE OBJECT COUNT DIFFERS" or " (not compared: another build since)"))) or ""))
+					-- ((0.8.17, the review) the reload asked as before even when another build went meanwhile: it also guards the host
+					-- against the crash of #305/#364 (G.hostBroken); only the log line says the count was not alone)
 					if withObjects and objs - objsBefore ~= objExpected then replayFailed(a, "construction edge objects differ") end
 				end }
 			end)
@@ -7476,9 +7710,11 @@ local function replayNativeStreet(a)
 		-- the stops and signals the tool re-created on the new segments (issue #28)
 		G.placeStopsAfter(a)
 		local expected = #(m.proposal.addedSegments or {}) - #(m.proposal.removedSegments or {})
+		-- ((0.8.17, the review) its stops placed again in the frames after it go to the engine too: counted with it)
+		local since = G.frames + 10 + 30 * #(a.stopsAfter or {})
 		G.waits[#G.waits + 1] = { at = G.frames + 10, fn = function()
 			local got = #R.allEdges() - edgesBefore
-			log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. (got == expected and "" or " SEGMENT COUNT DIFFERS"))
+			log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. G.countLine(a.uid, got, expected, since))
 		end }
 	end)
 end
@@ -7829,12 +8065,20 @@ G.replayNativeStop = function(a, plan)
 	local nGone = 0
 	for _ in pairs(plan.removeIdx or {}) do nGone = nGone + 1 end
 	local kind = "type " .. tostring(c.type) .. "/" .. tostring(c.typeIndex)
+	-- (0.8.17, #406: alexg's game crashed at 00:09:28 on Havoc181:1424, a stop on track segment 150586, between the dry run's answer
+	-- and the build: build() read c.roadTemplate in the dry run's callback, frames after getComponent gave c, a view into the
+	-- engine's storage of segments; meanwhile an industry of the game had added its streets, the storage moved, and the read went
+	-- into freed memory (access violation at TransportFever3.exe+0x2ffd19b, the getter of a component's field). What build() needs
+	-- of the segment is read now. MPFEVER_STOPSNAP=0: read in the callback, as before)
+	local cRoad, cObjN = c.roadTemplate, #c.objects
+	local snap = os.getenv("MPFEVER_STOPSNAP") ~= "0"
+	if snap then c = nil end
 	local function build(eo, keep)
 		local ctx = sContext(a)
 		local pi = not G.stopNoTown(a)
 		if not pi then log("NATIVE REPLAY " .. uid .. " native stop: the builder's build left the towns alike: replayed as a script's build (the towns ignore it)") end
 		-- (priced like the tool's build, as replayStop: the replaced segment free)
-		local free = G.toolCosts(a, plan) and (sc.roadTemplate == nil or sc.roadTemplate == c.roadTemplate)
+		local free = G.toolCosts(a, plan) and (sc.roadTemplate == nil or sc.roadTemplate == (snap and cRoad or c.roadTemplate))
 		local ign = G.toolIgnoresErrors(a)
 		local okk, cmd, label = false, nil, nil
 		for _, variant in ipairs({ {}, { noConfigs = true }, { noConfigs = true, noMaps = true } }) do
@@ -7889,7 +8133,7 @@ G.replayNativeStop = function(a, plan)
 	end
 	-- the engine's own edge objects first (a dry run it refuses, nothing built); the old segment removed in it only when it carries
 	-- nothing yet (the shape of test 111)
-	local okd, dry, n = pcall(G.eoDryRun, m, { removeE = (#c.objects == 0) and { plan.E } or nil })
+	local okd, dry, n = pcall(G.eoDryRun, m, { removeE = ((snap and cObjN or #c.objects) == 0) and { plan.E } or nil })
 	if not okd or not dry then return asBefore("dry run not made (" .. shortErr(dry) .. ")") end
 	log("NATIVE REPLAY " .. uid .. " native stop: " .. n .. " new object(s) on segment " .. plan.E .. " (" .. kind .. "): their conversion by the engine (dry run)")
 	toSim("replaying", { tok = a.tsTok })
@@ -8138,9 +8382,10 @@ function replayTwoStep(a)
 					log("NATIVE REPLAY " .. tostring(a.uid) .. " engine applied: +nodes " .. #st.addedNodes .. " -nodes " .. #st.removedNodes .. " +segments " .. #st.addedSegments .. " -segments " .. #st.removedSegments .. " +constructions " .. #res.proposal.toAdd)
 				end)
 				local expected = #(m0.proposal.addedSegments or {}) - #(m0.proposal.removedSegments or {})
+				local since = G.frames
 				G.waits[#G.waits + 1] = { at = G.frames + 10, fn = function()
 					local got = #R.allEdges() - edgesBefore
-					log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. (got == expected and "" or " SEGMENT COUNT DIFFERS"))
+					log("NATIVE REPLAY " .. tostring(a.uid) .. " edges here " .. got .. ", originator " .. expected .. G.countLine(a.uid, got, expected, since))
 				end }
 				return
 			end
@@ -8548,10 +8793,12 @@ local function replayNative(a, formIndex)
 					log("NATIVE REPLAY " .. tostring(a.uid) .. " originator detail: " .. table.concat(o, "; "))
 				end
 			end)
+			-- ((0.8.17, the review) its stops placed again just below go to the engine in the frames after: counted with it)
+			local since = G.frames + 10 + 30 * #(a.stopsAfter or {})
 			G.waits[#G.waits + 1] = { at = G.frames + 5, fn = function()
 				local got = #R.allEdges() - edgesBefore
 				if expected and got ~= expected then
-					log("NATIVE REPLAY " .. tostring(a.uid) .. " SEGMENT COUNT DIFFERS: originator " .. expected .. ", here " .. got)
+					log("NATIVE REPLAY " .. tostring(a.uid) .. (G.countSince(since) and " SEGMENT COUNT DIFFERS" or " segment count not compared (another build went to the engine since)") .. ": originator " .. expected .. ", here " .. got)
 				end
 			end }
 			-- the stops the tool placed again on the new segments (see the stop branch above)
@@ -8683,15 +8930,27 @@ end
 -- <step at the start of the latest batch> <steps it made> <stop point>"): standing at the stop point is the latest batch at that
 -- step, making none, for the stop point written last. Used once the module has answered (G.nstop.ok).
 G.nstop = { on = os.getenv("MPFEVER_STOPPOINT") ~= "0", L = false, seq = (os.time() % 100000) * 1000, ok = false, readFrame = -1 }
+G.nstopKeptOn = os.getenv("MPFEVER_NSTOPKEPT") ~= "0"
 G.nstopRead = function()
 	local N = G.nstop
 	if N.readFrame == G.frames then return N.st end
 	N.readFrame = G.frames
 	N.st = nil
-	local f = C.IO.open(C.DIR .. BS .. "native_stop_state.txt", "rb")
-	if not f then return nil end
-	local line = f:read("*l")
-	f:close()
+	-- ((0.8.17, speed) through a handle kept open (C.keptOpen), read again from its start: the native module rewrites this file
+	-- in place at every batch (one handle, never deleted), and an open after its write waited for the antivirus at every frame,
+	-- 0.42 to 0.64 ms a frame on average (MPFEVER_GUIPROF "stand", 2026-11-17). MPFEVER_NSTOPKEPT=0: opened at each frame, as before)
+	local line
+	if G.nstopKeptOn then
+		local f = C.keptOpen(C.DIR .. BS .. "native_stop_state.txt")
+		if not f then return nil end
+		local okR, l = pcall(function() f:seek("set", 0); return f:read("*l") end)
+		line = okR and l or nil
+	else
+		local f = C.IO.open(C.DIR .. BS .. "native_stop_state.txt", "rb")
+		if not f then return nil end
+		line = f:read("*l")
+		f:close()
+	end
 	local seq, S, n, L = tostring(line or ""):match("^(%-?%d+) (%d+) (%d+) (%-?%d+)")
 	if not seq then return nil end
 	N.st = { seq = tonumber(seq), S = tonumber(S), n = tonumber(n), L = tonumber(L) }
@@ -8969,6 +9228,8 @@ local function nativeHoldAt()
 	-- holds the game where it is until it is applied, from the frame after it became due (that frame is as before: the
 	-- action is sent later in it); not a paused one, which has its turns (see G.pt); not longer than 10 s each.
 	-- MPFEVER_DUEHOLD=0: as before)
+	-- (0.8.17: and a build held for the launcher's word on this game's refusal, see G.brokenWait: the game stands where it is)
+	if G.replayBroken and G.brokenHolding and G.frames - G.brokenHolding <= 2 then return now end
 	if os.getenv("MPFEVER_DUEHOLD") ~= "0" then
 		for _, a in ipairs(G.nativeQueue or {}) do
 			if a.at <= now and not a.paused and a.fn ~= "mpfCoJoin" then
@@ -9297,6 +9558,28 @@ G.ptTicket = function(origin, id, seq)
 	if not G.pt.seen then G.pt.seen = true; if G.pt.done < seq - 1 then G.pt.done = seq - 1 end end
 	G.pt.of[G.ptKey(origin, id)] = seq
 	if seq >= G.pt.next then G.pt.next = seq + 1 end
+	-- (0.8.17, see G.ptStray: its build already applied here as an ordinary one)
+	if G.ptStrayOn() and G.pt.applied and G.pt.applied[G.ptKey(origin, id)] and seq > G.pt.done then
+		G.pt.skip[seq] = true
+		log("paused build " .. G.ptKey(origin, id) .. ": turn " .. seq .. " given after the build was applied here (not in a pause): not waited for")
+	end
+end
+-- (0.8.17, #405: lulei's bulldozer, native build 138, made as a short pause began, took turn 3 from the host; released at its turn
+-- on lulei's game it landed 2 steps late, after the pause, and was shipped as an ordinary build (lulei#1:58): the host applied it
+-- as one, so turn 3 was never done there. 12 minutes later the next pause's turns 4 and 5 waited for it: the host stood 60 s, then
+-- skipped it ("never applied here in 30 s").) A build that has a turn but is applied as an ordinary build (or its turn given
+-- after) has its turn passed over, not waited for. MPFEVER_PTSTRAY=0: as before
+G.ptStrayOn = function() return os.getenv("MPFEVER_PTSTRAY") ~= "0" end
+G.ptStray = function(origin, natId)
+	if not G.ptStrayOn() or natId == nil then return end
+	local key = G.ptKey(origin, natId)
+	G.pt.applied = G.pt.applied or {}
+	G.pt.applied[key] = true
+	local s = G.pt.of[key]
+	if type(s) == "number" and s > G.pt.done and not G.pt.skip[s] then
+		G.pt.skip[s] = true
+		log("paused build " .. key .. ": its turn " .. s .. " passed over, the build applied here as an ordinary one (not in a pause)")
+	end
 end
 G.ptIssue = function(origin, id)
 	if C.ROLE ~= "host" or not G.ptOn then return end
@@ -9738,7 +10021,12 @@ G.takeToolCopy = function()
 	-- The user's upgrade of 15 segments on the server, 2026-11-07 20:32:29 (Knight-HD#2:57): the copy of 55 frames before was
 	-- shipped at the click, the last preview 41 frames before had not been read, the build came out otherwise than shipped and the
 	-- host's game was reloaded. Such a build is held and shipped the usual way. MPFEVER_PRECREATESTALE=0: taken, as before
-	if t and t.at == "create" and G.lastCreate and G.lastCreate.frame > t.frame and os.getenv("MPFEVER_PRECREATESTALE") ~= "0" then
+	-- (0.8.17, #405: Flubi's station edit, 21:02: the copy of the tool's "prepare" 110 frames before the build, a newer preview
+	-- 96 frames before: the build had 1 new street piece, the copy 2, and every game was reloaded. A "prepare" copy older than the
+	-- last preview is not the build either: 1 of the 185 prepare copies of the reports of 2026-11-16. MPFEVER_PREPARESTALE=0: a
+	-- prepare copy is always taken, as before)
+	local staleKind = t and (t.at == "create" or (t.at == "prepare" and os.getenv("MPFEVER_PREPARESTALE") ~= "0"))
+	if t and staleKind and G.lastCreate and G.lastCreate.frame > t.frame and os.getenv("MPFEVER_PRECREATESTALE") ~= "0" then
 		log("held build: the tool's copy (" .. (G.frames - t.frame) .. " frame(s) before) is older than its last preview (" .. (G.frames - G.lastCreate.frame)
 			.. " frame(s) before, not read): not taken, the build is shipped the usual way")
 		return nil
@@ -10163,7 +10451,7 @@ local function releaseOne(r, at, how)
 	G.natReleased = G.natReleased + 1
 	G.natShipIds = G.natShipIds or {}
 	G.natShipIds[#G.natShipIds + 1] = { id = r.id, at = at, frame = G.frames, combined = how ~= nil, simTick = G.simTick(), handshakes = 0, lead = r.lead,
-		pre = r.preshipped, preSig = r.preSig, preAt = r.at, preClean = r.preClean }
+		pre = r.preshipped, preSig = r.preSig, preAt = r.at, preClean = r.preClean, relTick = G.simTick(), relNow = gameTime() }
 	-- (BUILDLEAD: the simulation half is told first, see captureNativeBuild; this command enters the list before the build)
 	if r.lead then toSim("lead_out", { at = at }) end
 	if r.fn then
@@ -10416,6 +10704,29 @@ function G.brokenSkip(a)
 		return false
 	end
 	log("NATIVE REPLAY " .. tostring(a.uid) .. ": not built here, this game differs since " .. b.uid .. " (" .. b.why .. "): the host's game reloads it")
+	return true
+end
+
+-- (0.8.17, #400) While the launcher has not said whether the action this game could not apply was refused on every game (it
+-- waits for the other games' reports, up to 20 s since 0.8.17), another player's build due here is held, the game standing at
+-- its step, instead of being left out (G.brokenSkip): refused everywhere ("replay_alike"), this game did not differ and the build
+-- goes at its step; left out, it was lost on this game only, and the games parted although nobody differed before (a second
+-- sale of the same vehicles, refused by every game, made every player's game but the host's drop the next build of another
+-- player). Not longer than 25 s (then left out, as before); not a join. MPFEVER_BROKENWAIT=0: left out at once, as before
+G.brokenWaitOn = os.getenv("MPFEVER_BROKENWAIT") ~= "0"
+G.BROKEN_WAIT = 25
+G.brokenWait = function(a)
+	local b = G.replayBroken
+	if not G.brokenWaitOn or b == nil or type(a) ~= "table" or a.fn == "mpfCoJoin" then return false end
+	if os.clock() - b.at > G.BROKEN_WAIT then return false end
+	-- ((0.8.17, the review of the night) the launcher's word came as a resynchronisation: the build is left out, as before, and the
+	-- game goes on to the resynchronisation's pause instead of standing until the 25 s are over)
+	if G.session and G.session.resync then return false end
+	G.brokenHolding = G.frames
+	if not a.brokenWaitLogged then
+		a.brokenWaitLogged = true
+		log("NATIVE REPLAY " .. tostring(a.uid) .. ": waits at t=" .. tostring(a.at) .. " for the launcher's word on " .. tostring(b.uid) .. ", which this game could not apply (refused everywhere or a resynchronisation)")
+	end
 	return true
 end
 
@@ -11123,7 +11434,10 @@ local function runNativeReplays()
 		local jt = G.joinTurn(a)
 		if jt then seq = jt end
 		-- (a construction edited from a window in a pause: its turn among the paused actions, see G.actTurn)
-		local et = a.uiEdit and G.actTurn(a) or nil
+		-- ((0.8.17, the review of the night) "a.uiEdit and G.actTurn(a) or nil" turned the "wait" (false) into nil: the edit went at
+		-- once instead of in its turn. MPFEVER_UIEDITTURN=0: as before)
+		local et = nil
+		if a.uiEdit then et = G.actTurn(a); if et == false and os.getenv("MPFEVER_UIEDITTURN") == "0" then et = nil end end
 		if et then seq = et end
 		-- (a native build of the engine's own kind may go as the simulation is about to stand at its time, see G.nstopWillStand)
 		local due = a.at <= now or (a.native and not G.reallyPaused(a, seq) and a.fn ~= "terrainEdit" and a.fn ~= "mpfCoJoin" and a.fn ~= "assetBuild" and G.nstopWillStand(a.at))
@@ -11141,6 +11455,8 @@ local function runNativeReplays()
 			keep[#keep + 1] = a      -- the engine may still be making a step (see G.sendStillWait)
 		elseif due and a.pre and G.preUsable and not G.preUsable(a) then
 			-- (0.7.3, shipped at the click: changed here since its builder's click, this game waits for its capture, see G.preship)
+		elseif due and G.brokenWait(a) then
+			keep[#keep + 1] = a      -- (0.8.17) the launcher's word on this game's refusal first, see G.brokenWait
 		elseif due then
 			G.replayAt = a.at
 			-- (0.8, MPFEVER_NOWAIT: once its build is handed to the engine, the game does not wait for the answer, see G.gateHolds;
@@ -11151,6 +11467,8 @@ local function runNativeReplays()
 			if G.standLogOn then log("GATE " .. tostring(a.uid) .. ": " .. tostring(nw) .. " (on " .. tostring(G.gateOn()) .. ", native " .. tostring(a.native) .. ", paused " .. tostring(a.paused) .. ", seq " .. tostring(seq) .. ", fn " .. tostring(a.fn) .. ")") end
 			if a.at > now then log("NATIVE REPLAY " .. tostring(a.uid) .. ": sent as the simulation comes to t=" .. a.at .. " (this interface at " .. now .. ") [frame " .. G.frames .. "]") end
 			if seq then G.ptDone(seq); log("NATIVE REPLAY " .. tostring(a.uid) .. ": paused build, turn " .. seq) end
+			-- (0.8.17, #405: a build with a turn applied as an ordinary one, see G.ptStray)
+			if not seq and a.natId ~= nil and a.fn ~= "mpfCoJoin" then pcall(G.ptStray, a.origin, a.natId) end
 			-- (0.7.13, #168, a measure: its player's earlier actions still waiting for their step, see G.pullBuildLog)
 			if seq then pcall(G.pullBuildLog, a, a.origin, a.uid, seq) end
 			if a.at < now then
@@ -11159,7 +11477,7 @@ local function runNativeReplays()
 			end
 			nativeArrived(a)
 			-- (0.7.3: built here from its copy shipped at the click, see G.prePost and G.preCancelled)
-			if a.pre then G.preUsed[tostring(a.uid)] = { sig = a.preSig, t = os.clock(), origin = a.origin } end
+			if a.pre then G.preUsed[tostring(a.uid)] = { sig = a.preSig, t = os.clock(), origin = a.origin, at = a.at } end
 			-- (0.6: to the game options' modules that keep a copy of the players' builds, before the replay translates its references,
 			-- see G.featNativeAct; nothing while no option is on)
 			if G.featOn then pcall(G.featNativeAct, a) end
@@ -11179,7 +11497,7 @@ local function runNativeReplays()
 			else
 				if type(a.cost) == "number" then toSim("replay_cost", { uid = a.uid, cost = a.cost, co = a.co, kind = G.costKind(a) })
 				-- (0.7.3, a copy shipped at the click: its builder's cost comes with its confirmation, see H.pre_done and REFUND.book)
-				elseif a.pre then toSim("replay_cost", { uid = a.uid, co = a.co, kind = G.costKind(a), late = true }) end
+				elseif a.pre then toSim("replay_cost", { uid = a.uid, co = a.co, kind = G.costKind(a), late = true, at = a.at }) end
 				-- (its builder's town statistics, compared with this replay's: see SIM.townStats; MPFEVER_ALIGNCHECK=0: off. The mark of
 				-- the announcement, a.tsTok, goes with every "replaying" event of this replay; none without one)
 				a.tsTok = nil
@@ -11268,6 +11586,37 @@ local function claimResync(kind, id)
 	return true
 end
 
+-- (0.8.17, #390: Kasper's host saved the session's autosave, its engine took 12 to 16 s and answered nothing meanwhile; Eier's
+-- paused line and warehouse were applied on his game at once and handed to the host's engine, which applied them after the save.
+-- The bridge's waits of 600 frames (the paused actions' answer, a native replay's answer) ran out in the middle of the save, and
+-- the host's paused check was taken before its engine had applied them: "lines" 141/140, then "townBuildings" and money apart,
+-- and the host's money correction moved Eier's money by 1 185 061 and back.) While the host's save runs (G.saveBusy, at most
+-- 60 s), those waits do not run out, they start again once it is over; and a paused check waits for a native replay still in
+-- the engine's hands. MPFEVER_SAVEBUSY=0: as before
+G.saveBusyOn = function() return os.getenv("MPFEVER_SAVEBUSY") ~= "0" end
+G.saveOver = function()
+	if not G.saveBusy then return end
+	log("resynchronisation: the save took " .. (G.frames - G.saveBusy.frame) .. " frames; the waits for the engine start again")
+	G.saveBusy = nil
+	G.saveRefresh()
+end
+-- the waits for the engine's answers start again now (during the save, and once it is over)
+G.saveRefresh = function()
+	if (G.replayOut or 0) > 0 then G.replaySince = G.frames end
+	if G.pausedCreating then G.pausedCreating.frame = G.frames end
+	if G.pausedOut then for uid in pairs(G.pausedOut) do G.pausedOut[uid] = G.frames end end
+end
+G.saveBusyNow = function()
+	local b = G.saveBusy
+	if not b then return false end
+	if os.clock() - (b.clock or 0) > 60 then
+		log("resynchronisation: no word of the save for 60 s: the waits for the engine run again")
+		G.saveBusy = nil
+		return false
+	end
+	G.saveRefresh()
+	return true
+end
 H.resync_save = function(from, p)
 	if not claimResync("resync_save", p.id) then return end
 	-- Not while another player's build is being replayed here: a session of the friends saved in the very frame a replay was
@@ -11287,11 +11636,15 @@ H.resync_save = function(from, p)
 		if busy() and G.frames - start < 600 then G.waits[#G.waits + 1] = { at = G.frames + 3, fn = save }; return end
 		if G.frames > start then log("resynchronisation: the save waited " .. (G.frames - start) .. " frames for the replays under way" .. (busy() and " (still busy: saved anyway)" or "")) end
 		log("resynchronisation: saving the game as '" .. tostring(p.name) .. "' at t=" .. tostring(gameTime()))
+		-- (0.8.17, #390, see G.saveBusyOn)
+		if G.saveBusyOn() then G.saveBusy = { frame = G.frames, clock = os.clock() } end
 		local ok, err = pcall(app.saveGame, p.name, function()
 			log("resynchronisation: game saved")
+			pcall(G.saveOver)
 			send("save_done", { id = p.id, name = p.name, ok = true, t = gameTime() })
 		end, false, true)
 		if not ok then
+			pcall(G.saveOver)
 			log("resynchronisation: save failed: " .. tostring(err))
 			send("save_done", { id = p.id, name = p.name, ok = false, err = tostring(err) })
 		end
@@ -11641,6 +11994,11 @@ local function stampHeld()
 			if edit then
 				a.native, a.uiEdit = true, true
 				log("action " .. a.uid .. ": the edit of a construction from a window, replayed by the engine's replacement on every game")
+			elseif G.uiObjBuild and G.uiObjBuild(a) then
+				-- (0.8.17, #398, see G.uiObjBuild)
+				edit = true
+				a.native, a.uiEdit = true, true
+				log("action " .. a.uid .. ": a build of the interface that cuts segments with stops or signals, replayed as a tool's build on every game")
 			end
 			send("act", a)
 			if edit then
@@ -12358,9 +12716,19 @@ G.preshipSettle = function(a, o)
 	a.preClean = e.preClean == true
 	if e.preClean then
 		G.preStats.differ = G.preStats.differ + 1
-		log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " otherwise than shipped at the click for t=" .. tostring(e.preAt)
-			.. " (" .. tostring(sig) .. " / " .. tostring(e.preSig) .. "): its capture shipped, resynchronisation")
-		pcall(send, "replay_failed", { uid = tostring(e.pre), why = "built otherwise than shipped at the click" })
+		-- (0.8.17, #405: Flubi's station edit came out otherwise than its copy; lulei's game had not built the copy yet, got the
+		-- capture first and built it: "its capture came before its time here: built from the capture". The games were alike, yet
+		-- this report reloaded them. Each game that built the copy now finds the difference itself when the capture comes (form
+		-- and step, see G.prePost) and reports it; a game that built the capture has nothing to report. MPFEVER_PREVERIFY=0: the
+		-- builder reports it, as before)
+		if G.preVerifyOn() then
+			log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " otherwise than shipped at the click for t=" .. tostring(e.preAt)
+				.. " (" .. tostring(sig) .. " / " .. tostring(e.preSig) .. "): its capture shipped; a game that built the copy says so")
+		else
+			log("PRESHIP " .. tostring(e.pre) .. ": built here at t=" .. tostring(o.at) .. " otherwise than shipped at the click for t=" .. tostring(e.preAt)
+				.. " (" .. tostring(sig) .. " / " .. tostring(e.preSig) .. "): its capture shipped, resynchronisation")
+			pcall(send, "replay_failed", { uid = tostring(e.pre), why = "built otherwise than shipped at the click" })
+		end
 	else
 		G.preStats.changed = G.preStats.changed + 1
 		log("PRESHIP " .. tostring(e.pre) .. ": changed since the click, its capture shipped for the others, who waited for it")
@@ -12401,6 +12769,9 @@ G.preDrop = function(uid)
 	return n > 0
 end
 -- the capture of a copy shipped at the click (its builder's game saw a change since the click, or built otherwise): true to drop it
+-- (0.8.17, #405) the games that built a copy shipped at the click find a difference with its capture themselves, see
+-- G.preshipSettle. MPFEVER_PREVERIFY=0: the builder reports it, as before
+G.preVerifyOn = function() return os.getenv("MPFEVER_PREVERIFY") ~= "0" end
 G.prePost = function(p)
 	local uid = tostring(p.post)
 	G.preVerdict[uid] = "capture"
@@ -12410,8 +12781,12 @@ G.prePost = function(p)
 		if u.refused then
 			log("PRESHIP " .. uid .. ": refused here, built by its builder: resynchronisation")
 			pcall(send, "replay_failed", { uid = uid, why = "copy refused here, built by its builder" })
-		elseif not p.preClean and G.preStreetSig(type(p.args) == "table" and p.args[1] or nil) ~= u.sig then
-			log("PRESHIP " .. uid .. ": built here from its copy, its builder built otherwise (it saw a change since the click): resynchronisation")
+		elseif (not p.preClean or G.preVerifyOn()) and (G.preStreetSig(type(p.args) == "table" and p.args[1] or nil) ~= u.sig
+			or (G.preVerifyOn() and type(u.at) == "number" and type(p.at) == "number" and p.at ~= u.at)) then
+			-- (0.8.17: also a capture of a build that was not changed since the click (preClean) but landed otherwise or at another
+			-- step on its builder's game: this game reports it, the builder no longer does, see G.preshipSettle)
+			log("PRESHIP " .. uid .. ": built here from its copy" .. (type(u.at) == "number" and (" at t=" .. u.at) or "") .. ", its builder built otherwise"
+				.. (type(p.at) == "number" and (" at t=" .. p.at) or "") .. ": resynchronisation")
 			pcall(send, "replay_failed", { uid = uid, why = "copy built here, its builder built otherwise" })
 		else
 			log("PRESHIP " .. uid .. ": its capture came, built here from its copy already: not built again")
@@ -12447,7 +12822,7 @@ H.pre_done = function(from, p)
 	if p.origin == G.me then return end
 	local uid = tostring(p.uid)
 	G.preVerdict[uid] = "same"
-	if type(p.cost) == "number" then pcall(toSim, "replay_cost_set", { uid = uid, cost = p.cost }) end
+	if type(p.cost) == "number" then pcall(toSim, "replay_cost_set", { uid = uid, cost = p.cost, at = p.at }) end
 	local u = G.preUsed[uid]
 	if u then
 		G.preUsed[uid] = nil
@@ -12691,6 +13066,8 @@ G.pullBuildLog = function(b, origin, id, seq)
 end
 
 local function runPausedActions()
+	-- (0.8.17, #390: the waits for the engine do not run out while the host's save runs, see G.saveBusyOn)
+	local saving = G.saveBusyNow and G.saveBusyNow() or false
 	local natAt = nativeHoldAt()
 	if #G.pendingPaused == 0 and natAt == nil then
 		if G.holdAt then
@@ -12754,6 +13131,15 @@ local function runPausedActions()
 		if a.kind == "hash" and answering and a.at <= now and not creating then
 			creating = true
 			if G.ansHashWaitLogged ~= a.n then G.ansHashWaitLogged = a.n; log("checkpoint " .. tostring(a.n) .. " waits for the engine's answer to the paused actions before it") end
+		end
+		-- (0.8.17, #390) nor while a native replay of the pause is still in the engine's hands, or this game's save runs: it would
+		-- read the world without it (Eier's warehouse, replayed during the host's save: "townBuildings" apart). At most 3600 frames
+		if a.kind == "hash" and a.at <= now and not creating and G.saveBusyOn and G.saveBusyOn() and (saving or (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)) then
+			a.engWait = a.engWait or G.frames
+			if G.frames - a.engWait < 3600 then
+				creating = true
+				if G.engHashWaitLogged ~= a.n then G.engHashWaitLogged = a.n; log("checkpoint " .. tostring(a.n) .. " waits for the engine (" .. (saving and "the save under way" or "a replay in its hands") .. ")") end
+			end
 		end
 		-- (0.7.13, #168) nor while a paused action's player's earlier actions are applied before it: it would read half of them
 		if a.kind == "hash" and G.pull and a.at <= now and not creating and not pullWait then
@@ -12822,6 +13208,15 @@ local function runPausedActions()
 				-- (another player's change of the world: a build held here was computed before it, see G.restale)
 				if a.origin ~= G.me and G.isWorldAct(a) then G.worldFrame = G.frames end
 				local creates = (a.fn == "makeVehicleBuyCmd" or a.fn == "makeLineCreateCmd") and os.getenv("MPFEVER_OLDPAUSED") ~= "1"
+			-- (0.8.17, #394: AndisPC's town transit mod replaced street pieces one after the other in a pause, each build made on
+			-- his game once the one before it was applied: the engine gave the freed number of a removed piece to the new one, and
+			-- the next build's node configurations named it. Replayed in one frame, the builds after the first were looked at before
+			-- the first was applied (C.staleNodeConfig: "taken away by an earlier build at this time"): 9 refused on every game,
+			-- AndisPC's included, and the games drifted after. A script's street build of a pause now waits for the engine's
+			-- answer to the one before it, as a purchase does, and is looked at on the world as it is then. MPFEVER_PAUSEDBUILDSEQ=0:
+			-- in one frame, as before)
+			if not creates and a.fn == "makeWorldBuildProposalCmd" and type(a.args) == "table" and type(a.args[1]) == "table"
+				and type(a.args[1].streetProposal) == "table" and os.getenv("MPFEVER_PAUSEDBUILDSEQ") ~= "0" then creates = true end
 				if creates then
 					G.pausedCreating = { uid = a.uid, frame = G.frames }
 					creating = true
@@ -14971,9 +15366,21 @@ local function runStopMatrix(p)
 	AUTO.results = {}
 	AUTO.points = {}
 	local list = {}
+	-- (not a segment at a junction with traffic lights: the replacePosCfgObj form takes the configuration of its nodes away
+	-- and adds none, and the engine needs one for traffic lights: the client's game closed on its own test build, k8sp
+	-- 2026-11-17 "it != components.end()" BaseNodeConfig of node 48531. MPFEVER_STOPLIGHTS=1: such segments too, as before)
+	local lightsToo = os.getenv("MPFEVER_STOPLIGHTS") == "1"
+	local function lights(c)
+		if lightsToo then return false end
+		for _, nd in ipairs({ c.node0, c.node1 }) do
+			local okT, has = pcall(function() return api.engine.getComponent(nd, api.type.ComponentType.BASE_NODE_TRAFFIC_LIGHT) ~= nil end)
+			if okT and has then return true end
+		end
+		return false
+	end
 	for _, e in ipairs(R.allEdges()) do
 		local c = api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE)
-		if c and c.type == 0 and c.roadTemplate and c.roadTemplate:find("town", 1, true) and #c.objects == 0 then list[#list + 1] = e end
+		if c and c.type == 0 and c.roadTemplate and c.roadTemplate:find("town", 1, true) and #c.objects == 0 and not lights(c) then list[#list + 1] = e end
 	end
 	local forms = nil
 	local i = 0
@@ -22284,6 +22691,8 @@ G.openNet = function(reg, me)
 			if E.roadRule and E.roadRule(reg, co).rule == "open" then roads[co.ent] = true; sig[#sig + 1] = "r" .. co.ent end
 		end
 	end
+	-- ((0.8.17, speed) nothing built since the last look and the same open companies: the list is the same, the look is skipped)
+	if os.getenv("MPFEVER_TRACKTYPE") ~= "0" and G.openNetSkip(me, sig) then return end
 	local ids, seen = {}, {}
 	local function add(e) if type(e) == "number" and e >= 0 and not seen[e] then seen[e] = true; ids[#ids + 1] = e end end
 	if os.getenv("MPFEVER_TRACKTYPE") ~= "0" then
@@ -22335,6 +22744,7 @@ G.openNet = function(reg, me)
 			end
 		end
 	end
+	G.openNetSkipKey, G.openNetSkipNext = G.openNetSkipNext, nil
 	table.sort(ids)
 	local txt = table.concat(ids, " ")
 	if txt == G.openNetTxt then return end
@@ -22347,6 +22757,24 @@ G.openNet = function(reg, me)
 	local okT, tm = pcall(os.time)
 	nativeCtl("opennet " .. (((okT and tm or 0) % 1000000) * 100 + K.coCtlSeq % 100))
 	log("companies: " .. #ids .. " entities of the tracks the other companies opened")
+end
+
+-- (0.8.17, speed) Whether G.openNet may skip its look: the street graph's look (G.openTracks) took 30 to 40 ms every 300 frames on
+-- the interface's thread on Andy's and berni1212's map (6 444 segments; up to 114 ms), a hitch every 5 s, though the list only
+-- changes with a build or the companies' rules. Skipped when no build was made since the last look (the simulation's count of
+-- builds, G.simBuildIds: every game's own, replayed and the computer companies' builds), the open companies are the same and
+-- the last whole look is less than 1800 frames old (a sale or a merger changes owners without a build, as before).
+-- MPFEVER_OPENNETSKIP=0: a look every time, as before
+G.openNetSkip = function(me, sig)
+	if os.getenv("MPFEVER_OPENNETSKIP") == "0" then return false end
+	local b = G.simBuildIds
+	local nb = -1
+	if type(b) == "table" then nb = (tonumber(b.n0) or 0) + (type(b.list) == "table" and #b.list or 0) end
+	local key = tostring(me and me.id) .. "|" .. table.concat(sig, " ") .. "|" .. nb
+	if key == G.openNetSkipKey and G.openNetTxt ~= nil and G.frames - (G.openNetFull or -100000) < 1800 then return true end
+	-- (kept by G.openNet once its look went through: a look that failed is made again at the next turn, the review)
+	G.openNetSkipNext = key
+	return false
 end
 
 -- (G.openNet) the track segments of the open companies (open: their player entities) and their nodes, through add. Every segment of
@@ -23651,10 +24079,71 @@ H.permstest = function(from, p)
 	end)
 end
 
-local function guiUpdate(userParams, state, guiState)
+-- (0.8.17, speed) The interface's copy of the simulation's state for this frame (see guiUpdateBody): the copy of the frame before
+-- while the interface has the same copy of the simulation (the same tickCount) and for at most 30 frames; a new state:get()
+-- otherwise. A failed read is never kept. With MPFEVER_GUIPROF=2, one kept copy in ten is compared with a new read (the
+-- "cache" figures of the gui alive lines: compared/differed; a difference would mean the state changed between two handshakes).
+-- The engine gives the same table at every state:get() (filled again): whether this frame's copy is a kept one is G.stKept,
+-- never the identity of the table)
+G.stateCacheOn = os.getenv("MPFEVER_STATECACHE") ~= "0"
+G.stateCached = function(state, gp)
+	local tk = G.stateCacheOn and G.simTick() or nil
+	if tk ~= nil and G.stCache ~= nil and tk == G.stCacheTick and G.frames - (G.stCacheFrame or -1000) < 30 then
+		if gp and G.gpCheck and G.frames % 10 == 0 then pcall(G.stateCacheCheck, state, G.stCache) end
+		G.stKept = true
+		return G.stCache
+	end
+	G.stKept = false
+	local okh, st = pcall(function() return state:get() end)
+	if not (okh and type(st) == "table") then G.stCache = nil; return {} end
+	if tk ~= nil then G.stCache, G.stCacheTick, G.stCacheFrame = st, tk, G.frames else G.stCache = nil end
+	-- (GUIPROF=2: the state's text as read now; the engine gives the same table at every state:get(), filled again, so a kept
+	-- copy is compared with this text, never with itself)
+	if gp and G.gpCheck then G.stSnap = G.stateCanon(st) end
+	return st
+end
+G.stateCanon = function(v, depth)
+	depth = depth or 0
+	if type(v) ~= "table" or depth >= 40 then return C.ser(v) end
+	local parts = {}
+	for k, val in pairs(v) do parts[#parts + 1] = C.ser(k) .. "=" .. G.stateCanon(val, depth + 1) end
+	table.sort(parts)
+	return "{" .. table.concat(parts, ",") .. "}"
+end
+G.stateCacheCheck = function(state, cached)
+	if G.stSnap == nil then return end
+	local okN, fresh = pcall(function() return state:get() end)
+	if not okN or type(fresh) ~= "table" then return end
+	G.stcN = (G.stcN or 0) + 1
+	local now = G.stateCanon(fresh)
+	if now ~= G.stSnap then
+		G.stcDiff = (G.stcDiff or 0) + 1
+		if (G.stcDiffLogged or 0) < 5 then
+			G.stcDiffLogged = (G.stcDiffLogged or 0) + 1
+			log("GUIPROF state changed within one tick (frame " .. G.frames .. ", tick " .. tostring(G.stCacheTick) .. ")")
+		end
+		G.stSnap = now
+	end
+end
+
+-- (0.8.17, diagnostic MPFEVER_GUIPROF=1: where the interface half's time goes each frame, by part, in the "gui alive" lines as
+-- "prof <part>=<ms a frame>": the speed work's measure. Off: nothing measured)
+-- (MPFEVER_GUIPROF=2: and one kept copy of the state in ten compared with a new read, see G.stateCached; it costs a lot)
+G.gpOn = os.getenv("MPFEVER_GUIPROF") == "1" or os.getenv("MPFEVER_GUIPROF") == "2"
+G.gpCheck = os.getenv("MPFEVER_GUIPROF") == "2"
+G.gpMark = function(name)
+	local now = os.clock()
+	local P = G.gpT or {}
+	G.gpT = P
+	P[name] = (P[name] or 0) + (now - (G.gpLast or now))
+	G.gpLast = now
+end
+G.guiUpdateBody = function(userParams, state, guiState)
 	if G.api == nil then pcall(G.installApi) end
 	if not C.ACTIVE then return end
 	G.frames = G.frames + 1
+	local gp = G.gpOn
+	if gp then G.gpLast = os.clock() end
 	-- ((0.7.15, #174) this frame, for the builds an interface sends in one frame, see executeActionOnce)
 	C.uiFrame = G.frames
 	G.stateObj = state
@@ -23662,6 +24151,7 @@ local function guiUpdate(userParams, state, guiState)
 	if G.frames % 30 == 7 then pcall(G.nameTick) end
 	if G.frames % 60 == 11 then local okA, errA = pcall(G.asbTest); if not okA then log("ASBTEST: " .. tostring(errA)) end end
 	if G.frames % 60 == 23 and G.preTick then local okP, errP = pcall(G.preTick); if not okP then log("PRESHIP: " .. tostring(errP)) end end
+	if gp then G.gpMark("ticks") end
 	-- (0.8, the measure of the stands: the session running, the engine making no step at the stop point, this frame's time)
 	pcall(function()
 		local now = os.clock()
@@ -23675,10 +24165,20 @@ local function guiUpdate(userParams, state, guiState)
 		end
 		S.last = now
 	end)
+	if gp then G.gpMark("stand") end
 	if G.frames % 600 == 0 then
 		local ps = G.pstat
 		log("gui alive frame " .. G.frames .. " t=" .. tostring(gameTime()) .. " | slowed by other clocks " .. ps.barrier .. "/" .. ps.frames .. " frames, by held actions " .. ps.hold
-			.. string.format(" | stood %.1f s so far", G.standM and G.standM.t or 0))
+			.. string.format(" | stood %.1f s so far", G.standM and G.standM.t or 0)
+			.. string.format(" | bridge %.2f ms a frame, %.1f ms at most", (G.guiCost or 0) * 1000 / math.max(1, G.guiCostN or 0), (G.guiMax or 0) * 1000)
+			.. (gp and G.gpT and (function()
+				local t = {}
+				for k, v in pairs(G.gpT) do t[#t + 1] = string.format("%s=%.3f", k, v * 1000 / math.max(1, G.guiCostN or 0)) end
+				table.sort(t)
+				return " | prof " .. table.concat(t, " ") .. " | cache " .. tostring(G.stcN or 0) .. "/" .. tostring(G.stcDiff or 0)
+			end)() or ""))
+		G.guiCost, G.guiCostN, G.guiMax = 0, 0, 0
+		G.gpT = nil
 		ps.frames, ps.barrier, ps.hold = 0, 0, 0
 	end
 	if not G.started then
@@ -23747,6 +24247,7 @@ local function guiUpdate(userParams, state, guiState)
 		local hb = C.IO.open(C.DIR .. BS .. "bridge_alive.txt", "wb")
 		if hb then hb:write(tostring(G.aliveN)); hb:close() end
 	end
+	if gp then G.gpMark("head") end
 	G.staleNow, G.staleBefore = G.staleBefore, nil
 	for _, line in ipairs(readLines("in.log", "inOff")) do
 		local kind, from, payload = parseLine(line)
@@ -23758,6 +24259,8 @@ local function guiUpdate(userParams, state, guiState)
 				-- (the size of an action, for its lag line, see G.lagLine)
 				if kind == "act" and nb > 20000 then payload.lagBytes = nb end
 				if G.staleNow and G.staleDrop(kind, payload, G.staleNow) then h = nil end
+				-- (0.8.17, #395: the host's values of a checkpoint left out after the load, see G.staleDrop)
+				if h and kind == "auth" and G.staleAuth(payload) then h = nil end
 				if h then
 					local ok, err = pcall(h, from, payload)
 					if not ok then log("handler " .. kind .. " failed: " .. tostring(err)) end
@@ -23766,6 +24269,7 @@ local function guiUpdate(userParams, state, guiState)
 		end
 	end
 	G.staleNow, G.staleLid = nil, nil
+	if gp then G.gpMark("inlog") end
 
 	do
 		local okT, tNow = pcall(gameTime)
@@ -23776,8 +24280,32 @@ local function guiUpdate(userParams, state, guiState)
 		local okS, errS = pcall(G.stillWatch)
 		if not okS and not G.stillFailed then G.stillFailed = true; G.stillS = nil; log("stillness watch failed: " .. tostring(errS)) end
 	end
-	local okh, st = pcall(function() return state:get() end)
-	if not (okh and type(st) == "table") then st = {} end
+	if gp then G.gpMark("still") end
+	-- ((0.8.17, speed) the simulation's state, read again only when the interface took over a new copy of the simulation
+	-- (GameTime.tickCount changed: once per handshake, in a pause too, see G.simTick), and at least every 30 frames: state:get()
+	-- copies the whole state (90 kB, 1.2 to 2 ms in the autotest stationedit of 2026-11-17) at every frame, 60 times a second,
+	-- for a state that changes about 5 times a second. Nothing of the interface writes into that table (see the test).
+	-- MPFEVER_STATECACHE=0: read at every frame, as before)
+	local st = G.stateCached(state, gp)
+	if gp then G.gpMark("stateget") end
+	-- ((0.8.17, MPFEVER_GUIPROF=1) and every 600 frames the size of each part of the simulation's state, which state:get() copies
+	-- each frame: what weighs)
+	if gp and G.frames % 600 == 300 then
+		pcall(function()
+			local t, total = {}, 0
+			for k, v in pairs(st) do
+				local okS, txt = pcall(C.ser, v)
+				local n = okS and #txt or -1
+				total = total + math.max(n, 0)
+				t[#t + 1] = { k = tostring(k), n = n }
+			end
+			table.sort(t, function(a, b) return a.n > b.n end)
+			local l = {}
+			for i = 1, math.min(12, #t) do l[#l + 1] = t[i].k .. "=" .. t[i].n end
+			log("GUIPROF state " .. total .. " bytes: " .. table.concat(l, " "))
+		end)
+		G.gpLast = os.clock()
+	end
 	G.simTerrainSig = st.terrainSig
 	G.simBuildIds = st.buildIds
 	-- (0.7.13, #168: the simulation's queue and its answer to a pull, as this interface sees them, see G.pullHold)
@@ -23785,8 +24313,10 @@ local function guiUpdate(userParams, state, guiState)
 	pcall(G.pullPrune, st)
 	G.co = st.co
 	REFUND.list = st.rcost
+	if gp then G.gpMark("prune") end
 	local okco, errco = pcall(coGui, st)
 	if not okco then log("companies (gui): " .. tostring(errco)) end
+	if gp then G.gpMark("cogui") end
 	-- (0.6) the game options: the host's options into the game (f_opts), the modules' gui (mpfever_feat.lua); nothing while no option
 	-- is on or asked. MPFEVER_FEAT=0: never
 	if K.FEAT then
@@ -23795,6 +24325,7 @@ local function guiUpdate(userParams, state, guiState)
 	end
 	-- the computer companies (the host's game only: the host chose them in its lobby; MPFEVER_AI=1 / MPFEVER_AIDEV for the tests)
 	if C.ROLE == "host" and ((G.coAi and G.coAi ~= "") or os.getenv("MPFEVER_AI") or os.getenv("MPFEVER_AIDEV")) then pcall(G.aiStep, st) end
+	if gp then G.gpMark("featai") end
 	if st.late and st.late > (G.lateSeen or 0) then
 		G.lateSeen = st.late
 		G.aheadLocked = true
@@ -23830,6 +24361,7 @@ local function guiUpdate(userParams, state, guiState)
 		end
 	end
 
+	if gp then G.gpMark("ship") end
 	if G.connected then
 		local okv, errv = pcall(function()
 			if G.session.started and not G.natEnabled then G.natEnabled = true; nativeCtl("enable 1") end
@@ -23840,9 +24372,12 @@ local function guiUpdate(userParams, state, guiState)
 		end)
 		if not okv then log("native deferral failed: " .. tostring(errv)) end
 	end
+	if gp then G.gpMark("native") end
 	pcall(runPausedActions)
+	if gp then G.gpMark("paused") end
 	local okn, errn = pcall(runNativeReplays)
 	if not okn then log("native replays failed: " .. tostring(errn)) end
+	if gp then G.gpMark("replays") end
 
 	-- (no session: no stop point, see G.nstop)
 	if not G.connected then pcall(G.nstopWrite, nil) end
@@ -23923,7 +24458,12 @@ local function guiUpdate(userParams, state, guiState)
 		end
 	end
 
+	if gp then G.gpMark("pacing") end
 	-- bindings, results and hashes produced by the simulation half
+	-- ((0.8.17, speed) the copy of the state kept from the frame before (G.stKept, see G.stateCached): its bindings, check and
+	-- results were all taken then (each is taken once: G.bind, G.hashSent, G.resultsSeen); a new read is looked through as before.
+	-- MPFEVER_STATECACHE=0: every frame, as before)
+	if not G.stKept then
 	for key, e in pairs(st.bind or {}) do
 		if G.bind[key] ~= e then
 			G.rebind(key, e)
@@ -23944,9 +24484,11 @@ local function guiUpdate(userParams, state, guiState)
 			G.reportResult(r)
 		end
 	end
+	end
 	-- replays of this game whose town statistics differ from their builders' (see SIM.townStats)
 	if st.townDiffs and G.tsWait then pcall(G.townDiffs, st) end
 
+	if gp then G.gpMark("bind") end
 	if #G.waits > 0 then
 		local current = G.waits
 		G.waits = setmetatable({}, WAITS_MT)
@@ -23962,6 +24504,18 @@ local function guiUpdate(userParams, state, guiState)
 			end
 		end
 	end
+	if gp then G.gpMark("waits") end
+end
+
+-- (0.8.17, a measure for the speed work: how long this bridge's interface half takes each frame, in the "gui alive" lines every
+-- 600 frames: "bridge <average> ms a frame, <longest> ms at most")
+local function guiUpdate(userParams, state, guiState)
+	local t0 = os.clock()
+	G.guiUpdateBody(userParams, state, guiState)
+	local dt = os.clock() - t0
+	G.guiCost = (G.guiCost or 0) + dt
+	G.guiCostN = (G.guiCostN or 0) + 1
+	if dt > (G.guiMax or 0) then G.guiMax = dt end
 end
 
 -- (0.6.8) One company per player: a tool's build that takes away a street of another company whose roads are not shared (its

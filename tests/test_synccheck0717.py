@@ -38,7 +38,8 @@ c = mf[mf.index('case "replay_failed":'):]
 c = c[:c.index('case "save_done":')]
 check('Environment.GetEnvironmentVariable("MPFEVER_FAILWAIT") != "0"' in c, "MPFEVER_FAILWAIT=0: 1.5 s as before")
 w = c[c.index("bool everywhere = RefusedEverywhere("):]
-check(w.index("Thread.Sleep(250);") < w.index("if (everywhere)") and "fw < FailWaitTicks && !everywhere" in w,
+# (0.8.17, #400: by the games' clocks when the report has the action's time, 5 s as before when it has none, see test_failclock0817.py)
+check(w.index("Thread.Sleep(250);") < w.index("if (everywhere)") and "fw < FailWaitTicks) && !everywhere" in w,
       "the reports looked at again every 0.25 s until refused everywhere")
 check(c.index("Thread.Sleep(1500);") < c.index("bool everywhere"), "  after the first 1.5 s, as before")
 check("internal const int FailWaitTicks = 14;" in mf, "5 s in all")

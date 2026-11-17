@@ -183,7 +183,8 @@ uis = open(UI, encoding="utf-8").read()
 check("bridge: the simulation half installs it at its first step, before the session check",
       re.search(r"local function update\(userParams, state, dt\)\n\tif SIM\.api == nil then pcall\(SIM\.installApi\) end\n\tif not C\.ACTIVE then return end", bridge) is not None)
 check("bridge: the interface half installs it at its first frame",
-      re.search(r"local function guiUpdate\(userParams, state, guiState\)\n\tif G\.api == nil then pcall\(G\.installApi\) end\n\tif not C\.ACTIVE then return end", bridge) is not None)
+      re.search(r"G\.guiUpdateBody = function\(userParams, state, guiState\)\n\tif G\.api == nil then pcall\(G\.installApi\) end\n\tif not C\.ACTIVE then return end", bridge) is not None
+      and "G.guiUpdateBody(userParams, state, guiState)" in bridge)  # (0.8.17: the body behind the measuring guiUpdate)
 check("bridge: halves 'simulation' and 'interface'", 'half = "simulation"' in bridge and 'half = "interface"' in bridge)
 check("bridge: the game scripts' verdict reads the declarations", "facts.declared = SIM.MPAPI.declaredOf(G.api, mods) ~= nil" in bridge)
 check("interface hook: installed at doReplace, before the session check",

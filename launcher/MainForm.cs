@@ -249,6 +249,33 @@ namespace MPFever
         const long Step = 200;                 // game time units per simulation step
         const double UnitsPerSecond = 1000;    // game time units per real second at x1
         const double HashEverySeconds = 10;
+        // (0.8.17, perf) the checks' interval grows with what a check costs on the slowest game: each one holds every game's
+        // simulation for its time (0.4 s at most checks of Andy's and Eric's maps, 1.2 s of Bence's, every 10 s: 4 to 12 % of the
+        // time, and a hitch each time). The mean of the last 7 checks (one turn of the parts, see simHash) times 40, between 10
+        // and 20 s: a check takes 2.5 % of the time up to 0.5 s a check; a small map stays at 10 s. (20 s at most: the host's money
+        // values go with each check, a difference lasts until the next.) A check that found the games apart, one not compared
+        // (games at other turns or times) and one after which every game keeps its drift rings bring the next one at 10 s as before.
+        // MPFEVER_HASHADAPT=0: every 10 s, as before
+        const double HashMaxSeconds = 20, HashCostFactor = 40;
+        const int HashCostWindow = 7;
+        readonly Queue<double> hashCostRecent = new Queue<double>();
+        readonly Dictionary<int, double> hashCostOf = new Dictionary<int, double>();
+        volatile bool hashApart;
+
+        /// <summary>(0.8.17) The interval between two checks: see HashMaxSeconds.</summary>
+        internal static double HashInterval(IEnumerable<double> recentCosts, bool apart, string env)
+        {
+            if (env == "0" || apart || recentCosts == null) return HashEverySeconds;
+            var l = recentCosts.Where(c => c > 0 && !double.IsNaN(c) && !double.IsInfinity(c)).ToList();
+            if (l.Count == 0) return HashEverySeconds;
+            return Math.Max(HashEverySeconds, Math.Min(HashMaxSeconds, l.Average() * HashCostFactor));
+        }
+
+        double CurrentHashInterval()
+        {
+            double[] recent; lock (hashes) recent = hashCostRecent.ToArray();
+            return HashInterval(recent, hashApart, Environment.GetEnvironmentVariable("MPFEVER_HASHADAPT"));
+        }
 
         readonly TextBox nameBox = new TextBox { Text = SavedName() };
         readonly TextBox hostBox = new TextBox { Text = "127.0.0.1" };
@@ -1274,6 +1301,18 @@ namespace MPFever
         bool ModMissingStop()
         {
             if (Environment.GetEnvironmentVariable("MPFEVER_NOMODSTOP") == "0") return false;
+            // (0.8.17, #401: lgeru's full disk: the mod's copy failed and the game started anyway, then closed at once) a mod that
+            // could not be installed is said, and the game is not started. MPFEVER_INSTALLSTOP=0: started as before
+            var failed = GameInstall.InstallFailed;
+            if (failed != null && Environment.GetEnvironmentVariable("MPFEVER_INSTALLSTOP") != "0")
+            {
+                var why = T("MPFever n'a pas pu installer son mod dans le jeu", "MPFever could not install its mod into the game") + " (" + failed + "). "
+                    + T("Libérez de la place sur le disque du jeu (ou vérifiez que rien ne bloque ce dossier), puis relancez MPFever.",
+                        "Free some space on the game's disk (or check that nothing blocks that folder), then start MPFever again.");
+                Log.Err(why);
+                try { MessageBox.Show(this, why, "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Warning); } catch { }
+                return true;
+            }
             bool reachable = true;
             try { reachable = GameInstall.ModReachable(GameInstall.FindModSource(), GameInstall.ModsDirs(gameDir)); } catch { }
             if (reachable) return false;
@@ -1891,7 +1930,20 @@ namespace MPFever
             if (string.IsNullOrEmpty(hostTag) || string.IsNullOrEmpty(theirTag)) return "";
             var h = hostTag.Split('|'); var t = theirTag.Split('|');
             if (h[0] == t[0]) return "";
-            string Show(string[] x) => (x.Length > 1 && x[1] != "?" ? x[1] : x[0]) + (x.Length > 2 && x[2] == "other" ? " (" + T("pas une copie Steam", "not a Steam copy") + ")" : "");
+            // (0.8.17, #407: Til (GOG's game) and Eric (Steam's executable in a folder Steam did not install) both read "40425 (not a
+            // Steam copy)": the same words for two builds that differ. With the same number, the executable each one has is named
+            // (Steam's, GOG's, else its stamp), and "outside Steam" for Steam's out of a Steam install. MPFEVER_BUILDSTAMP=0: as before)
+            bool sameNum = h.Length > 1 && t.Length > 1 && h[1] == t[1] && h[1] != "?" && Environment.GetEnvironmentVariable("MPFEVER_BUILDSTAMP") != "0";
+            string Show(string[] x)
+            {
+                var num = x.Length > 1 && x[1] != "?" ? x[1] : x[0];
+                bool other = x.Length > 2 && x[2] == "other";
+                if (!sameNum) return num + (other ? " (" + T("pas une copie Steam", "not a Steam copy") + ")" : "");
+                var flavor = Reporter.BuildFlavor(x[0]);
+                if (flavor == "Steam") return num + " (" + (other ? T("exécutable de Steam, hors de Steam", "Steam's executable, outside Steam") : "Steam") + ")";
+                if (flavor != null) return num + " (" + flavor + ")";
+                return num + " (" + x[0] + (other ? ", " + T("pas une copie Steam", "not a Steam copy") : "") + ")";
+            }
             return player == null
                 ? F("Version du jeu différente : vous avez la version {0}, l'hôte la version {1}. Deux versions différentes ne simulent pas la partie de la même façon : des désynchronisations sont probables. Ayez la même version (Steam : Propriétés > Fichiers installés > Vérifier l'intégrité). La partie peut tout de même être lancée.",
                     "Different game build: you have build {0}, the host build {1}. Two different builds do not simulate the game alike: desyncs are likely. Get the same build (Steam: Properties > Installed Files > Verify integrity). The game can still be played.", Show(t), Show(h))
@@ -2840,6 +2892,8 @@ namespace MPFever
             lock (resyncParts) resyncParts.Clear();   // a host game half received in the session that ends
             hostSaveSha = ""; hostSaveState = ""; hostSaveLocal = null;   // (a lobby opened again is looked at again)
             hashN = 0; syncText = "—"; actsRelayed = actRefused = actFails = desyncs = 0;
+            lock (hashes) { hashCostRecent.Clear(); hashCostOf.Clear(); }
+            hashApart = false;
             resyncing = false; resyncDropping = false; resyncSending = false; resyncWaiting.Clear(); ignoredParts.Clear(); unmeasuredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = ""; stepsDumped = false; lock (partStreak) partStreak.Clear();
             joinPending = false; riskyAnnounced = "";
             lock (reviewing) reviewing.Clear();
@@ -3230,6 +3284,9 @@ namespace MPFever
                     var cam = Environment.GetEnvironmentVariable("MPFEVER_CAMTOUR");
                     if (!string.IsNullOrEmpty(cam)) HostSend(Msg.Make("camtour", hostName, "{[\"role\"]=\"" + cam + "\"}"));
                     Thread.Sleep(Math.Max(10, secs) * 1000);
+                    // (0.8.17: a check at the end, as the other scenarios: the checks may come up to 20 s apart, see HashMaxSeconds)
+                    RequestHash();
+                    Thread.Sleep(12000);
                     AutoLine("sync: " + syncText + " (desyncs " + desyncs + ")");
                     return;
                 }
@@ -3282,6 +3339,8 @@ namespace MPFever
                             SetSpeed(Math.Max(1, ssp), "autotest");
                             AutoLine("soak " + ssecs + " s at x" + Math.Max(1, ssp));
                             Thread.Sleep(Math.Max(10, ssecs) * 1000);
+                            RequestHash();
+                            Thread.Sleep(12000);
                             AutoLine("soak over: " + syncText + " (desyncs " + desyncs + ")");
                         }
                         continue;
@@ -4675,9 +4734,23 @@ namespace MPFever
         {
             if (!started) return;
             long at = FutureStamp();
+            // (0.8.17, #395: see PauseStamp)
+            { long? cur; int sp; lock (sessionGate) { cur = pauseAt; sp = speed; } at = PauseStamp(at, cur, sp, RoundUpToStep(MaxClock()), Environment.GetEnvironmentVariable("MPFEVER_PAUSESTANDING") != "0"); }
             lock (sessionGate) pauseAt = at;
             Log.W(F("Pause au temps {0} (demandée par {1})", "Pause at time {0} (asked by {1})", at, who));
             BroadcastSession();
+        }
+
+        /// <summary>(0.8.17, #395: local_user's session of 2026-11-16 19:02: the session stood at its start (speed 0, every game at the
+        /// pause 12208000) when mandy joined; the resynchronisation's pause went to a future stamp (12209200) that no standing game
+        /// could reach, it waited 120 s and was given up: "the games did not stop", and mandy had to be invited again.) A pause asked
+        /// for while the session stands already stays at its pause, where every game stands; a running
+        /// session pauses at the future stamp, as before. MPFEVER_PAUSESTANDING=0: the future stamp always, as before</summary>
+        internal static long PauseStamp(long future, long? currentPause, int speed, long maxClock, bool on)
+        {
+            if (!on || speed != 0 || !currentPause.HasValue) return future;
+            // (where every game stands already, at or past it: a standing game does not move up to a later stamp)
+            return currentPause.Value;
         }
 
         void RequestHash()
@@ -4735,7 +4808,7 @@ namespace MPFever
                 bool allStopped; lock (clocks) allStopped = clocks.Count > 0 && clocks.Values.Select(c => c.T).Distinct().Count() == 1;
                 bool pausedWork = paused && actsRelayed != actsAtHash && pausedAt.HasValue && MaxClock() >= pausedAt.Value
                     && allStopped && Now - lastActRelayed > 5;
-                if (started && (!paused || pausedWork) && !detRunning && !resyncing && Now - lastHash > HashEverySeconds)
+                if (started && (!paused || pausedWork) && !detRunning && !resyncing && Now - lastHash > (paused ? HashEverySeconds : CurrentHashInterval()))
                 {
                     lastHash = Now; actsAtHash = actsRelayed; RequestHash();
                 }
@@ -5050,9 +5123,22 @@ namespace MPFever
                                 // but their reports came 19.0, 21.0 and 21.7 s: after 1.5 s only one had come, and every game was
                                 // reloaded for nothing. The reports are now waited for up to 5 s in all (looked at every 0.25 s); a
                                 // build refused on one game only still reloads, 3.5 s later at most. MPFEVER_FAILWAIT=0: 1.5 s, as before
+                                // (0.8.17, #400: Bence's second sale of the same vehicles, refused alike on the three games, their reports
+                                // 0, 4.4 and 6.5 s apart: YkeWoudstra's game was 4 to 6 s behind the host's, which led, and every game was
+                                // reloaded for nothing.) With the action's time (at, sent with the report), the reports are waited for
+                                // until every game that has not reported has run 8 steps past it (its clocks come after its report, in
+                                // order), 20 s at most; without it (an older version), 5 s as before. MPFEVER_FAILCLOCK=0: 5 s as before
+                                long? fat = FailedAt(m.Payload);
+                                bool byClock = fat.HasValue && Environment.GetEnvironmentVariable("MPFEVER_FAILCLOCK") != "0";
                                 if (!everywhere && Environment.GetEnvironmentVariable("MPFEVER_FAILWAIT") != "0")
-                                    for (int fw = 0; fw < FailWaitTicks && !everywhere; fw++)
+                                    for (int fw = 0; (byClock ? fw < FailWaitClockTicks : fw < FailWaitTicks) && !everywhere; fw++)
                                     {
+                                        if (byClock)
+                                        {
+                                            Dictionary<string, long> ct;
+                                            lock (clocks) ct = clocks.GroupBy(kv => BaseName(kv.Key), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Max(x => x.Value.T), StringComparer.OrdinalIgnoreCase);
+                                            if (FailWaitDecided(fat.Value, who, all.Select(BaseName), ct, FailClockSlack)) break;
+                                        }
                                         Thread.Sleep(250);
                                         lock (failedBy) who = failedBy.TryGetValue(fuid, out var w2) ? new HashSet<string>(w2, StringComparer.OrdinalIgnoreCase) : new HashSet<string>();
                                         lock (players) all = players.ToArray();
@@ -5249,6 +5335,38 @@ namespace MPFever
 
         /// <summary>(0.7.17, #193) the 0.25 s looks after the first 1.5 s for the other games' reports of a refused build (5 s in all)</summary>
         internal const int FailWaitTicks = 14;
+        /// <summary>(0.8.17, #400) with the refused action's time: up to 20 s in all (1.5 s, then 74 looks of 0.25 s)</summary>
+        internal const int FailWaitClockTicks = 74;
+        /// <summary>(0.8.17) how far past the action's time a game's clock must be for its report to have come (8 steps of 200: a game's
+        /// reports and clocks come in order; a game holding the others for the launcher's word lets them come about 9 steps past it)</summary>
+        internal const long FailClockSlack = 8 * 200;
+
+        /// <summary>(0.8.17, #400) The time of a refused action in a replay_failed report, or null (an older version sends none).</summary>
+        internal static long? FailedAt(string payload)
+        {
+            try
+            {
+                var d = LuaLit.Parse(payload) as Dictionary<object, object>;
+                return d != null && d.TryGetValue("at", out var v) && v is double at && at > 0 ? (long?)(long)at : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>(0.8.17, #400) Whether every game that has not reported the refusal has run far enough past the action's time
+        /// that its report would have come already (its reports and its clocks come in order): then the games that are silent built
+        /// it, and waiting longer changes nothing.</summary>
+        internal static bool FailWaitDecided(long at, ICollection<string> refusedBy, IEnumerable<string> players, IDictionary<string, long> clockT, long slack)
+        {
+            if (players == null || clockT == null) return false;
+            var set = new HashSet<string>((refusedBy ?? new List<string>()).Select(BaseName), StringComparer.OrdinalIgnoreCase);
+            foreach (var p in players)
+            {
+                var b = BaseName(p);
+                if (set.Contains(b)) continue;
+                if (!clockT.TryGetValue(b, out long t) || t < at + slack) return false;
+            }
+            return true;
+        }
         int timeSkips;   // (0.7.17, #188) sync checks in a row not compared for their games' different times
 
         // a difference line is "name: values"; names may contain ':' themselves (script:mission)
@@ -5284,6 +5402,15 @@ namespace MPFever
             {
                 if (!hashes.TryGetValue(n, out var d)) return;
                 d[m.From] = parts;
+                // (0.8.17) the slowest game's cost of this check, kept for the interval (see HashMaxSeconds)
+                double myCost = t.TryGetValue("cost", out var cv) && cv is double cd ? cd : 0;
+                hashCostOf[n] = Math.Max(hashCostOf.TryGetValue(n, out var hc) ? hc : 0, myCost);
+                if (d.Count >= expected)
+                {
+                    if (hashCostOf[n] > 0) { hashCostRecent.Enqueue(hashCostOf[n]); while (hashCostRecent.Count > HashCostWindow) hashCostRecent.Dequeue(); }
+                    hashCostOf.Remove(n);
+                }
+                foreach (var old in hashCostOf.Keys.Where(k => k < n - 20).ToList()) hashCostOf.Remove(old);
                 // (a check taken in a pause: the turns of the paused builds and actions each game had applied, see below)
                 if (t.TryGetValue("ptd", out var ptv) && ptv is double ptd)
                 {
@@ -5304,6 +5431,7 @@ namespace MPFever
             {
                 Log.Dim(F("Synchronisation n°{0} : pas comparée (jeux à des tours différents de la pause : {1})", "Sync check #{0}: not compared (games at different turns of the pause: {1})",
                     n, string.Join(", ", turns.OrderBy(x => x.Key).Select(x => x.Key + "=" + x.Value))));
+                hashApart = true;   // (0.8.17: the next check at 10 s, see HashMaxSeconds)
                 return;
             }
             // (0.7.17, #188: olihf and Tezla, 19:17:28) a check whose games stood at different game times (27534600 and 27535800,
@@ -5316,6 +5444,7 @@ namespace MPFever
             {
                 Log.Dim(F("Synchronisation n°{0} : pas comparée (jeux à des temps différents : {1})", "Sync check #{0}: not compared (games at different game times: {1})",
                     n, string.Join(", ", got.OrderBy(x => x.Key).Select(x => x.Key + "=" + (x.Value != null && x.Value.TryGetValue("time", out var xt) ? LuaLit.Show(xt) : "?")))));
+                hashApart = true;   // (0.8.17: the next check at 10 s, see HashMaxSeconds)
                 return;
             }
             lastSyncAt = Now;
@@ -5396,6 +5525,8 @@ namespace MPFever
                 pending = partStreak.Keys.Where(k => !CorrectedParts.Contains(k) && !DiagnosticParts.Contains(k) && !ignoredParts.Contains(k)).ToList();
             }
             CheckResync(pending, n);
+            // (0.8.17) games apart (a difference now, or one not checked again yet): the next check at the usual 10 s
+            hashApart = diffs.Count > 0 || pending.Count > 0 || worldDumpNext;
             // (a difference not checked again at this checkpoint: the sync state stays as it was)
             if (diffs.Count == 0 && pending.Count > 0) return;
             if (diffs.Count == 0)

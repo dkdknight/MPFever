@@ -6657,19 +6657,6 @@
       "zh-CN": "未测试的脚本可能导致游戏不同步：届时 MPFever 会为所有人重新加载游戏。",
       "zh-TW": "未測試的腳本可能導致遊戲不同步：屆時 MPFever 會為所有人重新載入遊戲。"
     },
-    "Its added signals are built on every game (0.7.8; refused everywhere from 0.7.1 to 0.7.6).": {
-      "de": "Seine zusätzlichen Signale werden auf jedem Spiel gebaut (0.7.8; von 0.7.1 bis 0.7.6 überall abgelehnt).",
-      "es": "Sus señales añadidas se construyen en todas las partidas (0.7.8; rechazadas en todas de la 0.7.1 a la 0.7.6).",
-      "it": "I suoi segnali aggiunti vengono costruiti su ogni partita (0.7.8; rifiutati ovunque dalla 0.7.1 alla 0.7.6).",
-      "nl": "Zijn toegevoegde seinen worden op elk spel gebouwd (0.7.8; van 0.7.1 tot 0.7.6 overal geweigerd).",
-      "pl": "Jego dodane sygnały są budowane w każdej grze (0.7.8; odrzucane wszędzie od 0.7.1 do 0.7.6).",
-      "pt-BR": "Seus sinais adicionados são construídos em todos os jogos (0.7.8; recusados em todos da 0.7.1 à 0.7.6).",
-      "ru": "Его добавленные сигналы строятся в каждой игре (0.7.8; с 0.7.1 по 0.7.6 отклонялись везде).",
-      "ja": "追加された信号はすべてのゲームで建設されます（0.7.8。0.7.1〜0.7.6 ではすべてで拒否されていました）。",
-      "ko": "추가된 신호가 모든 게임에서 건설됩니다 (0.7.8, 0.7.1~0.7.6에서는 모든 게임에서 거부됨).",
-      "zh-CN": "其添加的信号会在每个游戏中建造（0.7.8；0.7.1 至 0.7.6 在所有游戏中被拒绝）。",
-      "zh-TW": "其新增的號誌會在每個遊戲中建造（0.7.8；0.7.1 至 0.7.6 在所有遊戲中被拒絕）。"
-    },
     "TPF3-MP (another multiplayer mod) is installed on this PC.\n\nIt is INCOMPATIBLE with MPFever: it changes the same things, and a game where it is active keeps desynchronising.\n\nTurn it off in your savegames' mods (when loading the game) before playing with MPFever, or uninstall it.": {
       "de": "TPF3-MP (ein anderer Mehrspieler-Mod) ist auf diesem PC installiert.\n\nEr ist INKOMPATIBEL mit MPFever: Er verändert dieselben Dinge, und ein Spiel, in dem er aktiv ist, desynchronisiert sich ständig.\n\nDeaktiviere ihn in den Mods deiner Spielstände (beim Laden des Spiels), bevor du mit MPFever spielst, oder deinstalliere ihn.",
       "es": "TPF3-MP (otro mod multijugador) está instalado en este PC.\n\nEs INCOMPATIBLE con MPFever: modifica las mismas cosas, y una partida en la que está activo se desincroniza sin parar.\n\nDesactívalo en los mods de tus partidas guardadas (al cargar la partida) antes de jugar con MPFever, o desinstálalo.",
@@ -25870,6 +25857,110 @@
       "ko": "MPFever용으로 제작됨: MPFever의 모드 API를 사용합니다.",
       "zh-CN": "为 MPFever 制作：使用其模组 API。",
       "zh-TW": "為 MPFever 製作：使用其模組 API。"
+    },
+    "The mod could not be installed in ": {
+      "de": "Der Mod konnte nicht installiert werden in ",
+      "es": "No se pudo instalar el mod en ",
+      "it": "Impossibile installare la mod in ",
+      "nl": "De mod kon niet worden geïnstalleerd in ",
+      "pl": "Nie udało się zainstalować moda w ",
+      "pt-BR": "Não foi possível instalar o mod em ",
+      "ru": "Не удалось установить мод в ",
+      "ja": "Mod をインストールできませんでした: ",
+      "ko": "모드를 설치할 수 없습니다: ",
+      "zh-CN": "无法将模组安装到 ",
+      "zh-TW": "無法將模組安裝到 "
+    },
+    ": the copy there before is kept.": {
+      "de": ": die vorherige Kopie bleibt erhalten.",
+      "es": ": se conserva la copia anterior.",
+      "it": ": la copia precedente viene mantenuta.",
+      "nl": ": de vorige kopie blijft behouden.",
+      "pl": ": poprzednia kopia zostaje zachowana.",
+      "pt-BR": ": a cópia anterior é mantida.",
+      "ru": ": прежняя копия сохранена.",
+      "ja": ": 以前のコピーはそのまま残ります。",
+      "ko": ": 이전 사본은 그대로 유지됩니다.",
+      "zh-CN": "：保留之前的副本。",
+      "zh-TW": "：保留先前的副本。"
+    },
+    "Steam's executable, outside Steam": {
+      "de": "Steam-Programmdatei, außerhalb von Steam",
+      "es": "ejecutable de Steam, fuera de Steam",
+      "it": "eseguibile di Steam, fuori da Steam",
+      "nl": "Steam-programmabestand, buiten Steam",
+      "pl": "plik wykonywalny Steam, poza Steam",
+      "pt-BR": "executável da Steam, fora da Steam",
+      "ru": "исполняемый файл Steam вне Steam",
+      "ja": "Steam の実行ファイル（Steam 外）",
+      "ko": "Steam 실행 파일(Steam 외부)",
+      "zh-CN": "Steam 的可执行文件（不在 Steam 中）",
+      "zh-TW": "Steam 的執行檔（不在 Steam 中）"
+    },
+    "MPFever could not install its mod into the game": {
+      "de": "MPFever konnte seinen Mod nicht im Spiel installieren",
+      "es": "MPFever no pudo instalar su mod en el juego",
+      "it": "MPFever non è riuscito a installare la sua mod nel gioco",
+      "nl": "MPFever kon zijn mod niet in het spel installeren",
+      "pl": "MPFever nie mógł zainstalować swojego moda w grze",
+      "pt-BR": "O MPFever não conseguiu instalar seu mod no jogo",
+      "ru": "MPFever не смог установить свой мод в игру",
+      "ja": "MPFever は Mod をゲームにインストールできませんでした",
+      "ko": "MPFever가 게임에 모드를 설치하지 못했습니다",
+      "zh-CN": "MPFever 无法将其模组安装到游戏中",
+      "zh-TW": "MPFever 無法將其模組安裝到遊戲中"
+    },
+    "Free some space on the game's disk (or check that nothing blocks that folder), then start MPFever again.": {
+      "de": "Schaffe Platz auf der Festplatte des Spiels (oder prüfe, dass nichts diesen Ordner blockiert) und starte MPFever dann neu.",
+      "es": "Libera espacio en el disco del juego (o comprueba que nada bloquee esa carpeta) y vuelve a iniciar MPFever.",
+      "it": "Libera spazio sul disco del gioco (o verifica che nulla blocchi quella cartella), poi riavvia MPFever.",
+      "nl": "Maak ruimte vrij op de schijf van het spel (of controleer dat niets die map blokkeert) en start MPFever daarna opnieuw.",
+      "pl": "Zwolnij miejsce na dysku gry (lub sprawdź, czy nic nie blokuje tego folderu), a potem uruchom MPFever ponownie.",
+      "pt-BR": "Libere espaço no disco do jogo (ou verifique se nada bloqueia essa pasta) e inicie o MPFever novamente.",
+      "ru": "Освободите место на диске игры (или проверьте, что ничто не блокирует эту папку), затем запустите MPFever снова.",
+      "ja": "ゲームのディスクの空き容量を増やして（またはそのフォルダーをブロックしているものがないか確認して）から、MPFever を再起動してください。",
+      "ko": "게임 디스크의 공간을 확보한 뒤(또는 그 폴더를 막는 것이 없는지 확인한 뒤) MPFever를 다시 시작하세요.",
+      "zh-CN": "请释放游戏所在磁盘的空间（或检查没有程序阻止该文件夹），然后重新启动 MPFever。",
+      "zh-TW": "請釋放遊戲所在磁碟的空間（或檢查沒有程式阻擋該資料夾），然後重新啟動 MPFever。"
+    },
+    "Its added signals are built on every game (0.7.8); a signal kept by a new track piece no longer crashes the other games (0.8.17, #399).": {
+      "de": "Seine hinzugefügten Signale werden in jedem Spiel gebaut (0.7.8); ein von einem neuen Gleisstück behaltenes Signal lässt die anderen Spiele nicht mehr abstürzen (0.8.17, #399).",
+      "es": "Sus señales añadidas se construyen en cada partida (0.7.8); una señal conservada por un tramo de vía nuevo ya no bloquea las demás partidas (0.8.17, #399).",
+      "it": "I suoi segnali aggiunti vengono costruiti in ogni partita (0.7.8); un segnale mantenuto da un nuovo tratto di binario non manda più in crash le altre partite (0.8.17, #399).",
+      "nl": "Zijn toegevoegde seinen worden in elk spel gebouwd (0.7.8); een sein dat een nieuw spoorstuk behoudt laat de andere spellen niet meer crashen (0.8.17, #399).",
+      "pl": "Jego dodane sygnały są budowane w każdej grze (0.7.8); sygnał zachowany przez nowy odcinek toru nie powoduje już awarii innych gier (0.8.17, #399).",
+      "pt-BR": "Seus sinais adicionados são construídos em cada jogo (0.7.8); um sinal mantido por um novo trecho de trilho não trava mais os outros jogos (0.8.17, #399).",
+      "ru": "Добавленные им сигналы строятся в каждой игре (0.7.8); сигнал, сохранённый новым участком пути, больше не роняет другие игры (0.8.17, #399).",
+      "ja": "追加した信号は各ゲームで建設されます（0.7.8）。新しい線路区間が保持する信号で他のゲームがクラッシュすることはなくなりました（0.8.17、#399）。",
+      "ko": "추가한 신호는 모든 게임에서 건설됩니다(0.7.8). 새 선로 구간이 유지하는 신호로 다른 게임이 충돌하지 않습니다(0.8.17, #399).",
+      "zh-CN": "其添加的信号会在每个游戏中建造（0.7.8）；新轨道段保留的信号不再导致其他游戏崩溃（0.8.17，#399）。",
+      "zh-TW": "其新增的號誌會在每個遊戲中建造（0.7.8）；新軌道段保留的號誌不再導致其他遊戲當機（0.8.17，#399）。"
+    },
+    "Its stations built with a tram street are replayed as the game's own stations (0.8.17, #400).": {
+      "de": "Seine mit einer Straßenbahnstraße gebauten Stationen werden wie die Stationen des Spiels nachgebaut (0.8.17, #400).",
+      "es": "Sus estaciones construidas con una calle de tranvía se reproducen como las estaciones del juego (0.8.17, #400).",
+      "it": "Le sue stazioni costruite con una strada tranviaria vengono riprodotte come le stazioni del gioco (0.8.17, #400).",
+      "nl": "Zijn stations die met een tramstraat zijn gebouwd worden nagebouwd zoals de stations van het spel (0.8.17, #400).",
+      "pl": "Jego stacje zbudowane z ulicą tramwajową są odtwarzane jak stacje gry (0.8.17, #400).",
+      "pt-BR": "Suas estações construídas com uma rua de bonde são reproduzidas como as estações do jogo (0.8.17, #400).",
+      "ru": "Его станции, построенные с трамвайной улицей, воспроизводятся как станции самой игры (0.8.17, #400).",
+      "ja": "路面電車の道路と一緒に建設した駅は、ゲーム本来の駅と同じように再現されます（0.8.17、#400）。",
+      "ko": "트램 도로와 함께 건설한 역은 게임 자체의 역처럼 재현됩니다(0.8.17, #400).",
+      "zh-CN": "与有轨电车道路一起建造的车站会像游戏自带车站一样重放（0.8.17，#400）。",
+      "zh-TW": "與路面電車道路一起建造的車站會像遊戲本身的車站一樣重播（0.8.17，#400）。"
+    },
+    "In a pause, its street pieces replaced one after the other are all built (0.8.17, #394).": {
+      "de": "In einer Pause werden seine nacheinander ersetzten Straßenstücke alle gebaut (0.8.17, #394).",
+      "es": "En una pausa, todos sus tramos de calle reemplazados uno tras otro se construyen (0.8.17, #394).",
+      "it": "In pausa, i suoi tratti di strada sostituiti uno dopo l'altro vengono tutti costruiti (0.8.17, #394).",
+      "nl": "In een pauze worden al zijn na elkaar vervangen straatstukken gebouwd (0.8.17, #394).",
+      "pl": "W pauzie wszystkie jego kolejno zastępowane odcinki ulic są budowane (0.8.17, #394).",
+      "pt-BR": "Em uma pausa, todos os seus trechos de rua substituídos um após o outro são construídos (0.8.17, #394).",
+      "ru": "В паузе все его участки улиц, заменяемые один за другим, строятся (0.8.17, #394).",
+      "ja": "一時停止中に次々と置き換えた道路区間がすべて建設されます（0.8.17、#394）。",
+      "ko": "일시 정지 중에 차례로 교체한 도로 구간이 모두 건설됩니다(0.8.17, #394).",
+      "zh-CN": "暂停时，其依次替换的道路段都会被建造（0.8.17，#394）。",
+      "zh-TW": "暫停時，其依序替換的道路段都會被建造（0.8.17，#394）。"
     }
   }
 }

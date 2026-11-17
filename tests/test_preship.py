@@ -192,12 +192,19 @@ L.execute("A1 = { preOf = E }; DONE = G.preshipSettle(A1, { at = 26213600, cost 
 sent = L.eval("SENT")
 check(L.globals().DONE is True and len(sent) == 1 and sent[1].kind == "pre_done" and sent[1].p.cost == 4200 and sent[1].p.uid == "Client#1:1",
       "built as its copy, nothing changed: a confirmation with its cost goes, not the capture")
+# (0.8.17, #405: the builder no longer reports it, the games that built the copy do, see test_preverify0817.py; as before with
+# MPFEVER_PREVERIFY=0)
+L.execute("ENV.MPFEVER_PREVERIFY = '0'")
 L.execute("SENT = {}; A2 = { preOf = E }; DONE = G.preshipSettle(A2, { at = 26213600, args = { { proposal = { tag = 'road', addedSegments = { {}, {} } } } } })")
 sent = L.eval("SENT")
 check(L.globals().DONE is False and L.eval("A2.post") == "Client#1:1" and len(sent) == 1 and sent[1].kind == "replay_failed",
-      "built otherwise, nothing had changed: its capture goes with it and the host's game is reloaded")
+      "MPFEVER_PREVERIFY=0: built otherwise, nothing had changed: its capture goes with it and the host's game is reloaded")
 L.execute("SENT = {}; A3 = { preOf = E }; DONE = G.preshipSettle(A3, { at = 26213800, args = { { proposal = { tag = 'road', addedSegments = { {} } } } } })")
-check(L.globals().DONE is False and L.eval("SENT")[1].kind == "replay_failed", "built at another step than shipped for: the same")
+check(L.globals().DONE is False and L.eval("SENT")[1].kind == "replay_failed", "MPFEVER_PREVERIFY=0: built at another step than shipped for: the same")
+L.execute("ENV.MPFEVER_PREVERIFY = nil")
+L.execute("SENT = {}; A2 = { preOf = E }; DONE = G.preshipSettle(A2, { at = 26213600, args = { { proposal = { tag = 'road', addedSegments = { {}, {} } } } } })")
+check(L.globals().DONE is False and L.eval("A2.post") == "Client#1:1" and len(L.eval("SENT")) == 0,
+      "(0.8.17) built otherwise, nothing had changed: its capture goes, the builder reports nothing (the games that built the copy do)")
 L.execute("SENT = {}; E.preClean = false; A4 = { preOf = E }; DONE = G.preshipSettle(A4, { at = 26213600, args = { { proposal = { tag = 'road', addedSegments = { {}, {} } } } } })")
 check(L.globals().DONE is False and L.eval("A4.post") == "Client#1:1" and L.eval("A4.preClean") is False and len(L.eval("SENT")) == 0,
       "changed since the click: its capture goes for the others, who waited for it (no reload)")
@@ -273,7 +280,7 @@ check('send("nat_cancel", { origin = G.me, id = entry.id, pre = entry.pre })' in
 check("if p.pre then pcall(G.preCancelled, p) end" in src and "(not w.arrived or p.pre)" in src, "...and stop holding for it even though its copy came")
 check("if p.post and G.prePost then" in src, "a capture after its copy: looked at first")
 check("elseif due and a.pre and G.preUsable and not G.preUsable(a) then" in src, "the others look again at its step")
-check("if a.pre then G.preUsed[tostring(a.uid)] = { sig = a.preSig, t = os.clock(), origin = a.origin } end" in src, "a copy built here is remembered")
+check("if a.pre then G.preUsed[tostring(a.uid)] = { sig = a.preSig, t = os.clock(), origin = a.origin, at = a.at } end" in src, "a copy built here is remembered (0.8.17: with its step)")
 check("G.preUsed[tostring(a.uid)].refused = true" in src, "a copy refused here waits for what its builder's engine did")
 check("(rc.late and rc.cost == nil and now - rc.at <= 50 * STEP)" in src and 'elseif name == "replay_cost_set" then' in src,
       "its builder's cost booked when it comes")

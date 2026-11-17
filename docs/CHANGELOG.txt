@@ -1,9 +1,9 @@
 MPFever - Changelog
 ===================
 
-0.8.17 - (in progress): a player joining no longer starts the shared maintenance one moment early on his game; an API for mod authors
+0.8.17 - 2026-11-17: the resyncs of the players' reports of 2026-11-16 fixed (builds landing late, joins, stations and signals of mods, pauses, saves), two crashes fixed, lighter sync checks and a lighter interface; an API for mod authors
   - FIX (#388: Andy, berni1212, dedicated server, vehicles drifting 20 minutes after a join): one company per player, when a
-    player joined, his game began to load the session's save while the script of the game he had before still ran for a moment;
+    player joined, that player's game began to load the session's save while the script of the game before still ran for a moment;
     that script gave its table of the depots open for maintenance just after the load was counted, so the table was taken as the
     new game's and in use from its first iteration, and never given again (the same table). The other games used none until their
     new game's script gave it, about 50 steps later: the maintenance differed in between. From a load's first copy, the native
@@ -11,6 +11,125 @@ MPFever - Changelog
     two states of that copy); the loaded game's script then gives the table at the same step on every game. MPFEVER_MTLOADBLOCK=0:
     as before. MPFEVER_MTSTALETEST=1 (tests) gives the table of the game before again at the load, as Andy's game did.
     Test: tests/test_maintload0817.py.
+  - FIX (#397, #398, #405: Andy, berni1212, lulei; 3 resyncs "build not reproduced" in one evening): a player's own build, held
+    for its step, was released as the game was about to stand there; the game's stop point moved on at once, and when the
+    simulation's next batch came before the moment the command list went to it, it made its steps first: the build landed a
+    batch late (2 to 4 steps) on its builder's game, unlike the copy shipped at the click to the others, and every game was
+    reloaded. The stop point now stays at the build's step until the simulation has taken the command list (the next exchange
+    between the interface and the simulation, a fifth of a second usually, a second at most). MPFEVER_RELHOLD=0: as before. Test:
+    tests/test_relhold0817.py (a model of the engine's batches and exchanges: the build a batch late before, at its step now).
+  - FIX (#398: the dedicated server's money of berni1212's company off by 15 584 and 27 029): a build shipped at the click is
+    confirmed by its builder with its cost, and each other game books the difference with its own replay. A game behind the
+    others got the confirmation before replaying the build: the cost was lost and nothing was booked there. It is now kept for
+    the replay, and a replay whose builder's cost never comes is said in the log. MPFEVER_COSTEARLY=0: as before. Test:
+    tests/test_costearly0817.py.
+  - FIX (#402, #403: BeunHaas34 and P0WeRZz): the mod "Narrow One-Way Tram Track" (a street template in an "infrastructure"
+    folder) was taken for an interface mod, so the host's game had it and the player's did not: every street of it was refused
+    there and the games were reloaded. The launcher now counts every content folder of the game and every Lua file named as a
+    resource of the world (street templates, constructions, modules, materials...) as part of the world: such a mod must be on
+    every player's game. The 105 mods installed on the test PC keep their verdicts. MPFEVER_PERSONALWORLD=0: as before. Tests:
+    tests/test_personalworld0817.py and the launcher's selftest.
+  - FIX (#407: Til and Eric, vehicles drifting 3 minutes after Eric joined): the host put a signal as the join's pause began; the host's
+    game built it, then saved. Eric's game, loading that save, read the signal and built it a second time: a build of a pause was
+    always kept. Its new track piece took the number the host's game had given an animal, and the games drifted. A build made
+    before the load is now left out on the joining game whether or not it was made in a pause (the players' joins are still
+    kept). MPFEVER_STALEPAUSED=0: as before. Test: tests/test_stalepaused0817.py.
+  - FIX (#406: alexg's game crashed while placing Havoc181's stop on a track): the replay of a stop asks the engine for its own
+    form of the stop first (a dry run), and only then builds. It read the track segment's data again after that answer, from a
+    view of the engine's storage taken before; an industry adding its streets in between had moved that storage, and the game
+    read freed memory. What the build needs is now read before the dry run. MPFEVER_STOPSNAP=0: as before. Test:
+    tests/test_stopsnap0817.py (the engine's view freed between the two: read before, nothing read now).
+  - FIX (#399: domin's game crashed on Swen's build from the mod Auto Signals): a game script's build gave a new track piece the
+    signal already there by its number on Swen's game; on domin's game that number was another thing, the build was refused, and
+    its next form, which leaves such objects out, removed the old track pieces with their stops still on them: the game crashed on
+    those stops. The signals and stops a script's new piece keeps now travel by reference like the rest of its build, and a form
+    that would leave stops or signals on a removed piece is refused (the same way on every game) instead of being built.
+    MPFEVER_GSMODOBJS=0, MPFEVER_GSSTRAND=0: as before. Test: tests/test_gsmodobjs0817.py.
+  - FIX (#400: yoyo, YkeWoudstra and Bence; a resync and two desyncs): a light rail station of the mod Ultimate Light Rail,
+    built with a new tram street to it, was rebuilt on the other games by MPFever's general forms, which the game refused; the
+    street was then built without its station. A player's construction of a mod, or any construction whose file says it is a
+    station, built with a street now goes the way of the game's own stations (the tool's proposal, converted by the engine).
+    MPFEVER_CONMOD=0: as before. Test: tests/test_conmod0817.py.
+  - FIX (#400: a resync for nothing): a line deleted quickly sold its vehicles a second time; every game refused that second
+    sale alike, but the third game's report came 6.5 s after the first and the launcher gave up waiting after 5 s. The report of
+    a refusal now carries the action's time, and the launcher waits until every game that has not reported has run 8 steps
+    past it (20 s at most). MPFEVER_FAILCLOCK=0: 5 s as before. Tests: tests/test_failclock0817.py and the launcher's selftest.
+  - FIX (found with #400): meanwhile, a player's game that had refused such an action left the other players' builds out until
+    a reload; when the launcher then said "refused everywhere" (no reload), those builds were lost on that game only. They now
+    wait for the launcher's word, the game standing at their step, and are built then (left out as before when the word is a
+    resynchronisation, or after 25 s).
+    MPFEVER_BROKENWAIT=0: as before. Test: tests/test_brokenwait0817.py.
+  - FIX (#405: Flubi and lulei, a resync while building a station): the copy of a build shipped at the click was taken from
+    the tool's preparation of an earlier position (the player had moved the tool since); such a copy is now left out (the build
+    is shipped the usual way), as the older previews already were. MPFEVER_PREPARESTALE=0: as before. Test:
+    tests/test_preparestale0817.py.
+  - FIX (#405): when a build came out otherwise than its copy shipped at the click, its builder reloaded every game, even when
+    no other game had built that copy yet (lulei's game built the real build, the games were alike). Now each game that built
+    the copy compares it with the real build (its form and its step) and asks for the reload itself; the others have nothing to
+    report. MPFEVER_PREVERIFY=0: as before. Test: tests/test_preverify0817.py.
+  - FIX (#398: Andy's track upgrade made 16 times, lost every time): a build sent by the game's interface itself (not by a
+    building tool) that replaces track pieces carrying signals was rebuilt by MPFever's general forms, which refuse to move
+    signals: refused on every game, the player's too, without a word. Such a build now goes the way of the building tools'
+    builds on every game, its player's too. MPFEVER_UIOBJBUILD=0: as before. Test: tests/test_uiobjbuild0817.py.
+  - FIX (#401: lgeru's game closed at once): the disk was full; the launcher had deleted MPFever's mod in the game, the new copy
+    stopped halfway, and the game started with half a mod. The mod is now copied beside the game's mods folder first and put in
+    place only once whole (a failed copy leaves the old one as it was), and a failed installation is said and the game is not
+    started. MPFEVER_SAFEINSTALL=0, MPFEVER_INSTALLSTOP=0: as before. Tests: tests/test_safeinstall0817.py and the launcher's
+    selftest.
+  - #407: two players with the same game build but other executables (GOG's and Steam's out of a Steam install) both read
+    "40425 (not a Steam copy)"; the warning now names each one's executable, and GOG's executable of build 40425 is known.
+    MPFEVER_BUILDSTAMP=0: as before. Test: the launcher's selftest.
+  - FIX (#405: Flubi's game stood a minute): lulei's bulldozer made as a short pause began took a turn of that pause, then
+    landed after it and was shipped as an ordinary build; the host applied it as one and its turn stayed open, so 12 minutes later
+    the next pause's turns waited 30 s for it (then skipped it, "desync risk"). A turn whose build was applied as an ordinary one
+    is now passed over at once. MPFEVER_PTSTRAY=0: as before. Test: tests/test_ptstray0817.py.
+  - FIX (#390: Kasper and Eier, a line and a warehouse "apart" for one check each, and the money corrected by 1 185 061 and
+    back): while the host saved the session's autosave, its game engine answered nothing for 12 to 16 s; MPFever's waits for the
+    engine ran out meanwhile, and the host's check of the pause was taken before its engine had applied Eier's line and
+    warehouse. Those waits now hold while the host's save runs and start again after it, and a check of a pause waits for a
+    build still in the engine's hands. MPFEVER_SAVEBUSY=0: as before. Test: tests/test_savebusy0817.py.
+  - FIX (#395: local_user and mandy): a player joining while the session stood at its start got a resynchronisation that
+    waited 2 minutes and gave up ("the games did not stop"): its pause was set ahead of where the standing games were. A pause
+    asked while the session stands now stays where every game stands. MPFEVER_PAUSESTANDING=0: as before. Tests:
+    tests/test_pausestanding0817.py and the launcher's selftest.
+  - FIX (#395): mandy, invited again after a failed join, loaded the session's save and then took a check of the connection
+    before, older than that save; the host's values of that check then set the company's money back to that older moment until the next
+    check. Such a check is now left out after a load, and the host's values of it are never applied. MPFEVER_STALEHASH=0: as
+    before. Test: tests/test_stalehash0817.py.
+  - SPEED (#405: Flubi's host held the simulation 0.17 to 0.24 s at most sync checks, every 10 s, for every player): the
+    heavy parts of a check take seven turns instead of five (the constructions, the node configurations and the segments'
+    ages each their own), so a check costs about half; each part is still checked every 70 s. MPFEVER_HASHGROUPS7=0: as
+    before. Test: tests/test_persondigest0713.py.
+  - SPEED (big maps): the host asked for a sync check every 10 s whatever it cost. In the reports of 2026-11-16 a check held
+    every game's simulation 0.4 s on Andy's, yoyo's and Eric's maps (4 % of the time and a hitch every 10 s) and 1.2 s on
+    Bence's (12 %). The interval now follows the cost on the slowest game (the mean of the last seven checks, times 40, between
+    10 and 20 s): a check takes 2.5 % of the time on Andy's map (every 16 s) and 6 % on Bence's (every 20 s, at most: the host's
+    money values go with each check); a small map is still checked every 10 s, and games found apart are checked again 10 s later. MPFEVER_HASHADAPT=0: every 10 s, as before. Tests: tests/test_hashadapt0817.py and the
+    launcher's selftest.
+  - SPEED (one company per player, big maps): every 5 s the interface looked through the whole street graph for the tracks the
+    other companies opened, 30 to 40 ms on Andy's and berni1212's map (up to 114 ms), a hitch each time. That look is now
+    skipped while nothing was built and the companies' rules are the same (a whole look still every 30 s, for sales and
+    mergers). MPFEVER_OPENNETSKIP=0: as before. Test: tests/test_opennetskip0817.py.
+  - SPEED (every game): MPFever's interface copied the whole state of its simulation half (90 kB, 1.2 to 2 ms) at every
+    frame, 60 times a second, though that state only changes when the interface takes a new copy of the simulation (about 5
+    times a second). It is now read again only then, and at least every 30 frames, and its bindings, check and results are
+    looked through only in a new copy. MPFEVER_STATECACHE=0: as before. Test:
+    tests/test_statecache0817.py.
+  - SPEED (every game): the interface read the native module's stop state (native_stop_state.txt) by opening the file at
+    every frame; the module rewrites it at every batch, and each open waited for the antivirus: 0.4 to 0.6 ms a frame, the
+    largest part of MPFever's interface time. It is now read through a handle kept open, as the session's messages already
+    were. With the state cache above, MPFever's interface takes about 0.5 ms a frame instead of 1.3 to 1.5 ms (Test Lag Rp).
+    MPFEVER_NSTOPKEPT=0: as before. Test: tests/test_nstopkept0817.py.
+  - TESTS: the autotest "stops" no longer picks a segment at a junction with traffic lights: its replacePosCfgObj form takes
+    the configuration of the segment's nodes away and adds none, and the client's game closed on its own test build ("it !=
+    components.end()", the configuration of a traffic-light node). A player's tool never sends that form. MPFEVER_STOPLIGHTS=1:
+    such segments too, as before. Test: tests/test_stoplights0817.py.
+  - DIAGNOSTIC (speed): mod.log's "gui alive" lines (every 600 frames) say how long MPFever's interface half took each frame
+    ("bridge <average> ms a frame, <longest> ms at most"); with MPFEVER_GUIPROF=1, that time by part ("prof <part>=<ms a
+    frame>"). Test: tests/test_guiprof0817.py.
+  - DIAGNOSTIC (#397, #398): "SEGMENT COUNT DIFFERS" after a replay was a false alarm when the next build was applied before
+    the count; such a count is now said as not compared, and a construction's count of signs or stops asks for a reload only
+    when nothing else was built meanwhile. MPFEVER_COUNTGUARD=0: as before. Test: tests/test_countguard0817.py.
   - NEW (for mod authors): MPFever's public API. Until now each mod that drifted needed its own rule in MPFever, guessed from the
     outside (a rule made for one mod could catch another). A mod can now ask MPFever through package.loaded["mpfever"]: whether
     a session runs, the company mode, the company of a player entity (the same number on every game) and this game's entity of a

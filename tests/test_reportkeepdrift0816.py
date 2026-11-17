@@ -26,7 +26,8 @@ def check(cond, name):
 d = src[src.find("internal static bool DriftDump(string name)"):]
 d = d[:d.find("\n        }\n") + 10]
 check("DriftDump" in d, "Reporter.DriftDump found")
-check('n.StartsWith("sdump_drift") || n.StartsWith("drift_") || n == "native_drift.txt"' in d, "  the drift dumps by their names")
+# (0.8.17, #393: and the segments' stamps, sdump_epochs_*, see test_epochdump0817.py)
+check('n.StartsWith("sdump_drift") || n.StartsWith("sdump_epochs") || n.StartsWith("drift_") || n == "native_drift.txt"' in d, "  the drift dumps by their names")
 check('"MPFEVER_REPORTKEEPDRIFT") == "0") return false' in d, "  MPFEVER_REPORTKEEPDRIFT=0: none kept")
 c = src[src.find("static string CutLargest(ref byte[] zipBytes)"):]
 c = c[:c.find("if (best == null || bestLen < 64 * 1024) return null;")]

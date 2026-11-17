@@ -242,7 +242,9 @@ def main():
         return bool(G.eval("(function(n) local s = ROT(n); R.hashSkip = nil; return not (s and s.personsDigest) end)(" + n + ")"))
 
     for env, ng, mates, what in [
-        ("", 5, ("edges2", "owners"), "with the halves (5 groups): with edges2 and owners"),
+        # (0.8.17, #405: seven turns, the digest with the ages; MPFEVER_HASHGROUPS7=0: the five of 0.7.5)
+        ("", 7, ("ages",), "with the halves (7 groups, 0.8.17): with the ages"),
+        ("MPFEVER_HASHGROUPS7 = '0'", 5, ("edges2", "owners"), "MPFEVER_HASHGROUPS7=0 (5 groups): with edges2 and owners"),
         ("MPFEVER_HASHHALVES = '0'", 3, ("constructions", "nodeConfigs", "ages"), "without the halves (3 groups): with the constructions, the nodes, the ages"),
         ("MPFEVER_HASHGROUPS = '0'", 3, ("constructions", "nodeConfigs"), "MPFEVER_HASHGROUPS=0 (3 groups): with the constructions and the nodes"),
     ]:
@@ -260,14 +262,15 @@ def main():
     ]:
         check(all(measured(env, str(n)) for n in range(40)), what)
     check(measured("", "nil"), "  a check without a number (the determinism run): measured, as before")
-    check(not measured("MPFEVER_PERSONDIGEST = '0'", "0") and measured("MPFEVER_PERSONDIGEST = '0'", "4"),
+    check(not measured("MPFEVER_PERSONDIGEST = '0'", "0") and measured("MPFEVER_PERSONDIGEST = '0'", "6"),
           "  MPFEVER_PERSONDIGEST=0: its turn kept (its value \"off\" at that check)")
     G.execute("ENV = {}")
     G.execute("CHK = function(n) local s = ROT(n); R.hashSkip = setmetatable({}, { __index = function(_, k) if k == 'personsDigest' or k == 'persons' then return s and s[k] else return true end end }); "
               "R.hashCheckN = n; local p = R.contentHash(HS, tostring); R.hashCheckN = nil; R.hashSkip = nil; return tostring(p.personsDigest) .. ' ' .. tostring(p.persons) end")
-    c16, c19, c24 = G.eval("CHK(16)"), G.eval("CHK(19)"), G.eval("CHK(24)")
-    check(c16 == "nil " + str(pc) and c19 == str(digest(A, "19")) + " " + str(pc) and c24 == str(d0) + " " + str(pc),
-          "  through R.contentHash: absent at another group's check (16), the eighth of its check's number at its turns (19, 24)", f"{c16} | {c19} | {c24}")
+    # (0.8.17: seven turns, the digest's at n % 7 == 6: 20 (eighth 4) and 48 (eighth 0))
+    c16, c19, c24 = G.eval("CHK(16)"), G.eval("CHK(20)"), G.eval("CHK(48)")
+    check(c16 == "nil " + str(pc) and c19 == str(digest(A, "20")) + " " + str(pc) and c24 == str(d0) + " " + str(pc),
+          "  through R.contentHash: absent at another group's check (16), the eighth of its check's number at its turns (20, 48)", f"{c16} | {c19} | {c24}")
 
     # extendedParts: the persons in the dump after a difference
     i = br.index("local function extendedParts(parts, checkN)")

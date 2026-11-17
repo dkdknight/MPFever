@@ -897,6 +897,16 @@ function R.translateOut(fn, margs, rev)
 				if type(sg.comp) == "table" then
 					if type(sg.comp.node0) == "number" and sg.comp.node0 >= 0 then sg.comp.node0 = ref("node", sg.comp.node0) end
 					if type(sg.comp.node1) == "number" and sg.comp.node1 >= 0 then sg.comp.node1 = ref("node", sg.comp.node1) end
+					-- (0.8.17, #399: Swen's Auto Signals build, a signal path over 3 segments: a new segment kept a signal already
+					-- there, comp.objects {{129113, 2}}, the edge object's id on Swen's game. On domin's game that id was another
+					-- entity: the first form failed on it (GetComponentDataIndex asserted), a form without the objects removed the
+					-- segment's stops, and the game crashed on them. The existing edge objects a new segment keeps now go as
+					-- references too (a new one, its id below 0, stays as it is). MPFEVER_GSMODOBJS=0: as before)
+					if type(sg.comp.objects) == "table" and os.getenv("MPFEVER_GSMODOBJS") ~= "0" then
+						for _, o in ipairs(sg.comp.objects) do
+							if type(o) == "table" and type(o[1]) == "number" and o[1] >= 0 then o[1] = ref("eo", o[1]) end
+						end
+					end
 				end
 				if type(sg.playerOwned) == "table" and type(sg.playerOwned.player) == "number" and R.coIdOf and R.coIdOf(sg.playerOwned.player) then
 					sg.playerOwned.player = ref("player", sg.playerOwned.player)

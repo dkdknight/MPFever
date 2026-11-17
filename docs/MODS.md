@@ -54,6 +54,15 @@ A mod with a **script** can act on the game by itself. In November 2026 we read 
 | Station and vehicle mods with scripts (Rail Vehicle Assets, CRH EMU Maintenance Depot, Seaplane & Land-Water Hub, Land Fish Farm, Elevated Curved Train Station, Curved Railway Station, Bigger Stations, All Stations...) | Their construction scripts give the same result on every game. |
 | cmf BB 27000 / BB 60000 packs, SNCF signals | The same on every game. With one company per player, the rebuilt locomotive assets belong to the savegame's first company. |
 
+### Made compatible in 0.8.17 (to confirm in your sessions)
+
+| Mod | Before 0.8.17 |
+|---|---|
+| Ultimate Light Rail | A light rail station built with a new tram street to it was refused on the other games (the street was built without its station): a resync. Its stations go the way of the game's own stations now ([#400](https://github.com/dkdknight/MPFever/issues/400)). |
+| Narrow One-Way Tram Track | It was taken for an interface mod, so a player without it could join, and every tram street of it was refused on that player's game: a resync. Every player needs it now, as any mod of streets or tracks ([#403](https://github.com/dkdknight/MPFever/issues/403)). |
+| Auto Signals | A signal path that kept a signal already there could make the other players' games crash (the signal named by its number on the builder's game). Its builds now name existing signals as the rest of the build ([#399](https://github.com/dkdknight/MPFever/issues/399)). |
+| Town Transit Planner | In a pause, its street pieces replaced one after the other were refused on every game after the first (the game had given a removed piece's number to the new one): the games drifted after. Each one now waits for the one before ([#394](https://github.com/dkdknight/MPFever/issues/394)). |
+
 ### Made compatible in 0.7.0 (to confirm in your sessions)
 
 These mods sent commands **from their interface by themselves** (a timer, a scan after a load). Each player's game sent the same command, and it was applied once per player: two sets of decorations, a toll paid twice, lines renamed back and forth. Since 0.7.0 such a command goes from **one game only**: the host's, or with one company per player the game of the company that owns the line or vehicle it changes.

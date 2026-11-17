@@ -88,6 +88,12 @@ namespace MPFever
             ok &= RunOldCopy081();
             ok &= RunLuaGate081();
             ok &= RunModStop088();
+            ok &= RunPersonalWorld0817();
+            ok &= RunFailClock0817();
+            ok &= RunSafeInstall0817();
+            ok &= RunBuildStamp0817();
+            ok &= RunPauseStanding0817();
+            ok &= RunHashAdapt0817();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
         }
@@ -928,6 +934,161 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             Check(MainForm.NativeFxProblem("Bob", null, "wear;") == null && MainForm.NativeFxProblem("Bob", "wear;", null) == null, "an older mod (no list): nothing said");
             var t3 = MainForm.NativeOldProblem("Cowboy", null) ?? "";
             Check(t3.Contains("Cowboy") && t3.Length > 40, "an old native module named: " + t3);
+            return ok;
+        }
+
+        /// <summary>(0.8.17, #395) A resynchronisation's pause asked while the session stands stays where the games stand.</summary>
+        /// <summary>(0.8.17, perf) The checks' interval grows with their cost on the slowest game (MainForm.HashInterval).</summary>
+        static bool RunHashAdapt0817()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "  ok    " : "  FAIL  ") + "0.8.17 checks' interval: " + what); ok &= c; }
+            var andy = new[] { 0.41, 0.38, 0.45, 0.40, 0.36, 0.43, 0.39 };
+            C(MainForm.HashInterval(andy, false, "0") == 10, "MPFEVER_HASHADAPT=0: every 10 s on Andy's map (0.4 s a check: 4 % of the time, the slowdown)");
+            double a = MainForm.HashInterval(andy, false, null);
+            C(a > 15.5 && a < 16.5, "now: Andy's map every " + a.ToString("0.0") + " s (2.5 % of the time)");
+            C(MainForm.HashInterval(new[] { 1.2, 1.5, 0.9, 1.1, 1.3, 1.0, 1.2 }, false, null) == 20, "Bence's map (1.2 s a check): 20 s at most (the host's money values go with each check)");
+            C(MainForm.HashInterval(new[] { 0.21, 0.23, 0.20 }, false, null) == 10, "a small map (0.2 s): 10 s as before");
+            C(MainForm.HashInterval(andy, true, null) == 10, "games apart: the next check at 10 s as before");
+            C(MainForm.HashInterval(new double[0], false, null) == 10 && MainForm.HashInterval(new[] { 0.0, 0.0 }, false, null) == 10, "no cost known (the paused checks send 0): 10 s");
+            C(MainForm.HashInterval(new[] { double.NaN, 0.3 }, false, null) == 12, "a cost that is not a number left out");
+            return ok;
+        }
+
+        static bool RunPauseStanding0817()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "  ok    " : "  FAIL  ") + "0.8.17 pause while standing: " + what); ok &= c; }
+            C(MainForm.PauseStamp(12209200, 12208000, 0, 12208000, false) == 12209200, "MPFEVER_PAUSESTANDING=0: the future stamp no standing game reaches (the bug of #395)");
+            C(MainForm.PauseStamp(12209200, 12208000, 0, 12208000, true) == 12208000, "now: the session standing at 12208000 pauses there, the resynchronisation goes on");
+            C(MainForm.PauseStamp(12209200, 12208000, 0, 12208400, true) == 12208000, "  a game a step further: still the pause, every game at or past it");
+            C(MainForm.PauseStamp(12209200, 12208000, 4, 12208000, true) == 12209200, "a running session: the future stamp, as before");
+            C(MainForm.PauseStamp(12209200, null, 0, 12208000, true) == 12209200, "no pause yet: the future stamp, as before");
+            return ok;
+        }
+
+        /// <summary>(0.8.17, #407) Two builds of the same number: the warning names each one's executable.</summary>
+        static bool RunBuildStamp0817()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "  ok    " : "  FAIL  ") + "0.8.17 build warning: " + what); ok &= c; }
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_BUILDSTAMP");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_BUILDSTAMP", null);
+                var w = MainForm.BuildWarning("Eric", "6ad9e27e|40425|other", "6ad9ce10|40425|other");
+                C(w.Contains("GOG") && (w.Contains("Steam's executable, outside Steam") || w.Contains("exécutable de Steam, hors de Steam")), "Til (GOG) and Eric (Steam's executable outside Steam) told apart: " + w);
+                C(MainForm.BuildWarning("Eric", "6ad9e27e|40425|other", "6ad9e27e|40425|other") == "", "two GOG copies of 40425: no warning");
+                var w2 = MainForm.BuildWarning("Bob", "6ad9ce10|40425|steam", "6ad0e4e5|40423|steam");
+                C(w2.Contains("40423") && w2.Contains("40425") && !w2.Contains("GOG"), "two numbers: as before (" + w2 + ")");
+                C(Reporter.BuildFlavor("6ad9e27e") == "GOG" && Reporter.BuildFlavor("6ad9ce10") == "Steam" && Reporter.BuildFlavor("12345678") == null, "the known executables");
+                Environment.SetEnvironmentVariable("MPFEVER_BUILDSTAMP", "0");
+                var w3 = MainForm.BuildWarning("Eric", "6ad9e27e|40425|other", "6ad9ce10|40425|other");
+                C(!w3.Contains("GOG"), "MPFEVER_BUILDSTAMP=0: the same words for both, as before (the confusion of #407)");
+            }
+            catch (Exception e) { C(false, e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_BUILDSTAMP", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.8.17, #401) The mod is copied beside the mods folder, then put in place; a copy that fails leaves the old one
+        /// whole (MPFEVER_SAFEINSTALL=0: deleted first, as before: nothing left).</summary>
+        static bool RunSafeInstall0817()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "  ok    " : "  FAIL  ") + "0.8.17 mod installation: " + what); ok &= c; }
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-install-" + Guid.NewGuid().ToString("N"));
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_SAFEINSTALL");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_SAFEINSTALL", null);
+                var src = Path.Combine(dir, "src"); var dst = Path.Combine(dir, "local", "mods", "mpfever_1"); var tmp = Path.Combine(dir, "local", "mpfever_1.install");
+                Directory.CreateDirectory(Path.Combine(src, "content")); Directory.CreateDirectory(dst);
+                File.WriteAllText(Path.Combine(src, "mod.json"), "new"); File.WriteAllText(Path.Combine(src, "content", "a.lua"), "new");
+                File.WriteAllText(Path.Combine(dst, "mod.json"), "old"); File.WriteAllText(Path.Combine(dst, "gone.lua"), "old");
+                GameInstall.InstallCopy(src, dst, tmp);
+                C(File.ReadAllText(Path.Combine(dst, "mod.json")) == "new" && File.Exists(Path.Combine(dst, "content", "a.lua")), "the new copy in place");
+                C(!File.Exists(Path.Combine(dst, "gone.lua")), "a mirror: a file taken out of the mod is gone");
+                C(!Directory.Exists(tmp) && !Directory.Exists(tmp + ".old"), "no folder left beside it");
+                File.WriteAllText(Path.Combine(dst, "mod.json"), "old");
+                bool threw = false;
+                try { GameInstall.InstallCopy(Path.Combine(dir, "missing"), dst, tmp); } catch { threw = true; }
+                C(threw && File.ReadAllText(Path.Combine(dst, "mod.json")) == "old", "a copy that fails (a full disk): the old copy kept whole, the error said");
+                C(!Directory.Exists(tmp), "  and no half copy left");
+                Environment.SetEnvironmentVariable("MPFEVER_SAFEINSTALL", "0");
+                threw = false;
+                try { GameInstall.InstallCopy(Path.Combine(dir, "missing"), dst, tmp); } catch { threw = true; }
+                C(threw && !File.Exists(Path.Combine(dst, "mod.json")), "MPFEVER_SAFEINSTALL=0: the old copy deleted first, nothing whole left (the bug)");
+            }
+            catch (Exception e) { C(false, e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_SAFEINSTALL", kept); try { Directory.Delete(dir, true); } catch { } }
+            return ok;
+        }
+
+        /// <summary>(0.8.17, #400) A refused action's reports are waited for until every silent game's clock is 20 steps past its
+        /// time (20 s at most), not 5 s: Bence's second sale, refused alike, its third report 6.5 s after the first.</summary>
+        static bool RunFailClock0817()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "  ok    " : "  FAIL  ") + "0.8.17 refused everywhere: " + what); ok &= c; }
+            C(MainForm.FailedAt("{[\"uid\"]=\"Bence#6:6\",[\"why\"]=\"DESYNC unresolved\",[\"at\"]=32718200}") == 32718200, "the action's time read from the report");
+            C(MainForm.FailedAt("{[\"uid\"]=\"Bence#6:6\",[\"why\"]=\"x\"}") == null, "an older version's report: no time (5 s as before)");
+            var players = new[] { "yoyo", "Bence#6", "YkeWoudstra#2" };
+            var who = new List<string> { "Bence#6", "yoyo" };
+            var ct = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase) { ["yoyo"] = 32718200 + 6000, ["Bence"] = 32718200 + 200, ["YkeWoudstra"] = 32716000 };
+            C(!MainForm.FailWaitDecided(32718200, who, players, ct, MainForm.FailClockSlack), "YkeWoudstra 11 steps behind the action and silent: still waited for (it reported 6.5 s later)");
+            ct["YkeWoudstra"] = 32718200 + 1400;
+            C(!MainForm.FailWaitDecided(32718200, who, players, ct, MainForm.FailClockSlack), "7 steps past it: still waited for");
+            ct["YkeWoudstra"] = 32718200 + 1600;
+            C(MainForm.FailWaitDecided(32718200, who, players, ct, MainForm.FailClockSlack), "8 steps past it and silent: it built it, the games differ (no longer waited for)");
+            ct.Remove("YkeWoudstra");
+            C(!MainForm.FailWaitDecided(32718200, who, players, ct, MainForm.FailClockSlack), "no clock of a silent game yet: waited for");
+            C(1.5 + MainForm.FailWaitClockTicks * 0.25 >= 20.0 - 1e-9 && 1.5 + MainForm.FailWaitClockTicks * 0.25 <= 20.5, "20 s at most in all");
+            return ok;
+        }
+
+        /// <summary>(0.8.17, #402 #403) A street template in content/infrastructure/ (griese_narrow_single_tram) is no interface mod;
+        /// nor any Lua file named as a resource of the world; an interface mod stays personal; MPFEVER_PERSONALWORLD=0 as before.</summary>
+        static bool RunPersonalWorld0817()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + "0.8.17 personal mods: " + what); ok &= cond; }
+            var dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-personalworld-" + Guid.NewGuid().ToString("N"));
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_PERSONALWORLD");
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_PERSONALWORLD", null);
+                var tram = Path.Combine(dir, "content", "infrastructure", "griese_single_tram");
+                Directory.CreateDirectory(tram);
+                File.WriteAllText(Path.Combine(dir, "mod.json"), "{\"modId\":\"griese_narrow_single_tram\"}");
+                File.WriteAllText(Path.Combine(tram, "narrow.street_template.lua"), "function data() return { name = 'narrow' } end");
+                File.WriteAllText(Path.Combine(tram, "narrow@2x.tga"), "x");
+                var why = Mods.Personal(dir);
+                Check(why.StartsWith("game resources (infrastructure/"), "the tram street template of #403 is shared (" + why + ")");
+                Environment.SetEnvironmentVariable("MPFEVER_PERSONALWORLD", "0");
+                Check(Mods.Personal(dir) == "", "MPFEVER_PERSONALWORLD=0: taken for personal as before (the bug)");
+                Environment.SetEnvironmentVariable("MPFEVER_PERSONALWORLD", null);
+                Directory.Delete(Path.Combine(dir, "content", "infrastructure"), true);
+                var other = Path.Combine(dir, "content", "my_things");
+                Directory.CreateDirectory(other);
+                File.WriteAllText(Path.Combine(other, "fence.con.lua"), "function data() return {} end");
+                why = Mods.Personal(dir);
+                Check(why.StartsWith("a resource of the game's world (my_things/fence.con.lua"), "a construction in a folder of its own is shared (" + why + ")");
+                Directory.Delete(other, true);
+                var ui = Path.Combine(dir, "content", "res", "ui");
+                Directory.CreateDirectory(ui);
+                File.WriteAllText(Path.Combine(ui, "x.res.lua"), "local t = \"react-plugin\" return t");
+                File.WriteAllText(Path.Combine(ui, "x.css.lua"), "return {}");
+                File.WriteAllText(Path.Combine(ui, "strings.lang.lua"), "return {}");
+                File.WriteAllText(Path.Combine(ui, "helper.lua"), "return {}");
+                var gui = Path.Combine(dir, "content", "gui");
+                Directory.CreateDirectory(gui);
+                File.WriteAllText(Path.Combine(gui, "dut.script.lua"), "local function f() return 1 end return { f = f }");
+                Check(Mods.Personal(dir) == "", "an interface mod (react plugin, styles, strings, plain Lua, an interface script in gui/ as zhenya's) stays personal (" + Mods.Personal(dir) + ")");
+                Check(Mods.WorldLua("a.street_template.lua") && Mods.WorldLua("x.module.lua") && Mods.WorldLua("m.mat.lua") && !Mods.WorldLua("a.lua") && !Mods.WorldLua("a.res.lua") && !Mods.WorldLua("a.lang.lua") && !Mods.WorldLua("dkjson.min.lua") && !Mods.WorldLua("ui.helpers.lua"), "the kinds of Lua files (a library's dotted name stays the interface's, the review)");
+            }
+            catch (Exception e) { Check(false, e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_PERSONALWORLD", kept); try { Directory.Delete(dir, true); } catch { } }
             return ok;
         }
 

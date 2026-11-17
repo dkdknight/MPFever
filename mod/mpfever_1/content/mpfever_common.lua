@@ -883,6 +883,42 @@ function C.movesObjects(st)
 	return false
 end
 
+-- (0.8.17, #399) The edge objects a script's street proposal would leave on a segment it removes (see C.rebuildArgs): nil when
+-- none, else "segment:object". Only a proposal that names its removed segments by id (a game script's: edgesToRemove of numbers,
+-- this game's ids once translated); the objects listed in edgeObjectsToRemove go, those an added segment keeps in comp.objects stay
+-- with the 'full' form only.
+function C.strandedObjects(st, variant)
+	if type(st) ~= "table" or os.getenv("MPFEVER_GSSTRAND") == "0" then return nil end
+	local rm = st.edgesToRemove
+	if type(rm) ~= "table" or #rm == 0 then return nil end
+	local gone = {}
+	for _, id in ipairs(st.edgeObjectsToRemove or {}) do if type(id) == "number" then gone[id] = true end end
+	local kept = {}
+	if variant == "full" then
+		for _, s in ipairs(st.edgesToAdd or {}) do
+			local objs = type(s) == "table" and type(s.comp) == "table" and s.comp.objects
+			for _, o in ipairs(type(objs) == "table" and objs or {}) do
+				if type(o) == "table" and type(o[1]) == "number" then kept[o[1]] = true end
+			end
+		end
+	end
+	for _, e in ipairs(rm) do
+		if type(e) == "number" and e >= 0 then
+			local okC, c = pcall(function() return api.engine.getComponent(e, api.type.ComponentType.BASE_EDGE) end)
+			local objs = {}
+			if okC and c then
+				pcall(function()
+					for i = 1, #c.objects do objs[#objs + 1] = c.objects[i][1] end
+				end)
+			end
+			for _, id in ipairs(objs) do
+				if type(id) == "number" and not gone[id] and not kept[id] then return tostring(e) .. ":" .. tostring(id) end
+			end
+		end
+	end
+	return nil
+end
+
 -- the existing objects of a captured added segment, as this game's ({ id, kind } pairs)
 function C.localObjects(src, idMap)
 	local list = {}
@@ -1421,6 +1457,13 @@ function C.rebuildProposal(m, opts)
 		-- (the engine asserts adding their component again) and leaves them stranded on the removed segment (the game then
 		-- crashed in their catchment area). Only the native form moves them (see C.movesObjects).
 		if C.movesObjects(st) then error("stops or signals on a segment the build cuts: native form only") end
+		-- (0.8.17, #399) a game script's build names the segments it removes by their ids only (edgesToRemove), which
+		-- C.movesObjects cannot see into: Swen's Auto Signals build removed 3 segments, the form without the objects
+		-- ('minimal') left the stops of one of them stranded and domin's game crashed on them. The objects this game's removed
+		-- segments carry must be removed by the build or kept by one of its new segments (the 'full' form keeps comp.objects;
+		-- the others drop them): else this form is refused, the same way on every game. MPFEVER_GSSTRAND=0: as before
+		local strand = C.strandedObjects(st, variant)
+		if strand then error("stops or signals on a removed segment (" .. strand .. ") the '" .. variant .. "' form would leave behind") end
 		local edges = {}
 		for i, s in ipairs(st.edgesToAdd or st.addedSegments or {}) do
 			if variant == "full" then
