@@ -121,10 +121,10 @@ See [SERVER](docs/SERVER.txt).
 
 ### Hosting through a Linux server (experimental)
 
-A player can host through a Linux relay so everyone joins one address and the host needs no inbound port.
-See the [Linux relay setup guide](docs/LINUX-RELAY.md) and look for the Linux x64 relay and its SHA-256 checksum in the
-[release assets](https://github.com/dkdknight/MPFever/releases/latest) (`mpfever-relay-linux-x64`). Host migration is experimental and off by default.
-The Linux relay is written and looked after by [ampynjord](https://github.com/ampynjord).
+A player can host through a relay (`mpfever-relay`, on Linux or Windows) so everyone joins one address and the host needs no inbound port.
+See the [relay setup guide](docs/LINUX-RELAY.md) and look for the Linux x64 or Windows x64 relay and its SHA-256 checksum in the
+[release assets](https://github.com/dkdknight/MPFever/releases/latest). Host migration is experimental and off by default.
+The relay is written and looked after by [ampynjord](https://github.com/ampynjord).
 
 ### And also
 
