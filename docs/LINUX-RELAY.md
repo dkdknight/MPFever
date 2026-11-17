@@ -1,4 +1,4 @@
-# MPFever session server for Linux (tunnel mode)
+# MPFever relay (`mpfever-relay`, Linux or Windows): hosting through a small server
 
 Status: **works with two real games** (`MPFever.exe --autotest`, one host and one client through the server, also through a server on
 a remote Linux VPS): `IN SYNC, desyncs 0, refused 0`. Experimental host migration has been tested with three real games.
@@ -10,6 +10,11 @@ through it**: that player's MPFever and game are the host exactly as before (the
 connection to the players goes through the server instead of a port of its own. Everybody else joins the server's address like any host.
 So: one stable address, nothing to open or forward on the host's router (useful behind CGNAT), and the server can run on any cheap VPS
 because it simulates nothing.
+
+**This is not the dedicated server** (`MPFever-<version>-server.zip`, `MPFever.exe --server`): that one runs the game and the world itself, on a
+Windows PC with the game installed. The relay runs no game: the hosting player's PC and game still run the world, the relay only carries
+the messages. Use the dedicated server when a PC can run the game all the time; use the relay when the host has no port to open or wants a
+stable address.
 
 ## Using it
 
@@ -254,14 +259,14 @@ thread per player), and the server forwards each copy to its player. The paralle
 
 ## Deploying
 
-Download `mpfever-relay` and `mpfever-relay.sha256` from the [release assets](https://github.com/dkdknight/MPFever/releases/latest)
-once attached. The Release build workflow produces both in the `mpfever-relay-linux-x64` artifact. The code-signing policy covers the Windows
-release files of the game. The relay binaries (Linux and Windows) are unsigned. On Linux, check the download and make the binary executable
-from the directory containing both files.
+Download `MPFever-<version>-relay-linux-x64.tar.gz` from the [release assets](https://github.com/dkdknight/MPFever/releases/latest) once
+attached (the Release build workflow produces it, with its SHA-256 on the run's page). The archive holds a folder `MPFever-Relay` with the
+`mpfever-relay` program and this guide. The code-signing policy covers the Windows release files of the game. The relay programs (Linux and
+Windows) are unsigned. On Linux, check the download against that SHA-256 and unpack it.
 
 ```sh
-sha256sum -c mpfever-relay.sha256
-chmod +x mpfever-relay
+sha256sum MPFever-<version>-relay-linux-x64.tar.gz
+tar -xzf MPFever-<version>-relay-linux-x64.tar.gz
 ```
 
 To build from source, run `dotnet publish server-linux -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true`.
@@ -286,13 +291,15 @@ Open the TCP port configured with `--port` in the firewall. Use launchers that s
 
 ### On Windows
 
-The relay is the same program: the Release build workflow also produces `mpfever-relay.exe` and `mpfever-relay.exe.sha256` in the
-`mpfever-relay-windows-x64` artifact (self-contained, nothing to install; unsigned, so SmartScreen may ask for confirmation). To build it
+The relay is the same program: the Release build workflow also produces `MPFever-<version>-relay-win-x64.zip`, a folder `MPFever-Relay` with
+`mpfever-relay.exe` and this guide (self-contained, nothing to install; unsigned, so SmartScreen may ask for confirmation). To build it
 from source, run `dotnet publish server-linux -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`.
 
 ```powershell
-# check the download, from the folder that has both files
-(Get-FileHash mpfever-relay.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Content mpfever-relay.exe.sha256).Split(' ')[0]
+# check the download against the SHA-256 given with the release, then unpack it
+(Get-FileHash MPFever-<version>-relay-win-x64.zip -Algorithm SHA256).Hash
+Expand-Archive MPFever-<version>-relay-win-x64.zip -DestinationPath C:\
+cd C:\MPFever-Relay
 
 # run it (options are the same as on Linux)
 .\mpfever-relay.exe --port 28090 --password SECRET
@@ -302,7 +309,7 @@ To start it with the PC, create a scheduled task that runs it at start-up under 
 logged on or not", with the same arguments). Allow it through the Windows firewall for the port of `--port`:
 
 ```powershell
-New-NetFirewallRule -DisplayName "MPFever relay" -Direction Inbound -Protocol TCP -LocalPort 28090 -Action Allow -Program "C:\mpfever-relay\mpfever-relay.exe"
+New-NetFirewallRule -DisplayName "MPFever relay" -Direction Inbound -Protocol TCP -LocalPort 28090 -Action Allow -Program "C:\MPFever-Relay\mpfever-relay.exe"
 ```
 
 This is not the Windows dedicated server (`MPFever.exe --server`), which runs the game itself so the world goes on without a host: the relay only

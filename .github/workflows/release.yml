@@ -120,6 +120,8 @@ jobs:
           $lines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           $lines -join "`n"
 
+  # (the relay, named as the other archives: MPFever-<version>-relay-linux-x64.tar.gz and MPFever-<version>-relay-win-x64.zip, each
+  # with a folder MPFever-Relay holding the program and its guide; the hashes are on the run's page)
   linux-relay:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -130,23 +132,32 @@ jobs:
         with:
           dotnet-version: "9.0.x"
 
+      - name: Version
+        id: version
+        run: echo "version=$(sed -n 's/^set "VERSION=\([^"]*\)".*/\1/p' build.bat | tr -d '\r')" >> "$GITHUB_OUTPUT"
+
       - name: Publish Linux relay (x64)
         run: dotnet publish server-linux/MPFeverRelay.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o artifacts/linux
 
       - name: Test the published relay
         run: artifacts/linux/mpfever-relay --selftest
 
-      - name: Checksum
-        working-directory: artifacts/linux
-        run: sha256sum mpfever-relay > mpfever-relay.sha256
+      # (tar.gz, not zip: it keeps the executable bit)
+      - name: Pack
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          f="MPFever-$v-relay-linux-x64.tar.gz"
+          mkdir -p release/MPFever-Relay
+          cp artifacts/linux/mpfever-relay docs/LINUX-RELAY.md release/MPFever-Relay/
+          tar -czf "release/$f" -C release MPFever-Relay
+          bt='`'
+          echo "- $bt$f$bt, SHA-256 $bt$(sha256sum "release/$f" | cut -d' ' -f1)$bt" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Linux relay and checksum
+      - name: Linux relay
         uses: actions/upload-artifact@v4
         with:
-          name: mpfever-relay-linux-x64
-          path: |
-            artifacts/linux/mpfever-relay
-            artifacts/linux/mpfever-relay.sha256
+          name: MPFever-${{ steps.version.outputs.version }}-relay-linux-x64
+          path: release/MPFever-${{ steps.version.outputs.version }}-relay-linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -160,25 +171,34 @@ jobs:
         with:
           dotnet-version: "9.0.x"
 
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path build.bat -Pattern '^set "VERSION=([^"]+)"').Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
       - name: Publish Windows relay (x64)
         run: dotnet publish server-linux/MPFeverRelay.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o artifacts/windows
 
       - name: Test the published relay
         run: artifacts/windows/mpfever-relay.exe --selftest
 
-      - name: Checksum
+      - name: Pack
         shell: pwsh
-        working-directory: artifacts/windows
         run: |
-          $h = (Get-FileHash mpfever-relay.exe -Algorithm SHA256).Hash.ToLower()
-          "$h  mpfever-relay.exe" | Out-File -FilePath mpfever-relay.exe.sha256 -Encoding ascii
+          $v = "${{ steps.version.outputs.version }}"
+          $f = "MPFever-$v-relay-win-x64.zip"
+          New-Item -ItemType Directory -Force release/MPFever-Relay | Out-Null
+          Copy-Item artifacts/windows/mpfever-relay.exe, docs/LINUX-RELAY.md release/MPFever-Relay/
+          Compress-Archive -Path release/MPFever-Relay -DestinationPath "release/$f"
+          $h = (Get-FileHash "release/$f" -Algorithm SHA256).Hash
+          "- ``$f``, SHA-256 ``$h``" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
-      - name: Windows relay and checksum
+      - name: Windows relay
         uses: actions/upload-artifact@v4
         with:
-          name: mpfever-relay-windows-x64
-          path: |
-            artifacts/windows/mpfever-relay.exe
-            artifacts/windows/mpfever-relay.exe.sha256
+          name: MPFever-${{ steps.version.outputs.version }}-relay-win-x64
+          path: release/MPFever-${{ steps.version.outputs.version }}-relay-win-x64.zip
           if-no-files-found: error
           retention-days: 30
