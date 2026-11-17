@@ -121,6 +121,28 @@ version did: a player announced later is a new arrival for the host's code, whic
 The test: `MPFEVER_SERVER=127.0.0.1:28090 MPFEVER_NOLOCALCLIENT=1 MPFEVER_CLIENT2=1 MPFEVER_SCENARIO=migrate MPFever.exe --autotest <save>`
 for the host, then two `MPFever.exe --autoclient 127.0.0.1:28090 <save> <name>` for the players, against `mpfever-relay --migration`.
 
+## Keeping the save on the server (experimental)
+
+Off by default. With `--checkpoint-dir DIR --checkpoint-owner-key KEY` the server keeps the **latest complete save** of the session on disk, so
+the game can go on later even when nobody is connected and the last host is away. Add `--resume-without-host RECOVERYKEY` to let a second
+player, who has that key, fetch the save and host from it.
+
+- **Sending.** A host that has `server=` and `serverkey=KEY` in `mpfever_settings.txt` sends the session's autosave to the server after each
+  one (every N minutes, see the host's autosave setting). The server checks the size and the SHA-256, writes the file next to the old one and
+  replaces the old one only when the new one is complete: an interrupted or corrupt upload leaves the previous save in place. A host whose
+  PC crashes loses only what happened since the last autosave. There is no extra send when the host leaves normally yet.
+- **Resuming.** A player with `server=` and `serverkey=` (the owner key or the recovery key) gets a button, "Resume the server's saved game
+  (experimental)". It fetches the save into the game's savegames as "MPFever relay save" (nothing hosts yet on the server: it connects as
+  the host for that, then leaves). The player then clicks "Host a game" and loads that save as usual. The world is paused while nobody plays,
+  and the new host needs the mods and DLCs the save uses.
+- **Who may do what.** The server's password lets a player join, nothing more. Storing needs the owner key or the recovery key; reading needs
+  one of them too, and reading with the recovery key works only with `--resume-without-host`. The recovery key is meant for a trusted
+  friend who may also host, so it can store the save it goes on with. Keys are compared in constant time.
+- **Limits.** One save (the latest), at most 1 GB, written to `--checkpoint-dir` only (two servers cannot share a directory: it is locked).
+  The server does not read the save. Messages `tun_checkpoint`, `tun_checkpoint_bin` (host to server) and `tun_checkpoint_reply` (server to
+  host) are the server's own and a player's are dropped. Tested by `mpfever-relay --selftest` (storage, protocol, and the launcher's side
+  against the server); not yet tested with a real game.
+
 ## Why a tunnel, and what it is not
 
 - The host is more than a role: `MainForm` keeps the session's state (players, clocks, speed and pause, company mode, lobby, hashes,

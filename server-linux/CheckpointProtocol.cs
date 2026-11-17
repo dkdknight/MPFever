@@ -82,7 +82,8 @@ namespace MPFever.LinuxServer
             switch (CheckpointWire.Text(fields, "op"))
             {
                 case "begin":
-                    if (!OwnerKey(key) && checkpointRestored != sender) return CheckpointReply(id, "denied");
+                    // (the recovery key is the key of a player trusted to host: it may store the save it goes on with, too)
+                    if (!OwnerKey(key) && !RecoveryKey(key) && checkpointRestored != sender) return CheckpointReply(id, "denied");
                     if (!CheckpointWire.Number(fields, "size", CheckpointWire.MaxSize, out var bytes) || bytes == 0)
                         return CheckpointReply(id, "invalid");
                     string hashText = CheckpointWire.Text(fields, "sha");

@@ -944,7 +944,7 @@ namespace MPFever
                     bool answered = WaitUntil(() => serverSaveDone is Dictionary<object, object> d && d.TryGetValue("id", out var v) && v is double dv && (int)dv == id, 180);
                     var done = serverSaveDone;
                     bool ok = answered && done != null && done.TryGetValue("ok", out var okv) && okv is bool b && b;
-                    if (ok) { hostSavedActs = acts; hostSavedClock = clock; Log.Ok(F("Sauvegarde automatique de la session : « {0} » ({1:0.0} s).", "Session autosave: « {0} » ({1:0.0} s).", name, (DateTime.UtcNow - t0).TotalSeconds)); }
+                    if (ok) { hostSavedActs = acts; hostSavedClock = clock; Log.Ok(F("Sauvegarde automatique de la session : « {0} » ({1:0.0} s).", "Session autosave: « {0} » ({1:0.0} s).", name, (DateTime.UtcNow - t0).TotalSeconds)); KeepSaveOnServer(name); }
                     else if (answered) Log.Warn(F("Sauvegarde automatique de la session refusée par le jeu : {0}", "Session autosave refused by the game: {0}", done != null && done.TryGetValue("err", out var err) ? Convert.ToString(err, CultureInfo.InvariantCulture) : "?"));
                     else Log.Warn(T("Sauvegarde automatique de la session : pas de réponse du jeu.", "Session autosave: no answer from the game."));
                 }

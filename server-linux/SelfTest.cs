@@ -212,6 +212,42 @@ namespace MPFever.LinuxServer
                 }
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
+            CheckpointThroughRemoteRelay();
+        }
+
+        /// <summary>The launcher's own side (RemoteRelay.UploadCheckpoint / DownloadCheckpoint) against the relay, with a 2.5 MB save.</summary>
+        static void CheckpointThroughRemoteRelay()
+        {
+            Console.WriteLine("the launcher's side of the kept save");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-checkpoint-" + Guid.NewGuid().ToString("N"));
+            var save = new byte[2 * RelayCheckpoint.ChunkSize + 4321];
+            new Random(11).NextBytes(save);
+            try
+            {
+                var opt = new ServerOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
+                using (var srv = new Relay())
+                {
+                    var core = new SessionCore(srv, opt);
+                    srv.Start(0);
+                    using (var a = new RemoteRelay())
+                    {
+                        a.Connect("127.0.0.1", srv.Port, "Alice", null);
+                        Check("a host with a wrong key cannot keep a save", a.UploadCheckpoint("nope", save) == "denied");
+                        Check("a host with the owner key keeps a 2.5 MB save", a.UploadCheckpoint("own", save) == "saved");
+                    }
+                    Thread.Sleep(300);
+                    using (var b = new RemoteRelay())
+                    {
+                        b.Connect("127.0.0.1", srv.Port, "Bella", null);
+                        var none = b.DownloadCheckpoint("nope", out var status);
+                        Check("a wrong key reads nothing", none == null && status == "denied");
+                        var got = b.DownloadCheckpoint("rec", out status);
+                        Check("the recovery key reads the save back, hash checked", got != null && got.SequenceEqual(save) && status == "ready");
+                        Check("and may keep the save it goes on with", b.UploadCheckpoint("rec", new byte[] { 1, 2, 3, 4 }) == "saved");
+                    }
+                }
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
         }
 
         static void Tunnel()

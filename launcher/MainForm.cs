@@ -285,6 +285,7 @@ namespace MPFever
         readonly ModernButton hostBtn = new ModernButton(ButtonKind.Primary);
         readonly ModernButton joinBtn = new ModernButton(ButtonKind.Secondary);
         readonly ModernButton localBtn = new ModernButton(ButtonKind.Ghost);
+        readonly ModernButton resumeBtn = new ModernButton(ButtonKind.Ghost);
         readonly ModernButton startBtn = new ModernButton(ButtonKind.Primary) { Enabled = false };
         // (issue #94: shown in place of startBtn once the game is closed)
         readonly ModernButton againBtn = new ModernButton(ButtonKind.Primary) { Visible = false };
@@ -456,6 +457,7 @@ namespace MPFever
             hostBtn.Click += (s, e) => Guard(() => StartHost(PlayerName(), true));
             joinBtn.Click += (s, e) => Guard(() => StartClient(PlayerName(), hostBox.Text.Trim(), (int)portBox.Value, true));
             localBtn.Click += (s, e) => Guard(StartLocalTest);
+            resumeBtn.Click += (s, e) => ResumeFromServer();
             startBtn.Click += (s, e) => StartSession();
             againBtn.Click += (s, e) => StartAgain(updateInstalled);
             launchBtn.Click += (s, e) => LaunchFromButton();
@@ -484,6 +486,7 @@ namespace MPFever
             hostBtn.Text = T("Héberger une partie", "Host a game");
             joinBtn.Text = T("Rejoindre par IP", "Join by IP");
             localBtn.Text = T("Test local (2 jeux)", "Local test (2 games)");
+            resumeBtn.Text = T("Reprendre la partie du serveur (expérimental)", "Resume the server's saved game (experimental)");
             startBtn.Text = T("▶  Démarrer la partie", "▶  Start the game");
             againBtn.Text = T("Relancer Transport Fever 3", "Start Transport Fever 3 again");
             launchBtn.Text = T("▶  Lancer Transport Fever 3", "▶  Start Transport Fever 3");
@@ -497,7 +500,7 @@ namespace MPFever
             pauseBtn.Text = "❚❚  " + T("Pause", "Pause");
             detBtn.Text = T("Test déterminisme", "Determinism test");
             langBtn.Text = L.Name + "  ▾";
-            foreach (var b in new[] { hostBtn, joinBtn, localBtn, startBtn, againBtn, launchBtn, pauseBtn, x1Btn, x2Btn, x4Btn, detBtn, langBtn }) b.ResetFont();
+            foreach (var b in new[] { hostBtn, joinBtn, localBtn, resumeBtn, startBtn, againBtn, launchBtn, pauseBtn, x1Btn, x2Btn, x4Btn, detBtn, langBtn }) b.ResetFont();
             logBox.Font = Theme.Mono(9f);
 
             header = new HeaderBar(T("Multijoueur pour Transport Fever 3", "Multiplayer for Transport Fever 3"), "v" + Version, langBtn);
@@ -518,6 +521,7 @@ namespace MPFever
                 Ui.Caption(T("Connexion", "Connection")),
                 Ui.Field(T("Votre nom", "Your name"), nameBox),
                 Ui.Gap(8), hostRow, Ui.Gap(16), hostBtn, Ui.Gap(8), joinBtn };
+            if (CanKeepSave()) connItems.AddRange(new Control[] { Ui.Gap(8), resumeBtn });
             if (Dev) connItems.AddRange(new Control[] { Ui.Gap(8), localBtn });
             Ui.StackTop(conn, connItems.ToArray());
             Ui.FitHeight(conn);
