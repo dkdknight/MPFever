@@ -6,7 +6,7 @@ namespace MPFever.LinuxServer
 {
     static class Program
     {
-        static readonly string Usage = @"mpfever-relay, relay protocol " + RelayProtocol.Number + @" - MPFever session server without a game (Linux)
+        static readonly string Usage = @"mpfever-relay, relay protocol " + RelayProtocol.Number + @" - MPFever relay, without a game (Linux or Windows)
 
   mpfever-relay [--port 28090] [--password SECRET] [--max-players 8] [--name TEXT] [--migration]
                 [--max-connections 64] [--grace 60] [--migration-timeout 120]
@@ -22,6 +22,8 @@ hosts through this server, so it needs no open port, and everybody reaches the s
   --resume-without-host KEY    EXPERIMENTAL: a player who shows KEY may read the save and host from it when nobody hosts
   --migration-timeout SECONDS  how long a successor has to connect as the host before the next one is asked (default 120)
 Set a password (--password) on a server that is reachable from the Internet: without one anybody may join or host.
+The three secrets can also come from the environment, so that they are not in the command line (a container's settings, `ps`):
+MPFEVER_RELAY_PASSWORD, MPFEVER_RELAY_CHECKPOINT_OWNER_KEY and MPFEVER_RELAY_RESUME_WITHOUT_HOST; an option on the command line wins.
 See docs/LINUX-RELAY.md.";
 
         /// <summary>Why these settings cannot be used, or null.</summary>
@@ -37,9 +39,21 @@ See docs/LINUX-RELAY.md.";
             return null;
         }
 
+        /// <summary>The secrets given by the environment (an option on the command line, read after, wins).</summary>
+        internal static void ApplyEnvironment(ServerOptions o, Func<string, string> get)
+        {
+            string v = get("MPFEVER_RELAY_PASSWORD");
+            if (!string.IsNullOrEmpty(v)) o.Password = v;
+            v = get("MPFEVER_RELAY_CHECKPOINT_OWNER_KEY");
+            if (!string.IsNullOrEmpty(v)) o.CheckpointOwnerKey = v;
+            v = get("MPFEVER_RELAY_RESUME_WITHOUT_HOST");
+            if (!string.IsNullOrEmpty(v)) { o.CheckpointRecoveryKey = v; o.ResumeWithoutHost = true; }
+        }
+
         static int Main(string[] args)
         {
             var opt = new ServerOptions();
+            ApplyEnvironment(opt, Environment.GetEnvironmentVariable);
             bool selftest = false;
             try
             {

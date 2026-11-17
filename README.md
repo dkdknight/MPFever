@@ -130,7 +130,7 @@ stops, unless the experimental options below are on.
 |---|---|---|
 | Runs the game and the world | yes (Windows, the game installed) | no: the hosting player's PC does |
 | The world goes on when nobody plays | yes | no (experimental migration or kept save, off by default) |
-| Download | `MPFever-<version>-server.zip` | `MPFever-<version>-relay-linux-x64.tar.gz` or `MPFever-<version>-relay-win-x64.zip` |
+| Download | `MPFever-<version>-server.zip` | `MPFever-<version>-relay-linux-x64.tar.gz`, `MPFever-<version>-relay-win-x64.zip`, or (optional) a Docker image built from `server-linux/Dockerfile` |
 
 See the [relay setup guide](docs/LINUX-RELAY.md); the archives are in the [release assets](https://github.com/dkdknight/MPFever/releases/latest)
 (SHA-256 on the release). Host migration and keeping the session's save on the server (so the game can go on without its last host) are experimental and off by default; the **Relay server...** button of the launcher's Settings window sets the address, password and save key.

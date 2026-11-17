@@ -57,6 +57,7 @@ namespace MPFever.LinuxServer
             Remote();
             Migration();
             Parser();
+            Environment_();
             Compat();
             CheckpointPersistence();
             CheckpointOverTheRelay();
@@ -68,6 +69,27 @@ namespace MPFever.LinuxServer
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ALL " + passed + " CHECKS PASSED" : failed + " FAILED, " + passed + " passed");
             return failed == 0 ? 0 : 1;
+        }
+
+        /// <summary>The secrets may come from the environment (containers), and the command line wins.</summary>
+        static void Environment_()
+        {
+            var env = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["MPFEVER_RELAY_PASSWORD"] = "from-env", ["MPFEVER_RELAY_CHECKPOINT_OWNER_KEY"] = "owner-env", ["MPFEVER_RELAY_RESUME_WITHOUT_HOST"] = "resume-env"
+            };
+            Func<string, string> get = k => env.TryGetValue(k, out var v) ? v : null;
+            var o = new ServerOptions();
+            Program.ApplyEnvironment(o, get);
+            Check("the password, the owner key and the recovery key can come from the environment",
+                o.Password == "from-env" && o.CheckpointOwnerKey == "owner-env" && o.CheckpointRecoveryKey == "resume-env" && o.ResumeWithoutHost);
+            var none = new ServerOptions();
+            Program.ApplyEnvironment(none, k => null);
+            Check("without them the settings are as before (no password, no recovery)",
+                none.Password == "" && none.CheckpointOwnerKey == "" && none.CheckpointRecoveryKey == "" && !none.ResumeWithoutHost);
+            var empty = new ServerOptions { Password = "kept" };
+            Program.ApplyEnvironment(empty, k => "");
+            Check("an empty variable changes nothing", empty.Password == "kept" && !empty.ResumeWithoutHost);
         }
 
         static void CheckpointPersistence()

@@ -289,6 +289,32 @@ Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/tmp
 Open the TCP port configured with `--port` in the firewall. Use launchers that speak the relay protocol number printed by
 `mpfever-relay --help`.
 
+### With Docker (optional)
+
+Not needed: the program above runs as it is. If you prefer a container (a VPS that only has Docker, an ARM machine such as a Raspberry Pi), the
+repository has a `server-linux/Dockerfile` and a `server-linux/compose.yaml`. The image holds only the relay (self-contained, no shell, not
+root, about 40 MB); it is not the dedicated server and runs no game. From the root of the repository:
+
+```sh
+docker build -f server-linux/Dockerfile -t mpfever-relay .
+docker run -d --name mpfever-relay --restart unless-stopped -p 28090:28090   --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges   -e MPFEVER_RELAY_PASSWORD=SECRET mpfever-relay --max-players 6
+```
+
+or, with Compose (it stops if the password is not set):
+
+```sh
+MPFEVER_RELAY_PASSWORD=SECRET docker compose -f server-linux/compose.yaml up -d --build
+```
+
+The three secrets can come from the environment, so that they stay out of the command line (`docker inspect`, `ps`): `MPFEVER_RELAY_PASSWORD`,
+`MPFEVER_RELAY_CHECKPOINT_OWNER_KEY` and `MPFEVER_RELAY_RESUME_WITHOUT_HOST`. An option given on the command line wins. The other options
+are the arguments of the container (`mpfever-relay --help` lists them). To keep the session's save, mount a volume on `/data` and add
+`--checkpoint-dir /data` (the example in `compose.yaml` shows it). For arm64: `docker buildx build --platform linux/arm64 ...`. Open the TCP
+port in the firewall as above; Docker publishes it itself, past the host's `ufw`, so check what is really reachable.
+
+What is tested: the image builds, `--selftest` passes inside it (read-only, no capabilities), and it starts with the password from the
+environment and a mounted save directory. Not tested: arm64, and Compose beyond its configuration.
+
 ### On Windows
 
 The relay is the same program: the Release build workflow also produces `MPFever-<version>-relay-win-x64.zip`, a folder `MPFever-Relay` with

@@ -53,7 +53,7 @@ jobs:
   # The relay (server-linux/, docs/LINUX-RELAY.md), NOT the dedicated server (that one is MPFever.exe --server, built above with the
   # launcher): no game in it. Built with a warning as an error, its self-test (real clients, no game) and the self-contained linux-x64
   # binary; the Windows one is the next job.
-  linux-server:
+  linux-relay:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -112,3 +112,20 @@ jobs:
           name: mpfever-relay-win-x64-${{ github.sha }}
           path: artifacts/windows/mpfever-relay.exe
           retention-days: 14
+
+  # The relay's optional Docker image (server-linux/Dockerfile): it builds, and the self-test passes inside it as the container
+  # will run (read-only, no capabilities).
+  relay-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -f server-linux/Dockerfile -t mpfever-relay .
+
+      - name: Self-test in the container
+        run: docker run --rm --read-only --tmpfs /tmp --cap-drop ALL mpfever-relay --selftest
+
+      - name: Compose file
+        run: MPFEVER_RELAY_PASSWORD=ci docker compose -f server-linux/compose.yaml config -q

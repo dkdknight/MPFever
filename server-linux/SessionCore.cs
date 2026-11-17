@@ -14,7 +14,7 @@ namespace MPFever.LinuxServer
         public int Port = 28090;
         public string Password = "";
         public int MaxPlayers = 8;
-        public string Name = "MPFever Linux Server";
+        public string Name = "MPFever Relay";
         /// <summary>Seconds a successor has to connect as the host before the next player is asked (host migration).</summary>
         public int MigrationTimeoutSeconds = 120;
         /// <summary>When the host leaves: pass the session to a player that can take over (true), or end the session (false, as with a normal host).</summary>
@@ -38,7 +38,7 @@ namespace MPFever.LinuxServer
     }
 
     /// <summary>
-    /// The Linux server is a tunnel between the players and the one player that hosts (docs/LINUX-RELAY.md).
+    /// The relay is a tunnel between the players and the one player that hosts (docs/LINUX-RELAY.md).
     ///
     /// The host's brain (the launcher's MainForm.OnHostMessage: ordering of the actions, clocks, speed, hashes, resyncs, lobby, checks)
     /// stays in that player's launcher, unchanged. What the server adds is the address everybody reaches (the host needs no open

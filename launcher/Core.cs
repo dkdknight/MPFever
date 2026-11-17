@@ -1187,7 +1187,7 @@ namespace MPFever
         /// server and public games never do.</summary>
         public bool StrictBeforeAdmission { get; set; }
         /// <summary>With Admit: seconds a connection may stay without being let in before it is cut (0: no limit, as before). A host that
-        /// listens on the Internet (the Linux server) sets it: a connection that says nothing otherwise stays for ever.</summary>
+        /// listens on the Internet (the Linux relay) sets it: a connection that says nothing otherwise stays for ever.</summary>
         public int UnadmittedTimeoutSeconds { get; set; }
         /// <summary>Connections accepted at once, let in or not (0: no limit, as before); the others are closed at once.</summary>
         public int MaxConnections { get; set; }
@@ -2250,7 +2250,7 @@ namespace MPFever
             {
                 c.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
 #if NET
-                // (the Linux server, server-linux/: no IOControl there, the same values as socket options)
+                // (the Linux relay, server-linux/: no IOControl there, the same values as socket options)
                 if (!OperatingSystem.IsWindows())
                 {
                     c.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 15);
