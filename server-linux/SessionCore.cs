@@ -38,7 +38,7 @@ namespace MPFever.LinuxServer
     }
 
     /// <summary>
-    /// The relay is a tunnel between the players and the one player that hosts (docs/LINUX-RELAY.md).
+    /// The relay is a tunnel between the players and the one player that hosts (docs/RELAY.md).
     ///
     /// The host's brain (the launcher's MainForm.OnHostMessage: ordering of the actions, clocks, speed, hashes, resyncs, lobby, checks)
     /// stays in that player's launcher, unchanged. What the server adds is the address everybody reaches (the host needs no open

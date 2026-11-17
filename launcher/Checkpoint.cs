@@ -6,7 +6,7 @@ using static MPFever.L;
 
 namespace MPFever
 {
-    /// <summary>The save a server keeps for the session (EXPERIMENTAL, docs/LINUX-RELAY.md "Keeping the save"): a host that uses a server
+    /// <summary>The save a server keeps for the session (EXPERIMENTAL, docs/RELAY.md "Keeping the save"): a host that uses a server
     /// with a key ("serverkey=" in mpfever_settings.txt) sends it the session's autosave; a player with the key can fetch that save when
     /// nobody hosts and host from it. Nothing happens without "server=" and "serverkey=".</summary>
     sealed partial class MainForm

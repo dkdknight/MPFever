@@ -24,7 +24,7 @@ hosts through this server, so it needs no open port, and everybody reaches the s
 Set a password (--password) on a server that is reachable from the Internet: without one anybody may join or host.
 The three secrets can also come from the environment, so that they are not in the command line (a container's settings, `ps`):
 MPFEVER_RELAY_PASSWORD, MPFEVER_RELAY_CHECKPOINT_OWNER_KEY and MPFEVER_RELAY_RESUME_WITHOUT_HOST; an option on the command line wins.
-See docs/LINUX-RELAY.md.";
+See docs/RELAY.md.";
 
         /// <summary>Why these settings cannot be used, or null.</summary>
         static string Validate(ServerOptions o)

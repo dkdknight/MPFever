@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace MPFever.LinuxServer
 {
     /// <summary>
-    /// Who plays the host (docs/LINUX-RELAY.md). The server has no game, so one connected player's launcher and game are the host: the
+    /// Who plays the host (docs/RELAY.md). The server has no game, so one connected player's launcher and game are the host: the
     /// reference for the world, the one that holds and sends the savegame, answers the mod and build checks and compares the games.
     /// The first player in is the host. When it leaves, either the session ends (the default) or, with ServerOptions.Migration, a player
     /// that said it can take over ("mig" in its join) is asked, the oldest first:

@@ -148,7 +148,7 @@ jobs:
           v="${{ steps.version.outputs.version }}"
           f="MPFever-$v-relay-linux-x64.tar.gz"
           mkdir -p release/MPFever-Relay
-          cp artifacts/linux/mpfever-relay docs/LINUX-RELAY.md release/MPFever-Relay/
+          cp artifacts/linux/mpfever-relay docs/RELAY.md release/MPFever-Relay/
           tar -czf "release/$f" -C release MPFever-Relay
           bt='`'
           echo "- $bt$f$bt, SHA-256 $bt$(sha256sum "release/$f" | cut -d' ' -f1)$bt" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -190,7 +190,7 @@ jobs:
           $v = "${{ steps.version.outputs.version }}"
           $f = "MPFever-$v-relay-win-x64.zip"
           New-Item -ItemType Directory -Force release/MPFever-Relay | Out-Null
-          Copy-Item artifacts/windows/mpfever-relay.exe, docs/LINUX-RELAY.md release/MPFever-Relay/
+          Copy-Item artifacts/windows/mpfever-relay.exe, docs/RELAY.md release/MPFever-Relay/
           Compress-Archive -Path release/MPFever-Relay -DestinationPath "release/$f"
           $h = (Get-FileHash "release/$f" -Algorithm SHA256).Hash
           "- ``$f``, SHA-256 ``$h``" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append

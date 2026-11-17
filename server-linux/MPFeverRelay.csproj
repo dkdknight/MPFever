@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- MPFever relay server for Linux (see docs/LINUX-RELAY.md). It is built from the launcher's own protocol sources
+  <!-- MPFever relay server for Linux (see docs/RELAY.md). It is built from the launcher's own protocol sources
        (Core.cs: Msg, NetReader, LuaLit, SessionLink, Relay...), so it speaks exactly the protocol of the launcher it is built with. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>

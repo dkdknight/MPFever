@@ -6,7 +6,7 @@ using System.Threading;
 namespace MPFever
 {
     /// <summary>
-    /// The host's side when it hosts through an MPFever server (server-linux/, docs/LINUX-RELAY.md) instead of listening itself: the same
+    /// The host's side when it hosts through an MPFever server (server-linux/, docs/RELAY.md) instead of listening itself: the same
     /// surface as Relay (IRelay), so the host's code (MainForm.OnHostMessage and the session around it) is unchanged. The host is one
     /// connection to the server; the server tells it which players came in and left (tun_join, tun_left) and forwards what they send,
     /// and the host's messages go through it: "kind" to every player, "!name:kind" to every player but one, "@name:kind" to one.

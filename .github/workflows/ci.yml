@@ -50,7 +50,7 @@ jobs:
           path: release/*.zip
           retention-days: 14
 
-  # The relay (server-linux/, docs/LINUX-RELAY.md), NOT the dedicated server (that one is MPFever.exe --server, built above with the
+  # The relay (server-linux/, docs/RELAY.md), NOT the dedicated server (that one is MPFever.exe --server, built above with the
   # launcher): no game in it. Built with a warning as an error, its self-test (real clients, no game) and the self-contained linux-x64
   # binary; the Windows one is the next job.
   linux-relay:

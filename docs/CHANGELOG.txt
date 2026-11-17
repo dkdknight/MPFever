@@ -223,7 +223,7 @@ MPFever - Changelog
     through it ("server=host:port" in mpfever_settings.txt), the players join its address, no port to open; with --migration
     (experimental, off by default) the next player takes over when the host leaves. The relay checks its own protocol number,
     not MPFever's version. Players without such a server: nothing changes (a host never relays a player's "tun_" message).
-    Guide: docs/LINUX-RELAY.md.
+    Guide: docs/RELAY.md.
 
 0.8.13 - 2026-11-15: dedicated servers "without display" no longer crash when vehicles are replaced
   - FIX (#354, #361, the reports of 2026-11-15, MPFeverServerTest and DEOKCHEON's server): a server started without display

@@ -1111,7 +1111,7 @@ namespace MPFever
 
     /// <summary>The version of the relay protocol: what a launcher and the Linux relay (server-linux/) must agree on, whatever their MPFever
     /// versions. A launcher sends it in its join ("rp"); the relay refuses another number. Raise it only when the message format, the
-    /// admission, the reconnection or the tun_ messages change (docs/LINUX-RELAY.md). The "same MPFever version between players" rule is
+    /// admission, the reconnection or the tun_ messages change (docs/RELAY.md). The "same MPFever version between players" rule is
     /// the host's, as with a host that listens itself.</summary>
     static class RelayProtocol
     {

@@ -1,4 +1,4 @@
-# The relay (mpfever-relay), NOT the dedicated server: no game in it. See docs/LINUX-RELAY.md, "With Docker".
+# The relay (mpfever-relay), NOT the dedicated server: no game in it. See docs/RELAY.md, "With Docker".
 # Build, from the root of the repository (the relay is built from the launcher's protocol sources too):
 #   docker build -f server-linux/Dockerfile -t mpfever-relay .
 # Run (the password comes from the environment, not from the command line):
