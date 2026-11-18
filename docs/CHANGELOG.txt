@@ -16,10 +16,11 @@ MPFever - Changelog
     (its last entries removed down to the first difference, then the simulated state's added in their order): every batch
     starts from the order of the steps made one after the other. The lists that differed are written in native.log
     ("families: after the copy, ...") and counted in the minute's "order fixes" line (families copies/other order/put in
-    order/other entities/other places/odd). OFF by default (tested in game on 2026-11-18: every family read there held no
-    entity, the animals' among them on a map of 2549 animals, so the entries are not where this build keeps them and nothing
-    was ever compared; the cause of the animals' drift turned out to be their cached figures, see below): MPFEVER_FAMSYNC=1
-    compares and puts in order, =0 compares and writes only (tests). Test: tests/test_famorder0818.py.
+    order/other entities/other places/odd). In game on 2026-11-18 the entries were first read 8 bytes too early (every family
+    looked empty); read at the family's +0x10 now (AnimalMoveSystem's own list pointer showed where), the two states' lists
+    were in the same order in 673 copies in a row: by default they are only compared and written, one copy in ten (about
+    0.8 ms each), never put in order; MPFEVER_FAMSYNC=1 puts them in order at every copy, =off compares nothing. The cause of
+    the animals' drift turned out to be their cached figures (see below). Test: tests/test_famorder0818.py.
   - FIX (#150, the same cause, every element that moves): the batches themselves made the same on every game. Besides the lists
     above, other data of each world state is not copied (caches the systems rebuild from the old values when the copy replays
     the change records, "previous" values taken at the start of each batch). A game held behind a slower player's clock stands

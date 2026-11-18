@@ -2042,6 +2042,10 @@ static const FamKind* FamKindOf(u64 fam)
 static void FamCheckBody(void* src, void* dst);
 static void FamCheck(void* src, void* dst)
 {
+    // (compared and written only, the default: one copy in ten, about 0.8 ms each on Leawood's 35 lists; 673 copies in a row
+    // showed no list in another order, 2026-11-18. Put in order (MPFEVER_FAMSYNC=1): every copy)
+    static long famSeen = 0;
+    if (g_famSync == 0 && (famSeen++ % 10) != 0) return;
     i64 t0 = NowUs();
     FamCheckBody(src, dst);
     i64 us = NowUs() - t0;

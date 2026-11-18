@@ -376,6 +376,7 @@ def wiring():
           "if (GetEnvironmentVariableA(\"MPFEVER_FAMSYNC\", v, 3) <= 0) return 0;" in src and "if (g_famSync == 2) return;" in fb)
     # (2026-11-18 in game: AnimalMoveSystem's list pointer = the animals' family + 0x10; the slot-3 remove works on family + 8 with its
     # vector at +8..+0x10 of that part: the entries are at +0x10..+0x18 of the family. Read at +8 before, every family looked empty)
+    check("compared only (the default): one copy in ten; put in order: every copy", "if (g_famSync == 0 && (famSeen++ % 10) != 0) return;" in src)
     check("the entries read at the family's +0x10..+0x18 (not +8)", "u64 xb = *(u64*)(fx + 0x10), xe = *(u64*)(fx + 0x18), yb = *(u64*)(fy + 0x10), ye = *(u64*)(fy + 0x18);" in fb
           and "*(u64*)(fx + 8)" not in fb)
     k = re.search(r"^static void InstallFamSync\(\)\n\{\n.*?^\}\n", src, re.S | re.M)
