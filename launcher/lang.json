@@ -25923,6 +25923,19 @@
       "zh-CN": "此游戏正在使用旧的 MPFever 原生模块（更新时游戏处于打开状态）：会与其他游戏产生偏差。请关闭游戏，然后重新启动 MPFever。",
       "zh-TW": "此遊戲正在使用舊的 MPFever 原生模組（更新時遊戲處於開啟狀態）：會與其他遊戲產生偏差。請關閉遊戲，然後重新啟動 MPFever。"
     },
+    "Your company is not ready yet: action cancelled. Try again in a few seconds.": {
+      "de": "Deine Firma ist noch nicht bereit: Aktion abgebrochen. Versuche es in ein paar Sekunden erneut.",
+      "es": "Tu empresa aún no está lista: acción cancelada. Inténtalo de nuevo en unos segundos.",
+      "it": "La tua compagnia non è ancora pronta: azione annullata. Riprova tra qualche secondo.",
+      "nl": "Je bedrijf is nog niet klaar: actie geannuleerd. Probeer het over een paar seconden opnieuw.",
+      "pl": "Twoja firma nie jest jeszcze gotowa: akcja anulowana. Spróbuj ponownie za kilka sekund.",
+      "pt-BR": "Sua empresa ainda não está pronta: ação cancelada. Tente de novo em alguns segundos.",
+      "ru": "Ваша компания ещё не готова: действие отменено. Попробуйте снова через несколько секунд.",
+      "ja": "あなたの会社はまだ準備ができていません：操作を取り消しました。数秒後にもう一度お試しください。",
+      "ko": "회사가 아직 준비되지 않았습니다: 작업이 취소되었습니다. 몇 초 후에 다시 시도하세요.",
+      "zh-CN": "你的公司尚未准备好：操作已取消。请几秒钟后再试。",
+      "zh-TW": "你的公司尚未準備好：操作已取消。請幾秒鐘後再試。"
+    },
     "Made for MPFever: it uses its mod API.": {
       "de": "Für MPFever gemacht: nutzt dessen Mod-API.",
       "es": "Hecho para MPFever: usa su API para mods.",

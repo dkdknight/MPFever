@@ -9,6 +9,13 @@ MPFever - Changelog
     update is now called with the steps only in a session, as the landmarks script's since 0.8.3 (dt 0 skipped): every game
     completes a contract at the same step. Alone, as the game does. MPFEVER_SUBDT0=1: every call, as before.
     Test: tests/test_subdt0091.py (reproduces the two completion steps, then the same step with the fix).
+  - FIX (separate companies, the host correcting a client's money at every other check): a client's action made before its
+    company was known on its own game (the first seconds of a session or after a load, a join held up to 30 s) was built there
+    for the savegame's company, the host's (the native module's tools act as it until then), and shipped as the client's
+    company's: the other games booked its cost and its upkeep to the client's company, its own game to the host's (test X1 on
+    "Test Mix 18": a stop made 3 s before the join, then 38 corrections in 10 minutes, 15,000 then 616 again and again; the
+    same with the 0.9.0 fixes off). Such an action is now refused, and the player told to try again in a few seconds; the
+    autotests' stops wait for the company. MPFEVER_COBEFOREJOIN=1: as before. Test: tests/test_cobeforejoin091.py.
 
 0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412)
   - FIX (#150, the slow drift of the animals, vehicles and people between games; Test Leawood, 2026-11-17: 52 of 2546 animals

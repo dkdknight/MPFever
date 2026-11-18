@@ -11959,11 +11959,32 @@ end
 -- A player's build during a resynchronisation is refused by its own game: the launcher keeps none (the others never get it),
 -- and on a game that has already loaded the host's savegame nothing would undo it (issue #81: a station that stayed on one game
 -- only, a resync right after). The player is told in the chat.
+-- (0.9.1) A client whose company is not known here yet (its join not applied, the first seconds of a session or of a load, a
+-- join held up to 30 s): the native module still makes its tools act as the savegame's company, the host's (see coGui, issue
+-- #47). Its first stop in test X1 (2026-11-18, separate companies) was built here for the host's company and shipped as its
+-- own: the other games booked its cost and its upkeep to the client's company, this game to the host's, and the host corrected
+-- the money at every other check (15,000, then 616 again and again). Its actions are refused until its company is there.
+-- MPFEVER_COBEFOREJOIN=1: as before
+G.coUnknownHere = function()
+	return G.cmode == "separate" and G.session.started == true and G.myEnt == nil and C.ROLE == "client"
+		and os.getenv("MPFEVER_COBEFOREJOIN") ~= "1"
+end
+
 G.resyncRefuse = function(what)
 	-- (a player between two companies, after leaving one or a bankruptcy: nothing of it is applied until its new company is
 	-- there, a few seconds; see coGui)
 	if G.coNone and G.cmode == "separate" and G.session.started then
 		if G.frames - (G.coNoneToldAt or -1000) > 300 then G.coNoneToldAt = G.frames; log("companies: " .. tostring(what) .. " refused: this player has no company yet") end
+		return true
+	end
+	if G.coUnknownHere() then
+		G.coUnknownRefused = (G.coUnknownRefused or 0) + 1
+		if G.frames - (G.coUnknownToldAt or -1000) > 300 then
+			G.coUnknownToldAt = G.frames
+			log("companies: " .. tostring(what) .. " refused: this game's company is not known yet (its join is under way), its tools would act as the savegame's company")
+			pcall(G.featChat, C.T("Votre entreprise n'est pas encore prête : action annulée. Réessayez dans quelques secondes.",
+				"Your company is not ready yet: action cancelled. Try again in a few seconds."))
+		end
 		return true
 	end
 	if not G.session.resync then return false end
@@ -20929,6 +20950,14 @@ end
 -- the replaying game, MPFEVER_ENV_CLIENT for the host's stops, the bug of 2026-10-24 comes back: the segment laid again there).
 H.dstop = function(from, p)
 	if p.role ~= C.ROLE or AUTO.running then return end
+	-- (0.9.1) not before this game's company is known: its stops would be refused (see G.coUnknownHere); again every 30 frames,
+	-- a minute at most
+	if G.coUnknownHere() and (p.coWaits or 0) < 120 then
+		p.coWaits = (p.coWaits or 0) + 1
+		if p.coWaits == 1 then log("DSTOP waits for this game's company") end
+		G.waits[#G.waits + 1] = { at = G.frames + 30, fn = function() H.dstop(from, p) end }
+		return
+	end
 	AUTO.running = true
 	AUTO.results = {}
 	AUTO.points = {}
