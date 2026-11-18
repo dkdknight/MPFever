@@ -49,6 +49,11 @@ MPFever - Changelog
     ("animals' figures made again"). MPFEVER_ANIMALCACHE=0: as before; =2: at every step (both among the fixes the host compares).
     Test: tests/test_animcache0818.py (a model of the copy's old boxes: the animals part with other batches without the fix, stay
     alike with it; the signature, the vtable's slots 4, 5 and 12 checked in the game's file).
+  - FIX (#150, the same batches around a speed change): a speed changed while the session runs took effect on each game when the
+    host's message reached it, each at its own step, so around the change the games cut their steps otherwise (x2 here, x4
+    there). It now takes effect at a common step, as a pause does: a multiple of 4 steps a little ahead of the fastest game;
+    every game runs at the speed before up to it, stands there, then goes on at the new speed (from a pause: at once, every game
+    stands at the same step). MPFEVER_SPEEDAT=0: at once, as before. Tests: tests/test_speedat090.py, the launcher's self-test.
   - DIAGNOSTIC (#150): the drift rings say which batch each step was made in (which of the game's two world states, the step's
     place in the batch, the commands of the loop applied in that batch: "batch s<state>k<place> cmds <n>"); tools/drift_diff.py
     shows both games' batches before the first difference; the native module counts the batches with no step that applied
