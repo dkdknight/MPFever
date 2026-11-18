@@ -43,6 +43,9 @@ def pick(dir_a, dir_b, check=None):
 
 
 STEP = re.compile(r"step (\d+) queue (\d+) (\d+) (\d+) adds (\d+) rems (\d+) set (\d+)")
+# (0.8.18) the batch the step was made in: this game's state (0/1, the first seen since the load), place in the batch, the loop's
+# commands applied in that batch
+BATCH = re.compile(r" batch s(\d)k(\d+) cmds (\d+)")
 OP = re.compile(r"(\d+) ([+-])(-?\d+) (\S+) (\S+)")
 
 
@@ -56,6 +59,9 @@ def steps(path):
             if s == 0:
                 continue
             out[s] = {"queue": (int(m.group(2)), int(m.group(3)), int(m.group(4))), "ops": (int(m.group(5)), int(m.group(6)), int(m.group(7)))}
+            b = BATCH.search(l)
+            if b:
+                out[s]["batch"] = (int(b.group(1)), int(b.group(2)), int(b.group(3)))
     return out
 
 
@@ -114,6 +120,19 @@ def compare(dir_a, dir_b, check=None, out=print):
                 ca_ = [c for o, s, c in oa if s == "-"]
                 cb_ = [c for o, s, c in ob if s == "-"]
                 res["callers_a"], res["callers_b"] = ca_, cb_
+    # (0.8.18) the batches of both games before the first difference: where they ended, which state made them, commands in them
+    ref = first_ops if first_ops is not None else first_q
+    if ref is not None and any("batch" in sa.get(x, {}) for x in common):
+        win = [x for x in common if ref - 24 <= x <= ref]
+        if win:
+            a0, b0 = sa[win[0]].get("batch", (0, 0, 0))[0], sb[win[0]].get("batch", (0, 0, 0))[0]
+            same_cut = sum(1 for x in win if sa[x].get("batch", (0, 0, 0))[1] == sb[x].get("batch", (0, 0, 0))[1])
+            same_state = sum(1 for x in win if (sa[x].get("batch", (0, 0, 0))[0] ^ a0) == (sb[x].get("batch", (0, 0, 0))[0] ^ b0))
+            out("  batches of the last %d steps: same place in the batch %d, same state (relative) %d" % (len(win), same_cut, same_state))
+            for x in win[-12:]:
+                ba, bb = sa[x].get("batch"), sb[x].get("batch")
+                out("    step %d  A s%dk%d cmds %d | B s%dk%d cmds %d" % ((x,) + (ba or (-1, -1, -1)) + (bb or (-1, -1, -1))))
+            res["batches_same_cut"], res["batches_same_state"], res["batches_window"] = same_cut, same_state, len(win)
     if first_q is not None:
         out("first step whose free-id queue differs: %d (A %s, B %s)" % (first_q, sa[first_q]["queue"], sb[first_q]["queue"]))
     else:

@@ -55,9 +55,10 @@ namespace MPFever
             ["advanced_station_builder"] = () => new Verdict { Level = "fixed", Note = T("Ses gares sont envoyées à chaque jeu (0.7.2), ses signaux construits sur chaque jeu (0.7.8).", "Its stations are sent to every game (0.7.2), its signals built on every game (0.7.8).") },
             // (0.7.7) #133: each of these stations, placed once, was refused on the two other games and rebuilt there otherwise (two
             // reloads). Their construction scripts draw nothing at random (read 2026-11-08): the station and the streets the tool
-            // attaches to it are replayed otherwise. To reproduce with the mods installed
-            ["gct_tramschleife"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
-            ["gct_bogenbahnhof"] = () => new Verdict { Level = "caution", Note = T("Sa station posée a été refusée sur les autres jeux (#133) : à vérifier en partie.", "Its station, once placed, was refused on the other games (#133): to check in a session.") },
+            // attaches to it are replayed otherwise. (0.8.18) Both seen working in a player's sessions (flubixx, Discord #help,
+            // 2026-11-17, 0.8.16/0.8.17)
+            ["gct_tramschleife"] = () => new Verdict { Level = "ok", Note = T("Vu en marche dans les parties d'un joueur (0.8.17 ; une station refusée une fois en 0.7.7, #133).", "Seen working in a player's sessions (0.8.17; a station refused once in 0.7.7, #133).") },
+            ["gct_bogenbahnhof"] = () => new Verdict { Level = "ok", Note = T("Vu en marche dans les parties d'un joueur (0.8.17 ; une station refusée une fois en 0.7.7, #133).", "Seen working in a player's sessions (0.8.17; a station refused once in 0.7.7, #133).") },
             ["advanced_track_patterns"] = () => new Verdict { Level = "fixed", Note = T("Ses signaux construits par script sont construits sur chaque jeu (0.7.8).", "Its signals built by script are built on every game (0.7.8).") },
             // (0.7.15) a player's wish list (Elias, Discord, 2026-11-09), scripts read (docs/MODS.md)
             ["hohenzollern_bridge"] = () => new Verdict { Level = "fixed", Note = T("Le nettoyage d'un pont démoli ne part plus que d'un jeu (0.7.15).", "The clean-up of a bulldozed bridge now goes from one game only (0.7.15).") },

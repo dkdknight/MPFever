@@ -1,6 +1,81 @@
 MPFever - Changelog
 ===================
 
+0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412)
+  - FIX (#150, the slow drift of the animals, vehicles and people between games; Test Leawood, 2026-11-17: 52 of 2546 animals
+    with another target within one batch, the games a step apart in their batches): the engine keeps two world states and
+    makes each batch of steps on the other one, copying the state just simulated into the next one (its change records
+    replayed, then every component copied). The systems' entity lists (ecs::ComponentGroupFamily: the animals, the land
+    vehicles, the people, the ships, the aircraft... a system runs over) are not copied: each state keeps its own, in the
+    order of its own adds and removes (a remove moves the list's last entity into the removed one's place). Some results
+    depend on that order: the animals draw their random numbers per run of 128, from a generator seeded with the run's first
+    place in the list. When the copy's list ended in another order, a step's results depended on which state made it, that is
+    on how the steps were cut into batches, which differs between two games (a game held at its stop point makes batches of
+    one step). After each copy of the simulation loop the native module now compares every family's list of the copy with the
+    state just simulated and, where only the order differs, puts the copy's list in that order with the family's own calls
+    (its last entries removed down to the first difference, then the simulated state's added in their order): every batch
+    starts from the order of the steps made one after the other. The lists that differed are written in native.log
+    ("families: after the copy, ...") and counted in the minute's "order fixes" line (families copies/other order/put in
+    order/other entities/other places/odd). OFF by default (tested in game on 2026-11-18: every family read there held no
+    entity, the animals' among them on a map of 2549 animals, so the entries are not where this build keeps them and nothing
+    was ever compared; the cause of the animals' drift turned out to be their cached figures, see below): MPFEVER_FAMSYNC=1
+    compares and puts in order, =0 compares and writes only (tests). Test: tests/test_famorder0818.py.
+  - FIX (#150, the same cause, every element that moves): the batches themselves made the same on every game. Besides the lists
+    above, other data of each world state is not copied (caches the systems rebuild from the old values when the copy replays
+    the change records, "previous" values taken at the start of each batch). A game held behind a slower player's clock stands
+    at its stop point, making batches of no step (each one flips the two states) and ends its batches at its own stop points:
+    its batches were not the other games' ones, nor made by the same state. Now (native/batch_align.h, StepsForBatch) a batch
+    never runs past a multiple of the speed (4, 8, 12... at 4x), a run of still batches (paused, or standing at a stop point) is
+    always an even number of batches (the game stands one batch more, 200 ms, when it ended odd), counted from the game's load;
+    and the mod rounds this game's own stop points (the barrier of the other players' clocks, the build lead's cap, a queued
+    action's hold) down to a multiple of the speed, the shared ones (another player's action, the session's pause, its own
+    build released for its time) staying exact. Every game then makes the same batches on the same of its two states: what is
+    not copied between them follows the same history everywhere. Counted in the minute's "order fixes" line ("aligned batches":
+    batches/iterations/still/still added/cut at a multiple). MPFEVER_ALIGNBATCH=0: the batches as before; MPFEVER_ALIGNPARITY=0:
+    the ends aligned only (both among the fixes the host compares). Test: tests/test_alignbatch0818.py (a model of two games
+    with data of each state not copied, one held now and then: they part without the fix, make the same batches on the same
+    states and stay alike at every step with it, and still part without the even runs). Test switch MPFEVER_TESTHOLD=<percent>
+    (one game stands still now and then, as a held host: given to one game with MPFEVER_ENV_CLIENT).
+  - FIX (#150, where the drifts started): the animals' figures made again at the start of every batch. Every drift between two
+    games of one PC whose rings were kept on both (2026-11-13 to 11-17, tools/drift_diff.py over each pair) began with an entity
+    made or removed by AnimalMoveSystem on one game only, the free-id queue splitting at that step (from then on every new
+    entity, people and vehicles, took another id on each game: the slight drift of vehicles and towns the players see).
+    AnimalMoveSystem keeps an entry per animal (its box and its model's group) that it makes again only when the animal's
+    components are said changed; in the copy of a batch the change records are replayed before the components are copied, so the
+    copy's entry was made from its OLD components (as the aircraft's figures were, fixed in 0.8.8), and a step's result depended
+    on which world state made it. Each animal's entry is now made again (the system's own erase and make) at the first update of
+    every batch, in the state that makes it, from its components just copied. Counted in the minute's "order fixes" line
+    ("animals' figures made again"). MPFEVER_ANIMALCACHE=0: as before; =2: at every step (both among the fixes the host compares).
+    Test: tests/test_animcache0818.py (a model of the copy's old boxes: the animals part with other batches without the fix, stay
+    alike with it; the signature, the vtable's slots 4, 5 and 12 checked in the game's file).
+  - DIAGNOSTIC (#150): the drift rings say which batch each step was made in (which of the game's two world states, the step's
+    place in the batch, the commands of the loop applied in that batch: "batch s<state>k<place> cmds <n>"); tools/drift_diff.py
+    shows both games' batches before the first difference; the native module counts the batches with no step that applied
+    commands ("still batches with commands"). The families' check now pairs each family with the copy's family of the same
+    class, and writes once which families it compares. Tests: tests/test_batchdiag0818.py, tests/test_famorder0818.py.
+  - NEW (0.9, #418, asked by the user after a weak PC held a whole session): two signs before each player's name in MPFever's
+    window: the player's sync (green; yellow: a slight drift being corrected; blue: a resynchronisation or an arrival under way;
+    red: out of sync or not answering) and the pace of that player's game (the worst of its frames per second, 45 / 30 / 20, and
+    of the simulation's speed it reaches by itself in % of the speed asked, 95 / 75 / 50: green, yellow, orange, red; grey when
+    not known), with the figures in a tooltip. In lockstep every game waits for the slowest one: everybody now sees which PC slows
+    the session. Each game sends its figures every 3 s (the speed it reaches without the time it stood waiting for the others),
+    the host adds them to the players' list. MPFEVER_PERFSIGN=0: no signs. Test: tests/test_perfsign090.py.
+  - NEW (PR #412 by ampynjord, who looks after the relay): the relay can keep the session's latest save (experimental, off by
+    default: --checkpoint-dir and an owner key; a trusted player's recovery key), so a game can go on later from it ("Relay..."
+    in the Settings window: address, password, save key, "Resume the relay's saved game"); a Windows relay (mpfever-relay.exe)
+    and an optional Docker image; the relay archives named as the others (MPFever-<version>-relay-linux-x64.tar.gz,
+    -relay-win-x64.zip); the relay's settings are relay=, relaypw=, relaykey= (server=, serverpw=, serverkey= still read),
+    the password and key protected by Windows in mpfever_settings.txt and left out of the reports; a host that takes over
+    through a relay keeps the host's rules (start money, bankruptcy, sharing, auction, computer companies, options, autosave,
+    chat, players let in, names banned). Players without a relay: nothing changes. Guide: docs/RELAY.md.
+  - FIX (review of PR #412, before release): the last save at close was never sent (a condition always true); the host sends its
+    save in parts of 128 KiB instead of 1 MiB (every message of the session waited behind the part being written, about 1.7 s
+    at 5 Mbit/s up, at every autosave); one upload at a time (two at once made the relay keep none); the relay writes the save
+    to its disk without holding the session's own lock (a slow disk held every player); fetching the save offers no takeover.
+    Test: tests/test_relayreview0818.py.
+  - MODS: GCT Tram Loop and GCT Curved Station seen working in a player's sessions (flubixx, Discord, 2026-11-17, 0.8.16 and
+    0.8.17): "works" in the launcher's list and in docs/MODS.md (a station of theirs was refused once in 0.7.7, #133).
+
 0.8.17 - 2026-11-17: the resyncs of the players' reports of 2026-11-16 fixed (builds landing late, joins, stations and signals of mods, pauses, saves), two crashes fixed, lighter sync checks and a lighter interface; an API for mod authors
   - FIX (#388: Andy, berni1212, dedicated server, vehicles drifting 20 minutes after a join): one company per player, when a
     player joined, that player's game began to load the session's save while the script of the game before still ran for a moment;

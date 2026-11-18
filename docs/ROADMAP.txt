@@ -83,10 +83,13 @@ it is stable enough.
 
 0.9 - Long sessions, more players (the road to 1.0)
   [ ] Sessions of several hours between two different PCs without a resynchronisation (#150 confirmed by your reports)
+      (0.9.0: the cause found in the animals' figures and fixed, with the same batches on every game; to confirm with your sessions)
   [ ] Sessions of 3 players or more without a resynchronisation; tests and fixes for 3 to 8 players
   [ ] Big station edits and their replays without their last freeze
   [ ] Computer companies' track planner: their passenger trains on most maps, then lines that pay better
   [ ] The dedicated server in long real games
+  [x] Next to each player's name in the game: one sign for their sync and one for their game's pace (frames per second,
+      simulation speed), green, yellow, orange or red: everybody sees which PC slows the session (#418) (0.9.0)
 
 1.0 - Stable and complete
   [ ] Sessions of several hours between different PCs without a recurring resynchronisation or crash, one company for

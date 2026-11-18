@@ -152,7 +152,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.8.17";
+        public const string Version = "0.9.0";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -4394,7 +4394,9 @@ namespace MPFever
                 int pct = (state == "joining" || state == "loading") ? SendPctOf(id) : -1;
                 sb.Append("p=").Append(id).Append('\t').Append(BaseName(id)).Append('\t').Append(state).Append('\t')
                   .Append(lag).Append('\t').Append(id == hostName ? (server != null ? "server" : "host") : "")
-                  .Append('\t').Append(pct >= 0 ? pct.ToString(CultureInfo.InvariantCulture) : "").Append('\n');
+                  .Append('\t').Append(pct >= 0 ? pct.ToString(CultureInfo.InvariantCulture) : "")
+                  // (0.9.0, #418: its pace, "fps TAB pace %", empty when not known)
+                  .Append('\t').Append(PerfFields(id)).Append('\n');
             }
             if (hostName != null && !ready.Contains(hostName)) P(hostName, "joining", 0);   // the host's own game is loading
             foreach (var n in ready.OrderBy(n => n == hostName ? 0 : 1).ThenBy(n => n, StringComparer.OrdinalIgnoreCase))
@@ -4509,6 +4511,19 @@ namespace MPFever
             hostGame?.AppendChat(id, t, kind, name, text);
             relay?.Broadcast(m);
             if (kind == "msg") Log.Dim("[chat] " + name + ": " + text);
+        }
+
+        /// <summary>(0.9.0, #418) each game's pace, as its game last sent it (G.perfTick: every 3 s): frames per second and the simulation's
+        /// speed it reaches by itself, in % of the speed asked (-1: paused or not known). Shown next to the players' names.</summary>
+        sealed class PerfInfo { public int Fps, Pace; public double At; }
+        readonly Dictionary<string, PerfInfo> perfOf = new Dictionary<string, PerfInfo>();
+        /// <summary>The pace fields of a player's line: "fps TAB pace", empty when unknown or older than 15 s.</summary>
+        string PerfFields(string id)
+        {
+            PerfInfo p;
+            lock (perfOf) perfOf.TryGetValue(id, out p);
+            if (p == null || Now - p.At > 15) return "\t";
+            return p.Fps.ToString(CultureInfo.InvariantCulture) + "\t" + (p.Pace >= 0 ? p.Pace.ToString(CultureInfo.InvariantCulture) : "");
         }
 
         /// <summary>Every second: the status to the host's own game (mp_status.txt) and to every client.</summary>
@@ -5208,6 +5223,19 @@ namespace MPFever
                     saveDone = LuaLit.Parse(m.Payload) as Dictionary<object, object> ?? new Dictionary<object, object>();
                     Log.W(F("{0} : sauvegarde de resynchronisation terminée {1}", "{0}: resynchronisation save done {1}", m.From, m.Payload));
                     break;
+
+                case "perf":
+                    {
+                        // (0.9.0, #418) a game's pace (G.perfTick): kept for the players' list of mp_status.txt, not passed on
+                        var t = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+                        if (t != null && m.From != null)
+                        {
+                            int fps = t.TryGetValue("fps", out var fv) && fv is double fd ? (int)Math.Max(0, Math.Min(999, fd)) : -1;
+                            int pace = t.TryGetValue("pace", out var pv) && pv is double pd ? (int)Math.Max(-1, Math.Min(100, pd)) : -1;
+                            lock (perfOf) perfOf[m.From] = new PerfInfo { Fps = fps, Pace = pace, At = Now };
+                        }
+                        break;
+                    }
 
                 case "clock":
                     {

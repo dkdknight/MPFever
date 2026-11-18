@@ -63,6 +63,10 @@ def main():
         return 1
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
     L.execute(MOCK)
+    # (0.8.18) the stop points' rounding to the speed (G.alignDown, MPFEVER_ALIGNBATCH) is off here: this test is about the
+    # holds themselves, at their exact steps (tests/test_alignbatch0818.py covers the rounding)
+    m_a = re.search(r"^G\.alignDown = function\(t, k\)\n.*?^end\n", src, re.S | re.M)
+    L.execute("G.alignOn = false\n" + (m_a.group(0) if m_a else "G.alignDown = function(t) return t end\n"))
     L.execute(m_q.group(0) + "\nQUEUE = queueLocal\n")
     L.execute(m_p.group(0) + "\nPACING = pacing\n")
     run = L.eval("function(code) return assert(load(code))() end")

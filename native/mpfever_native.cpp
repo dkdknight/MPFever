@@ -1963,6 +1963,191 @@ static void DropAtLoad()
     DropCanon("a game is being loaded");
 }
 
+// ---------------------------------------------------------------- the systems' entity lists of the two states (0.8.18, #150)
+// The engine keeps two world states and makes each batch of steps on the other one; the simulation loop's Replicate copies the
+// state just simulated into the next one: it replays the source's change records into it (entities and components added and
+// removed, components changed), then copies every component. The ENTITY LISTS of the systems are not copied: each state keeps
+// its own ecs::ComponentGroupFamily lists (the entities that have the components a system runs over, see fam_order.h), made by
+// its own adds and removes, and a remove moves the list's last entity into the removed one's place. Their ORDER is that state's
+// own history: the steps it made itself, the replays of the other's. The systems run over their list in its order, and some
+// results depend on an entity's place in it: AnimalMoveSystem draws its random numbers per run of 128 animals, from a generator
+// seeded with the run's first index (0xa94350 on build 40425), so an animal's target is drawn from another number when the
+// animals before it are in another order. Two games cut their steps into other batches (a game held at its stop point makes a
+// batch of one step where the other makes four): if the two states' orders differ, a step's results depend on which state makes
+// it, and the games part (#150: the animals of Test Leawood, 52 of 2546 with another target in one batch, 2026-11-17).
+// After each copy of the loop, every family's list in the copy is compared with the state just simulated: entities, their order
+// and their components' places. Where only the order differs, the copy's list is put in the simulated state's order with the
+// family's own calls (its last entries removed down to the first difference, each the last one then: nothing else moves; then
+// the simulated state's entries added in their order): every batch then starts from the order of the steps made one after the
+// other, whatever the batches. Counted in the minute's "order fixes" line ("families"); the first differences are written.
+// MPFEVER_FAMSYNC=0: compared and written only, the copy's lists left as the replay made them.
+#include "fam_order.h"
+// (0.8.18, #150) the same batches on every game (batch_align.h): the batches end at the multiples of the speed and the runs of
+// still batches are even, so every game makes the same batches on the same of the engine's two states. MPFEVER_ALIGNBATCH=0: off
+// (the batches as before); MPFEVER_ALIGNPARITY=0: the batches' ends aligned, the still runs as they come. In the fixes list
+// (native_fx.txt: "alignbatch", "alignparity"): a game without it would make other batches than the host's
+#include "batch_align.h"
+static int g_alignOn = -1, g_alignParity = -1;
+static BatchAlign g_align = {};
+static u32 g_alignLastS = 0xFFFFFFFFu;   // (the step of the batch before: a load moves it back or far on)
+// (0.8.18, #150 diagnostic) the loop's commands applied (ApplyDetour), those of the batch under way, and the batches with no step
+// that applied some (a build landing in a still batch on one game and in a batch with steps on another)
+static volatile long g_loopCmds = 0;
+static volatile long g_batchSeq = 0;    // (0.8.18) every batch of the simulation (StepsForBatch), see AnimUpdateWrap
+static volatile long g_stepInBatch = 0; // (the steps made in the batch under way, see InstallStepSnap)
+static long g_loopCmdsSeen = 0, g_batchCmds = 0, g_stillCmds = 0;
+static void AlignInit()
+{
+    if (g_alignOn >= 0) return;
+    char v[4] = {};
+    g_alignOn = (GetEnvironmentVariableA("MPFEVER_ALIGNBATCH", v, 3) > 0 && v[0] == '0') ? 0 : 1;
+    char w[4] = {};
+    g_alignParity = g_alignOn && !(GetEnvironmentVariableA("MPFEVER_ALIGNPARITY", w, 3) > 0 && w[0] == '0') ? 1 : 0;
+}
+static int g_famSync = -1;
+// (MPFEVER_FAMSYNC: 1 compared and put in order, 0 compared and written only, unset: 2, nothing compared, see InstallFamSync)
+static int FamSyncMode() { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_FAMSYNC", v, 3) <= 0) return 2; return v[0] == '1' ? 1 : 0; }
+static volatile long g_famCopies = 0, g_famDiffer = 0, g_famFixed = 0, g_famApart = 0, g_famPlaces = 0, g_famOdd = 0;
+static i64 g_famUsSum = 0, g_famUsMax = 0;      // (the time FamCheck takes, in microseconds: the simulation's thread only)
+struct FamKind { u64 vt; u32 es; char name[100]; };
+static FamKind g_famKind[192];
+static int g_famKindN = 0;
+static u32* g_famScratch = 0;
+static u64 g_famScratchN = 0;
+// a family's kind from its vtable (vtable[-1]: the RTTI complete object locator, its type descriptor's RVA at +12, the type's
+// name 16 bytes into it); entry size 0: no list, or not a family of the shape known (left alone)
+static const FamKind* FamKindOf(u64 fam)
+{
+    u64 vt = *(u64*)fam;
+    for (int i = 0; i < g_famKindN; i++) if (g_famKind[i].vt == vt) return &g_famKind[i];
+    if (g_famKindN >= 192) return 0;
+    FamKind& k = g_famKind[g_famKindN++];
+    k.vt = vt; k.es = 0; k.name[0] = 0;
+    if (vt < g_base + 8 || !Readable((void*)(vt - 8), 0x28)) return &k;
+    u64 col = *(u64*)(vt - 8);
+    if (col < g_base || !Readable((void*)col, 0x18)) return &k;
+    u32 td = *(u32*)(col + 12);
+    const char* nm = (const char*)(g_base + td + 0x10);
+    if (!td || !Readable(nm, 100)) return &k;
+    int j = 0;
+    for (; j < 99 && nm[j]; j++) k.name[j] = nm[j];
+    k.name[j] = 0;
+    u32 es = FoEntrySize(k.name, j);
+    u64 add = *(u64*)(vt + 0x10), rem = *(u64*)(vt + 0x18);
+    if (add < g_textStart || add >= g_textEnd || rem < g_textStart || rem >= g_textEnd) es = 0;
+    k.es = es;
+    return &k;
+}
+// (the simulation loop's copy only: on the simulation's thread, the copy not yet in use)
+static void FamCheckBody(void* src, void* dst);
+static void FamCheck(void* src, void* dst)
+{
+    i64 t0 = NowUs();
+    FamCheckBody(src, dst);
+    i64 us = NowUs() - t0;
+    g_famUsSum += us;
+    if (us > g_famUsMax) g_famUsMax = us;
+}
+static void FamCheckBody(void* src, void* dst)
+{
+    if (g_famSync < 0) g_famSync = FamSyncMode();
+    if (g_famSync == 2) return;
+    if (!src || !dst || !Readable((u8*)src + 0x18, 8) || !Readable((u8*)dst + 0x18, 8)) return;
+    u64 ex = *(u64*)((u8*)src + 0x18), ey = *(u64*)((u8*)dst + 0x18);
+    if (!ex || !ey || ex == ey || !Readable((void*)(ex + 0x18), 16) || !Readable((void*)(ey + 0x18), 16)) { g_famOdd++; return; }
+    u64 fxb = *(u64*)(ex + 0x18), fxe = *(u64*)(ex + 0x20), fyb = *(u64*)(ey + 0x18), fye = *(u64*)(ey + 0x20);
+    if (!fxb || !fyb || fxe < fxb || fye < fyb || fxe - fxb != fye - fyb || (fxe - fxb) % 8 || fxe - fxb > 8 * 4096
+        || !Readable((void*)fxb, fxe - fxb) || !Readable((void*)fyb, fye - fyb)) { g_famOdd++; return; }
+    g_famCopies++;
+    long nf = (long)((fxe - fxb) / 8);
+    // (the two states' family vectors are not in the same order: each state makes its families as its systems first ask for
+    // them. A family of the state simulated is paired with the family of the copy of the same class (vtable), the first one not
+    // paired yet: seen in game 2026-11-18, 35 of the families at the same place were of another class)
+    // (the copy's classes read once per copy: one memory check per family, not one per pair)
+    static u8 taken[4096];
+    static u64 vty[4096];
+    static long pairedLogged = 0;
+    for (long g = 0; g < nf; g++) {
+        u64 c = ((u64*)fyb)[g];
+        taken[g] = 0;
+        vty[g] = (c && Readable((void*)c, 0x18)) ? *(u64*)c : 0;
+    }
+    long hint = 0;
+    // (0.8.18, once: the families of the first copies, compared or not and why, in native.log)
+    static long censusDone = 0;
+    bool census = censusDone < 1 && g_famCopies >= 50;
+    if (census) censusDone++;
+    long cNull = 0, cNoPair = 0, cNoList = 0, cCompared = 0;
+    for (long f = 0; f < nf; f++) {
+        u64 fx = ((u64*)fxb)[f];
+        if (!fx || !Readable((void*)fx, 0x18)) { g_famOdd++; cNull++; continue; }
+        u64 vt = *(u64*)fx, fy = 0;
+        for (long t = 0; t < nf && !fy; t++) {
+            long g = (f + t) % nf;
+            if (!taken[g] && vty[g] && vty[g] == vt) { fy = ((u64*)fyb)[g]; taken[g] = 1; if (g != f) hint++; }
+        }
+        if (!fy) { g_famOdd++; cNoPair++; continue; }
+        const FamKind* k = FamKindOf(fx);
+        if (!k || !k->es) { cNoList++; continue; }
+        cCompared++;
+        if (census) {
+            u64 cb = *(u64*)(fx + 8), ce = *(u64*)(fx + 0x10);
+            Buf b; b.str("families: compared: ").str(k->name).str(" (").dec((i64)k->es).str(" bytes an entry, ").dec((i64)(ce >= cb ? (ce - cb) / k->es : 0)).str(" entities)"); LogLine(b);
+        }
+        u32 es = k->es;
+        u64 xb = *(u64*)(fx + 8), xe = *(u64*)(fx + 0x10), yb = *(u64*)(fy + 8), ye = *(u64*)(fy + 0x10);
+        if (xe < xb || ye < yb || (xe - xb) % es || (ye - yb) % es) { g_famOdd++; continue; }
+        u64 xn = (xe - xb) / es, yn = (ye - yb) / es;
+        if (!xn && !yn) continue;
+        if ((xn && !Readable((void*)xb, xe - xb)) || (yn && !Readable((void*)yb, ye - yb))) { g_famOdd++; continue; }
+        u64 n = xn < yn ? xn : yn;
+        u64 first = FoFirstDiff((const u8*)xb, (const u8*)yb, n, es);
+        if (first == n && xn == yn) continue;
+        // (the entries alike up to `first`; the first other ENTITY from there: the same entities in the same order with other
+        // places of their components are counted and left alone, the order being what the systems' results depend on)
+        first += FoFirstEntDiff((const u8*)xb + first * es, (const u8*)yb + first * es, n - first, es);
+        if (first == n && xn == yn) {
+            long p = _InterlockedIncrement(&g_famPlaces);
+            if (p <= 10) { Buf b; b.str("families: after the copy, ").str(k->name).str(" holds the same entities in the same order, other places of their components (").dec(p).str(" so far)"); LogLine(b); }
+            continue;
+        }
+        long seen = _InterlockedIncrement(&g_famDiffer);
+        long entX = first < xn ? (long)*(u32*)(xb + first * es) : -1, entY = first < yn ? (long)*(u32*)(yb + first * es) : -1;
+        const char* what = "left alone (MPFEVER_FAMSYNC=0)";
+        if (g_famSync == 1) {
+            u64 m = n - first;
+            if (xn != yn) { what = "other entities in the copy: left alone"; g_famApart++; }
+            else {
+                if (g_famScratchN < 2 * m) {
+                    if (g_famScratch) HeapFree(GetProcessHeap(), 0, g_famScratch);
+                    g_famScratch = (u32*)HeapAlloc(GetProcessHeap(), 0, 2 * m * 4 + 64);
+                    g_famScratchN = g_famScratch ? 2 * m : 0;
+                }
+                if (!g_famScratch) { what = "no memory: left alone"; g_famOdd++; }
+                else if (!FoSameSet((const u8*)xb, (const u8*)yb, first, n, es, g_famScratch, g_famScratch + m)) { what = "other entities in the copy: left alone"; g_famApart++; }
+                else {
+                    FoPlan((const u8*)xb, (const u8*)yb, first, n, es, g_famScratch, g_famScratch + m);
+                    typedef void (*FamFn)(u64, u64, u32);
+                    FamFn add = *(FamFn*)(*(u64*)fy + 0x10), rem = *(FamFn*)(*(u64*)fy + 0x18);
+                    for (u64 i = 0; i < m; i++) rem(fy, ey, g_famScratch[i]);
+                    for (u64 i = 0; i < m; i++) add(fy, ey, g_famScratch[m + i]);
+                    yb = *(u64*)(fy + 8); ye = *(u64*)(fy + 0x10);
+                    bool same = ye - yb == xe - xb && Readable((void*)yb, ye - yb) && FoFirstEntDiff((const u8*)xb, (const u8*)yb, xn, es) == xn;
+                    if (same) { what = "put in the simulated state's order"; g_famFixed++; }
+                    else { what = "put in order, yet still another order"; g_famOdd++; }
+                }
+            }
+        }
+        if (seen <= 30 || seen % 1000 == 0) {
+            Buf b; b.str("families: after the copy, ").str(k->name).str(" differs (").dec((i64)xn).str(" entities in the state simulated, ").dec((i64)yn)
+                .str(" in the copy), first at ").dec((i64)first).str(": entity ").dec(entX).str(" / ").dec(entY).str("; ").str(what).str(" (").dec(seen).str(" so far)");
+            LogLine(b);
+        }
+    }
+    if (census) { Buf b; b.str("families: ").dec(nf).str(" places: ").dec(cCompared).str(" compared, ").dec(cNoList).str(" without a list, ").dec(cNull).str(" empty, ").dec(cNoPair).str(" without a family of the same class in the copy"); LogLine(b); }
+    if (hint && pairedLogged < 3) { pairedLogged++; Buf b; b.str("families: ").dec(hint).str(" of the ").dec(nf).str(" families paired with the copy's family of the same class at another place (the two states made them in another order)"); LogLine(b); }
+}
+
 static void DecisionCopy(void* src, void* dst);
 static bool g_replOn = false;
 static void MaintAtLoad(void* src, void* dst);   // (0.8.17, #388, see InstallSharedMaint)
@@ -1996,6 +2181,8 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
     if (dst && (u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) g_uiWord = (long)*(u32*)((u8*)dst + 0x20c);
     // (the platform-decision flags of the state just simulated, into the one about to be)
     if ((u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) DecisionCopy(src, dst);
+    // (0.8.18, #150: the systems' entity lists of the copy in the order of the state just simulated)
+    if ((u32)((uptr)_ReturnAddress() - g_base) == RVA_REPL_LOOP) FamCheck(src, dst);
     static long n = 0;
     if (n < 80) {
         n++;
@@ -2005,6 +2192,22 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
         LogLine(b);
     }
     return r;
+}
+
+// (0.8.18, see FamCheck) said once at the start; named among the fixes that change the simulation when it puts lists in order
+static void InstallFamSync()
+{
+    g_famSync = FamSyncMode();
+    Buf b;
+    // (0.8.18, seen in game 2026-11-18: every family read here held 0 entities, the animals' among them on a map of 2549 animals:
+    // the entries are not where this build keeps them, nothing was ever compared. Off until that layout is known: only a test
+    // switches it on)
+    if (g_famSync == 2) { b.str("families: not compared (MPFEVER_FAMSYNC=1: compared and put in order, =0: compared and written only; tests)"); LogLine(b); return; }
+    if (!g_replOn || !RVA_REPL_LOOP) { b.str("families: the simulation loop's copy not hooked, the systems' entity lists of the two states not compared"); LogLine(b); return; }
+    if (g_famSync == 1) Fx("famsync");
+    b.str("families: after each copy of the simulation loop, the systems' entity lists of the copy compared with the state just simulated")
+        .str(g_famSync == 1 ? " and put in its order where only the order differs" : ", left alone (MPFEVER_FAMSYNC=0)");
+    LogLine(b);
 }
 
 static u64 ApplyBody(void* a, void* b, bool inLoop);
@@ -2022,6 +2225,7 @@ extern "C" u64 ApplyDetour(void* a, void* b)
     bool sim = (long)GetCurrentThreadId() == g_simTid;
     bool script = ret && ret == RVA_SCRIPT_APPLY_RET;
     _InterlockedIncrement(&g_applySite[inLoop ? 0 : script ? 1 : (ret && ret == RVA_SINK_APPLY_RET) ? 2 : 3][sim ? 0 : 1]);
+    if (inLoop && sim) _InterlockedIncrement(&g_loopCmds);
     long prevCmd = g_cmdTid, prevKind = g_cmdKind, prevScript = g_scriptTid;
     // (MPFEVER_FRESHSCRIPT=0: the loop's commands only)
     static int freshScript = -1;
@@ -4194,9 +4398,18 @@ static void DriftStep(void* engine)
             }
         }
     }
+    // (0.8.18, #150) the batch the step was made in: which of this game's two states (0: the first one seen since the load), its
+    // place in the batch, commands of the loop applied in that batch: kept with the step (written "batch s<state>k<place> cmds <n>")
+    static u8* firstGs = 0;
+    static long padLoads = -1;
+    if (padLoads != g_ctlLoads) { padLoads = g_ctlLoads; firstGs = 0; }
+    if (!firstGs) firstGs = gs;
+    u32 padNow = (gs == firstGs ? 0u : 1u) | ((u32)(g_stepInBatch & 0x7F) << 1) | ((u32)(g_batchCmds > 0xFFFF ? 0xFFFF : g_batchCmds) << 8);
+    static u32 padPrev = 0;
     long i = g_dStepN++ & (DIAG_STEPS - 1);
     DiagStep& d = g_dSteps[i];
-    d.step = g_diagStep; d.adds = g_stepAdds; d.rems = g_stepRems; d.setHash = g_stepSet; d.pad = 0;
+    d.step = g_diagStep; d.adds = g_stepAdds; d.rems = g_stepRems; d.setHash = g_stepSet; d.pad = padPrev;
+    padPrev = padNow;
     QueueDigest((u8*)engine, &d.qsize, &d.qsum, &d.qhash);
     g_stepAdds = g_stepRems = g_stepSet = 0;
     g_diagStep = step;
@@ -4214,12 +4427,13 @@ static DWORD WINAPI DriftWriter(void* p)
     HANDLE h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h != INVALID_HANDLE_VALUE) {
         Buf l; l.str("drift diagnostic of check ").dec(d->check).str(": the last ").dec(d->nSteps).str(" steps of the simulation's engine\r\n")
-            .str("step <s> queue <size> <sum> <hash> adds <n> rems <n> set <order-free hash of the step's additions and removals>\r\n");
+            .str("step <s> queue <size> <sum> <hash> adds <n> rems <n> set <order-free hash of the step's additions and removals> batch s<this game's state 0/1>k<place in the batch> cmds <the loop's commands of that batch>\r\n");
         DWORD w; WriteFile(h, l.s, (DWORD)l.n, &w, 0);
         for (long i = 0; i < d->nSteps; i++) {
             const DiagStep& s = d->steps[(d->stepEnd - d->nSteps + i) & (DIAG_STEPS - 1)];
             Buf b; b.str("step ").dec((i64)s.step).str(" queue ").dec((i64)s.qsize).str(" ").dec((i64)s.qsum).str(" ").dec((i64)s.qhash)
-                .str(" adds ").dec((i64)s.adds).str(" rems ").dec((i64)s.rems).str(" set ").dec((i64)s.setHash).str("\r\n");
+                .str(" adds ").dec((i64)s.adds).str(" rems ").dec((i64)s.rems).str(" set ").dec((i64)s.setHash)
+                .str(" batch s").dec((i64)(s.pad & 1)).str("k").dec((i64)((s.pad >> 1) & 0x7F)).str(" cmds ").dec((i64)(s.pad >> 8)).str("\r\n");
             WriteFile(h, b.s, (DWORD)b.n, &w, 0);
         }
         CloseHandle(h);
@@ -4877,6 +5091,108 @@ static u64 AirUpdateWrap(u64 sys, u64 engine, i64 n, float dt)
     AirPost(sys, (long)(i32)n);
     return r;
 }
+// ---------------------------------------------------------------- the animals' cached figures (0.8.18, #150)
+// Every drift between two games of one PC that kept both games' rings (2026-11-13 to 11-17, tools/drift_diff.py over each pair):
+// its first difference was an entity made or removed by AnimalMoveSystem on one game only, and the free-id queue split there (from
+// then on every new entity, people and vehicles, took another id: the drift the players see). AnimalMoveSystem keeps, as
+// AircraftMoveSystem does, an entry per animal made by its vfunc4 and erased by its vfunc5 (0xa95a10 / 0xa95d10 on 40425: the
+// animal's box and its model's group, from its ModelInstanceList and BoundingVolume), made again only when one of those
+// components is said changed. In the copy of a batch the change records are replayed before the components are copied: the entry
+// is made from the copy's OLD components, as the aircraft's was (see above), and a step's result then depends on which state makes
+// it. Every animal's entry is now made again (vfunc5 then vfunc4) at the first update of each batch, in the state that makes the
+// batch, from its own components just copied: the same entries on every game whatever the batches. Around AnimalMoveSystem's
+// Update2 (its vtable's slot 12; its animals are 16-byte entries at [[system+8]], as the aircraft's). MPFEVER_ANIMALCACHE=0: as
+// before; =2: at every step (on every game of a session alike: "animalcache" in the fixes list).
+static AirUpdateF g_animOrig = 0;
+static int g_animMode = 1;
+static long g_animSeqDone = -1;
+static volatile long g_animRefresh = 0, g_animMade = 0, g_animOdd = 0;
+static i64 g_animUsSum = 0, g_animUsMax = 0;
+static void AnimRefresh(u64 sys, u64 engine, long n)
+{
+    if (!sys || !engine || n <= 0 || n > 262144 || !Readable((void*)sys, 0x10)) return;
+    u64 vt = *(u64*)sys;
+    if (!vt || !Readable((void*)vt, 0x68)) { _InterlockedIncrement(&g_animOdd); return; }
+    u64 list = 0, mpa = 0;
+    if (!AirLists(sys, n, &list, &mpa)) { _InterlockedIncrement(&g_animOdd); return; }
+    typedef void (*EntityFn)(u64, u64, u32);
+    EntityFn build = *(EntityFn*)(vt + 0x20), erase = *(EntityFn*)(vt + 0x28);
+    i64 t0 = NowUs();
+    u32* ids = (u32*)HeapAlloc(GetProcessHeap(), 0, (u64)n * 4);
+    if (!ids) return;
+    for (long i = 0; i < n; i++) ids[i] = *(u32*)(list + (u64)i * 16);
+    for (long i = 0; i < n; i++) { erase(sys, engine, ids[i]); build(sys, engine, ids[i]); }
+    HeapFree(GetProcessHeap(), 0, ids);
+    i64 us = NowUs() - t0;
+    g_animUsSum += us;
+    if (us > g_animUsMax) g_animUsMax = us;
+    g_animMade += n;
+    if (_InterlockedIncrement(&g_animRefresh) == 1) {
+        Buf b; b.str("animals' figures: made again ").str(g_animMode == 2 ? "at every step" : "at the first update of every batch").str(", ").dec(n)
+            .str(" animals at the first one (").dec((long)us).str(" us, thread ").dec((long)GetCurrentThreadId()).str(")"); LogLine(b);
+    }
+}
+static u64 AnimUpdateWrap(u64 sys, u64 engine, i64 n, float dt)
+{
+    // (no batch counted: the stop point is off, every update is made again)
+    long seq = g_batchSeq;
+    if (g_animMode == 2 || seq == 0 || seq != g_animSeqDone) { g_animSeqDone = seq; AnimRefresh(sys, engine, (long)(i32)n); }
+    return g_animOrig(sys, engine, n, dt);
+}
+// the one place outside the code that holds a function's address (a vtable's slot): 0 when none or more than one
+static u64 VtableSlotOf(u64 target, int* count)
+{
+    u64 slot = 0;
+    int slots = 0;
+    auto dos = (IMAGE_DOS_HEADER_*)g_base;
+    u8* ntp = (u8*)(g_base + dos->e_lfanew);
+    auto fh = (IMAGE_FILE_HEADER_*)(ntp + 4);
+    auto sec = (IMAGE_SECTION_HEADER_*)(ntp + 4 + sizeof(IMAGE_FILE_HEADER_) + fh->SizeOfOptionalHeader);
+    for (int i = 0; i < fh->NumberOfSections; i++) {
+        if (sec[i].Name[0] == '.' && sec[i].Name[1] == 't' && sec[i].Name[2] == 'e' && sec[i].Name[3] == 'x') continue;
+        u64 start = (g_base + sec[i].VirtualAddress + 7) & ~7ull, end = g_base + sec[i].VirtualAddress + sec[i].VirtualSize;
+        for (u64 q = start; q + 8 <= end; q += 8) {
+            if ((q & 0xFFF) == 0 || q == start) { if (!Readable((void*)q, 8)) { q = (q | 0xFFF) - 7; continue; } }
+            if (*(u64*)q == target) { slots++; slot = q; }
+        }
+    }
+    if (count) *count = slots;
+    return slots == 1 ? slot : 0;
+}
+static void InstallAnimCache()
+{
+    char v[4] = {};
+    Buf b;
+    if (GetEnvironmentVariableA("MPFEVER_ANIMALCACHE", v, 3) > 0) g_animMode = v[0] == '0' ? 0 : v[0] == '2' ? 2 : 1;
+    if (g_animMode == 0) { b.str("animals' figures: kept between the changes of their components, as before 0.8.18 (MPFEVER_ANIMALCACHE=0)"); LogLine(b); return; }
+    // AnimalMoveSystem::Update2 on 40425 (0xa960e0): "mov rax,rsp / mov [rax+20h],rbx / push rbp,rsi,rdi,r12-r15 / lea rbp,[rsp-60h] /
+    // sub rsp,160h / vmovaps [rax-48h],xmm6 / vmovaps [rax-58h],xmm7 / mov rax,cookie / xor rax,rsp / mov [rbp+30h],rax /
+    // vmovaps xmm7,xmm3 / mov edi,r8d / mov r15,rdx / mov rsi,rcx / mov [rbp-60h],rcx"
+    u32 at = FindSigRva("48 8B C4 48 89 58 20 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 A0 48 81 EC 60 01 00 00 C5 F8 29 70 B8 C5 F8 29 78 A8 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 30 C5 F8 28 FB 41 8B F8 4C 8B FA 48 8B F1 48 89 4D A0");
+    u64 target = at ? g_base + at : 0;
+    int slots = 0;
+    u64 slot = target ? VtableSlotOf(target, &slots) : 0;
+    bool shape = slot && Readable((void*)(slot - 0x60), 0x68);
+    if (shape) {
+        u64 f4 = *(u64*)(slot - 0x40), f5 = *(u64*)(slot - 0x38);
+        shape = f4 >= g_textStart && f4 < g_textEnd && f5 >= g_textStart && f5 < g_textEnd;
+    }
+    bool ok = false;
+    if (shape) {
+        DWORD old;
+        if (VirtualProtect((void*)slot, 8, 4 /* PAGE_READWRITE */, &old)) {
+            g_animOrig = (AirUpdateF)target;
+            *(u64*)slot = (u64)&AnimUpdateWrap;
+            VirtualProtect((void*)slot, 8, old, &old);
+            ok = true;
+        }
+    }
+    if (ok) Fx("animalcache");
+    if (ok) b.str("animals' figures: made again ").str(g_animMode == 2 ? "at every step (MPFEVER_ANIMALCACHE=2)" : "at the first update of every batch");
+    else { b.str("animals' figures: OFF (AnimalMoveSystem's update ").str(at ? "not in one vtable, " : "not found, ").dec(slots).str(" slot(s))"); }
+    LogLine(b);
+}
+
 static void InstallAirCache()
 {
     char v[4] = {};
@@ -5919,6 +6235,16 @@ static void LogOrderCounts()
     b.str("; decision flags ").dec(g_dsSyncs).str("/").dec(g_dsCopied).str("/").dec(g_dsNotes).str("/").dec(g_dsRefused).str("/").dec(g_dsOther);
     // (0.8.6, #150: the same account changes on every game, this machine's figures put back / not found)
     if (g_clearSame == 1) b.str("; own figures put back ").dec(g_clearSameKept).str("/").dec(g_clearSameMissed).str(" (with figures ").dec(g_clearSameFull).str(", largest ").dec(g_clearSameBytes).str(" bytes)");
+    // (0.8.18, #150: the loop's copies whose families were compared / lists in another order / put in order / other entities /
+    // same order, other places of the components / odd)
+    // (0.8.18, #150: the batches seen / the loop's iterations / still batches / still batches added for an even run / batches
+    // ended at a multiple of the speed)
+    b.str("; still batches with commands ").dec(g_stillCmds);
+    if (g_alignOn == 1) b.str("; aligned batches ").dec((long)g_align.batches).str("/").dec(g_iter).str("/").dec((long)g_align.stills).str("/").dec((long)g_align.parityAdds).str("/").dec((long)g_align.blockCuts);
+    if (g_animOrig) b.str("; animals' figures made again ").dec(g_animRefresh).str(" time(s), ").dec(g_animMade).str(" entries, odd ").dec(g_animOdd)
+        .str(" (").dec(g_animRefresh ? g_animUsSum / g_animRefresh : 0).str(" us a time, ").dec(g_animUsMax).str(" at most)");
+    b.str("; families ").dec(g_famCopies).str("/").dec(g_famDiffer).str("/").dec(g_famFixed).str("/").dec(g_famApart).str("/").dec(g_famPlaces).str("/").dec(g_famOdd)
+        .str(" (").dec(g_famCopies ? g_famUsSum / g_famCopies : 0).str(" us a copy, ").dec(g_famUsMax).str(" at most)");
     // (the commands' new entities given a fresh id / the same in a copy of the state / refused, another engine)
     // (the scripts' commands' entities: counted, the queue's ids)
     b.str("; fresh ids ").dec(g_freshCmd).str("/").dec(g_freshReplay).str("/").dec(g_freshOther).str(", left to the queue ").dec(g_freshSkip)
@@ -6251,25 +6577,94 @@ static void WriteStopState(u32 S, u32 n)
 // else the two games did not start at the same time)
 static int g_testSplit = -1;
 static bool g_splitArmed = false;
+// Test (0.8.18, MPFEVER_TESTHOLD=<percent>, 1 to 90): this game stands still now and then (batches of no step, at most 3 in a row,
+// the steps decided by the step's number and a count, the same on every run), as a host held by a slower player's clock stands at
+// its stop point. Given to one game only (MPFEVER_ENV_CLIENT="MPFEVER_TESTHOLD=30"): its batches then start at other steps than the
+// other game's and the engine's two world states take turns at other steps: does a session drift when one game stands at other
+// steps? (#150; armed once the game stood still once, as TESTSPLIT). The interface sees a slow batch, not a stand (the step is
+// short of the stop point).
+static int g_testHold = -1;
+static bool g_holdArmed = false;
+static long g_holdRun = 0, g_holdSeen = 0, g_holdCount = 0;
+static bool TestHold(u32 S, u32 sp, u32 n)
+{
+    if (g_testHold < 0) {
+        char v[8] = {}; int p = 0;
+        if (GetEnvironmentVariableA("MPFEVER_TESTHOLD", v, 7) > 0) for (int i = 0; v[i] >= '0' && v[i] <= '9'; i++) p = p * 10 + (v[i] - '0');
+        g_testHold = p > 90 ? 90 : p;
+        if (g_testHold) { Buf l; l.str("stop point: TEST this game stands still in ").dec(g_testHold).str("% of its batches (MPFEVER_TESTHOLD)"); LogLine(l); }
+    }
+    if (!g_testHold) return false;
+    if (sp == 0) { g_holdArmed = true; return false; }
+    if (!g_holdArmed || n == 0) return false;
+    u32 h = S * 2654435761u ^ (u32)(++g_holdSeen) * 40503u;
+    h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+    if (g_holdRun < 3 && h % 100 < (u32)g_testHold) {
+        g_holdRun++;
+        long c = ++g_holdCount;
+        if (c <= 20 || c % 1000 == 0) { Buf l; l.str("stop point: TEST batch at step ").dec((long)S).str(" stands still (").dec(c).str(" so far)"); LogLine(l); }
+        return true;
+    }
+    g_holdRun = 0;
+    return false;
+}
 static bool g_standSkipOn = false;     // (the thunk's path for a stand was installed, see InstallNativeStop)
-static volatile long g_stepInBatch = 0; // (the steps made in the batch under way, see InstallStepSnap)
+
 extern "C" u32 StepsForBatch(void* time, u32 speed, u32 asked)
 {
+    g_batchSeq++;
+    if (g_alignOn < 0) AlignInit();
     u32 sp = speed > asked ? speed : asked;
     g_stepInBatch = 0;
     if (g_testSplit < 0) { g_testSplit = GetEnvironmentVariableA("MPFEVER_TESTSPLIT", 0, 0) > 0 ? 1 : 0; if (g_testSplit) { Buf l; l.str("stop point: TEST batches split (MPFEVER_TESTSPLIT)"); LogLine(l); } }
     if (g_testSplit && sp == 0) g_splitArmed = true;
+    // (0.8.18: with the aligned batches the cut is made as a stop point's, on the steps left, the speed kept: see below)
+    u32 splitCut = 0;
     if (g_testSplit && g_splitArmed && sp > 1 && asked <= speed && g_getUpdRva && time) {
         u32 S0 = ((u32(*)(u64))(g_base + g_getUpdRva))((u64)time);
-        sp = 1 + (S0 * 7 + S0 / 3) % sp;
+        if (g_alignOn == 1) splitCut = 1 + (S0 * 7 + S0 / 3) % sp;
+        else sp = 1 + (S0 * 7 + S0 / 3) % sp;
     }
     ReadStop();
-    if (g_stopSeq < 0 || !g_getUpdRva || !time || !StopAlive()) return sp;
+    // (0.8.18, aligned batches) every batch is counted from the load of the game on, in a session or not yet: the runs of still
+    // batches are counted from there on every game (the games load at other times and stand still for other numbers of batches
+    // before the session starts). A load is seen by the step: back, or more than 64 steps on in one batch.
+    if (g_alignOn < 0) AlignInit();
+    { long c = g_loopCmds; g_batchCmds = c - g_loopCmdsSeen; g_loopCmdsSeen = c; }
+    if (g_alignOn == 1 && g_getUpdRva && time) {
+        u32 S1 = ((u32(*)(u64))(g_base + g_getUpdRva))((u64)time);
+        static long alignLoads = -1;
+        bool loaded = alignLoads >= 0 && alignLoads != g_ctlLoads;   // (the module's own count of the loads, DropAtLoad)
+        alignLoads = g_ctlLoads;
+        if (loaded || (g_alignLastS != 0xFFFFFFFFu && (S1 < g_alignLastS || S1 > g_alignLastS + 64))) {
+            Buf l; l.str("aligned batches: a game loaded (step ").dec((long)g_alignLastS).str(" -> ").dec((long)S1).str("): the still batches counted from here (").dec((long)g_align.stillRun).str(" before)"); LogLine(l);
+            g_align.stillRun = 0;
+        }
+        g_alignLastS = S1;
+    }
+    if (g_stopSeq < 0 || !g_getUpdRva || !time || !StopAlive()) {
+        // (no session: nothing changed, the batch only counted)
+        if (g_alignOn == 1) { if (sp == 0) { g_align.stillRun++; g_align.stills++; } else g_align.stillRun = 0; }
+        return sp;
+    }
     u32 S = ((u32(*)(u64))(g_base + g_getUpdRva))((u64)time);
     u32 n = sp;
     if (g_stopAt >= 0) {
         if ((long)S >= g_stopAt) n = 0;
         else if ((long)(S + sp) > g_stopAt) n = (u32)(g_stopAt - (long)S);
+    }
+    if (TestHold(S, sp, n)) n = 0;
+    if (splitCut && n > splitCut) n = splitCut;
+    // (the exact steps asked for, of the old way, are left as asked)
+    if (g_alignOn == 1 && asked <= speed) {
+        u32 a = AlignBatch(&g_align, S, sp, n, g_alignParity);
+        if (a != n && g_align.parityAdds + g_align.blockCuts <= 30) {
+            Buf l; l.str("aligned batches: batch at step ").dec((long)S).str(a == 0 ? " stands one batch more (an even run of still batches)" : " ends at a multiple of the speed").str(" (").dec((long)a).str(" step(s) instead of ").dec((long)n).str(")"); LogLine(l);
+        }
+        n = a;
+    } else if (g_alignOn == 1) {
+        // (exact steps asked for, the old way: left as asked, the batch still counted for the runs of still batches)
+        if (n == 0) { g_align.stillRun++; g_align.stills++; } else g_align.stillRun = 0;
     }
     // A batch with no step because of the stop point (the game runs at a speed): StepsForBatch answers ~0, and the thunk skips the
     // still batch's update of the game's scripts (the engine calls them with a duration of 0 when a batch makes no step). A game
@@ -6286,6 +6681,10 @@ extern "C" u32 StepsForBatch(void* time, u32 speed, u32 asked)
         if (c <= 40 || c % 500 == 0) { Buf l; l.str("stop point: batch at step ").dec((long)S).str(" makes ").dec((long)n).str(" step(s) instead of ").dec((long)sp).str(" (stop point ").dec(g_stopAt).str(", ").dec(c).str(" so far)"); LogLine(l); }
     }
     if (g_stopAt >= 0 && (long)S > g_stopAt && g_stopLastS != S) { Buf l; l.str("stop point: the simulation is at step ").dec((long)S).str(", past its stop point ").dec(g_stopAt).str(": it stands there until the stop point moves past it (a game that must stay behind a leading one, or a stop point written late)"); LogLine(l); }
+    if (n == 0 && g_batchCmds > 0) {
+        long c = ++g_stillCmds;
+        if (c <= 20 || c % 500 == 0) { Buf l; l.str("aligned batches: ").dec(g_batchCmds).str(" command(s) of the loop applied in a batch with no step at step ").dec((long)S).str(" (").dec(c).str(" such batches so far)"); LogLine(l); }
+    }
     WriteStopState(S, n);
     return n;
 }
@@ -6350,6 +6749,10 @@ static void InstallNativeStop()
     char path[400];
     PathOf(path, "native_stop.txt");
     DeleteFileA(path);
+    AlignInit();
+    if (g_alignOn) Fx("alignbatch");
+    if (g_alignParity) Fx("alignparity");
+    { Buf a; a.str("aligned batches: ").str(g_alignOn ? (g_alignParity ? "on (ends at the multiples of the speed, even runs of still batches)" : "ends only (MPFEVER_ALIGNPARITY=0)") : "off (MPFEVER_ALIGNBATCH=0)"); LogLine(a); }
     Buf b; b.str("stop point: the steps function's number of steps at ").hex(at + 8).str(" decided here (stop points of native_stop.txt)").str(g_standSkipOn ? "; a stand skips the scripts' update" : "; the still batch not as expected, a stand runs the scripts as before"); LogLine(b);
 }
 
@@ -6743,6 +7146,8 @@ static DWORD WINAPI Init(void*)
     PatchSaveCleanup();
     InstallNoGameAutosave();
     InstallAirCache();
+    InstallAnimCache();
+    InstallFamSync();
     InstallModuleBuilderGuard();
     if (g_layout) InstallToolCompany();
     if (g_layout) InstallHudShare();

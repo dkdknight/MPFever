@@ -1540,7 +1540,9 @@ local function pollStatus()
 			-- (id, name, state, lag, role, and since 0.7.4 the percent of the host's game it has received while one is on its way)
 			local f = {}
 			for x in (v .. C.TAB):gmatch("([^" .. C.TAB .. "]*)" .. C.TAB) do f[#f + 1] = x end
-			if #f >= 3 then st.players[#st.players + 1] = { id = f[1], name = f[2], state = f[3], lag = tonumber(f[4] or "") or 0, role = f[5] or "", pct = tonumber(f[6] or "") } end
+			-- (0.9.0, #418: and its pace, frames per second and the simulation's speed in % of the speed asked, empty when not known)
+			if #f >= 3 then st.players[#st.players + 1] = { id = f[1], name = f[2], state = f[3], lag = tonumber(f[4] or "") or 0, role = f[5] or "", pct = tonumber(f[6] or ""),
+				fps = tonumber(f[7] or ""), pace = tonumber(f[8] or "") } end
 		elseif k then
 			st[k] = v
 		end
@@ -1633,6 +1635,50 @@ local function playerLine(pl, me)
 	if pl.role == "host" then text = text .. "  –  " .. T("hôte", "host") end
 	local state, cls = (PLAYER_STATES[pl.state] or PLAYER_STATES.ok)(pl)
 	return text .. "  ·  " .. state, cls
+end
+
+-- (0.9.0, #418, the user's request after a weak PC held a whole session) two signs before each player's name: its sync and its
+-- game's pace, so that everybody sees which PC slows the session (in lockstep every game waits for the slowest one).
+--   sync: green in sync, yellow a slight drift being corrected, blue a resynchronisation or an arrival under way, red out of sync
+--         or not answering;
+--   pace: the worst of its frames per second (45 / 30 / 20) and of the simulation's speed it reaches by itself, in % of the speed
+--         asked (95 / 75 / 50; see G.perfTick in the bridge): green, yellow, orange, red; grey while not known.
+-- MPFEVER_PERFSIGN=0: no signs, as before
+U.signsOn = os.getenv("MPFEVER_PERFSIGN") ~= "0"
+U.syncSign = function(pl, st)
+	if pl.state == "loading" or pl.state == "joining" or (st and st.sync == "resync") then
+		return "Info", T("Resynchronisation ou arrivée en cours", "Resynchronising or joining")
+	end
+	if pl.state == "noresp" or pl.state == "away" or (st and st.sync == "desync") then
+		return "Error", T("Désynchronisé ou sans réponse", "Out of sync or not responding")
+	end
+	if st and st.sync == "drift" then return "Warning", T("Légère dérive, corrigée si elle dure", "Slight drift, corrected if it lasts") end
+	return "Ok", T("Synchronisé", "In sync")
+end
+U.perfLevel = function(v, a, b, c)
+	if v == nil then return 0 end
+	if v >= a then return 1 elseif v >= b then return 2 elseif v >= c then return 3 end
+	return 4
+end
+U.PERF_COLORS = { [0] = "NeutralLight", "Ok", "Warning", "Orange", "Error" }
+U.perfSign = function(pl)
+	local lf = U.perfLevel(pl.fps, 45, 30, 20)
+	local lp = U.perfLevel(pl.pace, 95, 75, 50)
+	local tip
+	if pl.fps and pl.pace then tip = C.Tf("%s images/s · simulation à %s % de la vitesse demandée", "%s FPS · simulation at %s % of the speed asked", pl.fps, pl.pace)
+	elseif pl.fps then tip = C.Tf("%s images/s", "%s FPS", pl.fps)
+	else tip = T("Rythme inconnu", "Pace not known") end
+	return U.PERF_COLORS[math.max(lf, lp)], tip
+end
+-- the two signs, as one row (K: the window's kit)
+U.playerSigns = function(K, pl, st)
+	if not (U.signsOn and K and K.disc) then return nil end
+	local function sign(colorName, tip)
+		return K.builtin.Component { meta = { tooltip = tip }, layout = K.col { K.gap(1, 4), K.disc(colorName, 11) } }
+	end
+	local sc, stip = U.syncSign(pl, st)
+	local pc, ptip = U.perfSign(pl)
+	return K.row { sign(sc, stip), K.gap(3, 1), sign(pc, ptip) }
 end
 
 -- the players still in the session (those who left are listed too, for a while; a dedicated server is not counted)
@@ -2450,6 +2496,7 @@ U.makeKit = function(builtin)
 	local FALLBACK = {
 		Ok = { 0.298, 0.733, 0.09, 1 }, Warning = { 0.855, 0.647, 0.125, 1 }, Error = { 0.808, 0.125, 0.161, 1 }, Info = { 0.176, 0.408, 0.769, 1 },
 		Positive = { 0.541, 0.725, 0.945, 1 }, Negative = { 0.941, 0.502, 0.502, 1 },
+		Orange = { 0.95, 0.52, 0.1, 1 },   -- (0.9.0: the players' pace signs, U.perfSign; not among the game's colours)
 		NeutralMedium = { 0.502, 0.502, 0.502, 1 }, NeutralLight = { 0.702, 0.702, 0.702, 1 }, NeutralLightest = { 1, 1, 1, 1 },
 		BaseVeryDark = { 0.09, 0.105, 0.12, 1 }, BaseDark = { 0.1125, 0.13125, 0.15, 1 }, BaseDarkMedium = { 0.135, 0.1575, 0.18, 1 },
 		BaseMedium = { 0.1575, 0.18375, 0.21, 1 }, BaseLightMedium = { 0.18, 0.21, 0.24, 1 }, BaseLight = { 0.2025, 0.23625, 0.27, 1 },
@@ -3583,7 +3630,9 @@ U.TABS.session = function(K, st, ctx)
 					K.btn(T("Exclure", "Kick"), nil, function() U.menuRequest("kick", who) end, false, nil, K.ICON_KICK), K.gap(6, 1),
 					K.btn(T("Bannir", "Ban"), nil, function() U.menuRequest("ban", who) end, false, nil, K.ICON_BAN) }
 			else
-				rows[#rows + 1] = K.row { K.icon(K.ICON_PERSON, 20), K.gap(6, 1), K.text(line, nil, cls, W - 26) }
+				local signs = pl.state ~= "left" and U.playerSigns and U.playerSigns(K, pl, st) or nil
+				if signs then rows[#rows + 1] = K.row { K.icon(K.ICON_PERSON, 20), K.gap(5, 1), signs, K.gap(6, 1), K.text(line, nil, cls, W - 62) }
+				else rows[#rows + 1] = K.row { K.icon(K.ICON_PERSON, 20), K.gap(6, 1), K.text(line, nil, cls, W - 26) } end
 			end
 		end
 	end
@@ -6400,7 +6449,10 @@ local function installSession(react, builtin)
 		for _, pl in ipairs(st and st.players or {}) do
 			if pl.role ~= "server" then
 				local line, cls = playerLine(pl, st.me)
-				rows[#rows + 1] = row { icon(ICON_PERSON, 22), text("  " .. line, nil, cls) }
+				-- (0.9.0, #418: its sync and pace signs, see U.playerSigns)
+				local signs = pl.state ~= "left" and U.playerSigns and U.playerSigns(U.kit, pl, st) or nil
+				if signs then rows[#rows + 1] = row { icon(ICON_PERSON, 22), text(" "), signs, text("  " .. line, nil, cls) }
+				else rows[#rows + 1] = row { icon(ICON_PERSON, 22), text("  " .. line, nil, cls) } end
 			end
 		end
 		if st and st.mode == "separate" and U.coMap then

@@ -5079,6 +5079,45 @@ G.relHold = function(now)
 	return m
 end
 
+-- (0.8.18, #150) the same batches on every game: the native module ends the batches at the multiples of the speed and keeps the
+-- runs of still batches even (batch_align.h, MPFEVER_ALIGNBATCH). The stop points every game shares (another player's action, the
+-- session's pause, this game's own build released for its time) stay exact; this game's own ones (the barrier of the other
+-- players' clocks, the build lead's cap, a queued action's hold) are rounded down to a multiple of the speed, so that a game held
+-- there ends its batches where the others do. MPFEVER_ALIGNBATCH=0: as before.
+G.alignOn = os.getenv("MPFEVER_ALIGNBATCH") ~= "0"
+G.alignDown = function(t, k)
+	if not (G.alignOn and t and k and k > 1) then return t end
+	local L = math.floor(t / STEP)
+	return (L - L % k) * STEP
+end
+
+-- (0.9.0, #418) this game's pace, every 3 s to the host, which shows it next to the player's name in every game (a sign in green,
+-- yellow, orange or red, see U.perfSign in mpfever_ui.script.lua): its frames per second, and the simulation's speed it reaches by
+-- itself in % of the speed asked: the game time it made per second of the time it did NOT stand waiting for the other games (at
+-- its stop point). The game every other game waits for stands little and shows the session's own pace; a game that waits for it
+-- shows its own, higher. -1: paused or not known. MPFEVER_PERFSIGN=0: nothing sent
+G.perfOn = os.getenv("MPFEVER_PERFSIGN") ~= "0"
+G.perfTick = function()
+	if not G.perfOn then return end
+	local now = os.clock()
+	local P = G.perfM
+	local okT, t = pcall(gameTime)
+	if not okT then return end
+	local stood = G.standM and G.standM.t or 0
+	if not P then G.perfM = { at = now, frames = G.frames, t = t, stood = stood }; return end
+	local dt = now - P.at
+	if dt < 3 then return end
+	local fps = (G.frames - P.frames) / dt
+	local spd = G.session and G.session.speed or 0
+	local pace = -1
+	if G.session and G.session.started and not G.session.pauseAt and spd > 0 and t >= P.t then
+		local busy = dt - math.max(0, stood - P.stood)
+		pace = busy < 0.3 and 100 or math.floor(math.min(100, (t - P.t) / (busy * 1000 * spd) * 100) + 0.5)
+	end
+	G.perfM = { at = now, frames = G.frames, t = t, stood = stood }
+	send("perf", { fps = math.floor(fps + 0.5), pace = pace })
+end
+
 -- the speed this game may run at: session speed, never past the slowest other player (barrier), stop points
 G.pstat = { frames = 0, barrier = 0, hold = 0 }
 local function pacing()
@@ -5103,6 +5142,7 @@ local function pacing()
 			end
 		end
 		G.qHold = keep
+		q = G.alignDown(q, s.speed)
 		if q and (stopAt == nil or q < stopAt) then
 			stopAt = q
 			if now >= q and G.qHoldLogged ~= q then G.qHoldLogged = q; log("queued action held at t=" .. q .. " until the simulation has it (now " .. now .. ") [frame " .. G.frames .. "]") end
@@ -5161,7 +5201,7 @@ local function pacing()
 	-- speed at 4x, 10 steps a second instead of 20, tests 602-639 of 2026-10-27. The stamp distance keeps that reserve too.)
 	local nativeAt = stopAt
 	if barrier then
-		local soft = barrier + overshootReserve() * STEP
+		local soft = G.alignDown(barrier + overshootReserve() * STEP, s.speed)
 		if nativeAt == nil or soft < nativeAt then nativeAt = soft end
 	end
 	G.lastStopAt = nativeAt
@@ -24456,6 +24496,7 @@ G.guiUpdateBody = function(userParams, state, guiState)
 			G.stampFloor = math.max(G.stampFloor, t + G.ahead * STEP)
 			send("clock", { t = t, sp = gameSpeed(), ah = G.ahead, tl = tl, bl = bl, ns = ns })
 		end
+		pcall(G.perfTick)
 	end
 
 	if gp then G.gpMark("pacing") end
