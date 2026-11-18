@@ -21,6 +21,13 @@ MPFever - Changelog
     engine's calls, more on a game that waits for the others): a type loaded by a delivery counted the deliveries of every
     company's lines until then, longer on one game than on another (deliver_cargo wrapped 16 s apart on Flubi's and lulei's
     games, #425). MPFEVER_CONTRACTWRAP=0: as before. Test: tests/test_contractwrap091.py.
+  - FIX (separate companies, #425: "script:progression" differed after every load and was left out as a local measure): right
+    after a load, the engine's second state of the game came to the native module as "a new game state", and it forgot both
+    companies until the mod said them again, about a second later. The other state's word still held the client's company, and
+    the simulation reads that word as it is while the savegame's company is unknown: the game's scripts saw the client's company
+    as the player on the client's game only (its company growth script made a record for it). The two states of the game being
+    loaded are now noted at its load, and the companies said since then are kept for the second one; the savegame's company is
+    also read from the control file before this machine's. MPFEVER_NEWSTATEDROP=1: as before. Test: tests/test_newstate091.py.
 
 0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412)
   - FIX (#150, the slow drift of the animals, vehicles and people between games; Test Leawood, 2026-11-17: 52 of 2546 animals

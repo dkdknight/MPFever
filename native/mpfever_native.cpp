@@ -470,6 +470,7 @@ static long g_othersTok = 0;
 // The savegame's own company ("setcanon <token> <entity>"): the interface's tools build for it whatever company this machine plays
 // (see OwnerFix), so its entity is looked for in the builds they issue.
 static volatile long g_canon = 0;
+static bool NewStateDrop();          // (0.9.1, #425, see g_loadGs)
 static volatile long g_mainTid = 0;        // the game's main thread (its interface), see PatchPlayerReads
 static volatile i64 g_pickCount[8][3];     // per redirected reading: [0] on the interface's thread, [1] the simulation's, [2] another
 static volatile u64 g_gsWord[2];           // addresses of the local-player word of the two game states (seen in Replicate)
@@ -730,6 +731,17 @@ static void ReadControl()
     }
     // (written into the game state by the simulation thread only, at its next iteration: from here, the state known last may be the
     // one of a game just unloaded, freed memory - writing there corrupted the heap and crashed the game after a resynchronisation)
+    // (0.9.1, #425) the savegame's company before this machine's: a state that applies a command between the two writes the local
+    // player into its word (ApplyLocalPlayer), and the simulation reads that word as it is while the savegame's company is unknown
+    // (after a load: lulei's game, 10:53:33). MPFEVER_NEWSTATEDROP=1: this machine's first, as before
+    auto takeCanon = [&]() {
+        if (pk.haveCanon && pk.canonTok != g_canonTok) {
+            g_canonTok = pk.canonTok; g_canon = pk.canon;
+            if (g_ctlShown[1]++ < 10) { Buf b; b.str("savegame company ").dec(pk.canon); LogLine(b); }
+        }
+    };
+    bool canonFirst = !NewStateDrop();
+    if (canonFirst) takeCanon();
     if (pk.haveLocal && pk.localTok != g_localTok) {
         g_localTok = pk.localTok; g_localPlayer = pk.local;
         // ((0.7.13) a line taken was never logged: a few after each load, see g_ctlShown; always one written before the load)
@@ -739,12 +751,9 @@ static void ReadControl()
             LogLine(b);
         }
     }
+    if (!canonFirst) takeCanon();
     if (hudTok && hudTok != g_hudShareTok) { g_hudShareTok = hudTok; LoadHudShare(); }
     if (openTok && openTok != g_openNetTok) { g_openNetTok = openTok; LoadOpenNet(); }
-    if (pk.haveCanon && pk.canonTok != g_canonTok) {
-        g_canonTok = pk.canonTok; g_canon = pk.canon;
-        if (g_ctlShown[1]++ < 10) { Buf b; b.str("savegame company ").dec(pk.canon); LogLine(b); }
-    }
     if (pk.haveOthers && pk.othersTok != g_othersTok) {
         g_othersTok = pk.othersTok;
         g_nOthers = 0;
@@ -1897,6 +1906,22 @@ static bool ReloadedAt(void* slot, u32 cur, u32 want)
     return false;
 }
 
+// (0.9.1, #425) The two states of the game loaded last, as ReplDetour saw its first copy into a fresh state (the load): the engine's
+// second state of that game then comes to ApplyLocalPlayer as "a new game state". Its values (this machine's company, the
+// savegame's) were said after that load (DropAtLoad forgets the ones before): they are this game's, and they are kept there.
+// Dropped, the savegame's company was unknown for about a second while the other state's word still held this machine's company,
+// and the simulation read that word as it was (PatchPlayerReads: "unknown, as read"): the game's scripts saw this machine's
+// company as the player on this game only (lulei's company growth state made a record for lulei's company, "script:progression"
+// differed after every load and was left out as a local measure). MPFEVER_NEWSTATEDROP=1: dropped, as before
+static void* volatile g_loadGs[2] = { 0, 0 };
+static volatile long g_secondKept = 0;
+static bool NewStateDrop()
+{
+    static long v = -1;
+    if (v < 0) { char e[4]; v = (GetEnvironmentVariableA("MPFEVER_NEWSTATEDROP", e, 3) == 1 && e[0] == '1') ? 1 : 0; }
+    return v == 1;
+}
+
 static void ApplyLocalPlayer(const char* why)
 {
     // The engine has more than one game-state object calling Apply (two were seen next to each other at the start of a game): the
@@ -1910,6 +1935,13 @@ static void ApplyLocalPlayer(const char* why)
         // (0.6.12: the oldest place once full. Always the first one before: after about eight games loaded in this process the two
         // states of the engine took it in turn and this machine's player was forgotten at every batch, see state_seen.h)
         seen[SeenPlace(&nseen, &seenNext, SeenFirst())] = g_slot;
+        // (0.9.1, #425) the other state of the game loaded last: the values said since that load are this game's, kept (see
+        // g_loadGs)
+        bool second = !NewStateDrop() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1]);
+        if (second) {
+            long k = _InterlockedIncrement(&g_secondKept);
+            if (k <= 20) { Buf b; b.str("a new game state ").hex((u64)g_slot).str(": the other state of the game loaded last, this machine's company ").dec(g_localPlayer).str(" and the savegame's ").dec(g_canon).str(" kept"); LogLine(b); }
+        } else {
         // the savegame's company too: the simulation's readings of the word are redirected to it (PatchPlayerReads), and a new
         // game after a session of companies read the company of the game before, an entity that is something else there (a
         // group of trees): the game's scripts failed and the engine closed the game when it booked money on it (issue #88)
@@ -1919,6 +1951,7 @@ static void ApplyLocalPlayer(const char* why)
             NoteStale(0, g_localPlayer);
             g_localPlayer = 0;
             return;
+        }
         }
     }
     long want = g_localPlayer;
@@ -2173,6 +2206,8 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
     // first iteration; the interface word of the game before is forgotten there, not at that iteration, see g_stalePlayer)
     if (dst && before == 0xFFFFFFFFu && (u32)((uptr)_ReturnAddress() - g_base) != RVA_REPL_LOOP) {
         g_uiWord = 0;
+        // (0.9.1, #425: the two states of this game, see g_loadGs)
+        g_loadGs[0] = src; g_loadGs[1] = dst;
         // (0.7.5) and this machine's company, the savegame's and the other companies' with it: they belong to the game before.
         // Kept until the first iteration of the new one (see ApplyLocalPlayer), the interface read this machine's company of the
         // game before while it made itself, and the money popups' HUD item keeps the player it is made for: a client that played
