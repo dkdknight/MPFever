@@ -471,6 +471,7 @@ static long g_othersTok = 0;
 // (see OwnerFix), so its entity is looked for in the builds they issue.
 static volatile long g_canon = 0;
 static bool NewStateDrop();          // (0.9.1, #425, see g_loadGs)
+static bool LoadKeepLocal();
 static volatile long g_mainTid = 0;        // the game's main thread (its interface), see PatchPlayerReads
 static volatile i64 g_pickCount[8][3];     // per redirected reading: [0] on the interface's thread, [1] the simulation's, [2] another
 static volatile u64 g_gsWord[2];           // addresses of the local-player word of the two game states (seen in Replicate)
@@ -1937,7 +1938,8 @@ static void ApplyLocalPlayer(const char* why)
         seen[SeenPlace(&nseen, &seenNext, SeenFirst())] = g_slot;
         // (0.9.1, #425) the other state of the game loaded last: the values said since that load are this game's, kept (see
         // g_loadGs)
-        bool second = !NewStateDrop() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1]);
+        // (only when the load forgot the values of the game before: never with MPFEVER_LOADKEEPLOCAL=1)
+        bool second = !NewStateDrop() && !LoadKeepLocal() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1]);
         if (second) {
             long k = _InterlockedIncrement(&g_secondKept);
             if (k <= 20) { Buf b; b.str("a new game state ").hex((u64)g_slot).str(": the other state of the game loaded last, this machine's company ").dec(g_localPlayer).str(" and the savegame's ").dec(g_canon).str(" kept"); LogLine(b); }

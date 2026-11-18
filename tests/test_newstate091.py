@@ -85,7 +85,7 @@ def main():
     alp = src[src.index("static void ApplyLocalPlayer(const char* why)\n{"):]
     alp = alp[:alp.index("\n}\n")]
     check("ApplyLocalPlayer keeps both companies when the new state is one of the two states of the game loaded last",
-          "bool second = !NewStateDrop() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1]);" in alp
+          "bool second = !NewStateDrop() && !LoadKeepLocal() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1]);" in alp
           and alp.index("if (second)") < alp.index('DropCanon("a new game state");'))
     rd = src[src.index('extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)'):]
     rd = rd[:rd.index("u64 r = g_replOrig(src, dst, flag);")]
