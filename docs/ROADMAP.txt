@@ -141,6 +141,9 @@ it is stable enough.
       supply and demand (game option, 0.8.6)
   [x] No more crash when joining a session of one company for everybody after a session of one company per player:
       no need to restart the game (0.7.5)
+  [x] No more money corrected again and again (an action made before the player's company was ready is refused),
+      contracts that end at the same step on every PC (#425), and the client's own company never seen as the
+      savegame's right after a load (0.9.0)
 
 0.5 - Mixed modes
   [x] Shared companies and separate companies in the same game (0.5.0)
@@ -175,5 +178,7 @@ it is stable enough.
 Later - Persistent worlds
   [x] Dedicated server running the world without the host's PC (0.3.12: MPFever.exe --server, separate archive,
       see SERVER.txt; to be tested in long real games; 0.5.8: start buttons, without display)
+  [x] A relay that keeps the session's save, so a game can go on later; a player who takes over as host keeps the
+      host's rules (0.9.0, by ampynjord, PR #412; see RELAY.md)
   [ ] Persistent world that players join and leave at any time
   [ ] Larger player counts (MMO-like)
