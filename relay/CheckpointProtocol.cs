@@ -46,9 +46,10 @@ namespace MPFever.StandaloneRelay
             Msg reply;
             lock (checkpointGate)
             {
-                lock (hostGate)
+                // (review of PR #412: only the host may; the disk work is done outside hostGate, which every player's message takes:
+                // a save written to a slow disk held the whole session)
+                lock (hostGate) { if (sender != host) return; }
                 {
-                    if (sender != host) return;
                     // (a relay started without --checkpoint-dir keeps nothing: it says so instead of leaving the launcher to time out)
                     if (checkpoint == null) { reply = CheckpointReply(id, "empty"); }
                     else try { reply = CheckpointRequest(message, sender, fields, id); }

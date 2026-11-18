@@ -75,8 +75,12 @@ namespace MPFever
         void KeepSaveOnRelay(string saveName)
         {
             var remote = relay as RemoteRelay;
+            if (remote == null) return;
             string key = RelayKey();
-            if (remote == null || key == "") return;
+            if (key == "") return;
+            // (review of PR #412: an upload longer than the autosave interval and a second one begun meanwhile made the relay abort the
+            // first and mix their parts: no save kept, ever. One at a time; this autosave is left out, the next one goes)
+            if (keepThread != null && keepThread.IsAlive) { Log.W(T("Sauvegarde précédente encore en cours d'envoi au relais : celle-ci n'est pas envoyée.", "The previous save is still being sent to the relay: this one is not sent.")); return; }
             keepThread = new Thread(() =>
             {
                 try
@@ -101,7 +105,9 @@ namespace MPFever
         /// nothing happened since the last save (HostAutosave skips it), nor during a resynchronisation.</summary>
         void FinalKeep()
         {
-            if (!(relay is RemoteRelay) || RelayKey() == "" || !started || hostGame == null || resyncing || relay != null) return;
+            // (review of PR #412: the condition said "relay != null", always true here, so the last save was never sent; a dedicated
+            // server is what is left out)
+            if (!(relay is RemoteRelay) || RelayKey() == "" || !started || hostGame == null || resyncing || server != null) return;
             var t = new Thread(() => { HostAutosave(); keepThread?.Join(); }) { IsBackground = true, Name = "Final keep" };
             t.Start();
             t.Join(40000);
@@ -125,7 +131,9 @@ namespace MPFever
         {
             string spec = RelaySetting(out string pw), key = RelayKey();
             if (spec == null || key == "") throw new InvalidOperationException(T("relay= et relaykey= doivent être dans mpfever_settings.txt", "relay= and relaykey= must be set in mpfever_settings.txt"));
-            var remote = new RemoteRelay();
+            // (review of PR #412: the fetch connects as the relay's host for a moment; on a --migration relay its leaving must not ask a
+            // player to take over)
+            var remote = new RemoteRelay { NoHandover = true };
             try
             {
                 ParseRelayAddress(spec, out string host, out int port);

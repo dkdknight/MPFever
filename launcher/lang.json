@@ -26040,6 +26040,19 @@
       "zh-CN": "存档已由中继保存（{0:0.0} MB，{1:0.0} 秒）。",
       "zh-TW": "存檔已由中繼保存（{0:0.0} MB，{1:0.0} 秒）。"
     },
+    "The previous save is still being sent to the relay: this one is not sent.": {
+      "de": "Der vorherige Spielstand wird noch an das Relay gesendet: dieser wird nicht gesendet.",
+      "es": "La partida guardada anterior todavía se está enviando al relé: esta no se envía.",
+      "it": "Il salvataggio precedente è ancora in invio al relay: questo non viene inviato.",
+      "nl": "De vorige opslag wordt nog naar de relay gestuurd: deze wordt niet verstuurd.",
+      "pl": "Poprzedni zapis jest wciąż wysyłany do przekaźnika: ten nie zostanie wysłany.",
+      "pt-BR": "O salvamento anterior ainda está sendo enviado ao relay: este não é enviado.",
+      "ru": "Предыдущее сохранение ещё отправляется на ретранслятор: это не отправляется.",
+      "ja": "前のセーブをまだリレーに送信中です：今回のセーブは送信しません。",
+      "ko": "이전 저장이 아직 릴레이로 전송 중입니다: 이번 저장은 보내지 않습니다.",
+      "zh-CN": "上一个存档仍在发送到中继：本次存档不发送。",
+      "zh-TW": "上一個存檔仍在傳送到中繼：本次存檔不傳送。"
+    },
     "The relay did not keep the save: {0}": {
       "de": "Das Relay hat den Spielstand nicht behalten: {0}",
       "es": "El retransmisor no guardó la partida: {0}",

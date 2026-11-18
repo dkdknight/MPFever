@@ -7,6 +7,10 @@ namespace MPFever
     static class CheckpointWire
     {
         public const int ChunkSize = 1024 * 1024;
+        /// <summary>(review of PR #412) the parts a host SENDS: the save goes on the session's own connection and every message of the
+        /// session waits behind the part being written (1 MiB: about 1.7 s at 5 Mbit/s up, at every autosave); 128 KiB: about 0.2 s. The
+        /// relay takes any part up to ChunkSize.</summary>
+        public const int UploadChunkSize = 128 * 1024;
         public const long MaxSize = 1024L * 1024 * 1024;
         public const string Request = "tun_checkpoint";
         public const string Binary = "tun_checkpoint_bin";

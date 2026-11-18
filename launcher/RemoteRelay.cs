@@ -109,9 +109,9 @@ namespace MPFever
             string sha = CheckpointWire.Hex(Sha256(data));
             string status = CpRequest(CheckpointWire.Field("op", "begin") + "," + CheckpointWire.Field("key", key ?? "") + "," + CheckpointWire.Field("size", data.Length) + "," + CheckpointWire.Field("sha", sha));
             if (status != "upload") return status;
-            for (int off = 0; off < data.Length; off += CheckpointWire.ChunkSize)
+            for (int off = 0; off < data.Length; off += CheckpointWire.UploadChunkSize)
             {
-                var chunk = new byte[Math.Min(CheckpointWire.ChunkSize, data.Length - off)];
+                var chunk = new byte[Math.Min(CheckpointWire.UploadChunkSize, data.Length - off)];
                 Buffer.BlockCopy(data, off, chunk, 0, chunk.Length);
                 string id = Guid.NewGuid().ToString("N");
                 var r = CpSend(new Msg { Kind = CheckpointWire.Binary, From = "-", Data = chunk,
