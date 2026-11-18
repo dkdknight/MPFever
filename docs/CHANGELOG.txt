@@ -26,8 +26,9 @@ MPFever - Changelog
     companies until the mod said them again, about a second later. The other state's word still held the client's company, and
     the simulation reads that word as it is while the savegame's company is unknown: the game's scripts saw the client's company
     as the player on the client's game only (its company growth script made a record for it). The two states of the game being
-    loaded are now noted at its load, and the companies said since then are kept for the second one; the savegame's company is
-    also read from the control file before this machine's. MPFEVER_NEWSTATEDROP=1: as before. Test: tests/test_newstate091.py.
+    loaded are now noted at its load, and the companies taken from the control file since then are kept for the second one; the
+    mod writes the savegame's company to that file before this machine's, and the native module takes it first. MPFEVER_NEWSTATEDROP=1:
+    as before. Test: tests/test_newstate091.py.
 
 0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412)
   - FIX (#150, the slow drift of the animals, vehicles and people between games; Test Leawood, 2026-11-17: 52 of 2546 animals
