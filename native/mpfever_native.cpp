@@ -5107,6 +5107,9 @@ static AirUpdateF g_animOrig = 0;
 static int g_animMode = 1;
 static long g_animSeqDone = -1;
 static volatile long g_animRefresh = 0, g_animMade = 0, g_animOdd = 0;
+// (diagnostic: the entities the engine made or removed during the refresh, as the drift diagnostic counts them: an entry made
+// again that was right changes nothing; one made from old figures moves the animal in the engine's spatial index)
+static volatile long g_animOpsAdds = 0, g_animOpsRems = 0, g_animOpsTimes = 0;
 static i64 g_animUsSum = 0, g_animUsMax = 0;
 static void AnimRefresh(u64 sys, u64 engine, long n)
 {
@@ -5121,8 +5124,15 @@ static void AnimRefresh(u64 sys, u64 engine, long n)
     u32* ids = (u32*)HeapAlloc(GetProcessHeap(), 0, (u64)n * 4);
     if (!ids) return;
     for (long i = 0; i < n; i++) ids[i] = *(u32*)(list + (u64)i * 16);
+    u32 a0 = g_stepAdds, r0 = g_stepRems;
     for (long i = 0; i < n; i++) { erase(sys, engine, ids[i]); build(sys, engine, ids[i]); }
     HeapFree(GetProcessHeap(), 0, ids);
+    u32 da = g_stepAdds - a0, dr = g_stepRems - r0;
+    if (da || dr) {
+        g_animOpsAdds += (long)da; g_animOpsRems += (long)dr;
+        long t = ++g_animOpsTimes;
+        if (t <= 10 || t % 1000 == 0) { Buf l; l.str("animals' figures: the refresh made ").dec((long)da).str(" entity addition(s) and ").dec((long)dr).str(" removal(s) in the engine (").dec(t).str(" refreshes so far that changed something)"); LogLine(l); }
+    }
     i64 us = NowUs() - t0;
     g_animUsSum += us;
     if (us > g_animUsMax) g_animUsMax = us;
@@ -6242,7 +6252,8 @@ static void LogOrderCounts()
     b.str("; still batches with commands ").dec(g_stillCmds);
     if (g_alignOn == 1) b.str("; aligned batches ").dec((long)g_align.batches).str("/").dec(g_iter).str("/").dec((long)g_align.stills).str("/").dec((long)g_align.parityAdds).str("/").dec((long)g_align.blockCuts);
     if (g_animOrig) b.str("; animals' figures made again ").dec(g_animRefresh).str(" time(s), ").dec(g_animMade).str(" entries, odd ").dec(g_animOdd)
-        .str(" (").dec(g_animRefresh ? g_animUsSum / g_animRefresh : 0).str(" us a time, ").dec(g_animUsMax).str(" at most)");
+        .str(" (").dec(g_animRefresh ? g_animUsSum / g_animRefresh : 0).str(" us a time, ").dec(g_animUsMax).str(" at most), changed the engine ").dec(g_animOpsTimes)
+        .str(" time(s): ").dec(g_animOpsAdds).str(" additions, ").dec(g_animOpsRems).str(" removals");
     b.str("; families ").dec(g_famCopies).str("/").dec(g_famDiffer).str("/").dec(g_famFixed).str("/").dec(g_famApart).str("/").dec(g_famPlaces).str("/").dec(g_famOdd)
         .str(" (").dec(g_famCopies ? g_famUsSum / g_famCopies : 0).str(" us a copy, ").dec(g_famUsMax).str(" at most)");
     // (the commands' new entities given a fresh id / the same in a copy of the state / refused, another engine)

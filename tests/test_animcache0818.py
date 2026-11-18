@@ -101,6 +101,8 @@ check("the switch MPFEVER_ANIMALCACHE (0 off, 2 every step)", 'GetEnvironmentVar
 check("in the fixes list the host compares", 'if (ok) Fx("animalcache");' in src)
 check("installed with the aircraft's", "InstallAirCache();\n    InstallAnimCache();" in src)
 check("counted in the minute's line", "animals' figures made again " in src)
+check("diagnostic: the entities the engine made or removed during a refresh counted (an entry made from old figures moves the animal)",
+      "u32 a0 = g_stepAdds, r0 = g_stepRems;" in ar and "u32 da = g_stepAdds - a0, dr = g_stepRems - r0;" in ar and "changed the engine " in src)
 
 # ---------------------------------------------------------------- the game's layout (build 40425)
 exe = ROOT.parent / "TransportFever3.exe"
