@@ -16,6 +16,11 @@ MPFever - Changelog
     "Test Mix 18": a stop made 3 s before the join, then 38 corrections in 10 minutes, 15,000 then 616 again and again; the
     same with the 0.9.0 fixes off). Such an action is now refused, and the player told to try again in a few seconds; the
     autotests' stops wait for the company. MPFEVER_COBEFOREJOIN=1: as before. Test: tests/test_cobeforejoin091.py.
+  - FIX (separate companies, contracts): every type of contract is loaded and wrapped for its company at the first update after
+    a load. The game loads a type when it first needs it, and MPFever wrapped the types every 50 of its updates (a count of the
+    engine's calls, more on a game that waits for the others): a type loaded by a delivery counted the deliveries of every
+    company's lines until then, longer on one game than on another (deliver_cargo wrapped 16 s apart on Flubi's and lulei's
+    games, #425). MPFEVER_CONTRACTWRAP=0: as before. Test: tests/test_contractwrap091.py.
 
 0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412)
   - FIX (#150, the slow drift of the animals, vehicles and people between games; Test Leawood, 2026-11-17: 52 of 2546 animals

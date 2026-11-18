@@ -24,6 +24,7 @@ GAME = {
     "game": "the game's script interface (game.interface, game.gui), in game scripts and the interface",
     "app": "the game's application object (main menu: app.getUserProfile...)",
     "ug_require": "the game's require for its own script libraries",
+    "loaderHelper": "the game's loader of script functions (loaderHelper:useFn, api/tealdef/api.d.tl; the game's util.useFn)",
     "_": "the game's translation function _(text)",
     "_react": "the game's React bridge (menu and interface plugins)",
     "getBuildVersion": "the game's build number",

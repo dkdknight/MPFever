@@ -3084,8 +3084,12 @@ local function update(userParams, state, dt)
 		-- (again from time to time: the game loads the script of a type of contract when it first needs it)
 		SIM.ctTick = (SIM.ctTick or 0) + 1
 		if SIM.ctTick % 50 == 1 and os.getenv("MPFEVER_EVSTEPLOG") == "1" then pcall(SIM.evStepInstall) end
-		if SIM.coRegistry and SIM.coRegistry.mode == "separate" and SIM.ctTick % 50 == 1 then
-			CO.installContracts({ log = log, registry = function() return SIM.coRegistry end, localCo = simLocalCo })
+		-- (0.9.1: at every update, every type of contract loaded at the first, see CO.installContracts. MPFEVER_CONTRACTWRAP=0:
+		-- every 50 updates and as the game loads them, as before)
+		local cwOld = os.getenv("MPFEVER_CONTRACTWRAP") == "0"
+		if SIM.coRegistry and SIM.coRegistry.mode == "separate" and (not cwOld or SIM.ctTick % 50 == 1) then
+			SIM.ctEnv = SIM.ctEnv or { log = log, registry = function() return SIM.coRegistry end, localCo = simLocalCo, preload = not cwOld }
+			CO.installContracts(SIM.ctEnv)
 		end
 		-- (at every step, so that every game wraps the companies script at the same step: its prospections run per company from
 		-- then on, and a game wrapping it later kept a different state for a while, "script:company" in the checks)

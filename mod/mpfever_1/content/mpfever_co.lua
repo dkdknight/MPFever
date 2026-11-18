@@ -523,16 +523,36 @@ function CO.installContracts(env)
 		if env.log then env.log("companies: contracts are accepted per company") end
 	end
 	-- every type of contract (the game's and the mods')
-	pcall(function()
-		for _, rid in ipairs(api.res.genericRep.getAllOfType("subvention")) do
-			local gr = api.res.genericRep.get(rid)
-			local ref = gr and gr.data and gr.data.scriptFile
-			local path, fname = tostring(ref or ""):match("^([^@]+)@(.+)$")
-			local m = path and game[path]
-			local t = (type(m) == "table" and fname) and m[fname] or nil
-			if type(t) == "table" then wrapContractType(env, t, fname) end
+	-- (0.9.1) The game loads a type's script when it first needs it: an offer of that type, or the first event or update of a
+	-- contract of it after a load. Loaded in the middle of a batch (a delivery's event), the type counted the deliveries of every
+	-- company's lines until it was wrapped here, and this ran every 50 updates of this script: a count of the engine's calls,
+	-- which a standing game makes more of. Every type is now loaded here, at the first update after a load, and wrapped before
+	-- any of its contracts sees an event (env.preload). The list of types is read once.
+	if not CO.contractRefs then
+		local refs = {}
+		pcall(function()
+			for _, rid in ipairs(api.res.genericRep.getAllOfType("subvention")) do
+				local gr = api.res.genericRep.get(rid)
+				local ref = gr and gr.data and gr.data.scriptFile
+				local path, fname = tostring(ref or ""):match("^([^@]+)@(.+)$")
+				if path and fname then refs[#refs + 1] = { ref = tostring(ref), path = path, fname = fname } end
+			end
+		end)
+		-- (kept once read: an empty list, read too early, is read again)
+		if #refs > 0 then CO.contractRefs = refs end
+		CO.contractRefsNow = refs
+	end
+	for _, r in ipairs(CO.contractRefs or CO.contractRefsNow or {}) do
+		if not r.done then
+			if game[r.path] == nil and env.preload and loaderHelper ~= nil then
+				local okL, errL = pcall(function() loaderHelper:useFn(r.ref .. ".shouldDespawn") end)
+				if env.log then env.log("companies: contracts of type " .. r.fname .. " loaded at once" .. (okL and "" or (": " .. tostring(errL)))) end
+			end
+			local m = game[r.path]
+			local t = type(m) == "table" and m[r.fname] or nil
+			if type(t) == "table" then wrapContractType(env, t, r.fname); r.done = true end
 		end
-	end)
+	end
 	-- notifications (this game's own: what its player sees): the cards of the contracts of the other companies are left out
 	local okn, nu = pcall(ug_require, "::/game_mechanics/notifications/notification_util.tl")
 	if okn and type(nu) == "table" and type(nu.updatePersistentNotifications) == "function" and not nu.__mpfCo then
