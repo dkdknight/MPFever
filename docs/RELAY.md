@@ -34,7 +34,7 @@ They are two different things:
 
 | | Dedicated server | Relay |
 |---|---|---|
-| Download | `MPFever-<version>-server.zip` | `MPFever-<version>-relay-linux-x64.tar.gz`, `MPFever-<version>-relay-win-x64.zip`, or the Docker image |
+| Download | `MPFever-<version>-server.zip` | `Relay-MPFever-<version>-linux-x64.tar.gz`, `Relay-MPFever-<version>-win-x64.zip`, or the Docker image |
 | Runs on | Windows, with Transport Fever 3 installed | Linux (x64, arm64 with Docker) or Windows, nothing else installed |
 | Runs the game and the world | **Yes** (`MPFever.exe --server`) | **No**: the hosting player's PC and game run the world |
 | The world goes on when nobody plays | Yes | No, unless migration or the kept save are used |
@@ -391,14 +391,14 @@ thread per player), and the relay forwards each copy to its player. The parallel
 
 ## Deploying
 
-Download `MPFever-<version>-relay-linux-x64.tar.gz` from the [release assets](https://github.com/dkdknight/MPFever/releases/latest) once
+Download `Relay-MPFever-<version>-linux-x64.tar.gz` from the [release assets](https://github.com/dkdknight/MPFever/releases/latest) once
 attached (the Release build workflow produces it, with its SHA-256 on the run's page). The archive holds a folder `MPFever-Relay` with the
 `mpfever-relay` program and this guide. The code-signing policy covers the Windows release files of the game; the relay programs (Linux and
 Windows) are unsigned. On Linux, check the download against that SHA-256 and unpack it:
 
 ```sh
-sha256sum MPFever-<version>-relay-linux-x64.tar.gz
-tar -xzf MPFever-<version>-relay-linux-x64.tar.gz
+sha256sum Relay-MPFever-<version>-linux-x64.tar.gz
+tar -xzf Relay-MPFever-<version>-linux-x64.tar.gz
 ```
 
 To build from source, run `dotnet publish relay -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true`.
@@ -458,7 +458,7 @@ byte. The arm64 image builds and passes `--selftest` under emulation. Not tested
 
 ### On Windows
 
-The relay is the same program: the Release build workflow also produces `MPFever-<version>-relay-win-x64.zip`, a folder `MPFever-Relay` with
+The relay is the same program: the Release build workflow also produces `Relay-MPFever-<version>-win-x64.zip`, a folder `MPFever-Relay` with
 `mpfever-relay.exe` and this guide (self-contained, nothing to install; unsigned, so SmartScreen may ask for confirmation). To build it
 from source, run `dotnet publish relay -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`.
 
@@ -467,8 +467,8 @@ the kept save): `SYNCHRONE`, 0 desyncs; after a restart of the relay, `--fetch-s
 
 ```powershell
 # check the download against the SHA-256 given with the release, then unpack it
-(Get-FileHash MPFever-<version>-relay-win-x64.zip -Algorithm SHA256).Hash
-Expand-Archive MPFever-<version>-relay-win-x64.zip -DestinationPath C:\
+(Get-FileHash Relay-MPFever-<version>-win-x64.zip -Algorithm SHA256).Hash
+Expand-Archive Relay-MPFever-<version>-win-x64.zip -DestinationPath C:\
 cd C:\MPFever-Relay
 
 # run it (options are the same as on Linux)

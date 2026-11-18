@@ -101,7 +101,23 @@ namespace MPFever
                 // the players' archive, or the dedicated server's (MPFever-<version>-server.zip, the same files plus the
                 // server's) for a server; GitHub lists the server's first ("-" sorts before ".")
                 Func<Dictionary<string, object>, bool> isServer = a => Str(a, "name").EndsWith("-server.zip", StringComparison.OrdinalIgnoreCase);
-                var zip = (server ? zips.FirstOrDefault(isServer) : null) ?? zips.FirstOrDefault(a => !isServer(a));
+                // (0.9.1) the archive named exactly as the players' (MPFever-<version>.zip) or the server's (MPFever-<version>-server.zip):
+                // 0.9.0's release also held MPFever-0.9.0-relay-win-x64.zip, which GitHub lists first ("-" sorts before "."), and every
+                // 0.8.17 took it for the players' archive ("MPFever.exe is missing from the update", 2026-11-18). Else, as before, the first
+                // zip, the relay's left out. MPFEVER_UPDATEEXACT=0: the first zip, as before
+                Dictionary<string, object> zip = null;
+                if (Environment.GetEnvironmentVariable("MPFEVER_UPDATEEXACT") != "0")
+                {
+                    var tagV = ParseVersion(Str(r, "tag_name")) ?? ParseVersion(Str(r, "name"));
+                    if (tagV != null)
+                    {
+                        var vs = string.Join(".", tagV);
+                        Func<string, Dictionary<string, object>> named = n => zips.FirstOrDefault(a => string.Equals(Str(a, "name"), n, StringComparison.OrdinalIgnoreCase));
+                        zip = (server ? named("MPFever-" + vs + "-server.zip") : null) ?? named("MPFever-" + vs + ".zip");
+                    }
+                    if (zip == null) zips = zips.Where(a => Str(a, "name").IndexOf("relay", StringComparison.OrdinalIgnoreCase) < 0).ToList();
+                }
+                if (zip == null) zip = (server ? zips.FirstOrDefault(isServer) : null) ?? zips.FirstOrDefault(a => !isServer(a));
                 if (zip == null) continue;
                 // the version of the tag (0.3.10, MPFever0.2.0), else of the title or of the zip's name
                 var v = ParseVersion(Str(r, "tag_name")) ?? ParseVersion(Str(r, "name")) ?? ParseVersion(Str(zip, "name"));

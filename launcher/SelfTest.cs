@@ -1313,6 +1313,21 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             var us2 = Updater.Newest(json2, "0.3.21-experimental", true);
             Check(us2 != null && us2.ZipUrl.EndsWith("/MPFever-0.3.22-server.zip"), "update: a 0.3.21-experimental server takes MPFever-0.3.22-server.zip");
             Check(Updater.Newest(json2, "0.3.22") == null, "update: nothing newer than 0.3.22");
+            // (0.9.1) 0.9.0's release, its assets as GitHub listed them: the relay's Windows zip came first and was taken ("MPFever.exe
+            // is missing from the update"); the exact names now
+            var json3 = "[" + Rel("0.9.0", false, false, Asset("MPFever-0.9.0-relay-linux-x64.tar.gz"), Asset("MPFever-0.9.0-relay-win-x64.zip"),
+                Asset("MPFever-0.9.0-server.zip"), Asset("MPFever-0.9.0.zip")) + "]";
+            Environment.SetEnvironmentVariable("MPFEVER_UPDATEEXACT", "0");
+            var u3old = Updater.Newest(json3, "0.8.17");
+            Environment.SetEnvironmentVariable("MPFEVER_UPDATEEXACT", null);
+            Check(u3old != null && u3old.ZipUrl.EndsWith("/MPFever-0.9.0-relay-win-x64.zip"), "update: before (MPFEVER_UPDATEEXACT=0), 0.8.17's rule took the relay's zip (the bug)");
+            var u3 = Updater.Newest(json3, "0.8.17");
+            Check(u3 != null && u3.ZipUrl.EndsWith("/MPFever-0.9.0.zip"), "update: the players' archive by its exact name, never the relay's (" + (u3 == null ? "none" : u3.ZipUrl) + ")");
+            var us3 = Updater.Newest(json3, "0.8.17", true);
+            Check(us3 != null && us3.ZipUrl.EndsWith("/MPFever-0.9.0-server.zip"), "update: a server takes MPFever-0.9.0-server.zip");
+            var json4 = "[" + Rel("0.9.2", false, false, Asset("MPFever-relay-test.zip"), Asset("MPFever-0.9.2-b.zip")) + "]";
+            var u4 = Updater.Newest(json4, "0.9.0");
+            Check(u4 != null && u4.ZipUrl.EndsWith("/MPFever-0.9.2-b.zip"), "update: no exact name: the first zip that is not the relay's");
 
             var root = Path.Combine(Path.GetTempPath(), "mpfever_selftest_update_" + System.Diagnostics.Process.GetCurrentProcess().Id);
             try

@@ -125,7 +125,9 @@ jobs:
           $lines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           $lines -join "`n"
 
-  # (the relay, named as the other archives: MPFever-<version>-relay-linux-x64.tar.gz and MPFever-<version>-relay-win-x64.zip, each
+  # (the relay: Relay-MPFever-<version>-linux-x64.tar.gz and Relay-MPFever-<version>-win-x64.zip, never a name that starts with "MPFever"
+  # and ends with ".zip": MPFever's updater up to 0.9.0 takes the first such asset GitHub lists for the players' archive (0.9.0's
+  # MPFever-0.9.0-relay-win-x64.zip broke every update from 0.8.17, 2026-11-18); each
   # with a folder MPFever-Relay holding the program and its guide; the hashes are on the run's page)
   linux-relay:
     runs-on: ubuntu-latest
@@ -151,7 +153,7 @@ jobs:
       - name: Pack
         run: |
           v="${{ steps.version.outputs.version }}"
-          f="MPFever-$v-relay-linux-x64.tar.gz"
+          f="Relay-MPFever-$v-linux-x64.tar.gz"
           mkdir -p release/MPFever-Relay
           cp artifacts/linux/mpfever-relay docs/RELAY.md release/MPFever-Relay/
           tar -czf "release/$f" -C release MPFever-Relay
@@ -161,8 +163,8 @@ jobs:
       - name: Linux relay
         uses: actions/upload-artifact@v4
         with:
-          name: MPFever-${{ steps.version.outputs.version }}-relay-linux-x64
-          path: release/MPFever-${{ steps.version.outputs.version }}-relay-linux-x64.tar.gz
+          name: Relay-MPFever-${{ steps.version.outputs.version }}-linux-x64
+          path: release/Relay-MPFever-${{ steps.version.outputs.version }}-linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -245,7 +247,7 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          $f = "MPFever-$v-relay-win-x64.zip"
+          $f = "Relay-MPFever-$v-win-x64.zip"
           New-Item -ItemType Directory -Force release/MPFever-Relay | Out-Null
           Copy-Item artifacts/windows/mpfever-relay.exe, docs/RELAY.md release/MPFever-Relay/
           Compress-Archive -Path release/MPFever-Relay -DestinationPath "release/$f"
@@ -255,7 +257,7 @@ jobs:
       - name: Windows relay
         uses: actions/upload-artifact@v4
         with:
-          name: MPFever-${{ steps.version.outputs.version }}-relay-win-x64
-          path: release/MPFever-${{ steps.version.outputs.version }}-relay-win-x64.zip
+          name: Relay-MPFever-${{ steps.version.outputs.version }}-win-x64
+          path: release/Relay-MPFever-${{ steps.version.outputs.version }}-win-x64.zip
           if-no-files-found: error
           retention-days: 30

@@ -1,7 +1,16 @@
 MPFever - Changelog
 ===================
 
-0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412), fixes for one company per player (money corrections, contracts, the client's company after a load)
+0.9.1 - (in progress)
+  - FIX (the update from 0.8.17 to 0.9.0 failed for everyone, "MPFever.exe is missing from the update", 2026-11-18): the updater
+    takes the first asset of the release named MPFever*.zip that is not the server's, and GitHub listed 0.9.0's new
+    MPFever-0.9.0-relay-win-x64.zip first ("-" sorts before "."): the players downloaded the Windows relay. The asset was
+    renamed on the release (Relay-MPFever-0.9.0-win-x64.zip) the same evening. Now the release workflow names the relay's archives
+    Relay-MPFever-<version>-linux-x64.tar.gz and Relay-MPFever-<version>-win-x64.zip (the updaters already installed keep their
+    rule), and the updater takes the archive named exactly MPFever-<version>.zip (or -server.zip), else the first zip that is not
+    the relay's. MPFEVER_UPDATEEXACT=0: the first zip, as before. Tests: tests/test_updatepick091.py, the launcher's self-test.
+
+0.9.0 - 2026-11-18: the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412), fixes for one company per player (money corrections, contracts, the client's company after a load)
   - FIX (#425, Flubi and lulei: "script:subventions" differed while every step was alike, a resync): the game's contracts script
     ends a contract in its update, at the game time of that call. A contract "connect two towns" is reached by an event of the
     line; a game standing at the step of another player's line change got the update with dt 0 at once and completed the
