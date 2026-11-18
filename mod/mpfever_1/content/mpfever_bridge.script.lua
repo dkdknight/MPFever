@@ -2540,6 +2540,26 @@ function DET.wrapModEvents()
 			end
 			log("the game's landmarks script: update called with the steps only")
 		end
+		-- (0.9.1, #425) The game's contracts script (subventions) ends a contract in its update, at the game time of that call: a
+		-- contract "connect two towns" is reached by an event of the line (OnStartedLineUsage), and the next update completes it, pays
+		-- its reward and doubles the line's ticket prices. A game standing at the step of another player's replayed line change got that
+		-- update with dt 0 at once and completed the contract at that step; the game that did not stand completed it in the next
+		-- step's update. The two games kept other completion times ("script:subventions", Flubi and lulei: a resync, 2026-11-18).
+		-- Its update is called with the steps only in a session, as the landmarks script's: every game completes a contract at the
+		-- same step. MPFEVER_SUBDT0=1: every call, as before
+		if k == "::/game_mechanics/subventions/subventions.script" and type(v) == "table" and type(v.update) == "function"
+			and not v.__mpfSubDt and os.getenv("MPFEVER_SUBDT0") ~= "1" then
+			v.__mpfSubDt = true
+			local origS = v.update
+			v.update = function(u, st, dt, ...)
+				if dt == 0 and (C.ROLE == "host" or C.ROLE == "client") then
+					SIM.subDt0 = (SIM.subDt0 or 0) + 1
+					return
+				end
+				return origS(u, st, dt, ...)
+			end
+			log("the game's contracts script: update called with the steps only")
+		end
 		-- (0.8.6, Elias, #276) "Deutsche Signale" (tf3_signale_de_1): after every load its engine sweeps the lamps no signal keeps,
 		-- 400 entities an evaluation at most but stopping once 2 ms of the PC's clock have gone (its CLOCK, os.clock): each PC
 		-- finished at another step, destroyed the orphan lamps at other steps, and the freed ids went to other entities (a resync a
