@@ -119,6 +119,12 @@ def main():
     run("CO.installContracts(ENV); deliver(101)")
     check("the second simulation state (its own game table): its type loaded and wrapped as well, the other company's delivery not counted",
           run("return CONTRACT.delivered") == 0 and run("return LOADS") == 2, (run("return CONTRACT.delivered"), run("return LOADS")))
+    # a type the loader cannot load: tried once per state, never at every update
+    run("game = { ['::/game_mechanics/subventions/subventions.script'] = { handleEvent = function() end } }; FAILS = 0; loaderHelper = { useFn = function() FAILS = FAILS + 1; error('no such script') end }")
+    n1 = run("return #LOG")
+    run("for i = 1, 20 do CO.installContracts(ENV) end")
+    tries = sum(1 for i in range(n1 + 1, run("return #LOG") + 1) if "loaded at once" in str(run(f"return LOG[{i}]")))
+    check("a type that cannot be loaded: tried once, logged once (not at every update)", run("return FAILS") == 1 and tries == 1, (run("return FAILS"), tries))
 
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0

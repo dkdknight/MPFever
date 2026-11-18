@@ -544,9 +544,14 @@ function CO.installContracts(env)
 	end
 	-- (each simulation state of the engine has its own `game` table: whether a type is loaded and wrapped is asked of that table,
 	-- its flag __mpfCo, never kept here)
+	-- (one try to load a type per simulation state: a type that cannot be loaded is left to the game, never tried at every update)
+	CO.preTried = CO.preTried or setmetatable({}, { __mode = "k" })
+	local tried = CO.preTried[game] or {}
+	CO.preTried[game] = tried
 	for _, r in ipairs(CO.contractRefs or CO.contractRefsNow or {}) do
 		pcall(function()
-			if game[r.path] == nil and env.preload and loaderHelper ~= nil then
+			if game[r.path] == nil and env.preload and loaderHelper ~= nil and not tried[r.ref] then
+				tried[r.ref] = true
 				local okL, errL = pcall(function() loaderHelper:useFn(r.ref .. ".shouldDespawn") end)
 				if env.log then env.log("companies: contracts of type " .. r.fname .. " loaded at once" .. (okL and "" or (": " .. tostring(errL)))) end
 			end
