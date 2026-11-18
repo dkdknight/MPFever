@@ -84,6 +84,14 @@ namespace MPFever
             new Opt { Key = "automods", Launcher = true, DefaultOn = true, OnValue = "1", OffValue = "0",
                 Name = () => T("Installation automatique des mods manquants", "Install missing mods by themselves"),
                 Help = () => T("En rejoignant : le Mod Hub du jeu installe les mods de l'hôte qui vous manquent.", "When joining: the game's Mod Hub installs the host's mods you lack.") },
+            // (host migration, docs/RELAY.md) read by HostState.cs: takeover=0 and this PC is never asked to take over
+            // (expert settings, in the "Relay" part of the window: they matter only to a player who hosts or plays through a relay)
+            new Opt { Key = "takeover", Launcher = true, Expert = true, DefaultOn = true, OnValue = "1", OffValue = "0",
+                Name = () => T("Reprendre l'hébergement si l'hôte part", "Take over hosting if the host leaves"),
+                Help = () => T("Avec un relais : si l'hôte part, ce PC peut devenir l'hôte. À décocher sur un PC lent.", "With a relay: if the host leaves, this PC may become the host. Untick on a slow PC.") },
+            new Opt { Key = "handover", Launcher = true, Expert = true, DefaultOn = true, OnValue = "1", OffValue = "0",
+                Name = () => T("Laisser un joueur reprendre la partie si je pars", "Let a player take over if I leave"),
+                Help = () => T("Avec un relais : si vous partez, un autre joueur reprend. Décoché, la session s'arrête.", "With a relay: if you leave, another player takes over. Unticked, the session ends.") },
             new Opt { Key = "lookupip", Launcher = true, DefaultOn = true, OnValue = "1", OffValue = "0",
                 Name = () => T("Recherche de l'adresse IP publique", "Look up the public IP address"),
                 Help = () => T("Pour héberger : affiche l'adresse à donner à vos amis.", "To host: shows the address to give to your friends.") },
@@ -228,6 +236,10 @@ namespace MPFever
     /// player's own, and the expert ones (the switches of recent fixes), hidden until asked for.</summary>
     sealed class OptionsDialog : Form
     {
+        /// <summary>"Resume the relay's saved game" was pressed in the relay server window opened from here (the caller fetches the save).</summary>
+        static bool resumeAsked;
+        public static bool TakeResume() { bool r = resumeAsked; resumeAsked = false; return r; }
+
         public OptionsDialog(bool guest)
         {
             var S = (Func<int, int>)Theme.S;
@@ -274,7 +286,7 @@ namespace MPFever
                 : T("Si vous hébergez, ils sont envoyés aux autres joueurs : ils sont les mêmes sur tous les jeux.", "When you host, they are sent to the other players: they are the same on every game.")));
             foreach (var o in Options.All.Where(x => x.Session && !x.Expert)) list.Controls.Add(Row(o));
             list.Controls.Add(Heading(T("Réglages personnels", "Your settings")));
-            foreach (var o in Options.All.Where(x => !x.Session)) list.Controls.Add(Row(o));
+            foreach (var o in Options.All.Where(x => !x.Session && !x.Expert)) list.Controls.Add(Row(o));
             // (0.8.0) the copy of the game (Steam, GOG, Epic) when this PC has several
             try
             {
@@ -297,7 +309,13 @@ namespace MPFever
             var expertNote = Note(T("Correctifs récents : ne les désactivez que si on vous le demande dans une issue GitHub. Choisis par l'hôte.", "Recent fixes: turn them off only when asked to in a GitHub issue. Chosen by the host."));
             expertRows.Add(expertNote);
             list.Controls.Add(expertNote);
-            foreach (var o in Options.All.Where(x => x.Expert)) { var r = Row(o); expertRows.Add(r); list.Controls.Add(r); }
+            foreach (var o in Options.All.Where(x => x.Expert && x.Session)) { var r = Row(o); expertRows.Add(r); list.Controls.Add(r); }
+            // (the relay's own settings: this player's, not the session's)
+            var relayHead = Heading(T("Relais", "Relay"));
+            var relayNote = Note(T("Utiles seulement si vous hébergez ou jouez à travers un relais (bouton Relais...).", "Used only when you host or play through a relay (Relay... button)."));
+            expertRows.Add(relayHead); list.Controls.Add(relayHead);
+            expertRows.Add(relayNote); list.Controls.Add(relayNote);
+            foreach (var o in Options.All.Where(x => x.Expert && !x.Session)) { var r = Row(o); expertRows.Add(r); list.Controls.Add(r); }
             foreach (var r in expertRows) r.Visible = false;
             showExpert.CheckedChanged += (s, e) => { foreach (var r in expertRows) r.Visible = showExpert.Checked; };
 
@@ -313,8 +331,14 @@ namespace MPFever
                 foreach (var kv in boxes)
                     if (kv.Value.Enabled) { kv.Value.Checked = kv.Key.DefaultOn; Options.Set(kv.Key, kv.Key.DefaultOn); }
             };
+            // (a player hosting through a relay server: its address, password and save key, RelayDialog.cs)
+            var relayBtn = new ModernButton(ButtonKind.Secondary) { Text = T("Relais...", "Relay...") };
+            relayBtn.Fit();
+            relayBtn.Margin = new Padding(0, 0, S(10), 0);
+            relayBtn.Click += (s, e) => { using (var d = new RelayDialog()) { d.ShowDialog(this); if (d.ResumeAsked) { resumeAsked = true; Close(); } } };
             buttons.Controls.Add(close);
             buttons.Controls.Add(reset);
+            buttons.Controls.Add(relayBtn);
             var note = new Label { Dock = DockStyle.Bottom, Height = S(24), TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Ui(8.5f), ForeColor = Theme.Faint,
                 Text = T("Les réglages s'appliquent au prochain chargement d'une partie.", "The settings apply from the next time a game loads.") };
 

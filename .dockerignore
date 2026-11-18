@@ -1,0 +1,7 @@
+**
+!launcher/Core.cs
+!launcher/RemoteRelay.cs
+!launcher/CheckpointWire.cs
+!relay
+relay/bin
+relay/obj

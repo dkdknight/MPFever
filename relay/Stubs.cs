@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 
 // The launcher's Core.cs (shared with the Windows launcher, see MPFeverRelay.csproj) refers to a few members of classes that
-// live in Windows-only files (MainForm.cs, Mods.cs). The Linux server has no game and no window: these are the minimum.
+// live in Windows-only files (MainForm.cs, Mods.cs). The Linux relay has no game and no window: these are the minimum.
 namespace MPFever
 {
     static class MainForm
@@ -18,7 +18,7 @@ namespace MPFever
         public static string InstalledDlcs() => "";
     }
 
-    // used by GameLink (the link to a running game), which the Linux server never creates
+    // used by GameLink (the link to a running game), which the Linux relay never creates
     static class Options
     {
         public static bool Disabled => true;

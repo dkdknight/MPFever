@@ -86,7 +86,31 @@ namespace MPFever
             catch (Exception e) { Log.W("bans: " + e.Message); }
         }
 
-        public List<Ban> Bans() { lock (banGate) { LoadBans(); return bans.ToList(); } }
+        // (host migration, HostState.cs) the names the host before this one had banned: kept for this session only, listed with the
+        // day "session" (the host can Unban them), never written to this host's own file
+        readonly List<Ban> inheritedBans = new List<Ban>();
+
+        /// <summary>(a player who took over as the host) the players the host before it had let in (not asked again when the host's
+        /// approval is on: they are all announced by the relay as new arrivals) and the names it had banned.</summary>
+        public void InheritFromHost(IEnumerable<string> members, IEnumerable<string> banned)
+        {
+            lock (letIn) foreach (var n in members) { var c = (n ?? "").Trim(); if (c != "") letIn[Key(c, "")] = c; }
+            lock (banGate)
+            {
+                inheritedBans.Clear();
+                foreach (var n in banned)
+                {
+                    var c = Clean(n);
+                    if (c != "" && !inheritedBans.Any(x => string.Equals(x.Name, c, StringComparison.OrdinalIgnoreCase))) inheritedBans.Add(new Ban { Name = c, Date = "session" });
+                }
+            }
+            Changed?.Invoke();
+        }
+
+        /// <summary>The session ends: the names inherited are forgotten (EndSession forgets the players let in).</summary>
+        public void ForgetInherited() { lock (banGate) inheritedBans.Clear(); }
+
+        public List<Ban> Bans() { lock (banGate) { LoadBans(); return bans.Concat(inheritedBans.Where(i => !bans.Any(b => string.Equals(b.Name, i.Name, StringComparison.OrdinalIgnoreCase)))).ToList(); } }
 
         /// <summary>A player banned: by its name, and its Steam id or address when known (a line of its own, or added to that
         /// name's line).</summary>
@@ -114,6 +138,7 @@ namespace MPFever
                 LoadBans();
                 n = bans.RemoveAll(x => string.Equals(x.Name, Clean(name), StringComparison.OrdinalIgnoreCase));
                 if (n > 0) SaveBans();
+                n += inheritedBans.RemoveAll(x => string.Equals(x.Name, Clean(name), StringComparison.OrdinalIgnoreCase));
             }
             if (n > 0) Changed?.Invoke();
             return n > 0;
@@ -125,7 +150,7 @@ namespace MPFever
             lock (banGate)
             {
                 LoadBans();
-                return bans.FirstOrDefault(b => (b.Name != "" && string.Equals(b.Name, name, StringComparison.OrdinalIgnoreCase))
+                return bans.Concat(inheritedBans).FirstOrDefault(b => (b.Name != "" && string.Equals(b.Name, name, StringComparison.OrdinalIgnoreCase))
                     || (b.Steam != "" && b.Steam == steam) || (b.Ip != "" && b.Ip == ip));
             }
         }
@@ -344,6 +369,7 @@ namespace MPFever
                 }
             }
             MenuStatus();
+            SendHostRules();   // (the names banned or taken back, the game's name: kept for a change of host, HostState.cs)
             return true;
         }
 

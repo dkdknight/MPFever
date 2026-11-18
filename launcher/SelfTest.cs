@@ -55,6 +55,8 @@ namespace MPFever
             ok &= RunUpdater();
             ok &= RunPortMap();
             ok &= RunRedact();
+            ok &= RunRelaySecrets();
+            ok &= RunHostRules();
             ok &= RunGameDir();
             ok &= RunSmartAppControl();
             ok &= RunDiag();
@@ -347,15 +349,15 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             // hosting through a server (and taking over as the host): the address as the player typed it, with or without its port
             {
                 string sh; int sp;
-                MainForm.ParseServer("my.server.example", out sh, out sp);
+                MainForm.ParseRelayAddress("my.server.example", out sh, out sp);
                 C(sh == "my.server.example" && sp == 28090, "server address without a port: 28090");
-                MainForm.ParseServer("203.0.113.7:28091", out sh, out sp);
+                MainForm.ParseRelayAddress("203.0.113.7:28091", out sh, out sp);
                 C(sh == "203.0.113.7" && sp == 28091, "  with its port: that port");
-                MainForm.ParseServer("[2001:db8::1]:28092", out sh, out sp);
+                MainForm.ParseRelayAddress("[2001:db8::1]:28092", out sh, out sp);
                 C(sh == "2001:db8::1" && sp == 28092, "  an IPv6 address in brackets with its port");
-                MainForm.ParseServer(NetAddr.First("203.0.113.7:28090", 28090), out sh, out sp);
+                MainForm.ParseRelayAddress(NetAddr.First("203.0.113.7:28090", 28090), out sh, out sp);
                 C(sh == "203.0.113.7" && sp == 28090, "  the address of a join, as the takeover reuses it (the port is not added twice)");
-                MainForm.ParseServer(NetAddr.First("203.0.113.7", 28090), out sh, out sp);
+                MainForm.ParseRelayAddress(NetAddr.First("203.0.113.7", 28090), out sh, out sp);
                 C(sh == "203.0.113.7" && sp == 28090, "  the same without a port in what was typed");
                 C(MainForm.InviteConnect("203.0.113.7:28090") == "+mpfever_connect 203.0.113.7:28090", "a Steam invitation of a host that uses a server names the server");
                 C(NetAddr.First(MainForm.InviteConnect("203.0.113.7:28090").Substring("+mpfever_connect".Length).Trim(), 28090) == "203.0.113.7:28090", "  and the friend's game reads it back as the address to join");
@@ -1679,6 +1681,75 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
         }
 
         /// <summary>Problem reports: what tells who and where the player is taken out of the text (see Redact).</summary>
+        /// <summary>The relay's password and key in the settings file: protected by Windows, read back, kept out of reports.</summary>
+        static bool RunRelaySecrets()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            string p = SecretStore.Protect("pa=ss word/Z");
+            Check(SecretStore.IsProtected(p) && !p.Contains("pa=ss") && SecretStore.Unprotect(p) == "pa=ss word/Z", "relay secrets: protected by Windows, then read back");
+            Check(SecretStore.Unprotect("typed-by-hand") == "typed-by-hand" && SecretStore.Protect("") == "" && SecretStore.Unprotect("") == "", "relay secrets: a value without the prefix is read as it is, an empty one stays empty");
+            Check(SecretStore.Unprotect(SecretStore.Prefix + "not-base64!!") == null && SecretStore.Unprotect(SecretStore.Prefix + Convert.ToBase64String(new byte[] { 1, 2, 3 })) == null,
+                "relay secrets: a protected value that cannot be opened here gives null, not an exception");
+            Check(SecretStore.Protect(p) == p, "relay secrets: a value already protected is not protected again");
+            var s = new Dictionary<string, string> { ["relaypw"] = p, ["relaykey"] = "plain-key", ["serverpw"] = "old-password", ["relay"] = "host:28090" };
+            Check(MainForm.RelayConf(s, "relaypw") == "pa=ss word/Z" && MainForm.RelayConf(s, "relaykey") == "plain-key" && MainForm.RelayConf(s, "relay") == "host:28090",
+                "relay settings: read protected or as typed");
+            var legacy = new Dictionary<string, string> { ["serverpw"] = "old-password", ["serverkey"] = "old-key", ["server"] = "old.example:28090" };
+            Check(MainForm.RelayConf(legacy, "relaypw") == "old-password" && MainForm.RelayConf(legacy, "relaykey") == "old-key" && MainForm.RelayConf(legacy, "relay") == "old.example:28090",
+                "relay settings: the names of the first versions are still read");
+            string r = Redact.Text("relaykey=abcdef0123456789 and MPFEVER_RELAYPW=hunter2 and serverpw=old, but relaypw= in the text stays, relay=host:28090");
+            Check(!r.Contains("abcdef0123456789") && !r.Contains("hunter2") && !r.Contains("serverpw=old") && r.Contains("relaykey=<secret>") && r.Contains("relaypw= in the text") && r.Contains("relay=host:28090"),
+                "report: the relay's password and keys are never in it (" + r + ")");
+            return ok;
+        }
+
+        /// <summary>The host's rules that travel to a player who may take over (host migration): the message, and what a player accepts of it.</summary>
+        static bool RunHostRules()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            string payload = HostRules.Payload("3500000", "6", "0", "company:10", "1:5:2,2:7:3:900000", "MPFEVER_FOO=1", 15);
+            var r = HostRules.Parse(payload);
+            Check(r != null && r.Money == "3500000" && r.Bankrupt == "6" && r.Share == "0" && r.Auction == "company:10" && r.Ai == "1:5:2,2:7:3:900000" && r.AutosaveMinutes == 15,
+                "host change: the host's rules read back as sent (start money, bankruptcy, sharing, auction, computer companies, autosave)");
+            var bad = HostRules.Parse(HostRules.Payload("-5", "7", "yes", "weird:9", "1;DROP", "", 5000));
+            Check(bad != null && bad.Money == null && bad.Bankrupt == null && bad.Share == null && bad.Auction == null && bad.Ai == null && bad.AutosaveMinutes == -1,
+                "host change: a value that is not valid is left out, this player's own is used then");
+            Check(HostRules.Parse("{[\"v\"]=2}") == null && HostRules.Parse("not a table") == null && HostRules.Parse("{}") == null,
+                "host change: a message of another version, or that is no table, is not taken");
+            Check(MainForm.TakeoverAllowedValue(null) && MainForm.TakeoverAllowedValue("1") && !MainForm.TakeoverAllowedValue("0") && !MainForm.TakeoverAllowedValue(" 0 "),
+                "host change: takeover=0 in the settings says this PC is never asked to take over");
+            // the public game's name, the players let in and the names banned
+            var r2 = HostRules.Parse(HostRules.Payload("2000000", "12", "1", "assets:5", "", "", 10, "Lena's trains", new[] { "Ann", "Bob Lee" }, new[] { "Troll", "Tr oll	X", "ok-1" }));
+            Check(r2 != null && r2.PublicName == "Lena's trains" && r2.Members.SequenceEqual(new[] { "Ann", "Bob Lee" }) && r2.Banned.SequenceEqual(new[] { "Troll", "ok-1" }),
+                "host change: the public game's name, the players let in and the names banned (names only) read back, a name with a tab left out");
+            var r3 = HostRules.Parse(HostRules.Payload("1", "12", "1", "assets:5", "", "", 10, new string('x', 41), null, null));
+            Check(r3 != null && r3.PublicName == null && r3.Members.Count == 0 && r3.Banned.Count == 0, "host change: a public name over 40 characters is not taken, no names means none");
+            // the gate of a player who took over: it does not ask again the players the host let in, refuses the names banned
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-selftest-hs-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                var gate = new PublicGate { BanFile = Path.Combine(dir, "mpfever_bans.txt"), AskSeconds = 1, Options = () => GameOpts.Canon("join_approve=1;join_bans=1") };
+                gate.InheritFromHost(new[] { "Ann", "Bob" }, new[] { "Troll" });
+                string ann = gate.Admit(new Peer { Name = "Ann#3" }, () => 1, null);
+                string troll = gate.Admit(new Peer { Name = "Troll#4" }, () => 1, null);
+                string stranger = gate.Admit(new Peer { Name = "Eve#5" }, () => 1, null);
+                Check(ann == null, "host change: a player the host before had let in is not asked again (every player is announced to the new host as an arrival)");
+                Check(troll != null && troll.Contains("banned"), "host change: a name the host before had banned is refused");
+                Check(stranger != null && stranger.Contains("refused"), "host change: a stranger is still asked (and refused when nobody answers)");
+                var list = gate.Bans();
+                Check(list.Count == 1 && list[0].Date == "session" && !File.Exists(gate.BanFile), "host change: the inherited ban is listed (\"session\") and never written to this host's own file");
+                Check(gate.RemoveBan("Troll") && gate.BannedAs("Troll", "", "") == null && gate.Bans().Count == 0, "host change: the host can unban an inherited name");
+                gate.InheritFromHost(new string[0], new[] { "Troll2" });
+                gate.ForgetInherited();
+                Check(gate.Bans().Count == 0, "host change: the names inherited are forgotten when the session ends");
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+            return ok;
+        }
+
         static bool RunRedact()
         {
             bool ok = true;

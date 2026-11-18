@@ -1109,9 +1109,9 @@ namespace MPFever
         public readonly List<BulkLink> Bulk = new List<BulkLink>();
     }
 
-    /// <summary>The version of the relay protocol: what a launcher and the Linux relay (server-linux/) must agree on, whatever their MPFever
+    /// <summary>The version of the relay protocol: what a launcher and the Linux relay (relay/) must agree on, whatever their MPFever
     /// versions. A launcher sends it in its join ("rp"); the relay refuses another number. Raise it only when the message format, the
-    /// admission, the reconnection or the tun_ messages change (docs/LINUX-RELAY.md). The "same MPFever version between players" rule is
+    /// admission, the reconnection or the tun_ messages change (docs/RELAY.md). The "same MPFever version between players" rule is
     /// the host's, as with a host that listens itself.</summary>
     static class RelayProtocol
     {
@@ -1128,7 +1128,7 @@ namespace MPFever
     }
 
     /// <summary>What the host's code (MainForm.OnHostMessage and the session around it) needs from the place its players connect to:
-    /// a Relay (the host's own TCP listener) or a RemoteRelay (a server the host and the players all connect to, server-linux/).</summary>
+    /// a Relay (the host's own TCP listener) or a RemoteRelay (a server the host and the players all connect to, relay/).</summary>
     interface IRelay : IDisposable
     {
         event Action<Peer, Msg> Received;
@@ -1183,11 +1183,11 @@ namespace MPFever
         public Func<Peer, Msg, string> Admit { get; set; }
         /// <summary>True: a connection that is not let in yet (it has an Admit that has not said yes) may only send a short text line
         /// (64 KB), no binary message, so that anybody on the Internet cannot make this process hold megabytes for nothing. False (the
-        /// default): nothing is limited, as it always was. Only the Linux relay (server-linux/) sets it; a launcher's host, a dedicated
+        /// default): nothing is limited, as it always was. Only the Linux relay (relay/) sets it; a launcher's host, a dedicated
         /// server and public games never do.</summary>
         public bool StrictBeforeAdmission { get; set; }
         /// <summary>With Admit: seconds a connection may stay without being let in before it is cut (0: no limit, as before). A host that
-        /// listens on the Internet (the Linux server) sets it: a connection that says nothing otherwise stays for ever.</summary>
+        /// listens on the Internet (the Linux relay) sets it: a connection that says nothing otherwise stays for ever.</summary>
         public int UnadmittedTimeoutSeconds { get; set; }
         /// <summary>Connections accepted at once, let in or not (0: no limit, as before); the others are closed at once.</summary>
         public int MaxConnections { get; set; }
@@ -1213,10 +1213,20 @@ namespace MPFever
         /// <summary>(0.6, the autotest pubtest) the port it listens on; 0 before Start.</summary>
         public int Port { get { try { return (listener?.LocalEndpoint as IPEndPoint)?.Port ?? 0; } catch { return 0; } } }
 
+        /// <summary>(the standalone relay's --listen) the one address to listen on, for a relay that only a private network (a VPN, a LAN)
+        /// may reach; null: every address, as always (a host's own listener never sets it).</summary>
+        public IPAddress BindTo { get; set; }
+
         public void Start(int port)
         {
             // IPv4 and IPv6 on one socket (players behind DS-Lite, without a public IPv4 of their own, are reached over
             // IPv6); IPv4 only where the PC has no IPv6
+            if (BindTo != null)
+            {
+                listener = new TcpListener(BindTo, port);
+                listener.Start();
+            }
+            else
             try
             {
                 listener = new TcpListener(IPAddress.IPv6Any, port);
@@ -1682,6 +1692,9 @@ namespace MPFever
         /// then names the other attempts first and ends with one short note on IPv6 (issue #31).
         /// The password is the one of a dedicated server (none: null); the join also tells this MPFever's version
         /// (a dedicated server only lets in its own).</summary>
+        /// <summary>(a host through a relay) the host does not want a player to take over when it leaves: the relay ends the session then (host migration, docs/RELAY.md).</summary>
+        public bool NoHandover;
+
         public void Connect(string host, int port, string name, string password = null, bool resume = false, bool tunnelHost = false, bool canTakeOver = false, string migrationToken = null)
         {
             // "steam:<id>" entries: through the host's Steam (the game's module, SteamNet), tried at the same time as the
@@ -1752,7 +1765,7 @@ namespace MPFever
             else Link.Reset(null);   // (a new player: the host counts from this join; what waited is dropped)
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
-                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
+                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (tunnelHost && NoHandover ? ",[\"nomig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
             viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             usedDirect = viaSteam ? null : used;
             gotAny = false;
@@ -2250,7 +2263,7 @@ namespace MPFever
             {
                 c.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
 #if NET
-                // (the Linux server, server-linux/: no IOControl there, the same values as socket options)
+                // (the Linux relay, relay/: no IOControl there, the same values as socket options)
                 if (!OperatingSystem.IsWindows())
                 {
                     c.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 15);

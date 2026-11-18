@@ -6,15 +6,15 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
-    /// <summary>Settings of the server (command line).</summary>
-    sealed class ServerOptions
+    /// <summary>Settings of the relay (command line).</summary>
+    sealed class RelayOptions
     {
         public int Port = 28090;
         public string Password = "";
         public int MaxPlayers = 8;
-        public string Name = "MPFever Linux Server";
+        public string Name = "MPFever Relay";
         /// <summary>Seconds a successor has to connect as the host before the next player is asked (host migration).</summary>
         public int MigrationTimeoutSeconds = 120;
         /// <summary>When the host leaves: pass the session to a player that can take over (true), or end the session (false, as with a normal host).</summary>
@@ -27,44 +27,54 @@ namespace MPFever.LinuxServer
         public int Grace = 60;
         /// <summary>Wrong passwords from one address before it is refused for LockoutSeconds (0: never).</summary>
         public int MaxBadPasswords = 5;
+        /// <summary>The one address to listen on (--listen): null is every address.</summary>
+        public System.Net.IPAddress Listen;
         public int LockoutSeconds = 300;
+        /// <summary>Directory where the latest complete save of the session is kept (null: nothing is kept).</summary>
+        public string CheckpointDirectory;
+        /// <summary>Key of the host that may store and read the save (the owner).</summary>
+        public string CheckpointOwnerKey = "";
+        /// <summary>EXPERIMENTAL: a key that lets another player read the save and host from it when nobody hosts.</summary>
+        public string CheckpointRecoveryKey = "";
+        public bool ResumeWithoutHost;
     }
 
     /// <summary>
-    /// The Linux server is a tunnel between the players and the one player that hosts (docs/LINUX-RELAY.md).
+    /// The relay is a tunnel between the players and the one player that hosts (docs/RELAY.md).
     ///
     /// The host's brain (the launcher's MainForm.OnHostMessage: ordering of the actions, clocks, speed, hashes, resyncs, lobby, checks)
-    /// stays in that player's launcher, unchanged. What the server adds is the address everybody reaches (the host needs no open
-    /// port), the admission rules, and the choice of the host. Wire format between the server and the host's launcher:
+    /// stays in that player's launcher, unchanged. What the relay adds is the address everybody reaches (the host needs no open
+    /// port), the admission rules, and the choice of the host. Wire format between the relay and the host's launcher:
     ///
-    ///   server -> host   tun_host  { you, epoch, migrate, prev, token }   this connection is the host (see Hosting.cs for a migration)
+    ///   relay -> host   tun_host  { you, epoch, migrate, prev, token }   this connection is the host (see Hosting.cs for a migration)
     ///                    tun_join  { name, addr, v }               a player was let in (name = "Name#n"; v = its MPFever version: the host
     ///                                                              decides whether it accepts that version, as a host that listens itself does)
     ///                    tun_left  { name }                        a player is gone for good (a guest that drops is waited for first)
     ///                    tun_players { n }                         after a takeover: the n players already there were all announced
     ///                    any other message of a player, unchanged kind and payload, From = that player's name
-    ///   host -> server   kind                                      to every player
+    ///   host -> relay   kind                                      to every player
     ///                    !Name#n:kind                              to every player but that one
     ///                    @Name#n:kind                              to that player only
     ///                    tun_kick { name, payload }                refuse a player (payload: the "denied" payload)
     ///
-    /// Kinds that start with "tun_" are the server's own: a player's message of that kind is dropped, never passed on. What a player sees is
-    /// what it would see from a host of its own: the server forwards the host's messages as they are (From is the host's name without its
-    /// "#n"), except the "rtok" of a welcome, which is replaced by the player's link with the server.
+    /// Kinds that start with "tun_" are the relay's own: a player's message of that kind is dropped, never passed on. What a player sees is
+    /// what it would see from a host of its own: the relay forwards the host's messages as they are (From is the host's name without its
+    /// "#n"), except the "rtok" of a welcome, which is replaced by the player's link with the relay.
     /// </summary>
     sealed partial class SessionCore
     {
         readonly Relay relay;
-        readonly ServerOptions opt;
+        readonly RelayOptions opt;
         readonly object sendGate = new object();   // every message to the players goes through it: all of them get the host's messages in order
 
-        public SessionCore(Relay relay, ServerOptions opt)
+        public SessionCore(Relay relay, RelayOptions opt)
         {
             this.relay = relay;
             this.opt = opt;
             relay.Admit = Admit;
             relay.Joined += OnJoined;
             relay.Left += OnLeft;
+            if (!string.IsNullOrEmpty(opt.CheckpointDirectory)) checkpoint = new RelayCheckpoint(opt.CheckpointDirectory);
             relay.StrictBeforeAdmission = true;
             relay.UnadmittedTimeoutSeconds = opt.UnadmittedTimeoutSeconds;
             relay.MaxConnections = opt.MaxConnections;
@@ -75,7 +85,7 @@ namespace MPFever.LinuxServer
         }
 
         public string HostName => opt.Name;
-        /// <summary>Control messages (tun_*) that players sent and the server dropped.</summary>
+        /// <summary>Control messages (tun_*) that players sent and the relay dropped.</summary>
         public int DroppedControl;
 
         bool IsHost(Peer p) { lock (hostGate) return host == p || (phase == Phase.AwaitingSuccessor && candidate == p && IsHostJoin(p)); }
@@ -141,13 +151,13 @@ namespace MPFever.LinuxServer
             if (opt.Password != "" && LockedOut(ip)) reason = "password";   // (too many wrong ones from this address: even the right one waits)
             else if (opt.Password != "" && !SamePassword(S("pw"), opt.Password)) { reason = "password"; NoteBadPassword(ip); }
             else if (others >= opt.MaxPlayers) { reason = "full"; extra = ",[\"max\"]=" + opt.MaxPlayers; }
-            else if (WantsHost(t) && HasHost && !IsAwaitedSuccessor(me, S("mtok"))) reason = "hosted";   // somebody hosts this server already: join it
+            else if (WantsHost(t) && HasHost && !IsAwaitedSuccessor(me, S("mtok"))) reason = "hosted";   // somebody hosts this relay already: join it
             else if (!WantsHost(t) && !HasHost) reason = "nohost";    // nobody hosts it yet: somebody must host first
             if (reason == null)
             {
                 lock (hostGate)
                 {
-                    if (WantsHost(t)) { hostJoins.Add(p); if (HasHost) presentedTokens[p] = S("mtok"); }
+                    if (WantsHost(t)) { hostJoins.Add(p); if (HasHost) presentedTokens[p] = S("mtok"); if (NoHandover(t)) noHandover.Add(p); }
                     if (CanTakeOver(t)) capable.Add(p);
                     joinVersions[p] = S("v");
                 }
@@ -180,6 +190,8 @@ namespace MPFever.LinuxServer
         void OnLeft(Peer p)
         {
             Log.W(p.Name + " left");
+            try { lock (checkpointGate) ReleaseCheckpoint(p); }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { Log.Warn("checkpoint cleanup: " + e.Message); }
             HostLeft(p);
         }
 
@@ -208,12 +220,12 @@ namespace MPFever.LinuxServer
 
             if (fromHost) { FromHost(m, from); return; }
 
-            // "tun_" is the server's own: a player cannot speak for it (it could make the host forget a player or believe in one that is not there)
-            // (also the host's routing prefixes "@name:" and "!name:": a host passes on what it does not know, and the server would deliver
+            // "tun_" is the relay's own: a player cannot speak for it (it could make the host forget a player or believe in one that is not there)
+            // (also the host's routing prefixes "@name:" and "!name:": a host passes on what it does not know, and the relay would deliver
             // "@Victim#3:tun_host" as a "tun_host" to Victim)
             if (RelayProtocol.IsReserved(m.Kind) || RelayProtocol.IsRouting(m.Kind) || m.Kind == "host_ready")
             {
-                if (Interlocked.Increment(ref DroppedControl) <= 3) Log.Warn(from.Name + " sent '" + m.Kind + "', which is the server's: dropped");
+                if (Interlocked.Increment(ref DroppedControl) <= 3) Log.Warn(from.Name + " sent '" + m.Kind + "', which is the relay's: dropped");
                 return;
             }
 
@@ -234,7 +246,8 @@ namespace MPFever.LinuxServer
                 if (target != null && target != host) new Thread(() => relay.Deny(target, payload ?? "{[\"reason\"]=\"kicked\"}")) { IsBackground = true }.Start();
                 return;
             }
-            if (m.Kind.StartsWith("tun_", StringComparison.Ordinal)) return;   // (the server's own kinds are not the host's to send)
+            if (m.Kind == CheckpointWire.Request || m.Kind == CheckpointWire.Binary) { HandleCheckpoint(m, host); return; }
+            if (m.Kind.StartsWith("tun_", StringComparison.Ordinal)) return;   // (the relay's own kinds are not the host's to send)
             if (m.Kind.Length > 1 && m.Kind[0] == '@')
             {
                 int i = m.Kind.IndexOf(':');
@@ -260,7 +273,7 @@ namespace MPFever.LinuxServer
 
         static readonly Regex RtokRx = new Regex("\\[\"rtok\"\\]=\"[^\"]*\"", RegexOptions.Compiled);
 
-        /// <summary>A copy for this player: a welcome carries the player's link with the server, not the host's.</summary>
+        /// <summary>A copy for this player: a welcome carries the player's link with the relay, not the host's.</summary>
         static Msg Fix(Msg m, Peer to)
         {
             if (m.Kind != "welcome" || to.Link == null) return m;

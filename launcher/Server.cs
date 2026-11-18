@@ -708,6 +708,8 @@ namespace MPFever
                 StopServer(true);
                 return;
             }
+            // (a player's own game hosting through a server that keeps its save: one last save is sent, Checkpoint.cs)
+            try { FinalKeep(); } catch (Exception ex) { Log.W("final keep: " + ex.Message); }
             base.OnFormClosing(e);
         }
 
@@ -892,6 +894,7 @@ namespace MPFever
         {
             var e = Environment.GetEnvironmentVariable("MPFEVER_HOSTAUTOSAVE");
             if (!string.IsNullOrEmpty(e)) return int.TryParse(e, out var m) ? Math.Max(0, Math.Min(1440, m)) : 0;
+            if (inheritedAutosave >= 0) return inheritedAutosave;   // (a player who took over: the host's interval, HostState.cs)
             if (Environment.GetEnvironmentVariable("MPFEVER_GAMEAUTOSAVE") == "1" || autotest) return 0;
             return GameInstall.GameAutosaveMinutes() ?? 10;
         }
@@ -944,7 +947,7 @@ namespace MPFever
                     bool answered = WaitUntil(() => serverSaveDone is Dictionary<object, object> d && d.TryGetValue("id", out var v) && v is double dv && (int)dv == id, 180);
                     var done = serverSaveDone;
                     bool ok = answered && done != null && done.TryGetValue("ok", out var okv) && okv is bool b && b;
-                    if (ok) { hostSavedActs = acts; hostSavedClock = clock; Log.Ok(F("Sauvegarde automatique de la session : « {0} » ({1:0.0} s).", "Session autosave: « {0} » ({1:0.0} s).", name, (DateTime.UtcNow - t0).TotalSeconds)); }
+                    if (ok) { hostSavedActs = acts; hostSavedClock = clock; Log.Ok(F("Sauvegarde automatique de la session : « {0} » ({1:0.0} s).", "Session autosave: « {0} » ({1:0.0} s).", name, (DateTime.UtcNow - t0).TotalSeconds)); KeepSaveOnRelay(name); }
                     else if (answered) Log.Warn(F("Sauvegarde automatique de la session refusée par le jeu : {0}", "Session autosave refused by the game: {0}", done != null && done.TryGetValue("err", out var err) ? Convert.ToString(err, CultureInfo.InvariantCulture) : "?"));
                     else Log.Warn(T("Sauvegarde automatique de la session : pas de réponse du jeu.", "Session autosave: no answer from the game."));
                 }
@@ -1101,9 +1104,9 @@ namespace MPFever
                     if (game) return T("L'hôte vous a exclu de la partie.", "The host kicked you from the game.");
                     return T("Vous avez été exclu du serveur.", "You were kicked from the server.");
                 case "stopped": return T("Le serveur a été arrêté.", "The server was stopped.");
-                case "relay": return T("Ce serveur parle un autre protocole de relais : mettez MPFever à jour ou utilisez un serveur qui correspond.", "This server speaks another relay protocol: update MPFever or use a server that matches.");
-                case "nohost": return T("Personne n'héberge encore sur ce serveur : quelqu'un doit héberger d'abord.", "Nobody hosts on this server yet: somebody must host first.");
-                case "hosted": return T("Quelqu'un héberge déjà sur ce serveur : rejoignez-le.", "Somebody already hosts on this server: join it instead.");
+                case "relay": return T("Ce relais parle un autre protocole : mettez MPFever à jour ou utilisez un relais qui correspond.", "This relay speaks another protocol: update MPFever or use a relay that matches.");
+                case "nohost": return T("Personne n'héberge encore sur ce relais : quelqu'un doit héberger d'abord.", "Nobody hosts on this relay yet: somebody must host first.");
+                case "hosted": return T("Quelqu'un héberge déjà sur ce relais : rejoignez-le.", "Somebody already hosts on this relay: join it instead.");
                 case "banned": return T("L'hôte vous a banni de ses parties.", "The host banned you from their games.");
                 case "refused": return T("L'hôte n'a pas accepté votre arrivée.", "The host did not let you in.");
             }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
     // Test-only copy of the literal reader from upstream 0.8.11. Use only with generated well-formed input.
     static class LegacyLuaLit

@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
-    /// <summary>mpfever-relay --selftest: real clients (the launcher's own Client class) against the server, no game. Exit code 0 when
+    /// <summary>mpfever-relay --selftest: real clients (the launcher's own Client class) against the relay, no game. Exit code 0 when
     /// every check passes.</summary>
     static class SelfTest
     {
@@ -17,8 +19,9 @@ namespace MPFever.LinuxServer
             public readonly List<Msg> Got = new List<Msg>();
             public string DeniedReason;
             public volatile bool Closed;
-            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null)
+            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null, bool noHandover = false)
             {
+                C.NoHandover = noHandover;
                 C.Received += m => { lock (Got) Got.Add(m); };
                 C.Denied += d => { DeniedReason = d.TryGetValue("reason", out var r) ? r as string : "?"; };
                 C.Closed += () => Closed = true;
@@ -55,7 +58,12 @@ namespace MPFever.LinuxServer
             Remote();
             Migration();
             Parser();
+            Environment_();
+            Secrets();
             Compat();
+            CheckpointPersistence();
+            CheckpointOverTheRelay();
+            CheckpointKeyLockout();
             VersionBetweenPlayers();
             Hardening();
             Races();
@@ -66,10 +74,322 @@ namespace MPFever.LinuxServer
             return failed == 0 ? 0 : 1;
         }
 
+        /// <summary>The secrets may come from the environment (containers), and the command line wins.</summary>
+        static void Environment_()
+        {
+            var env = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["MPFEVER_RELAY_PASSWORD"] = "from-env", ["MPFEVER_RELAY_CHECKPOINT_OWNER_KEY"] = "owner-env", ["MPFEVER_RELAY_RESUME_WITHOUT_HOST"] = "resume-env"
+            };
+            Func<string, string> get = k => env.TryGetValue(k, out var v) ? v : null;
+            var o = new RelayOptions();
+            Program.ApplyEnvironment(o, get);
+            Check("the password, the owner key and the recovery key can come from the environment",
+                o.Password == "from-env" && o.CheckpointOwnerKey == "owner-env" && o.CheckpointRecoveryKey == "resume-env" && o.ResumeWithoutHost);
+            var none = new RelayOptions();
+            Program.ApplyEnvironment(none, k => null);
+            Check("without them the settings are as before (no password, no recovery)",
+                none.Password == "" && none.CheckpointOwnerKey == "" && none.CheckpointRecoveryKey == "" && !none.ResumeWithoutHost);
+            var empty = new RelayOptions { Password = "kept" };
+            Program.ApplyEnvironment(empty, k => "");
+            Check("an empty variable changes nothing", empty.Password == "kept" && !empty.ResumeWithoutHost);
+        }
+
+        /// <summary>The secrets from files, secrets that cannot be used or are weak, and the private files of the kept save.</summary>
+        static void Secrets()
+        {
+            Console.WriteLine("secrets");
+            using (var only = new Relay { BindTo = System.Net.IPAddress.Loopback })
+            {
+                var core = new SessionCore(only, new RelayOptions());
+                only.Start(0);
+                using (var p = new Player(only.Port, "Local", null, true))
+                    Check("a relay told to listen on one address (--listen) works on that address", p.Wait(() => p.Of("tun_host").Length > 0));
+            }
+            var env = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["MPFEVER_RELAY_PASSWORD_FILE"] = "/run/secrets/pw", ["MPFEVER_RELAY_CHECKPOINT_OWNER_KEY_FILE"] = "/run/secrets/owner",
+                ["MPFEVER_RELAY_RESUME_WITHOUT_HOST_FILE"] = "/run/secrets/rec"
+            };
+            string Files(string path) => path.EndsWith("pw") ? "file-password\n" : path.EndsWith("owner") ? "file-owner-key\r\n" : "file-recovery-key";
+            var o = new RelayOptions();
+            Program.ApplyEnvironment(o, k => env.TryGetValue(k, out var v) ? v : null, Files);
+            Check("the three secrets can come from files, without the line break at the end",
+                o.Password == "file-password" && o.CheckpointOwnerKey == "file-owner-key" && o.CheckpointRecoveryKey == "file-recovery-key" && o.ResumeWithoutHost);
+            var both = new RelayOptions();
+            Program.ApplyEnvironment(both, k => k == "MPFEVER_RELAY_PASSWORD" ? "plain" : k == "MPFEVER_RELAY_PASSWORD_FILE" ? "/x/pw" : null, Files);
+            Check("the variable wins over the file", both.Password == "plain");
+            bool empty = false, unreadable = false;
+            try { Program.ReadSecret("/x", p => "\n"); } catch (ArgumentException e) { empty = e.Message.Contains("empty"); }
+            try { Program.ReadSecret("/x", p => throw new IOException("secret-text-must-not-show")); }
+            catch (ArgumentException e) { unreadable = e.Message.Contains("cannot read") && !e.Message.Contains("secret-text-must-not-show"); }
+            Check("an empty or unreadable secret file stops the relay and says nothing of what it holds", empty && unreadable);
+            Check("a key equal to the password is refused: every player knows the password",
+                Program.Validate(new RelayOptions { Password = "same", CheckpointDirectory = "d", CheckpointOwnerKey = "same" }) != null);
+            Check("a recovery key equal to the owner key, or to the password, is refused",
+                Program.Validate(new RelayOptions { CheckpointDirectory = "d", CheckpointOwnerKey = "k", CheckpointRecoveryKey = "k", ResumeWithoutHost = true }) != null
+                && Program.Validate(new RelayOptions { Password = "p", CheckpointDirectory = "d", CheckpointOwnerKey = "k", CheckpointRecoveryKey = "p", ResumeWithoutHost = true }) != null);
+            Check("two different keys and a password are accepted",
+                Program.Validate(new RelayOptions { Password = "p", CheckpointDirectory = "d", CheckpointOwnerKey = "k1", CheckpointRecoveryKey = "k2", ResumeWithoutHost = true }) == null);
+            Check("short secrets are said at start, strong ones are not",
+                Program.WeakSecrets(new RelayOptions { Password = "abc", CheckpointOwnerKey = "short", CheckpointRecoveryKey = "short2", ResumeWithoutHost = true }).Length == 3
+                && Program.WeakSecrets(new RelayOptions { Password = "long-enough-password", CheckpointOwnerKey = "0123456789abcdef", CheckpointRecoveryKey = "fedcba9876543210", ResumeWithoutHost = true }).Length == 0);
+            if (!OperatingSystem.IsWindows())
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "mpfever-private-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    using (var c = new RelayCheckpoint(dir))
+                    {
+                        c.Begin(5, SHA256.HashData(new byte[] { 1, 2, 3, 4, 5 }));
+                        var dirMode = File.GetUnixFileMode(dir);
+                        var lockMode = File.GetUnixFileMode(Path.Combine(dir, "checkpoint.lock"));
+                        var partMode = File.GetUnixFileMode(Path.Combine(dir, "checkpoint.partial"));
+                        Check("the kept save's folder and files are private to the account that runs the relay (700, 600)",
+                            dirMode == (UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute)
+                            && lockMode == (UnixFileMode.UserRead | UnixFileMode.UserWrite) && partMode == (UnixFileMode.UserRead | UnixFileMode.UserWrite));
+                    }
+                }
+                finally { try { Directory.Delete(dir, true); } catch { } }
+            }
+        }
+
+        /// <summary>Wrong keys count like wrong passwords: from one address, after a few of them even the right key is refused.</summary>
+        static void CheckpointKeyLockout()
+        {
+            Console.WriteLine("kept save: wrong keys are counted");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-lockout-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var opt = new RelayOptions { Password = "pw", CheckpointDirectory = dir, CheckpointOwnerKey = "owner-key-0123456789", MaxBadPasswords = 3, LockoutSeconds = 60 };
+                using (var srv = new Relay())
+                {
+                    var core = new SessionCore(srv, opt);
+                    srv.Start(0);
+                    int n = 0;
+                    using (var host = new Player(srv.Port, "Host", "pw", true))
+                    {
+                        host.Wait(() => host.Of("tun_host").Length > 0);
+                        string Ask(string key)
+                        {
+                            string id = (++n).ToString("x32");
+                            host.C.Send(Msg.Make(CheckpointWire.Request, "Host", "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("op", "open") + "," + CheckpointWire.Field("key", key) + "}"));
+                            Msg r = null; host.Wait(() => (r = host.Of(CheckpointWire.Reply).FirstOrDefault(m => Field(m, "id") == id)) != null);
+                            return r == null ? "(no answer)" : Field(r, "status");
+                        }
+                        string a = Ask("wrong-1"), b = Ask("wrong-2");
+                        Check("a wrong key is denied", a == "denied" && b == "denied");
+                        Check("the right key still works before the limit", Ask("owner-key-0123456789") == "empty");
+                        Ask("wrong-3"); Ask("wrong-4");
+                        Check("after the limit the right key is refused too, for a while", Ask("owner-key-0123456789") == "denied");
+                    }
+                    Pause();
+                    using (var other = new Player(srv.Port, "Other", "pw", true))
+                    {
+                        Check("and with a password set the address cannot join any more either (the same count as the wrong passwords)", other.Wait(() => other.DeniedReason == "password"));
+                    }
+                }
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+        }
+
+        static void CheckpointPersistence()
+        {
+            Console.WriteLine("persistent checkpoint storage");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-checkpoint-" + Guid.NewGuid().ToString("N"));
+            var first = new byte[RelayCheckpoint.ChunkSize + 23];
+            var next = new byte[80];
+            var random = new Random(334);
+            random.NextBytes(first);
+            random.NextBytes(next);
+            byte[] firstHash = SHA256.HashData(first), nextHash = SHA256.HashData(next);
+
+            bool Matches(RelayCheckpoint store, byte[] expected, byte[] digest)
+            {
+                using var file = store.Open(out var size, out var sha);
+                if (file == null || size != expected.Length || !string.Equals(sha, Convert.ToHexString(digest), StringComparison.OrdinalIgnoreCase))
+                    return false;
+                var actual = new byte[expected.Length];
+                file.ReadExactly(actual);
+                return actual.SequenceEqual(expected);
+            }
+
+            try
+            {
+                using (var store = new RelayCheckpoint(dir))
+                {
+                    using (var missing = store.Open(out var size, out _))
+                        Check("a new store does not report a save", missing == null && size == 0);
+                    store.Begin(first.Length, firstHash);
+                    Check("a chunk larger than the transfer limit is refused", !store.Append(first));
+                    Check("a complete save can be committed from multiple chunks",
+                        store.Append(first.Take(RelayCheckpoint.ChunkSize).ToArray()) &&
+                        store.Append(first.Skip(RelayCheckpoint.ChunkSize).ToArray()) && store.Complete());
+
+                    bool locked = false;
+                    try { using var duplicate = new RelayCheckpoint(dir); }
+                    catch (IOException) { locked = true; }
+                    Check("two relays cannot write the same checkpoint directory", locked);
+
+                    store.Begin(next.Length, nextHash);
+                    store.Append(next.Take(8).ToArray());
+                    Check("an in-flight upload leaves the previous save readable", Matches(store, first, firstHash));
+                    Check("an incomplete upload cannot replace the previous save", !store.Complete() && Matches(store, first, firstHash));
+
+                    store.Begin(next.Length, firstHash);
+                    store.Append(next);
+                    Check("a checksum mismatch cannot replace the previous save", !store.Complete() && Matches(store, first, firstHash));
+                    store.Begin(next.Length, nextHash);
+                    store.Append(next.Take(8).ToArray());
+                }
+
+                // A forced process exit can leave an unfinished file in the directory.
+                var partial = Path.Combine(dir, "checkpoint.partial");
+                File.WriteAllBytes(partial, next);
+                using (var store = new RelayCheckpoint(dir))
+                {
+                    Check("restart ignores an abandoned temporary file", !File.Exists(partial) && Matches(store, first, firstHash));
+                    store.Begin(next.Length, nextHash);
+                    Check("a later verified upload replaces the previous save",
+                        store.Append(next) && store.Complete() && Matches(store, next, nextHash));
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(dir))
+                {
+                    foreach (var name in new[] { "checkpoint.partial", "checkpoint.bin", "checkpoint.lock" })
+                        File.Delete(Path.Combine(dir, name));
+                    Directory.Delete(dir);
+                }
+            }
+        }
+
+        static void CheckpointOverTheRelay()
+        {
+            Console.WriteLine("the save kept by the relay, through the protocol");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-checkpoint-" + Guid.NewGuid().ToString("N"));
+            var save = new byte[RelayCheckpoint.ChunkSize + 500];
+            new Random(7).NextBytes(save);
+            string sha = Convert.ToHexString(SHA256.HashData(save)).ToLowerInvariant();
+            try
+            {
+                var opt = new RelayOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
+                using (var srv = new Relay())
+                {
+                    var core = new SessionCore(srv, opt);
+                    srv.Start(0);
+                    int port = srv.Port;
+                    int n = 0;
+                    string Id() => (++n).ToString("x32");
+                    Msg Reply(Player pl, string id) { Msg r = null; pl.Wait(() => (r = pl.Of(CheckpointWire.Reply).FirstOrDefault(m => Field(m, "id") == id)) != null); return r; }
+                    string Ask(Player pl, string body)
+                    {
+                        string id = Id();
+                        pl.C.Send(Msg.Make(CheckpointWire.Request, "Host", "{" + CheckpointWire.Field("id", id) + "," + body + "}"));
+                        var r = Reply(pl, id);
+                        return r == null ? "(no answer)" : Field(r, "status");
+                    }
+                    using (var host = new Player(port, "Host", null, true))
+                    {
+                        host.Wait(() => host.Of("tun_host").Length > 0);
+                        Check("a host with the wrong key cannot store a save",
+                            Ask(host, CheckpointWire.Field("op", "begin") + "," + CheckpointWire.Field("key", "nope") + "," + CheckpointWire.Field("size", save.Length) + "," + CheckpointWire.Field("sha", sha)) == "denied");
+                        Check("the owner starts an upload",
+                            Ask(host, CheckpointWire.Field("op", "begin") + "," + CheckpointWire.Field("key", "own") + "," + CheckpointWire.Field("size", save.Length) + "," + CheckpointWire.Field("sha", sha)) == "upload");
+                        bool parts = true;
+                        for (int off = 0; off < save.Length; off += RelayCheckpoint.ChunkSize)
+                        {
+                            var chunk = save.Skip(off).Take(RelayCheckpoint.ChunkSize).ToArray();
+                            string id = Id();
+                            host.C.Send(new Msg { Kind = CheckpointWire.Binary, From = "Host", Data = chunk, Payload = "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("len", chunk.Length) + "}" });
+                            var r = Reply(host, id);
+                            parts &= r != null && Field(r, "status") == "part";
+                        }
+                        Check("every chunk is accepted", parts);
+                        Check("the complete, verified save is stored", Ask(host, CheckpointWire.Field("op", "commit")) == "saved");
+                    }
+                    Thread.Sleep(300);
+                    using (var next = new Player(port, "Next", null, true))
+                    {
+                        next.Wait(() => next.Of("tun_host").Length > 0);
+                        Check("the owner's password alone does not read the save: a wrong key is denied", Ask(next, CheckpointWire.Field("op", "open") + "," + CheckpointWire.Field("key", "bad")) == "denied");
+                        string id = Id();
+                        next.C.Send(Msg.Make(CheckpointWire.Request, "Next", "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("op", "open") + "," + CheckpointWire.Field("key", "rec") + "}"));
+                        var open = Reply(next, id);
+                        Check("the recovery key opens the save, with its size and hash", open != null && Field(open, "status") == "download"
+                            && Field(open, "size") == save.Length.ToString() && Field(open, "sha") == sha);
+                        var got = new List<byte>();
+                        while (got.Count < save.Length)
+                        {
+                            string rid = Id();
+                            next.C.Send(Msg.Make(CheckpointWire.Request, "Next", "{" + CheckpointWire.Field("id", rid) + "," + CheckpointWire.Field("op", "read") + "," + CheckpointWire.Field("offset", got.Count) + "}"));
+                            Msg bin = null;
+                            next.Wait(() => (bin = next.Of(CheckpointWire.Binary).FirstOrDefault(m => Field(m, "id") == rid)) != null);
+                            if (bin == null || bin.Data == null) break;
+                            got.AddRange(bin.Data);
+                        }
+                        Check("the save comes back byte for byte", got.Count == save.Length && got.SequenceEqual(save));
+                        Check("the new host confirms it loaded it", Ask(next, CheckpointWire.Field("op", "loaded")) == "ready");
+                    }
+                }
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+            CheckpointThroughRemoteRelay();
+            // a relay started without --checkpoint-dir says it keeps nothing (the launcher does not wait for an answer that never comes)
+            using (var srv = new Relay())
+            {
+                var core = new SessionCore(srv, new RelayOptions());
+                srv.Start(0);
+                using (var a = new RemoteRelay())
+                {
+                    a.Connect("127.0.0.1", srv.Port, "Alice", null);
+                    var t0 = Environment.TickCount64;
+                    string status = a.UploadCheckpoint("anything", new byte[] { 1, 2, 3 });
+                    Check("a relay without --checkpoint-dir answers that it keeps no save, at once", status == "empty" && Environment.TickCount64 - t0 < 5000);
+                }
+            }
+        }
+
+        /// <summary>The launcher's own side (RemoteRelay.UploadCheckpoint / DownloadCheckpoint) against the relay, with a 2.5 MB save.</summary>
+        static void CheckpointThroughRemoteRelay()
+        {
+            Console.WriteLine("the launcher's side of the kept save");
+            string dir = Path.Combine(Path.GetTempPath(), "mpfever-checkpoint-" + Guid.NewGuid().ToString("N"));
+            var save = new byte[2 * RelayCheckpoint.ChunkSize + 4321];
+            new Random(11).NextBytes(save);
+            try
+            {
+                var opt = new RelayOptions { CheckpointDirectory = dir, CheckpointOwnerKey = "own", CheckpointRecoveryKey = "rec", ResumeWithoutHost = true };
+                using (var srv = new Relay())
+                {
+                    var core = new SessionCore(srv, opt);
+                    srv.Start(0);
+                    using (var a = new RemoteRelay())
+                    {
+                        a.Connect("127.0.0.1", srv.Port, "Alice", null);
+                        Check("a host with a wrong key cannot keep a save", a.UploadCheckpoint("nope", save) == "denied");
+                        Check("a host with the owner key keeps a 2.5 MB save", a.UploadCheckpoint("own", save) == "saved");
+                    }
+                    Thread.Sleep(300);
+                    using (var b = new RemoteRelay())
+                    {
+                        b.Connect("127.0.0.1", srv.Port, "Bella", null);
+                        var none = b.DownloadCheckpoint("nope", out var status);
+                        Check("a wrong key reads nothing", none == null && status == "denied");
+                        var got = b.DownloadCheckpoint("rec", out status);
+                        Check("the recovery key reads the save back, hash checked", got != null && got.SequenceEqual(save) && status == "ready");
+                        Check("and may keep the save it goes on with", b.UploadCheckpoint("rec", new byte[] { 1, 2, 3, 4 }) == "saved");
+                    }
+                }
+            }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+        }
+
         static void Tunnel()
         {
             Console.WriteLine("admission");
-            var opt = new ServerOptions { Password = "pw", MaxPlayers = 3 };
+            var opt = new RelayOptions { Password = "pw", MaxPlayers = 3 };
             using (var relay = new Relay())
             {
                 var core = new SessionCore(relay, opt);
@@ -91,6 +411,8 @@ namespace MPFever.LinuxServer
                 using (var h2 = new Player(port, "Hugo", "pw", true))
                     Check("a second host is refused", h2.Wait(() => h2.DeniedReason != null) && h2.DeniedReason == "hosted");
                 var b = new Player(port, "Bob", "pw");
+                // (Bob is let in before Cat connects: two connections made at once may be let in in either order, and the checks below read them in order)
+                h.Wait(() => h.Of("tun_join").Length == 1);
                 var c = new Player(port, "Cat", "pw");
                 try
                 {
@@ -101,7 +423,7 @@ namespace MPFever.LinuxServer
                     Check("a player gets nothing until the host speaks", b.Of("welcome").Length == 0 && b.Of("tun_join").Length == 0);
 
                     using (var d = new Player(port, "Dan", "pw"))
-                        Check("a fourth player is refused when the server is full", d.Wait(() => d.DeniedReason != null) && d.DeniedReason == "full");
+                        Check("a fourth player is refused when the relay is full", d.Wait(() => d.DeniedReason != null) && d.DeniedReason == "full");
 
                     Console.WriteLine("messages to the host");
                     b.C.Send(Msg.Make("hello", "x", "{[\"role\"]=\"client\"}"));
@@ -112,7 +434,7 @@ namespace MPFever.LinuxServer
                     for (int i = 1; i <= 5; i++) c.C.Send(Msg.Make("act", "x", "{[\"i\"]=" + i + "}"));
                     Check("actions reach the host in order", h.Wait(() => h.Of("act").Length == 5) && h.Of("act").Select(m => Field(m, "i")).SequenceEqual(new[] { "1", "2", "3", "4", "5" }));
                     Pause();
-                    Check("and are not sent to the other players by the server", b.Of("act").Length == 0);
+                    Check("and are not sent to the other players by the relay", b.Of("act").Length == 0);
 
                     Console.WriteLine("messages from the host");
                     h.C.Send(Msg.Make("@" + bn + ":welcome", "x", "{[\"you\"]=\"" + bn + "\",[\"role\"]=\"client\",[\"rtok\"]=\"\"}"));
@@ -120,7 +442,7 @@ namespace MPFever.LinuxServer
                     Pause();
                     Check("and nobody else", c.Of("welcome").Length == 0);
                     Check("with the host's name as sender, without its #n", b.Of("welcome").Length > 0 && b.Of("welcome")[0].From == "Hank");
-                    Check("a welcome carries the player's own link with the server", b.Of("welcome").Length > 0 && (Field(b.Of("welcome")[0], "rtok") ?? "").Length > 5);
+                    Check("a welcome carries the player's own link with the relay", b.Of("welcome").Length > 0 && (Field(b.Of("welcome")[0], "rtok") ?? "").Length > 5);
                     h.C.Send(Msg.Make("session", "x", "{[\"started\"]=true,[\"speed\"]=1}"));
                     Check("a message to everybody reaches every player", b.Wait(() => b.Of("session").Length == 1) && c.Wait(() => c.Of("session").Length == 1));
                     Pause();
@@ -147,13 +469,13 @@ namespace MPFever.LinuxServer
         }
 
 
-        /// <summary>The launcher's side: a RemoteRelay (what MainForm uses as its relay) against the server, with ordinary clients as the players.</summary>
+        /// <summary>The launcher's side: a RemoteRelay (what MainForm uses as its relay) against the relay, with ordinary clients as the players.</summary>
         static void Remote()
         {
             Console.WriteLine("remote relay (the host's launcher side)");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions { Password = "pw" });
+                var core = new SessionCore(srv, new RelayOptions { Password = "pw" });
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -167,6 +489,7 @@ namespace MPFever.LinuxServer
                     host.Connect("127.0.0.1", port, "Hank", "pw");
                     Check("the host connects and learns its name", host.Me != null && host.Me.StartsWith("Hank#"));
                     var b = new Player(port, "Bob", "pw");
+                    Wait(() => { lock (joined) return joined.Count == 1; });   // (Bob first: joined[0] is Bob below)
                     var c = new Player(port, "Cat", "pw");
                     Check("players that come in raise Joined", Wait(() => { lock (joined) return joined.Count == 2; }));
                     Check("and are listed like a Relay lists them", host.AdmittedCount == 2 && host.PeerNames().Length == 2 && host.Find(joined[0].Name) == joined[0] && joined[0].Admitted);
@@ -214,7 +537,7 @@ namespace MPFever.LinuxServer
             public Raw(int port) { T.Connect("127.0.0.1", port); T.NoDelay = true; }
             public void Send(byte[] b) { T.GetStream().Write(b, 0, b.Length); }
             public void Send(string s) { Send(System.Text.Encoding.UTF8.GetBytes(s)); }
-            /// <summary>True when the server closed the connection (within ms).</summary>
+            /// <summary>True when the relay closed the connection (within ms).</summary>
             public bool ClosedBy(int ms)
             {
                 var end = Environment.TickCount64 + ms;
@@ -238,7 +561,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("the version rule between players stays with the host");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions());
+                var core = new SessionCore(srv, new RelayOptions());
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -281,7 +604,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: messages a player must not be able to send");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions());
+                var core = new SessionCore(srv, new RelayOptions());
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -303,13 +626,13 @@ namespace MPFever.LinuxServer
                         Pause(); Pause();
                         Check("a player cannot make the host forget another player (tun_left)", host.Find(cat) != null);
                         Check("a player cannot make the host believe in a player that is not there (tun_join)", host.Find("Ghost#99") == null);
-                        Check("a player's control messages are dropped by the server, not passed on", core.DroppedControl >= 3);
+                        Check("a player's control messages are dropped by the relay, not passed on", core.DroppedControl >= 3);
                         // (through a host that passes on what it does not know, "@Victim:tun_host" would reach Victim as a "tun_host")
                         int before = core.DroppedControl;
                         b.C.Send(Msg.Make("@" + cat + ":tun_host", "x", "{[\"you\"]=\"Cat#1\",[\"migrate\"]=true,[\"token\"]=\"x\"}"));
                         b.C.Send(Msg.Make("!" + cat + ":tun_host", "x", "{[\"migrate\"]=true}"));
                         Pause(); Pause();
-                        Check("a player's routing prefixes are dropped by the server, not passed on", core.DroppedControl >= before + 2 && !host.Find(cat).Equals(null));
+                        Check("a player's routing prefixes are dropped by the relay, not passed on", core.DroppedControl >= before + 2 && !host.Find(cat).Equals(null));
                         Check("so no player receives a tun_host from another player", c.Of("tun_host").Length == 0 && b.Of("tun_host").Length == 0);
                         // (and a host's message that would deliver a reserved kind is not delivered either)
                         host.Broadcast(Msg.Make("@" + cat + ":tun_host", "Hank", "{[\"migrate\"]=true,[\"token\"]=\"x\"}"));
@@ -321,10 +644,10 @@ namespace MPFever.LinuxServer
                 finally { host.Dispose(); }
             }
 
-            Console.WriteLine("hardening: the successor is the one the server asked");
+            Console.WriteLine("hardening: the successor is the one the relay asked");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 30 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 30 });
                 relay.Start(0);
                 int port = relay.Port;
                 var a = new Player(port, "Ann", null, true);
@@ -337,10 +660,10 @@ namespace MPFever.LinuxServer
                 {
                     a.C.Leave();
                     Check("the successor is asked", b.Wait(() => b.Of("tun_host").Length == 1));
-                    // another player of the server, with the successor's name, connects as the host without having been asked
+                    // another player of the relay, with the successor's name, connects as the host without having been asked
                     evil = new Player(port, "Bob", null, true);
                     Check("a connection that only has the successor's name is refused", evil.Wait(() => evil.DeniedReason != null || evil.Of("tun_host").Length > 0) && evil.DeniedReason == "hosted");
-                    Check("and the server still waits for the successor", core.Migrating && core.HostPlayer != null && core.HostPlayer.StartsWith("Bob#"));
+                    Check("and the relay still waits for the successor", core.Migrating && core.HostPlayer != null && core.HostPlayer.StartsWith("Bob#"));
                     var token = Field(b.Of("tun_host")[0], "token");
                     Check("the successor's request carries a token", !string.IsNullOrEmpty(token) && token.Length >= 16);
                     real = new Player(port, "Bob", null, true, false, token);
@@ -354,7 +677,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: a migration does not go on for ever");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
                 relay.Start(0);
                 int port = relay.Port;
                 var a = new Player(port, "Ann", null, true);
@@ -378,7 +701,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: a connection that is not let in");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { UnadmittedTimeoutSeconds = 2, MaxConnections = 4 });
+                var core = new SessionCore(relay, new RelayOptions { UnadmittedTimeoutSeconds = 2, MaxConnections = 4 });
                 relay.Start(0);
                 int port = relay.Port;
                 using (var r1 = new Raw(port))
@@ -403,13 +726,13 @@ namespace MPFever.LinuxServer
                     Check("connections beyond the limit are refused", extra);
                 }
                 finally { foreach (var r in raws) r.Dispose(); }
-                Check("the server still works after all that", new Func<bool>(() => { using (var h = new Player(port, "Hank", null, true)) return h.Wait(() => h.Of("tun_host").Length == 1); })());
+                Check("the relay still works after all that", new Func<bool>(() => { using (var h = new Player(port, "Hank", null, true)) return h.Wait(() => h.Of("tun_host").Length == 1); })());
             }
 
             Console.WriteLine("hardening: wrong passwords");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { Password = "right", MaxPlayers = 4 });
+                var core = new SessionCore(relay, new RelayOptions { Password = "right", MaxPlayers = 4 });
                 relay.Start(0);
                 int port = relay.Port;
                 for (int i = 0; i < 6; i++) using (var bad = new Player(port, "Eve" + i, "wrong")) bad.Wait(() => bad.DeniedReason != null);
@@ -420,7 +743,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("hardening: a guest that drops is waited for");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Grace = 10 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Grace = 10 });
                 relay.Start(0);
                 int port = relay.Port;
                 var host = new RemoteRelay();
@@ -441,7 +764,7 @@ namespace MPFever.LinuxServer
                     t0 = Environment.TickCount64; while (string.IsNullOrEmpty(link.Token) && Environment.TickCount64 - t0 < 4000) Thread.Sleep(20);
                     guest.Dispose();   // the network drops: no goodbye
                     Thread.Sleep(1500);
-                    Check("the host is not told that the guest left (the server waits for it)", new Func<bool>(() => { lock (left) return left.Count == 0; })());
+                    Check("the host is not told that the guest left (the relay waits for it)", new Func<bool>(() => { lock (left) return left.Count == 0; })());
                     host.Send(host.Find(bob), Msg.Make("chatmsg", "Hank", "{[\"text\"]=\"while you were away\"}"));
                     var back = new Client(link);
                     back.Received += m => { lock (inbox) inbox.Add(m); };
@@ -582,7 +905,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("races: the timer of an attempt meets the successor's takeover");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 4, Migration = true, MigrationTimeoutSeconds = 1 });
                 relay.Start(0);
                 int port = relay.Port;
                 var held = new ManualResetEventSlim(false); var release = new ManualResetEventSlim(false);
@@ -618,7 +941,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("load: 60 players, a burst of messages");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 64, MaxConnections = 200 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 64, MaxConnections = 200 });
                 relay.Start(0);
                 int port = relay.Port;
                 var host = new RemoteRelay();
@@ -653,7 +976,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("robustness: bad input does not stop the service");
             using (var srv = new Relay())
             {
-                var core = new SessionCore(srv, new ServerOptions { Grace = 1 });
+                var core = new SessionCore(srv, new RelayOptions { Grace = 1 });
                 srv.Start(0);
                 int port = srv.Port;
                 var host = new RemoteRelay();
@@ -705,14 +1028,14 @@ namespace MPFever.LinuxServer
                         bj.Send("join\tBad\t{not lua at all\n");
                         Check("a join that is not even a table is refused and closed", bj.ClosedBy(3000));
                     }
-                    // the host cannot speak with the server's own kinds either
+                    // the host cannot speak with the relay's own kinds either
                     using (var p2 = new Player(port, "Other"))
                     {
-                        // (the broadcast goes to the players the server has let in: wait until the host has been told of this one)
+                        // (the broadcast goes to the players the relay has let in: wait until the host has been told of this one)
                         var wait0 = Environment.TickCount64; while (!host.PeerNames().Any(n => n.StartsWith("Other#")) && Environment.TickCount64 - wait0 < 4000) Thread.Sleep(20);
                         host.Broadcast(Msg.Make("tun_join", "Hank", "{[\"name\"]=\"Zed#1\"}"));
                         host.Broadcast(Msg.Make("session", "Hank", "{[\"started\"]=true}"));
-                        Check("the server's kinds are not passed on from the host to the players", p2.Wait(() => p2.Of("session").Length == 1) && p2.Of("tun_join").Length == 0);
+                        Check("the relay's kinds are not passed on from the host to the players", p2.Wait(() => p2.Of("session").Length == 1) && p2.Of("tun_join").Length == 0);
                     }
                 }
                 finally { host.Dispose(); }
@@ -733,7 +1056,7 @@ namespace MPFever.LinuxServer
             Console.WriteLine("host migration");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 30 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 30 });
                 relay.Start(0);
                 int port = relay.Port;
                 var a = new Player(port, "Ann", null, true);
@@ -767,10 +1090,30 @@ namespace MPFever.LinuxServer
                 finally { a.Dispose(); b.Dispose(); c.Dispose(); nb?.Dispose(); }
             }
 
+            Console.WriteLine("a host that does not want a player to take over (handover=0)");
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 30 });
+                relay.Start(0);
+                int port = relay.Port;
+                var a = new Player(port, "Ann", null, true, false, null, true);
+                a.Wait(() => a.Of("tun_host").Length == 1);
+                var b = new Player(port, "Bob", null, false, true);
+                try
+                {
+                    b.Wait(() => a.Of("tun_join").Length >= 1);
+                    a.C.Leave();
+                    Check("the session ends with a host that asked for it, even if the relay allows migration", b.Wait(() => core.SessionEnded) && !core.Migrating);
+                    Check("and the players still there are disconnected", b.Wait(() => b.Closed));
+                    Check("and nobody was asked to take over", b.Of("tun_host").Length == 0);
+                }
+                finally { a.Dispose(); b.Dispose(); }
+            }
+
             Console.WriteLine("several migrations one after the other, and a successor that does not come");
             using (var relay = new Relay())
             {
-                var core = new SessionCore(relay, new ServerOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 1 });
+                var core = new SessionCore(relay, new RelayOptions { MaxPlayers = 6, Migration = true, MigrationTimeoutSeconds = 1 });
                 relay.Start(0);
                 int port = relay.Port;
                 var h = new Player(port, "Ann", null, true);

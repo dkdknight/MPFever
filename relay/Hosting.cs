@@ -6,22 +6,22 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace MPFever.LinuxServer
+namespace MPFever.StandaloneRelay
 {
     /// <summary>
-    /// Who plays the host (docs/LINUX-RELAY.md). The server has no game, so one connected player's launcher and game are the host: the
+    /// Who plays the host (docs/RELAY.md). The relay has no game, so one connected player's launcher and game are the host: the
     /// reference for the world, the one that holds and sends the savegame, answers the mod and build checks and compares the games.
-    /// The first player in is the host. When it leaves, either the session ends (the default) or, with ServerOptions.Migration, a player
+    /// The first player in is the host. When it leaves, either the session ends (the default) or, with RelayOptions.Migration, a player
     /// that said it can take over ("mig" in its join) is asked, the oldest first:
     ///
-    ///   server -> successor   tun_host  { you, epoch, migrate = true, prev, token }   "take over": the token is random, made for this
+    ///   relay -> successor   tun_host  { you, epoch, migrate = true, prev, token }   "take over": the token is random, made for this
     ///                                                                                attempt and this player, and used once
-    ///   successor -> server   a new connection, join { host = true, mtok = token }    its game was reloaded as the host
-    ///   server -> new host    tun_join for every other player, then tun_players { n }  (the end of the list: it may start)
+    ///   successor -> relay   a new connection, join { host = true, mtok = token }    its game was reloaded as the host
+    ///   relay -> new host    tun_join for every other player, then tun_players { n }  (the end of the list: it may start)
     ///
     /// A successor that does not connect within MigrationTimeoutSeconds, or that leaves, is not asked again for this migration; the
     /// next one is. When nobody is left to ask, the session ends. Whether the new host has finished reloading and resynchronising the
-    /// others is up to the launchers: the server only knows that the successor is connected as the host, and if that connection drops
+    /// others is up to the launchers: the relay only knows that the successor is connected as the host, and if that connection drops
     /// a new migration starts.
     /// </summary>
     sealed partial class SessionCore
@@ -32,6 +32,7 @@ namespace MPFever.LinuxServer
         readonly List<Peer> order = new List<Peer>();             // connected players, oldest first
         readonly HashSet<Peer> hostJoins = new HashSet<Peer>();   // the connections that asked to host (join { host = true })
         readonly HashSet<Peer> capable = new HashSet<Peer>();     // the players that can take over (join { mig = true })
+        readonly HashSet<Peer> noHandover = new HashSet<Peer>();  // the hosts that want the session to end with them (join { host = true, nomig = true })
         readonly HashSet<Peer> failed = new HashSet<Peer>();      // asked during this migration and not there in time
         readonly Dictionary<Peer, string> presentedTokens = new Dictionary<Peer, string>();   // what a host join showed as its token
         readonly Dictionary<Peer, string> joinVersions = new Dictionary<Peer, string>();      // the MPFever version each player said (for the host)
@@ -52,6 +53,7 @@ namespace MPFever.LinuxServer
 
         static bool WantsHost(Dictionary<object, object> join) => join.TryGetValue("host", out var h) && h is bool b && b;
         static bool CanTakeOver(Dictionary<object, object> join) => join.TryGetValue("mig", out var h) && h is bool b && b;
+        static bool NoHandover(Dictionary<object, object> join) => join.TryGetValue("nomig", out var h) && h is bool b && b;
 
         /// <summary>This join is the successor's: a migration waits for a player of this name and the token is the one given to it.</summary>
         bool IsAwaitedSuccessor(string baseName, string presented)
@@ -115,13 +117,14 @@ namespace MPFever.LinuxServer
 
         void HostLeft(Peer p)
         {
-            bool wasHost, wasCandidate; Peer h; int atEpoch;
+            bool wasHost, wasCandidate, noHand; Peer h; int atEpoch;
             lock (hostGate)
             {
                 atEpoch = epoch;
                 order.Remove(p);
                 hostJoins.Remove(p);
                 capable.Remove(p);
+                noHand = noHandover.Remove(p);
                 presentedTokens.Remove(p);
                 joinVersions.Remove(p);
                 wasHost = host == p;
@@ -133,8 +136,8 @@ namespace MPFever.LinuxServer
             }
             if (wasHost)
             {
-                if (opt.Migration) Migrate(p.Name, atEpoch);
-                else EndSession("The host " + p.Name + " left");
+                if (opt.Migration && !noHand) Migrate(p.Name, atEpoch);
+                else EndSession("The host " + p.Name + " left" + (noHand ? " (it asked for the session to end with it)" : ""));
             }
             else if (wasCandidate) Migrate(p.Name, atEpoch);
             else if (h != null && !SameName(p, h)) ToHost(h, Msg.Make("tun_left", p.Name, "{[\"name\"]=" + LuaLit.Quote(p.Name) + "}"));

@@ -50,9 +50,10 @@ jobs:
           path: release/*.zip
           retention-days: 14
 
-  # The Linux session server (server-linux/, docs/LINUX-RELAY.md): built with a warning as an error, its self-test (real clients, no game)
-  # and the self-contained linux-x64 binary.
-  linux-server:
+  # The relay (relay/, docs/RELAY.md), NOT the dedicated server (that one is MPFever.exe --server, built above with the
+  # launcher): no game in it. Built with a warning as an error, its self-test (real clients, no game) and the self-contained linux-x64
+  # binary; the Windows one is the next job.
+  linux-relay:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -63,13 +64,13 @@ jobs:
           dotnet-version: "9.0.x"
 
       - name: Build
-        run: dotnet build server-linux/MPFeverRelay.csproj -c Release
+        run: dotnet build relay/MPFeverRelay.csproj -c Release
 
       - name: Self-test
-        run: dotnet run --project server-linux/MPFeverRelay.csproj -c Release --no-build -- --selftest
+        run: dotnet run --project relay/MPFeverRelay.csproj -c Release --no-build -- --selftest
 
       - name: Publish (linux-x64)
-        run: dotnet publish server-linux/MPFeverRelay.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o artifacts/linux
+        run: dotnet publish relay/MPFeverRelay.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o artifacts/linux
 
       # (0.8.16) the published file is trimmed: its own self-test, as the Release workflow does
       - name: Self-test (published, trimmed)
@@ -78,6 +79,53 @@ jobs:
       - name: Binary
         uses: actions/upload-artifact@v4
         with:
-          name: mpfever-relay-linux-x64-${{ github.sha }}
+          name: MPFever-relay-linux-x64-${{ github.sha }}
           path: artifacts/linux/mpfever-relay
           retention-days: 14
+
+  # The same relay on Windows: its self-test, then the self-contained win-x64 binary tested as it will be published.
+  windows-relay:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Build
+        run: dotnet build relay/MPFeverRelay.csproj -c Release
+
+      - name: Self-test
+        run: dotnet run --project relay/MPFeverRelay.csproj -c Release --no-build -- --selftest
+
+      - name: Publish (win-x64)
+        run: dotnet publish relay/MPFeverRelay.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o artifacts/windows
+
+      - name: Test the published relay
+        run: artifacts/windows/mpfever-relay.exe --selftest
+
+      - name: Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPFever-relay-win-x64-${{ github.sha }}
+          path: artifacts/windows/mpfever-relay.exe
+          retention-days: 14
+
+  # The relay's optional Docker image (relay/Dockerfile): it builds, and the self-test passes inside it as the container
+  # will run (read-only, no capabilities).
+  docker-relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -f relay/Dockerfile -t mpfever-relay .
+
+      - name: Self-test in the container
+        run: docker run --rm --read-only --tmpfs /tmp --cap-drop ALL mpfever-relay --selftest
+
+      - name: Compose file
+        run: MPFEVER_RELAY_PASSWORD=ci docker compose -f relay/compose.yaml config -q

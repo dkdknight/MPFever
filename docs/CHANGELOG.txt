@@ -154,7 +154,7 @@ MPFever - Changelog
     dumps first; Kasper and Eier's first-drift dumps lost their start (the towns), alike on both games, so the first difference
     could not be found. The drift dumps (sdump_drift*, drift_*, native_drift.txt) are now cut last, after every other log.
     MPFEVER_REPORTKEEPDRIFT=0: as before. Tests: tests/test_reportkeepdrift0816.py and the launcher's selftest.
-  - Linux session server: its published file trims the .NET runtime to what the relay uses and is compressed: 71 MB -> 13 MB
+  - Linux relay: its published file trims the .NET runtime to what the relay uses and is compressed: 71 MB -> 13 MB
     (the trimmed file passes the relay's 120 self-test checks; the CI now also tests the published file). Test:
     tests/test_relaytrim0816.py.
   - NEW: the host compares every game's MPFever native fixes that change the simulation with its own (the order fixes, the account
@@ -219,11 +219,11 @@ MPFever - Changelog
     sharing rules off): a vehicle can be bought there, the toll booked as before (0.5.0). A session setting of the host,
     « Open depots usable by the other companies », on by default (MPFEVER_SHAREDDEPOTS=0: off).
     Test: tests/test_shareddepots0814.py.
-  - NEW (PR #334 by ampynjord, who looks after it): a Linux session server (server-linux/, mpfever-relay): a host can host
+  - NEW (PR #334 by ampynjord, who looks after it): a Linux relay (relay/, mpfever-relay): a host can host
     through it ("server=host:port" in mpfever_settings.txt), the players join its address, no port to open; with --migration
     (experimental, off by default) the next player takes over when the host leaves. The relay checks its own protocol number,
     not MPFever's version. Players without such a server: nothing changes (a host never relays a player's "tun_" message).
-    Guide: docs/LINUX-RELAY.md.
+    Guide: docs/RELAY.md.
 
 0.8.13 - 2026-11-15: dedicated servers "without display" no longer crash when vehicles are replaced
   - FIX (#354, #361, the reports of 2026-11-15, MPFeverServerTest and DEOKCHEON's server): a server started without display

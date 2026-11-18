@@ -6,9 +6,9 @@ using System.Threading;
 namespace MPFever
 {
     /// <summary>
-    /// The host's side when it hosts through an MPFever server (server-linux/, docs/LINUX-RELAY.md) instead of listening itself: the same
+    /// The host's side when it hosts through an MPFever relay (relay/, docs/RELAY.md) instead of listening itself: the same
     /// surface as Relay (IRelay), so the host's code (MainForm.OnHostMessage and the session around it) is unchanged. The host is one
-    /// connection to the server; the server tells it which players came in and left (tun_join, tun_left) and forwards what they send,
+    /// connection to the relay; the relay tells it which players came in and left (tun_join, tun_left) and forwards what they send,
     /// and the host's messages go through it: "kind" to every player, "!name:kind" to every player but one, "@name:kind" to one.
     /// </summary>
     sealed class RemoteRelay : IRelay
@@ -24,20 +24,23 @@ namespace MPFever
 
         public event Action<Peer, Msg> Received;
         public event Action<Peer> Joined, Left;
-        // (the server waits for the players who drop, and tells the host only when one is really gone: no Away, no Resumed)
+        // (the relay waits for the players who drop, and tells the host only when one is really gone: no Away, no Resumed)
         public event Action<Peer> Away { add { } remove { } }
         public event Action<Peer, double, int> Resumed { add { } remove { } }
-        /// <summary>The connection to the server was lost: the session cannot go on.</summary>
+        /// <summary>The connection to the relay was lost: the session cannot go on.</summary>
         public event Action<string> Lost;
 
-        // The server checks the relay protocol, password and places and waits for players who drop.
+        // The relay checks the relay protocol, password and places and waits for players who drop.
         // The host supplies Admit for its own version and public-game rules.
         public Func<Peer, bool> MayWait { get; set; }
         public double Grace { get; set; }
         public Func<Peer, Msg, string> Admit { get; set; }
         public string SteamSecret { get; set; }
 
-        /// <summary>The host's name on the server ("Name#n").</summary>
+        /// <summary>The host wants the session to end with it: no player takes over ("handover=0", told to the relay in the join).</summary>
+        public bool NoHandover;
+
+        /// <summary>The host's name on the relay ("Name#n").</summary>
         public string Me { get; private set; }
         public int Epoch { get; private set; }
 
@@ -53,25 +56,104 @@ namespace MPFever
         public void DropOlder(Peer p) { }
         public void FinalizeAway(string why) { }
 
-        /// <summary>Connects to the server as its host. Throws with the server's reason when it refuses (another host, wrong password,
+        /// <summary>Connects to the relay as its host. Throws with the relay's reason when it refuses (another host, wrong password,
         /// relay protocol...).</summary>
         public void Connect(string host, int port, string name, string password, string migrationToken = null)
         {
-            client.Received += OnServerMessage;
+            client.Received += OnRelayMessage;
             client.Denied += d => { denied = d.TryGetValue("reason", out var r) ? r as string : "?"; hosted.Set(); };
-            client.Closed += () => { if (!stop) { Lose("connection to the server closed"); } hosted.Set(); };
+            client.Closed += () => { if (!stop) { Lose("connection to the relay closed"); } hosted.Set(); };
+            client.NoHandover = NoHandover;
             client.Connect(host, port, name, password, false, true, false, migrationToken);
             hosted.Wait(TimeSpan.FromSeconds(15));
             if (denied != null) throw new InvalidOperationException(denied);
-            if (Me == null) throw new TimeoutException("the server did not answer");
+            if (Me == null) throw new TimeoutException("the relay did not answer");
         }
 
-        /// <summary>After a takeover: waits until the server has announced every player that was there (tun_players). False on timeout.</summary>
+        // ---------------------------------------------------------------- the save the relay keeps (CheckpointWire, relay/CheckpointProtocol.cs)
+
+        readonly object cpGate = new object();
+        readonly Dictionary<string, Msg> cpReplies = new Dictionary<string, Msg>();
+
+        static byte[] Sha256(byte[] data) { using (var h = System.Security.Cryptography.SHA256.Create()) return h.ComputeHash(data); }
+        static readonly System.Diagnostics.Stopwatch clockWatch = System.Diagnostics.Stopwatch.StartNew();
+        static long Now() => clockWatch.ElapsedMilliseconds;
+
+        Msg CpSend(Msg m, string id, int ms)
+        {
+            lock (cpGate) cpReplies.Remove(id);
+            client.Send(m);
+            var end = Now() + ms;
+            lock (cpGate)
+                while (!cpReplies.ContainsKey(id))
+                {
+                    long left = end - Now();
+                    if (left <= 0 || stop) return null;
+                    Monitor.Wait(cpGate, (int)Math.Min(left, 500));
+                }
+            lock (cpGate) { var r = cpReplies[id]; cpReplies.Remove(id); return r; }
+        }
+
+        static string CpStatus(Msg r) => r == null ? "timeout" : CheckpointWire.Text(CheckpointWire.Read(r), "status") ?? "invalid";
+
+        string CpRequest(string body, int ms = 30000)
+        {
+            string id = Guid.NewGuid().ToString("N");
+            return CpStatus(CpSend(Msg.Make(CheckpointWire.Request, "-", "{" + CheckpointWire.Field("id", id) + "," + body + "}"), id, ms));
+        }
+
+        /// <summary>Sends the save to the relay, which keeps it when it is complete (its SHA-256 is checked). "saved" or the reason it was not.</summary>
+        public string UploadCheckpoint(string key, byte[] data)
+        {
+            if (data == null || data.Length == 0 || data.Length > CheckpointWire.MaxSize) return "invalid";
+            string sha = CheckpointWire.Hex(Sha256(data));
+            string status = CpRequest(CheckpointWire.Field("op", "begin") + "," + CheckpointWire.Field("key", key ?? "") + "," + CheckpointWire.Field("size", data.Length) + "," + CheckpointWire.Field("sha", sha));
+            if (status != "upload") return status;
+            for (int off = 0; off < data.Length; off += CheckpointWire.ChunkSize)
+            {
+                var chunk = new byte[Math.Min(CheckpointWire.ChunkSize, data.Length - off)];
+                Buffer.BlockCopy(data, off, chunk, 0, chunk.Length);
+                string id = Guid.NewGuid().ToString("N");
+                var r = CpSend(new Msg { Kind = CheckpointWire.Binary, From = "-", Data = chunk,
+                    Payload = "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("len", chunk.Length) + "}" }, id, 30000);
+                if (CpStatus(r) != "part") return CpStatus(r);
+            }
+            return CpRequest(CheckpointWire.Field("op", "commit"));
+        }
+
+        /// <summary>Reads the save the relay keeps (null with the reason in status: denied, empty, ...). The hash is checked.</summary>
+        public byte[] DownloadCheckpoint(string key, out string status)
+        {
+            string id = Guid.NewGuid().ToString("N");
+            var open = CpSend(Msg.Make(CheckpointWire.Request, "-", "{" + CheckpointWire.Field("id", id) + "," + CheckpointWire.Field("op", "open") + "," + CheckpointWire.Field("key", key ?? "") + "}"), id, 30000);
+            status = CpStatus(open);
+            if (status != "download") return null;
+            var f = CheckpointWire.Read(open);
+            if (!CheckpointWire.Number(f, "size", CheckpointWire.MaxSize, out long size) || size == 0) { status = "invalid"; return null; }
+            string sha = CheckpointWire.Text(f, "sha");
+            var data = new byte[size];
+            long got = 0;
+            while (got < size)
+            {
+                string rid = Guid.NewGuid().ToString("N");
+                var r = CpSend(Msg.Make(CheckpointWire.Request, "-", "{" + CheckpointWire.Field("id", rid) + "," + CheckpointWire.Field("op", "read") + "," + CheckpointWire.Field("offset", got) + "}"), rid, 30000);
+                if (r == null) { status = "timeout"; return null; }
+                if (r.Kind != CheckpointWire.Binary || r.Data == null || r.Data.Length == 0 || got + r.Data.Length > size) { status = CpStatus(r); return null; }
+                Buffer.BlockCopy(r.Data, 0, data, (int)got, r.Data.Length);
+                got += r.Data.Length;
+            }
+            if (!string.Equals(CheckpointWire.Hex(Sha256(data)), sha, StringComparison.OrdinalIgnoreCase)) { status = "invalid"; return null; }
+            status = CpRequest(CheckpointWire.Field("op", "loaded"));
+            if (status != "ready") return null;
+            return data;
+        }
+
+        /// <summary>After a takeover: waits until the relay has announced every player that was there (tun_players). False on timeout.</summary>
         public bool WaitPlayersAnnounced(int milliseconds) => announced.Wait(milliseconds);
 
-        void OnServerMessage(Msg m)
+        void OnRelayMessage(Msg m)
         {
-            // (the server's own kinds come from the server only, which drops a player's: nothing else is taken for a control message)
+            // (the relay's own kinds come from the relay only, which drops a player's: nothing else is taken for a control message)
             switch (m.Kind)
             {
                 case "tun_host":
@@ -80,6 +162,14 @@ namespace MPFever
                         Me = t != null && t.TryGetValue("you", out var y) ? y as string : null;
                         Epoch = t != null && t.TryGetValue("epoch", out var e) && e is double ed ? (int)ed : 0;
                         hosted.Set();
+                        return;
+                    }
+                case CheckpointWire.Reply:
+                case CheckpointWire.Binary:
+                    {
+                        var t = LuaLit.Parse(m.Payload) as Dictionary<object, object>;
+                        string id = t != null && t.TryGetValue("id", out var iv) ? iv as string : null;
+                        if (id != null) lock (cpGate) { cpReplies[id] = m; Monitor.PulseAll(cpGate); }
                         return;
                     }
                 case "tun_players":
@@ -125,7 +215,7 @@ namespace MPFever
 
         void Lose(string why)
         {
-            Log.Err("Server: " + why);
+            Log.Err("Relay: " + why);
             Peer[] all;
             lock (gate) { all = peers.Values.ToArray(); peers.Clear(); }
             foreach (var p in all) Left?.Invoke(p);
@@ -148,10 +238,10 @@ namespace MPFever
                 client.Send(new Msg { Kind = prefix + m.Kind, From = m.From, Payload = m.Payload, Data = m.Data });
                 return true;
             }
-            catch (Exception e) { Log.Warn("sending to the server: " + e.Message); return false; }
+            catch (Exception e) { Log.Warn("sending to the relay: " + e.Message); return false; }
         }
 
-        /// <summary>Refuses a player: it is told why ("denied" with this payload) and disconnected by the server.</summary>
+        /// <summary>Refuses a player: it is told why ("denied" with this payload) and disconnected by the relay.</summary>
         public void Deny(Peer p, string payload)
         {
             try { client.Send(Msg.Make("tun_kick", "-", "{[\"name\"]=" + LuaLit.Quote(p.Name) + ",[\"payload\"]=" + LuaLit.Quote(payload ?? "") + "}")); }

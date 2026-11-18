@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- MPFever relay server for Linux (see docs/LINUX-RELAY.md). It is built from the launcher's own protocol sources
+  <!-- MPFever relay, for Linux and Windows (see docs/RELAY.md). It is built from the launcher's own protocol sources
        (Core.cs: Msg, NetReader, LuaLit, SessionLink, Relay...), so it speaks exactly the protocol of the launcher it is built with. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <AssemblyName>mpfever-relay</AssemblyName>
-    <RootNamespace>MPFever.LinuxServer</RootNamespace>
+    <RootNamespace>MPFever.StandaloneRelay</RootNamespace>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -28,7 +28,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\launcher\Core.cs" Link="shared\Core.cs" />
-    <!-- the host's side of a session through this server: used by the self-test, and by the launcher itself -->
+    <!-- the host's side of a session through this relay: used by the self-test, and by the launcher itself -->
     <Compile Include="..\launcher\RemoteRelay.cs" Link="shared\RemoteRelay.cs" />
+    <Compile Include="..\launcher\CheckpointWire.cs" Link="shared\CheckpointWire.cs" />
   </ItemGroup>
 </Project>
