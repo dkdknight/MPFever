@@ -523,7 +523,7 @@ function CO.installContracts(env)
 		if env.log then env.log("companies: contracts are accepted per company") end
 	end
 	-- every type of contract (the game's and the mods')
-	-- (0.9.1) The game loads a type's script when it first needs it: an offer of that type, or the first event or update of a
+	-- (0.9.0) The game loads a type's script when it first needs it: an offer of that type, or the first event or update of a
 	-- contract of it after a load. Loaded in the middle of a batch (a delivery's event), the type counted the deliveries of every
 	-- company's lines until it was wrapped here, and this ran every 50 updates of this script: a count of the engine's calls,
 	-- which a standing game makes more of. Every type is now loaded here, at the first update after a load, and wrapped before

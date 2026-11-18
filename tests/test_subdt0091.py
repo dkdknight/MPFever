@@ -1,4 +1,4 @@
-"""Offline test: the game's contracts script (subventions) is called with the steps only in a session (0.9.1, #425, MPFEVER_SUBDT0).
+"""Offline test: the game's contracts script (subventions) is called with the steps only in a session (0.9.0, #425, MPFEVER_SUBDT0).
 
 Report #425 (2026-11-18, Flubi host and lulei, 0.8.17, separate companies): "script:subventions" differed at check 139 (resync 2)
 while every simulation step was alike. lulei's game stood almost all the time (it waited for Flubi's clock), and a line was changed

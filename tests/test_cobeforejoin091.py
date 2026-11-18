@@ -1,4 +1,4 @@
-"""Offline test: a client's actions are refused until its company is known here (0.9.1, MPFEVER_COBEFOREJOIN).
+"""Offline test: a client's actions are refused until its company is known here (0.9.0, MPFEVER_COBEFOREJOIN).
 
 Test X1 (2026-11-18, "Test Mix 18", separate companies + 3 computer companies, scenario pmix,soak): the host corrected the client's
 money at every other check, 38 times in 10 minutes (15,000, then 616 again and again), the same in X0 with the 0.9.0 fixes off.

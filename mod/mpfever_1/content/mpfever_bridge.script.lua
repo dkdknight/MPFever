@@ -2540,7 +2540,7 @@ function DET.wrapModEvents()
 			end
 			log("the game's landmarks script: update called with the steps only")
 		end
-		-- (0.9.1, #425) The game's contracts script (subventions) ends a contract in its update, at the game time of that call: a
+		-- (0.9.0, #425) The game's contracts script (subventions) ends a contract in its update, at the game time of that call: a
 		-- contract "connect two towns" is reached by an event of the line (OnStartedLineUsage), and the next update completes it, pays
 		-- its reward and doubles the line's ticket prices. A game standing at the step of another player's replayed line change got that
 		-- update with dt 0 at once and completed the contract at that step; the game that did not stand completed it in the next
@@ -3084,7 +3084,7 @@ local function update(userParams, state, dt)
 		-- (again from time to time: the game loads the script of a type of contract when it first needs it)
 		SIM.ctTick = (SIM.ctTick or 0) + 1
 		if SIM.ctTick % 50 == 1 and os.getenv("MPFEVER_EVSTEPLOG") == "1" then pcall(SIM.evStepInstall) end
-		-- (0.9.1: at every update, every type of contract loaded at the first, see CO.installContracts. MPFEVER_CONTRACTWRAP=0:
+		-- (0.9.0: at every update, every type of contract loaded at the first, see CO.installContracts. MPFEVER_CONTRACTWRAP=0:
 		-- every 50 updates and as the game loads them, as before)
 		local cwOld = os.getenv("MPFEVER_CONTRACTWRAP") == "0"
 		if SIM.coRegistry and SIM.coRegistry.mode == "separate" and (not cwOld or SIM.ctTick % 50 == 1) then
@@ -11963,7 +11963,7 @@ end
 -- A player's build during a resynchronisation is refused by its own game: the launcher keeps none (the others never get it),
 -- and on a game that has already loaded the host's savegame nothing would undo it (issue #81: a station that stayed on one game
 -- only, a resync right after). The player is told in the chat.
--- (0.9.1) A client whose company is not known here yet (its join not applied, the first seconds of a session or of a load, a
+-- (0.9.0) A client whose company is not known here yet (its join not applied, the first seconds of a session or of a load, a
 -- join held up to 30 s): the native module still makes its tools act as the savegame's company, the host's (see coGui, issue
 -- #47). Its first stop in test X1 (2026-11-18, separate companies) was built here for the host's company and shipped as its
 -- own: the other games booked its cost and its upkeep to the client's company, this game to the host's, and the host corrected
@@ -20954,7 +20954,7 @@ end
 -- the replaying game, MPFEVER_ENV_CLIENT for the host's stops, the bug of 2026-10-24 comes back: the segment laid again there).
 H.dstop = function(from, p)
 	if p.role ~= C.ROLE or AUTO.running then return end
-	-- (0.9.1) not before this game's company is known: its stops would be refused (see G.coUnknownHere); again every 30 frames,
+	-- (0.9.0) not before this game's company is known: its stops would be refused (see G.coUnknownHere); again every 30 frames,
 	-- a minute at most
 	if G.coUnknownHere() and (p.coWaits or 0) < 120 then
 		p.coWaits = (p.coWaits or 0) + 1
@@ -22226,7 +22226,7 @@ local function coGui(st)
 			K.coCtlSeq = K.coCtlSeq + 1
 			local okT, tm = pcall(os.time)
 			local tok = ((okT and tm or 0) % 1000000) * 100 + K.coCtlSeq % 100
-			-- ((0.9.1, #425) the savegame's company first: each line is its own write to the control file, and the native module can read
+			-- ((0.9.0, #425) the savegame's company first: each line is its own write to the control file, and the native module can read
 			-- it between two of them; this machine's company without the savegame's is written into the word the simulation then reads as
 			-- it is. MPFEVER_NEWSTATEDROP=1: this machine's first, as before)
 			local canonFirst = os.getenv("MPFEVER_NEWSTATEDROP") ~= "1"

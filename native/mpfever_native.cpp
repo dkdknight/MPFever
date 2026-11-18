@@ -470,10 +470,10 @@ static long g_othersTok = 0;
 // The savegame's own company ("setcanon <token> <entity>"): the interface's tools build for it whatever company this machine plays
 // (see OwnerFix), so its entity is looked for in the builds they issue.
 static volatile long g_canon = 0;
-// ((0.9.1, #425) the loads counted (g_ctlLoads) when this machine's company and the savegame's were taken from the control file:
+// ((0.9.0, #425) the loads counted (g_ctlLoads) when this machine's company and the savegame's were taken from the control file:
 // kept at the engine's second state of a game only when both were taken since its load, see ApplyLocalPlayer)
 static volatile long g_localLoads = -1, g_canonLoads = -1;
-static bool NewStateDrop();          // (0.9.1, #425, see g_loadGs)
+static bool NewStateDrop();          // (0.9.0, #425, see g_loadGs)
 static bool LoadKeepLocal();
 static volatile long g_mainTid = 0;        // the game's main thread (its interface), see PatchPlayerReads
 static volatile i64 g_pickCount[8][3];     // per redirected reading: [0] on the interface's thread, [1] the simulation's, [2] another
@@ -735,7 +735,7 @@ static void ReadControl()
     }
     // (written into the game state by the simulation thread only, at its next iteration: from here, the state known last may be the
     // one of a game just unloaded, freed memory - writing there corrupted the heap and crashed the game after a resynchronisation)
-    // (0.9.1, #425) the savegame's company before this machine's: a state that applies a command between the two writes the local
+    // (0.9.0, #425) the savegame's company before this machine's: a state that applies a command between the two writes the local
     // player into its word (ApplyLocalPlayer), and the simulation reads that word as it is while the savegame's company is unknown
     // (after a load: lulei's game, 10:53:33). MPFEVER_NEWSTATEDROP=1: this machine's first, as before
     auto takeCanon = [&]() {
@@ -1910,7 +1910,7 @@ static bool ReloadedAt(void* slot, u32 cur, u32 want)
     return false;
 }
 
-// (0.9.1, #425) The two states of the game loaded last, as ReplDetour saw its first copy into a fresh state (the load): the engine's
+// (0.9.0, #425) The two states of the game loaded last, as ReplDetour saw its first copy into a fresh state (the load): the engine's
 // second state of that game then comes to ApplyLocalPlayer as "a new game state". Its values (this machine's company, the
 // savegame's) were said after that load (DropAtLoad forgets the ones before): they are this game's, and they are kept there.
 // Dropped, the savegame's company was unknown for about a second while the other state's word still held this machine's company,
@@ -1939,7 +1939,7 @@ static void ApplyLocalPlayer(const char* why)
         // (0.6.12: the oldest place once full. Always the first one before: after about eight games loaded in this process the two
         // states of the engine took it in turn and this machine's player was forgotten at every batch, see state_seen.h)
         seen[SeenPlace(&nseen, &seenNext, SeenFirst())] = g_slot;
-        // (0.9.1, #425) the other state of the game loaded last: the values said since that load are this game's, kept (see
+        // (0.9.0, #425) the other state of the game loaded last: the values said since that load are this game's, kept (see
         // g_loadGs)
         // (only when the load forgot the values of the game before: never with MPFEVER_LOADKEEPLOCAL=1)
         // (and only values taken from the control file since that load: a load begun between the file's check and its values,
@@ -2214,7 +2214,7 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
     // first iteration; the interface word of the game before is forgotten there, not at that iteration, see g_stalePlayer)
     if (dst && before == 0xFFFFFFFFu && (u32)((uptr)_ReturnAddress() - g_base) != RVA_REPL_LOOP) {
         g_uiWord = 0;
-        // (0.9.1, #425: the two states of this game, see g_loadGs)
+        // (0.9.0, #425: the two states of this game, see g_loadGs)
         g_loadGs[0] = src; g_loadGs[1] = dst;
         // (0.7.5) and this machine's company, the savegame's and the other companies' with it: they belong to the game before.
         // Kept until the first iteration of the new one (see ApplyLocalPlayer), the interface read this machine's company of the

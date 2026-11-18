@@ -304,7 +304,7 @@ def text_cases():
           "if (!takeOld && g_ctlLoads != loads0) { pk.haveLocal = false; pk.haveCanon = false; pk.haveOthers = false; }" in rc)
     check("  the values taken as before, from the header",
           "if (pk.haveLocal && pk.localTok != g_localTok) {\n        g_localTok = pk.localTok; g_localPlayer = pk.local;" in rc
-          # ((0.9.1, #425) taken before the local player, in takeCanon: see test_newstate091.py)
+          # ((0.9.0, #425) taken before the local player, in takeCanon: see test_newstate091.py)
           and "if (pk.haveCanon && pk.canonTok != g_canonTok) {" in rc and "g_canonTok = pk.canonTok; g_canon = pk.canon;" in rc
           and "if (pk.haveOthers && pk.othersTok != g_othersTok) {" in rc and "g_nOthers = pk.nOthers;" in rc)
     check("  logged: the lines left out (once a load), the local player taken (old ones always)",

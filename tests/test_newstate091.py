@@ -1,4 +1,4 @@
-"""Offline test: after a load, the simulation never reads this machine's company as the player (0.9.1, #425, MPFEVER_NEWSTATEDROP).
+"""Offline test: after a load, the simulation never reads this machine's company as the player (0.9.0, #425, MPFEVER_NEWSTATEDROP).
 
 Report #425 (Flubi host, lulei client, separate companies): right after every load, lulei's native log shows
   10:50:21 local player 116899 from the control file / savegame company 64532 / local player 64532 -> 116899 (apply, state ...5e60)
@@ -87,7 +87,7 @@ def main():
     check("ApplyLocalPlayer keeps both companies when the new state is one of the two states of the game loaded last",
           "bool second = !NewStateDrop() && !LoadKeepLocal() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1])" in alp
           and alp.index("if (second)") < alp.index('DropCanon("a new game state");'))
-    # (the review of 0.9.1: a load begun on another thread between the control file's check and its values leaves the game
+    # (the review of 0.9.0: a load begun on another thread between the control file's check and its values leaves the game
     # before's values: kept only when both were taken since the last load)
     check("  only values taken from the control file since that load (the load count noted with each value)",
           "&& g_localLoads == g_ctlLoads && g_canonLoads == g_ctlLoads;" in alp

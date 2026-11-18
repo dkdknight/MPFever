@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.9.1 - (in progress)
+0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412), fixes for one company per player (money corrections, contracts, the client's company after a load)
   - FIX (#425, Flubi and lulei: "script:subventions" differed while every step was alike, a resync): the game's contracts script
     ends a contract in its update, at the game time of that call. A contract "connect two towns" is reached by an event of the
     line; a game standing at the step of another player's line change got the update with dt 0 at once and completed the
@@ -14,7 +14,7 @@ MPFever - Changelog
     for the savegame's company, the host's (the native module's tools act as it until then), and shipped as the client's
     company's: the other games booked its cost and its upkeep to the client's company, its own game to the host's (test X1 on
     "Test Mix 18": a stop made 3 s before the join, then 38 corrections in 10 minutes, 15,000 then 616 again and again; the
-    same with the 0.9.0 fixes off). Such an action is now refused, and the player told to try again in a few seconds; the
+    same with this version's drift fixes off). Such an action is now refused, and the player told to try again in a few seconds; the
     autotests' stops wait for the company. MPFEVER_COBEFOREJOIN=1: as before. Test: tests/test_cobeforejoin091.py.
   - FIX (separate companies, contracts): every type of contract is loaded and wrapped for its company at the first update after
     a load. The game loads a type when it first needs it, and MPFever wrapped the types every 50 of its updates (a count of the
@@ -29,8 +29,6 @@ MPFever - Changelog
     loaded are now noted at its load, and the companies taken from the control file since then are kept for the second one; the
     mod writes the savegame's company to that file before this machine's, and the native module takes it first. MPFEVER_NEWSTATEDROP=1:
     as before. Test: tests/test_newstate091.py.
-
-0.9.0 - (in progress): the slow drift's cause fixed (#150: the animals' figures and the same batches on every game), the players' sync and pace signs, the relay's kept save (PR #412)
   - FIX (#150, the slow drift of the animals, vehicles and people between games; Test Leawood, 2026-11-17: 52 of 2546 animals
     with another target within one batch, the games a step apart in their batches): the engine keeps two world states and
     makes each batch of steps on the other one, copying the state just simulated into the next one (its change records

@@ -1,11 +1,11 @@
-"""Offline test: every type of contract is loaded and wrapped at the first update after a load (0.9.1, MPFEVER_CONTRACTWRAP).
+"""Offline test: every type of contract is loaded and wrapped at the first update after a load (0.9.0, MPFEVER_CONTRACTWRAP).
 
 With one company per player, a contract counts only the deliveries of its company's lines: MPFever wraps each type of contract
 (CO.installContracts, wrapContractType). The game loads a type's script when it first needs it: an offer of that type, or the first
 event or update of a contract of it after a load. The bridge wrapped the types every 50 of its updates (SIM.ctTick % 50), a count
 of the engine's calls that a standing game makes more of (dt 0 calls): a type loaded in the middle of a batch (a delivery's event)
 counted the deliveries of every company's lines until then, on one game for longer than on another (the deliver_cargo type was
-wrapped at 10:34:11 on Flubi's game, 10:34:27 on lulei's, #425). Since 0.9.1 the contracts script's update is also skipped at dt 0
+wrapped at 10:34:11 on Flubi's game, 10:34:27 on lulei's, #425). Since 0.9.0 the contracts script's update is also skipped at dt 0
 (#425): after a load, the types of the running contracts are loaded at their first event, in a batch.
 Now every type is loaded and wrapped at the bridge's first update, before any step (env.preload); the bridge calls it at every
 update. MPFEVER_CONTRACTWRAP=0: as before.
