@@ -2897,7 +2897,7 @@ namespace MPFever
             hostFromGame = clientFromGame = null;
             hostGame = null;
             hostName = null;
-            lock (sessionGate) { started = false; speed = 0; pauseAt = null; }
+            lock (sessionGate) { started = false; speed = 0; pauseAt = null; speedAt = null; }
             // (0.6.7) the answers about mods belong to this session: a player refused once was never asked again, in any later one
             lock (modAsks) { modAsks.Clear(); modAskDone.Clear(); }
             lock (players) players.Clear();
@@ -3394,7 +3394,7 @@ namespace MPFever
                             resyncing = true;
                             lock (players) players.Clear();
                             lock (clocks) clocks.Clear();
-                            lock (sessionGate) { started = false; pauseAt = null; speed = 0; }
+                            lock (sessionGate) { started = false; pauseAt = null; speed = 0; speedAt = null; }
                             HostSend(Msg.Make("tomenu", hostName, "{[\"seq\"]=" + DateTime.Now.Ticks + "}"));
                             companyMode = "shared";
                             // ((0.7.5) both games said hello again: their clocks come only once the session is started, so
@@ -3428,7 +3428,7 @@ namespace MPFever
                             resyncing = true;
                             lock (players) players.Clear();
                             lock (clocks) clocks.Clear();
-                            lock (sessionGate) { started = false; pauseAt = null; speed = 0; }
+                            lock (sessionGate) { started = false; pauseAt = null; speed = 0; speedAt = null; }
                             HostSend(Msg.Make("tomenu", hostName, "{[\"seq\"]=" + DateTime.Now.Ticks + ",[\"stale\"]=true}"));
                             Func<IntPtr> clientWin = () => { lock (games) return games.FirstOrDefault(x => x.Role == "client")?.Window ?? IntPtr.Zero; };
                             int hk = 0;
@@ -3623,7 +3623,7 @@ namespace MPFever
                 // what this player knows of the session, as the host's code reads it
                 var mode = hostCompanyMode;
                 if (mode == "separate" || mode == "shared") companyMode = mode;
-                lock (sessionGate) { started = true; speed = Math.Max(1, hostSessionSpeed); pauseAt = null; }   // (the games run until the resynchronisation pauses them)
+                lock (sessionGate) { started = true; speed = Math.Max(1, hostSessionSpeed); pauseAt = null; speedAt = null; }   // (the games run until the resynchronisation pauses them)
                 game.SetIdentity(name, "host");   // (read when the game loads: the resynchronisation reloads it as the host)
                 try { File.Delete(Path.Combine(game.Dir, "load_mods.txt")); } catch { }
                 // (the address the player typed: "ip", "ip:port" or several, each with or without its port)
@@ -4523,7 +4523,7 @@ namespace MPFever
             PerfInfo p;
             lock (perfOf) perfOf.TryGetValue(id, out p);
             if (p == null || Now - p.At > 15) return "\t";
-            return p.Fps.ToString(CultureInfo.InvariantCulture) + "\t" + (p.Pace >= 0 ? p.Pace.ToString(CultureInfo.InvariantCulture) : "");
+            return (p.Fps >= 0 ? p.Fps.ToString(CultureInfo.InvariantCulture) : "") + "\t" + (p.Pace >= 0 ? p.Pace.ToString(CultureInfo.InvariantCulture) : "");
         }
 
         /// <summary>Every second: the status to the host's own game (mp_status.txt) and to every client.</summary>
@@ -4722,7 +4722,7 @@ namespace MPFever
                 return "{[\"started\"]=" + (started ? "true" : "false") + ",[\"speed\"]=" + speed +
                        (pauseAt.HasValue ? ",[\"pauseAt\"]=" + pauseAt.Value : "") +
                        // (0.9.0) a speed changed while running: the speed before it up to this step (see SpeedChangeStep)
-                       (speedAt.HasValue && !pauseAt.HasValue ? ",[\"speedAt\"]=" + speedAt.Value + ",[\"speedFrom\"]=" + speedFrom : "") +
+                       (speedAt.HasValue ? ",[\"speedAt\"]=" + speedAt.Value + ",[\"speedFrom\"]=" + speedFrom : "") +
                        ",[\"cmode\"]=\"" + companyMode + "\"" +
                        (companyMode == "separate" ? ",[\"cstart\"]=" + StartMoney() + ",[\"bankrupt\"]=" + BankruptMonths() + ",[\"share\"]=" + (ShareRules() == "1" ? "true" : "false")
                            + ",[\"auction\"]=" + LuaLit.Quote(AuctionRule()) : "") +
@@ -4750,7 +4750,7 @@ namespace MPFever
             // savegame. The session pauses at the earliest time, as when the games overshoot a pause: the first check is
             // taken at the latest, and the games behind catch up to it.
             if (times.Count > 1 && times.Max() - times.Min() > 10 * Step) { Log.Warn(T("Les jeux ne sont pas au même temps (", "The games are not at the same time (") + string.Join(", ", times) + T(") : chargez exactement la même sauvegarde partout.", "): load exactly the same savegame everywhere.")); return; }
-            lock (sessionGate) { started = true; speed = 0; pauseAt = times.Count > 0 ? times.Min() : (long?)null; }
+            lock (sessionGate) { started = true; speed = 0; pauseAt = times.Count > 0 ? times.Min() : (long?)null; speedAt = null; }
             Log.W(F("=== Partie démarrée avec {0} jeu(x) au temps {1} : vérification initiale... ===", "=== Game started with {0} game(s) at time {1}: initial check... ===", n, times.FirstOrDefault()));
             BroadcastSession();
             // every game just loaded the same savegame: a part already different now is a local measure
@@ -4787,12 +4787,17 @@ namespace MPFever
             // session 1.5 s after it, cleared that pause and the resynchronisation waited for nothing; a player joining then never
             // got the host's game)
             if (resyncing) { Log.W(F("Vitesse x{0} demandée par {1} : ignorée pendant la resynchronisation", "Speed x{0} asked by {1}: ignored during the resynchronisation", s, who)); return; }
-            long future = FutureStamp();
+            long future = FutureStamp(), maxClock = MaxClock();
             lock (sessionGate)
             {
                 int ns = Math.Max(1, Math.Min(4, s));
-                speedAt = SpeedChangeStep(SpeedAtOn, speed, ns, pauseAt, future);
-                speedFrom = speed;
+                // (a change still to come: the games still run at speedFrom; a second click goes from there, never earlier than the first)
+                bool pending = speedAt.HasValue && speedAt.Value > maxClock && !pauseAt.HasValue;
+                int from = pending ? speedFrom : speed;
+                long? at = SpeedChangeStep(SpeedAtOn, from, ns, pauseAt, future);
+                if (pending && at.HasValue) at = Math.Max(at.Value, speedAt.Value);
+                speedAt = at;
+                speedFrom = from;
                 speed = ns; pauseAt = null;
             }
             Log.W(F("Vitesse : x{0} (demandée par {1})", "Speed: x{0} (asked by {1})", speed, who));
@@ -4805,7 +4810,7 @@ namespace MPFever
             long at = FutureStamp();
             // (0.8.17, #395: see PauseStamp)
             { long? cur; int sp; lock (sessionGate) { cur = pauseAt; sp = speed; } at = PauseStamp(at, cur, sp, RoundUpToStep(MaxClock()), Environment.GetEnvironmentVariable("MPFEVER_PAUSESTANDING") != "0"); }
-            lock (sessionGate) { pauseAt = at; speedAt = null; }
+            lock (sessionGate) { pauseAt = at; if (speedAt.HasValue && speedAt.Value >= at) speedAt = null; }
             Log.W(F("Pause au temps {0} (demandée par {1})", "Pause at time {0} (asked by {1})", at, who));
             BroadcastSession();
         }
@@ -6559,7 +6564,7 @@ namespace MPFever
                             break;
                         }
                     case "speed":
-                        lock (sessionGate) { speed = Math.Max(1, Math.Min(4, int.Parse(p[1]))); pauseAt = null; }
+                        lock (sessionGate) { speed = Math.Max(1, Math.Min(4, int.Parse(p[1]))); pauseAt = null; speedAt = null; }
                         BroadcastSession();
                         break;
                     case "run":

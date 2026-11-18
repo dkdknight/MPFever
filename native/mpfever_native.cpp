@@ -2005,8 +2005,8 @@ static void AlignInit()
     g_alignParity = g_alignOn && !(GetEnvironmentVariableA("MPFEVER_ALIGNPARITY", w, 3) > 0 && w[0] == '0') ? 1 : 0;
 }
 static int g_famSync = -1;
-// (MPFEVER_FAMSYNC: 1 compared and put in order, 0 compared and written only, unset: 2, nothing compared, see InstallFamSync)
-static int FamSyncMode() { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_FAMSYNC", v, 3) <= 0) return 0; return v[0] == '1' ? 1 : v[0] == 'o' ? 2 : 0; }
+// (MPFEVER_FAMSYNC: 1 compared and put in order; unset or 0: compared and written only, one copy in ten; off: nothing compared)
+static int FamSyncMode() { char v[8] = {}; if (GetEnvironmentVariableA("MPFEVER_FAMSYNC", v, 7) <= 0) return 0; return v[0] == '1' ? 1 : v[0] == 'o' ? 2 : 0; }
 static volatile long g_famCopies = 0, g_famDiffer = 0, g_famFixed = 0, g_famApart = 0, g_famPlaces = 0, g_famOdd = 0;
 static i64 g_famUsSum = 0, g_famUsMax = 0;      // (the time FamCheck takes, in microseconds: the simulation's thread only)
 struct FamKind { u64 vt; u32 es; char name[100]; };
@@ -2074,7 +2074,7 @@ static void FamCheckBody(void* src, void* dst)
     for (long g = 0; g < nf; g++) {
         u64 c = ((u64*)fyb)[g];
         taken[g] = 0;
-        vty[g] = (c && Readable((void*)c, 0x18)) ? *(u64*)c : 0;
+        vty[g] = (c && Readable((void*)c, 0x20)) ? *(u64*)c : 0;
     }
     long hint = 0;
     // (0.8.18, once: the families of the first copies, compared or not and why, in native.log)
@@ -2084,7 +2084,7 @@ static void FamCheckBody(void* src, void* dst)
     long cNull = 0, cNoPair = 0, cNoList = 0, cCompared = 0;
     for (long f = 0; f < nf; f++) {
         u64 fx = ((u64*)fxb)[f];
-        if (!fx || !Readable((void*)fx, 0x18)) { g_famOdd++; cNull++; continue; }
+        if (!fx || !Readable((void*)fx, 0x20)) { g_famOdd++; cNull++; continue; }
         u64 vt = *(u64*)fx, fy = 0;
         for (long t = 0; t < nf && !fy; t++) {
             long g = (f + t) % nf;

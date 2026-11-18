@@ -36,9 +36,13 @@ mf = open(os.path.join(ROOT, "launcher", "MainForm.cs"), encoding="utf-8").read(
 check("SpeedChangeStep: at once from a pause, from speed 0, the same speed or the switch off",
       "if (!on || pausedAt.HasValue || oldSpeed <= 0 || oldSpeed == newSpeed) return null;" in mf)
 check("SpeedChangeStep: a multiple of 4 steps at or past the future stamp", "long quad = 4 * Step;" in mf and "return (future + quad - 1) / quad * quad;" in mf)
-check("SetSpeed sets speedAt and speedFrom from the speed before", "speedAt = SpeedChangeStep(SpeedAtOn, speed, ns, pauseAt, future);" in mf and "speedFrom = speed;" in mf)
-check("a pause clears speedAt", "lock (sessionGate) { pauseAt = at; speedAt = null; }" in mf)
-check("the session message carries them (not while paused)", 'speedAt.HasValue && !pauseAt.HasValue ? ",[\\"speedAt\\"]=" + speedAt.Value + ",[\\"speedFrom\\"]=" + speedFrom' in mf)
+check("SetSpeed sets speedAt and speedFrom from the speed the games run at", "long? at = SpeedChangeStep(SpeedAtOn, from, ns, pauseAt, future);" in mf and "speedFrom = from;" in mf and "speedAt = at;" in mf)
+check("a pause keeps a change to come before its step, drops one after it", "lock (sessionGate) { pauseAt = at; if (speedAt.HasValue && speedAt.Value >= at) speedAt = null; }" in mf)
+check("a second click before the change took effect goes from the speed the games still run at, never earlier",
+      "bool pending = speedAt.HasValue && speedAt.Value > maxClock && !pauseAt.HasValue;" in mf and "int from = pending ? speedFrom : speed;" in mf
+      and "if (pending && at.HasValue) at = Math.Max(at.Value, speedAt.Value);" in mf)
+check("speedAt cleared wherever the session is reset (7 places)", mf.count("speedAt = null") >= 7)
+check("the session message carries them", 'speedAt.HasValue ? ",[\\"speedAt\\"]=" + speedAt.Value + ",[\\"speedFrom\\"]=" + speedFrom' in mf)
 check("the switch MPFEVER_SPEEDAT", 'Environment.GetEnvironmentVariable("MPFEVER_SPEEDAT") != "0"' in mf)
 st = open(os.path.join(ROOT, "launcher", "SelfTest.cs"), encoding="utf-8").read()
 check("the launcher's self-test checks SpeedChangeStep", "ok &= RunSpeedAt090();" in st)
@@ -57,6 +61,8 @@ STEP = 200
 NOW = 1000000
 function log(s) end
 function gameTime() return NOW end
+GAMESPEED = 2
+function gameSpeed() return GAMESPEED end
 function leadLevel() return 0 end
 function overshootReserve() return 9 end
 function terrainLeadSteps() return 0 end
@@ -79,14 +85,20 @@ sp = run("G.session.speedAt = NOW + 12 * STEP; G.session.speedFrom = 2; return P
 stop = run("return G.lastStopAt")
 check("before the change's step: the speed before (2)", sp == 2, sp)
 check("  and the stop point is the change's step (every game stands there)", stop == 1000000 + 12 * 200, stop)
-sp = run("NOW = G.session.speedAt; return PACING()")
+sp = run("NOW = G.session.speedAt; GAMESPEED = 2; return PACING()")
 stop = run("return G.lastStopAt")
-check("at the change's step: the new speed (4)", sp == 4, sp)
-check("  and no stop point there any more", stop != run("return G.session.speedAt"), stop)
+check("at the change's step: the new speed asked (4)", sp == 4, sp)
+check("  but the stop stays there while the engine still runs at the old speed", stop == run("return G.session.speedAt"), stop)
+sp = run("GAMESPEED = 4; return PACING()")
+stop = run("return G.lastStopAt")
+check("  the engine at the new speed: no stop point there any more", stop != run("return G.session.speedAt") and sp == 4, stop)
 sp = run("NOW = G.session.speedAt + 3 * STEP; return PACING()")
 check("after it: the new speed", sp == 4, sp)
 sp = run("NOW = 1000000; G.session.speedAt = NOW + 12 * STEP; G.session.pauseAt = NOW; return PACING()")
 check("paused: the pause wins (speed 0)", sp == 0, sp)
+sp = run("NOW = 1000000; GAMESPEED = 2; G.session.speedAt = NOW + 12 * STEP; G.session.pauseAt = NOW + 40 * STEP; return PACING()")
+stop = run("return G.lastStopAt")
+check("a pause to come after the change's step: the speed before and the stop at the change first", sp == 2 and stop == 1000000 + 12 * 200, (sp, stop))
 
 print(("FAILED: " + str(len(fails))) if fails else "ALL PASSED")
 sys.exit(1 if fails else 0)

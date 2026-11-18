@@ -373,7 +373,7 @@ def wiring():
     # (2026-11-18, in game: every family read held 0 entities, the animals' among them on a map of 2549: off until the entries'
     # place in this build is known)
     check("by default the lists are compared and written only, never put in order (MPFEVER_FAMSYNC=1: in order; =off: nothing)",
-          "if (GetEnvironmentVariableA(\"MPFEVER_FAMSYNC\", v, 3) <= 0) return 0;" in src and "if (g_famSync == 2) return;" in fb)
+          "if (GetEnvironmentVariableA(\"MPFEVER_FAMSYNC\", v, 7) <= 0) return 0;" in src and "char v[8] = {};" in src and "if (g_famSync == 2) return;" in fb)
     # (2026-11-18 in game: AnimalMoveSystem's list pointer = the animals' family + 0x10; the slot-3 remove works on family + 8 with its
     # vector at +8..+0x10 of that part: the entries are at +0x10..+0x18 of the family. Read at +8 before, every family looked empty)
     check("compared only (the default): one copy in ten; put in order: every copy", "if (g_famSync == 0 && (famSeen++ % 10) != 0) return;" in src)

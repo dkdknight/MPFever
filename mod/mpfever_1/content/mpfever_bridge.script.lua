@@ -5108,7 +5108,7 @@ G.perfTick = function()
 	local dt = now - P.at
 	if dt < 3 then return end
 	local fps = (G.frames - P.frames) / dt
-	local spd = G.session and G.session.speed or 0
+	local spd = G.speedNow and G.speedNow(t) or (G.session and G.session.speed) or 0
 	local pace = -1
 	if G.session and G.session.started and not G.session.pauseAt and spd > 0 and t >= P.t then
 		local busy = dt - math.max(0, stood - P.stood)
@@ -5137,7 +5137,11 @@ local function pacing()
 	local stopAt = s.pauseAt
 	-- (0.9.0) a speed change to come: every game stands at its step (shared, exact) before going on at the new speed
 	local spdNow = G.speedNow(now)
-	if s.speedAt and now < s.speedAt and s.pauseAt == nil then stopAt = s.speedAt end
+	-- (before a pause's step too; at the change's step the stop stays until the engine runs at the new speed: the speed command
+	-- reaches the engine at a later handshake than the stop point, and a batch begun meanwhile would make the old speed's steps)
+	if s.speedAt and (s.pauseAt == nil or s.speedAt < s.pauseAt) and (now < s.speedAt or (now == s.speedAt and (s.speed or 0) > 0 and gameSpeed() ~= s.speed)) then
+		if stopAt == nil or s.speedAt < stopAt then stopAt = s.speedAt end
+	end
 	-- paused, but an action stamped later (another game stopped further): catch up to it, one step at a time
 	local catchUp = s.pauseAt ~= nil and G.holdAt ~= nil and G.holdAt > s.pauseAt and now < G.holdAt
 	if catchUp then stopAt = G.holdAt
