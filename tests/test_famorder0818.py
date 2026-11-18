@@ -372,8 +372,12 @@ def wiring():
     check("the switch MPFEVER_FAMSYNC (=0: compared and written only)", 'GetEnvironmentVariableA("MPFEVER_FAMSYNC"' in src)
     # (2026-11-18, in game: every family read held 0 entities, the animals' among them on a map of 2549: off until the entries'
     # place in this build is known)
-    check("OFF by default: unset, nothing is compared (FamSyncMode returns 2, FamCheckBody returns at once)",
-          "if (GetEnvironmentVariableA(\"MPFEVER_FAMSYNC\", v, 3) <= 0) return 2;" in src and "if (g_famSync == 2) return;" in fb)
+    check("by default the lists are compared and written only, never put in order (MPFEVER_FAMSYNC=1: in order; =off: nothing)",
+          "if (GetEnvironmentVariableA(\"MPFEVER_FAMSYNC\", v, 3) <= 0) return 0;" in src and "if (g_famSync == 2) return;" in fb)
+    # (2026-11-18 in game: AnimalMoveSystem's list pointer = the animals' family + 0x10; the slot-3 remove works on family + 8 with its
+    # vector at +8..+0x10 of that part: the entries are at +0x10..+0x18 of the family. Read at +8 before, every family looked empty)
+    check("the entries read at the family's +0x10..+0x18 (not +8)", "u64 xb = *(u64*)(fx + 0x10), xe = *(u64*)(fx + 0x18), yb = *(u64*)(fy + 0x10), ye = *(u64*)(fy + 0x18);" in fb
+          and "*(u64*)(fx + 8)" not in fb)
     k = re.search(r"^static void InstallFamSync\(\)\n\{\n.*?^\}\n", src, re.S | re.M)
     kb = k.group(0) if k else ""
     check("InstallFamSync names the fix among those that change the simulation (native_fx.txt) when it is on and hooked",

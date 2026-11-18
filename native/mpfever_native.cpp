@@ -2006,7 +2006,7 @@ static void AlignInit()
 }
 static int g_famSync = -1;
 // (MPFEVER_FAMSYNC: 1 compared and put in order, 0 compared and written only, unset: 2, nothing compared, see InstallFamSync)
-static int FamSyncMode() { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_FAMSYNC", v, 3) <= 0) return 2; return v[0] == '1' ? 1 : 0; }
+static int FamSyncMode() { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_FAMSYNC", v, 3) <= 0) return 0; return v[0] == '1' ? 1 : v[0] == 'o' ? 2 : 0; }
 static volatile long g_famCopies = 0, g_famDiffer = 0, g_famFixed = 0, g_famApart = 0, g_famPlaces = 0, g_famOdd = 0;
 static i64 g_famUsSum = 0, g_famUsMax = 0;      // (the time FamCheck takes, in microseconds: the simulation's thread only)
 struct FamKind { u64 vt; u32 es; char name[100]; };
@@ -2091,11 +2091,13 @@ static void FamCheckBody(void* src, void* dst)
         if (!k || !k->es) { cNoList++; continue; }
         cCompared++;
         if (census) {
-            u64 cb = *(u64*)(fx + 8), ce = *(u64*)(fx + 0x10);
+            u64 cb = *(u64*)(fx + 0x10), ce = *(u64*)(fx + 0x18);
             Buf b; b.str("families: compared: ").str(k->name).str(" (").dec((i64)k->es).str(" bytes an entry, ").dec((i64)(ce >= cb ? (ce - cb) / k->es : 0)).str(" entities)"); LogLine(b);
         }
         u32 es = k->es;
-        u64 xb = *(u64*)(fx + 8), xe = *(u64*)(fx + 0x10), yb = *(u64*)(fy + 8), ye = *(u64*)(fy + 0x10);
+        // (the entries at +0x10..+0x18: the family's add and remove work on its part at +8 (slot 3: "add rcx,8"), whose vector
+        // is at +8..+0x10 of that part; seen in game 2026-11-18, AnimalMoveSystem's list pointer = the animals' family + 0x10)
+        u64 xb = *(u64*)(fx + 0x10), xe = *(u64*)(fx + 0x18), yb = *(u64*)(fy + 0x10), ye = *(u64*)(fy + 0x18);
         if (xe < xb || ye < yb || (xe - xb) % es || (ye - yb) % es) { g_famOdd++; continue; }
         u64 xn = (xe - xb) / es, yn = (ye - yb) / es;
         if (!xn && !yn) continue;
@@ -2131,7 +2133,7 @@ static void FamCheckBody(void* src, void* dst)
                     FamFn add = *(FamFn*)(*(u64*)fy + 0x10), rem = *(FamFn*)(*(u64*)fy + 0x18);
                     for (u64 i = 0; i < m; i++) rem(fy, ey, g_famScratch[i]);
                     for (u64 i = 0; i < m; i++) add(fy, ey, g_famScratch[m + i]);
-                    yb = *(u64*)(fy + 8); ye = *(u64*)(fy + 0x10);
+                    yb = *(u64*)(fy + 0x10); ye = *(u64*)(fy + 0x18);
                     bool same = ye - yb == xe - xb && Readable((void*)yb, ye - yb) && FoFirstEntDiff((const u8*)xb, (const u8*)yb, xn, es) == xn;
                     if (same) { what = "put in the simulated state's order"; g_famFixed++; }
                     else { what = "put in order, yet still another order"; g_famOdd++; }
@@ -2199,10 +2201,10 @@ static void InstallFamSync()
 {
     g_famSync = FamSyncMode();
     Buf b;
-    // (0.8.18, seen in game 2026-11-18: every family read here held 0 entities, the animals' among them on a map of 2549 animals:
-    // the entries are not where this build keeps them, nothing was ever compared. Off until that layout is known: only a test
-    // switches it on)
-    if (g_famSync == 2) { b.str("families: not compared (MPFEVER_FAMSYNC=1: compared and put in order, =0: compared and written only; tests)"); LogLine(b); return; }
+    // (0.8.18, seen in game 2026-11-18: every family read held 0 entities, the entries were read 8 bytes too early (see FamCheckBody).
+    // Read right now, but only compared and written by default (they were never compared in a game before): MPFEVER_FAMSYNC=1 puts
+    // the copy's lists in order (tests), =off compares nothing)
+    if (g_famSync == 2) { b.str("families: not compared (MPFEVER_FAMSYNC=off)"); LogLine(b); return; }
     if (!g_replOn || !RVA_REPL_LOOP) { b.str("families: the simulation loop's copy not hooked, the systems' entity lists of the two states not compared"); LogLine(b); return; }
     if (g_famSync == 1) Fx("famsync");
     b.str("families: after each copy of the simulation loop, the systems' entity lists of the copy compared with the state just simulated")
@@ -5118,6 +5120,23 @@ static void AnimRefresh(u64 sys, u64 engine, long n)
     if (!vt || !Readable((void*)vt, 0x68)) { _InterlockedIncrement(&g_animOdd); return; }
     u64 list = 0, mpa = 0;
     if (!AirLists(sys, n, &list, &mpa)) { _InterlockedIncrement(&g_animOdd); return; }
+    // (0.9.0 diagnostic, once: where the list the system is given lies among the engine's families, [engine+0x18], to read the
+    // families' entries in the right place: FamCheck read every family as empty)
+    static int famWhere = 0;
+    if (!famWhere++ && Readable((void*)(engine + 0x18), 16)) {
+        u64 vec = *(u64*)(sys + 8), fb = *(u64*)(engine + 0x18), fe = *(u64*)(engine + 0x20);
+        Buf b; b.str("animals' figures: the system's list pointer ").hex(vec).str(" (list ").hex(list).str(", ").dec(n).str(" animals)");
+        if (fb && fe > fb && fe - fb <= 8 * 4096 && Readable((void*)fb, fe - fb)) {
+            for (u64 q = fb; q < fe; q += 8) {
+                u64 fam = *(u64*)q;
+                if (fam && vec >= fam && vec < fam + 0x400) {
+                    const FamKind* k = Readable((void*)fam, 0x18) ? FamKindOf(fam) : 0;
+                    b.str(": in family ").hex(fam).str(" at +").hex(vec - fam).str(" (").str(k ? k->name : "?").str(", place ").dec((long)((q - fb) / 8)).str(")");
+                }
+            }
+        }
+        LogLine(b);
+    }
     typedef void (*EntityFn)(u64, u64, u32);
     EntityFn build = *(EntityFn*)(vt + 0x20), erase = *(EntityFn*)(vt + 0x28);
     i64 t0 = NowUs();
