@@ -5118,6 +5118,15 @@ G.perfTick = function()
 	send("perf", { fps = math.floor(fps + 0.5), pace = pace })
 end
 
+-- (0.9.0, #150) the session's speed at game time `now`: a speed changed while running takes effect at speedAt (a common step, at
+-- a multiple of 4 steps, see SpeedChangeStep in MainForm.cs), the speed before it up to then, so that every game cuts its steps
+-- into the same batches around the change too
+G.speedNow = function(now)
+	local s = G.session
+	if s.speedAt and s.speedFrom and now and now < s.speedAt then return s.speedFrom end
+	return s.speed
+end
+
 -- the speed this game may run at: session speed, never past the slowest other player (barrier), stop points
 G.pstat = { frames = 0, barrier = 0, hold = 0 }
 local function pacing()
@@ -5126,6 +5135,9 @@ local function pacing()
 	G.lastStopAt = nil
 	if not s.started then return 0 end
 	local stopAt = s.pauseAt
+	-- (0.9.0) a speed change to come: every game stands at its step (shared, exact) before going on at the new speed
+	local spdNow = G.speedNow(now)
+	if s.speedAt and now < s.speedAt and s.pauseAt == nil then stopAt = s.speedAt end
 	-- paused, but an action stamped later (another game stopped further): catch up to it, one step at a time
 	local catchUp = s.pauseAt ~= nil and G.holdAt ~= nil and G.holdAt > s.pauseAt and now < G.holdAt
 	if catchUp then stopAt = G.holdAt
@@ -5142,7 +5154,7 @@ local function pacing()
 			end
 		end
 		G.qHold = keep
-		q = G.alignDown(q, s.speed)
+		q = G.alignDown(q, spdNow)
 		if q and (stopAt == nil or q < stopAt) then
 			stopAt = q
 			if now >= q and G.qHoldLogged ~= q then G.qHoldLogged = q; log("queued action held at t=" .. q .. " until the simulation has it (now " .. now .. ") [frame " .. G.frames .. "]") end
@@ -5201,13 +5213,13 @@ local function pacing()
 	-- speed at 4x, 10 steps a second instead of 20, tests 602-639 of 2026-10-27. The stamp distance keeps that reserve too.)
 	local nativeAt = stopAt
 	if barrier then
-		local soft = G.alignDown(barrier + overshootReserve() * STEP, s.speed)
+		local soft = G.alignDown(barrier + overshootReserve() * STEP, spdNow)
 		if nativeAt == nil or soft < nativeAt then nativeAt = soft end
 	end
 	G.lastStopAt = nativeAt
 	if barrier and (stopAt == nil or barrier < stopAt) then stopAt = barrier end
 	G.lastBarrier = barrier
-	local want = s.speed
+	local want = spdNow
 	if s.pauseAt == nil and G.holdAt then want = math.max(1, want) end
 	if catchUp then want = 1 end
 	-- statistics (logged with "gui alive"): frames slowed down by the other players' clocks, or by held actions
@@ -5355,6 +5367,9 @@ H.session = function(from, p)
 	G.session.resync = rs
 	if not rs then G.resyncNewWorld = nil end
 	G.session.speed = p.speed or 0
+	-- (0.9.0) a speed changed while running takes effect at a common step: the speed before it up to then (see G.speedNow)
+	G.session.speedAt = tonumber(p.speedAt)
+	G.session.speedFrom = tonumber(p.speedFrom)
 	-- the tutorial: its missions are validated by each game's own interface, so they diverge (a unique building the client
 	-- built for its task stays a task on the host's game...): the players are told, once per game loaded
 	if G.session.started and C.ROLE == "host" and not G.tutorialChecked then

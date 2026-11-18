@@ -67,6 +67,9 @@ def main():
     # holds themselves, at their exact steps (tests/test_alignbatch0818.py covers the rounding)
     m_a = re.search(r"^G\.alignDown = function\(t, k\)\n.*?^end\n", src, re.S | re.M)
     L.execute("G.alignOn = false\n" + (m_a.group(0) if m_a else "G.alignDown = function(t) return t end\n"))
+    # (0.9.0) the session's speed at a time (a speed change at a common step, G.speedNow): none here, the session's speed
+    m_s = re.search(r"^G\.speedNow = function\(now\)\n.*?^end\n", src, re.S | re.M)
+    L.execute(m_s.group(0) if m_s else "G.speedNow = function() return G.session.speed end\n")
     L.execute(m_q.group(0) + "\nQUEUE = queueLocal\n")
     L.execute(m_p.group(0) + "\nPACING = pacing\n")
     run = L.eval("function(code) return assert(load(code))() end")

@@ -95,6 +95,7 @@ namespace MPFever
             ok &= RunSafeInstall0817();
             ok &= RunBuildStamp0817();
             ok &= RunPauseStanding0817();
+            ok &= RunSpeedAt090();
             ok &= RunHashAdapt0817();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
@@ -954,6 +955,21 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             C(MainForm.HashInterval(andy, true, null) == 10, "games apart: the next check at 10 s as before");
             C(MainForm.HashInterval(new double[0], false, null) == 10 && MainForm.HashInterval(new[] { 0.0, 0.0 }, false, null) == 10, "no cost known (the paused checks send 0): 10 s");
             C(MainForm.HashInterval(new[] { double.NaN, 0.3 }, false, null) == 12, "a cost that is not a number left out");
+            return ok;
+        }
+
+        /// <summary>(0.9.0, #150) A speed changed while the session runs takes effect at a common step, a multiple of 4 steps
+        /// (800 ms of game time) at or past the future stamp; at once from a pause, with the switch off, or for the same speed.</summary>
+        static bool RunSpeedAt090()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "  ok    " : "  FAIL  ") + "0.9.0 speed at a common step: " + what); ok &= c; }
+            C(MainForm.SpeedChangeStep(true, 2, 4, null, 12209200) == 12209600, "x2 -> x4 running: at 12209600 (the multiple of 800 at or past 12209200)");
+            C(MainForm.SpeedChangeStep(true, 4, 1, null, 12209600) == 12209600, "  a stamp already at a multiple: itself");
+            C(MainForm.SpeedChangeStep(true, 2, 4, 12208000, 12209200) == null, "from a pause: at once (every game stands at the pause's step)");
+            C(MainForm.SpeedChangeStep(true, 0, 4, null, 12209200) == null, "from speed 0 (the start): at once");
+            C(MainForm.SpeedChangeStep(true, 4, 4, null, 12209200) == null, "the same speed: nothing to change");
+            C(MainForm.SpeedChangeStep(false, 2, 4, null, 12209200) == null, "MPFEVER_SPEEDAT=0: at once, as before");
             return ok;
         }
 

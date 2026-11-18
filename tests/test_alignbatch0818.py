@@ -252,8 +252,8 @@ def wiring_tests():
     lua = (ROOT / "mod" / "mpfever_1" / "content" / "mpfever_bridge.script.lua").read_text(encoding="utf-8", errors="replace")
     pace = lua[lua.index("local function pacing()"):]
     pace = pace[:pace.index("\nend\n")]
-    check("the mod: the queued hold rounded down", "q = G.alignDown(q, s.speed)" in pace)
-    check("the mod: the barrier's soft stop rounded down", "local soft = G.alignDown(barrier + overshootReserve() * STEP, s.speed)" in pace)
+    check("the mod: the queued hold rounded down", "q = G.alignDown(q, spdNow)" in pace)
+    check("the mod: the barrier's soft stop rounded down", "local soft = G.alignDown(barrier + overshootReserve() * STEP, spdNow)" in pace)
     check("the mod: the shared stops (pause, holds, own released build) left exact", "G.alignDown(s.pauseAt" not in pace and "G.alignDown(G.holdAt" not in pace and "G.alignDown(rh" not in pace)
     try:
         import lupa

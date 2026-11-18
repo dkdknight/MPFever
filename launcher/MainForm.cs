@@ -4721,6 +4721,8 @@ namespace MPFever
             lock (sessionGate)
                 return "{[\"started\"]=" + (started ? "true" : "false") + ",[\"speed\"]=" + speed +
                        (pauseAt.HasValue ? ",[\"pauseAt\"]=" + pauseAt.Value : "") +
+                       // (0.9.0) a speed changed while running: the speed before it up to this step (see SpeedChangeStep)
+                       (speedAt.HasValue && !pauseAt.HasValue ? ",[\"speedAt\"]=" + speedAt.Value + ",[\"speedFrom\"]=" + speedFrom : "") +
                        ",[\"cmode\"]=\"" + companyMode + "\"" +
                        (companyMode == "separate" ? ",[\"cstart\"]=" + StartMoney() + ",[\"bankrupt\"]=" + BankruptMonths() + ",[\"share\"]=" + (ShareRules() == "1" ? "true" : "false")
                            + ",[\"auction\"]=" + LuaLit.Quote(AuctionRule()) : "") +
@@ -4764,6 +4766,20 @@ namespace MPFever
             }) { IsBackground = true }.Start();
         }
 
+        /// <summary>(0.9.0, #150) A speed changed while the session runs takes effect at a common step, as a pause does: every game
+        /// runs at the speed before (speedFrom) up to speedAt, stands there, then runs at the new one, so their batches stay the
+        /// same (see AlignBatch in the native module). A step a little ahead of the fastest game's clock, at a multiple of 4 steps
+        /// (the batches' ends at every speed). Null: at once (from a pause every game stands at the same step already).
+        /// MPFEVER_SPEEDAT=0: at once, as before.</summary>
+        long? speedAt; int speedFrom;
+        static readonly bool SpeedAtOn = Environment.GetEnvironmentVariable("MPFEVER_SPEEDAT") != "0";
+        internal static long? SpeedChangeStep(bool on, int oldSpeed, int newSpeed, long? pausedAt, long future)
+        {
+            if (!on || pausedAt.HasValue || oldSpeed <= 0 || oldSpeed == newSpeed) return null;
+            long quad = 4 * Step;
+            return (future + quad - 1) / quad * quad;
+        }
+
         void SetSpeed(int s, string who)
         {
             if (!started) return;
@@ -4771,7 +4787,14 @@ namespace MPFever
             // session 1.5 s after it, cleared that pause and the resynchronisation waited for nothing; a player joining then never
             // got the host's game)
             if (resyncing) { Log.W(F("Vitesse x{0} demandée par {1} : ignorée pendant la resynchronisation", "Speed x{0} asked by {1}: ignored during the resynchronisation", s, who)); return; }
-            lock (sessionGate) { speed = Math.Max(1, Math.Min(4, s)); pauseAt = null; }
+            long future = FutureStamp();
+            lock (sessionGate)
+            {
+                int ns = Math.Max(1, Math.Min(4, s));
+                speedAt = SpeedChangeStep(SpeedAtOn, speed, ns, pauseAt, future);
+                speedFrom = speed;
+                speed = ns; pauseAt = null;
+            }
             Log.W(F("Vitesse : x{0} (demandée par {1})", "Speed: x{0} (asked by {1})", speed, who));
             BroadcastSession();
         }
@@ -4782,7 +4805,7 @@ namespace MPFever
             long at = FutureStamp();
             // (0.8.17, #395: see PauseStamp)
             { long? cur; int sp; lock (sessionGate) { cur = pauseAt; sp = speed; } at = PauseStamp(at, cur, sp, RoundUpToStep(MaxClock()), Environment.GetEnvironmentVariable("MPFEVER_PAUSESTANDING") != "0"); }
-            lock (sessionGate) pauseAt = at;
+            lock (sessionGate) { pauseAt = at; speedAt = null; }
             Log.W(F("Pause au temps {0} (demandée par {1})", "Pause at time {0} (asked by {1})", at, who));
             BroadcastSession();
         }
