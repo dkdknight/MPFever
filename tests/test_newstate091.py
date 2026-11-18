@@ -85,8 +85,19 @@ def main():
     alp = src[src.index("static void ApplyLocalPlayer(const char* why)\n{"):]
     alp = alp[:alp.index("\n}\n")]
     check("ApplyLocalPlayer keeps both companies when the new state is one of the two states of the game loaded last",
-          "bool second = !NewStateDrop() && !LoadKeepLocal() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1]);" in alp
+          "bool second = !NewStateDrop() && !LoadKeepLocal() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1])" in alp
           and alp.index("if (second)") < alp.index('DropCanon("a new game state");'))
+    # (the review of 0.9.1: a load begun on another thread between the control file's check and its values leaves the game
+    # before's values: kept only when both were taken since the last load)
+    check("  only values taken from the control file since that load (the load count noted with each value)",
+          "&& g_localLoads == g_ctlLoads && g_canonLoads == g_ctlLoads;" in alp
+          and "g_canon = pk.canon; g_canonLoads = loads0;" in src and "g_localPlayer = pk.local; g_localLoads = loads0;" in src)
+    br = open(os.path.join(HERE, "..", "mod", "mpfever_1", "content", "mpfever_bridge.script.lua"), encoding="utf-8").read().replace("\r\n", "\n")
+    i_c = br.find('if canonFirst and reg.canon then nativeCtl("setcanon "')
+    i_l = br.find('nativeCtl("setlocal " .. c.ent .. " " .. tok)')
+    check("the mod writes the savegame's company to the control file before this machine's (each line its own write)",
+          0 < i_c < i_l and 'local canonFirst = os.getenv("MPFEVER_NEWSTATEDROP") ~= "1"' in br
+          and 'if not canonFirst and reg.canon then nativeCtl("setcanon "' in br)
     rd = src[src.index('extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)'):]
     rd = rd[:rd.index("u64 r = g_replOrig(src, dst, flag);")]
     check("ReplDetour notes the two states at the load's first copy (with DropAtLoad)",

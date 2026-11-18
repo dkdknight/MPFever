@@ -528,7 +528,9 @@ function CO.installContracts(env)
 	-- company's lines until it was wrapped here, and this ran every 50 updates of this script: a count of the engine's calls,
 	-- which a standing game makes more of. Every type is now loaded here, at the first update after a load, and wrapped before
 	-- any of its contracts sees an event (env.preload). The list of types is read once.
-	if not CO.contractRefs then
+	-- (an empty list, read too early, is read again 50 updates later, never at every update)
+	CO.contractTries = (CO.contractTries or 0) + 1
+	if not CO.contractRefs and (CO.contractTries == 1 or CO.contractTries % 50 == 0) then
 		local refs = {}
 		pcall(function()
 			for _, rid in ipairs(api.res.genericRep.getAllOfType("subvention")) do

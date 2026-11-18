@@ -470,6 +470,9 @@ static long g_othersTok = 0;
 // The savegame's own company ("setcanon <token> <entity>"): the interface's tools build for it whatever company this machine plays
 // (see OwnerFix), so its entity is looked for in the builds they issue.
 static volatile long g_canon = 0;
+// ((0.9.1, #425) the loads counted (g_ctlLoads) when this machine's company and the savegame's were taken from the control file:
+// kept at the engine's second state of a game only when both were taken since its load, see ApplyLocalPlayer)
+static volatile long g_localLoads = -1, g_canonLoads = -1;
 static bool NewStateDrop();          // (0.9.1, #425, see g_loadGs)
 static bool LoadKeepLocal();
 static volatile long g_mainTid = 0;        // the game's main thread (its interface), see PatchPlayerReads
@@ -737,14 +740,14 @@ static void ReadControl()
     // (after a load: lulei's game, 10:53:33). MPFEVER_NEWSTATEDROP=1: this machine's first, as before
     auto takeCanon = [&]() {
         if (pk.haveCanon && pk.canonTok != g_canonTok) {
-            g_canonTok = pk.canonTok; g_canon = pk.canon;
+            g_canonTok = pk.canonTok; g_canon = pk.canon; g_canonLoads = loads0;
             if (g_ctlShown[1]++ < 10) { Buf b; b.str("savegame company ").dec(pk.canon); LogLine(b); }
         }
     };
     bool canonFirst = !NewStateDrop();
     if (canonFirst) takeCanon();
     if (pk.haveLocal && pk.localTok != g_localTok) {
-        g_localTok = pk.localTok; g_localPlayer = pk.local;
+        g_localTok = pk.localTok; g_localPlayer = pk.local; g_localLoads = loads0;
         // ((0.7.13) a line taken was never logged: a few after each load, see g_ctlShown; always one written before the load)
         if (g_ctlShown[0]++ < 10 || pk.localOld) {
             Buf b; b.str("local player ").dec(pk.local).str(" from the control file (token ").dec(pk.localTok).str(")")
@@ -1939,7 +1942,10 @@ static void ApplyLocalPlayer(const char* why)
         // (0.9.1, #425) the other state of the game loaded last: the values said since that load are this game's, kept (see
         // g_loadGs)
         // (only when the load forgot the values of the game before: never with MPFEVER_LOADKEEPLOCAL=1)
-        bool second = !NewStateDrop() && !LoadKeepLocal() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1]);
+        // (and only values taken from the control file since that load: a load begun between the file's check and its values,
+        // on another thread, leaves the values of the game before)
+        bool second = !NewStateDrop() && !LoadKeepLocal() && g_slot && (g_slot == g_loadGs[0] || g_slot == g_loadGs[1])
+            && g_localLoads == g_ctlLoads && g_canonLoads == g_ctlLoads;
         if (second) {
             long k = _InterlockedIncrement(&g_secondKept);
             if (k <= 20) { Buf b; b.str("a new game state ").hex((u64)g_slot).str(": the other state of the game loaded last, this machine's company ").dec(g_localPlayer).str(" and the savegame's ").dec(g_canon).str(" kept"); LogLine(b); }

@@ -22226,10 +22226,15 @@ local function coGui(st)
 			K.coCtlSeq = K.coCtlSeq + 1
 			local okT, tm = pcall(os.time)
 			local tok = ((okT and tm or 0) % 1000000) * 100 + K.coCtlSeq % 100
+			-- ((0.9.1, #425) the savegame's company first: each line is its own write to the control file, and the native module can read
+			-- it between two of them; this machine's company without the savegame's is written into the word the simulation then reads as
+			-- it is. MPFEVER_NEWSTATEDROP=1: this machine's first, as before)
+			local canonFirst = os.getenv("MPFEVER_NEWSTATEDROP") ~= "1"
+			if canonFirst and reg.canon then nativeCtl("setcanon " .. tok .. " " .. reg.canon) end
 			if not os.getenv("MPFEVER_NOSETLOCAL") then nativeCtl("setlocal " .. c.ent .. " " .. tok) end
 			G.coOthers = osig
 			if osig ~= "" and not os.getenv("MPFEVER_NOCLEAR") then nativeCtl("setothers " .. tok .. " " .. osig) end
-			if reg.canon then nativeCtl("setcanon " .. tok .. " " .. reg.canon) end
+			if not canonFirst and reg.canon then nativeCtl("setcanon " .. tok .. " " .. reg.canon) end
 		end
 		-- the stations of the other companies that are not private: the native module lets their icons through the map's owner
 		-- filter (the line tool shows them, as this company's own), see HudShareSplice. Every 300 frames (at once when a rule
