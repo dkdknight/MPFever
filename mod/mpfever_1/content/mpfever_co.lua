@@ -542,16 +542,18 @@ function CO.installContracts(env)
 		if #refs > 0 then CO.contractRefs = refs end
 		CO.contractRefsNow = refs
 	end
+	-- (each simulation state of the engine has its own `game` table: whether a type is loaded and wrapped is asked of that table,
+	-- its flag __mpfCo, never kept here)
 	for _, r in ipairs(CO.contractRefs or CO.contractRefsNow or {}) do
-		if not r.done then
+		pcall(function()
 			if game[r.path] == nil and env.preload and loaderHelper ~= nil then
 				local okL, errL = pcall(function() loaderHelper:useFn(r.ref .. ".shouldDespawn") end)
 				if env.log then env.log("companies: contracts of type " .. r.fname .. " loaded at once" .. (okL and "" or (": " .. tostring(errL)))) end
 			end
 			local m = game[r.path]
 			local t = type(m) == "table" and m[r.fname] or nil
-			if type(t) == "table" then wrapContractType(env, t, r.fname); r.done = true end
-		end
+			if type(t) == "table" and not t.__mpfCo then wrapContractType(env, t, r.fname) end
+		end)
 	end
 	-- notifications (this game's own: what its player sees): the cards of the contracts of the other companies are left out
 	local okn, nu = pcall(ug_require, "::/game_mechanics/notifications/notification_util.tl")

@@ -114,6 +114,11 @@ def main():
     run("CO.installContracts(ENV); CO.installContracts(ENV)")
     check("  at every update after that: nothing again (the list of types read once, each type wrapped once)",
           run("return #LOG") == n0 and run("return LOADS") == 1)
+    # the engine's second simulation state: its own `game` table, the same CO module (CO.contractRefs kept): wrapped there too
+    run("GAME1 = game; game = { ['::/game_mechanics/subventions/subventions.script'] = { handleEvent = function() end } }; CONTRACT = { uid = 5, mpfOwner = 2, delivered = 0 }")
+    run("CO.installContracts(ENV); deliver(101)")
+    check("the second simulation state (its own game table): its type loaded and wrapped as well, the other company's delivery not counted",
+          run("return CONTRACT.delivered") == 0 and run("return LOADS") == 2, (run("return CONTRACT.delivered"), run("return LOADS")))
 
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0
