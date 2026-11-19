@@ -61,6 +61,7 @@ Commands for the administrator (the service is `mpfever-server`):
 |---|---|
 | `docker compose ps` / `logs -f` | state, health, log |
 | `docker compose run --rm mpfever-server status` | what is missing (game, Steam session, savegame, sparse files, disk) |
+| `docker compose exec mpfever-server mpfever-admin <command>` | a console command of the server (`help`, `status`, `say`, `kick`, `save`, ...) |
 | `docker compose exec mpfever-server /opt/mpfever/scripts/measure.sh` | memory (container, processes), CPU over 30 s, synchronisation |
 | `docker compose run --rm mpfever-server login` | sign in again when the Steam session expires (about 7 months) |
 | `docker compose run --rm -v "...:/in:ro" mpfever-server import-save /in/<world>.sav` | add or replace a savegame |
@@ -80,6 +81,8 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_START_SPEED`, `SRV_PAUSE_WHEN_EMPTY`, `SRV_PLAYER_SPEED_CONTROL` | `1`, `false`, `true` | |
 | `SRV_AUTOSAVE_MINUTES`, `SRV_BACKUPS` | `10`, `10` | autosave and copies kept in `srv/backups` |
 | `SRV_PUBLIC`, `SRV_PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list |
+| `SRV_LOG_FORMAT` | `json` | `json` (one JSON object per line) or `text` |
+| `SRV_UPDATE_CHECK` | `notify` | `notify` (new MPFever release announced in the log, never installed) or `off` |
 | `SRV_MEM_LIMIT`, `SRV_CPUS` | `16g`, `2` | container limits: about 12 GB and 1 CPU for the small world (minimum), 16 GB and 2 CPUs for a world of 120 MB; the CPU also sets how fast it starts and resynchronises |
 | `MPFEVER_IMAGE` | the published image | another image or a version tag (rollback) |
 
@@ -102,6 +105,33 @@ The image is **versioned by the MPFever version** it is built from (`ghcr.io/<ow
 archive (run it on the release's tag), so the players' client of that version can join; the version the server and the players run must be the same. The image holds no secret, no Transport Fever 3 file and no Valve file; the Valve client library is
 fetched from Valve at the first start (pinned build, hash-checked). Start (`server/scripts/entrypoint.sh run`): checks (disk, sparse support, RAM, game, session, savegame), first-start
 Wine prefix, the launcher restarted when it exits (five failures within a minute stop the container with a message), `SIGTERM` writes the stop file: the world is saved, the game closed, then the container exits.
+
+## Administering the server
+
+The launcher of the image is the server's brain (`MPFever.exe --server`, the same program as the Windows dedicated server): hosting, synchronisation, saves, the console. The container only wraps it (Wine, Steam through Dock, scripts).
+The console commands of the server window work from outside with **`mpfever-admin`**:
+
+```
+docker compose exec mpfever-server mpfever-admin help        # the list of commands
+docker compose exec mpfever-server mpfever-admin status      # players, speed, synchronisation, last save
+docker compose exec mpfever-server mpfever-admin say "Restart in 5 minutes"
+docker compose exec mpfever-server mpfever-admin kick <player>
+docker compose exec mpfever-server mpfever-admin save
+```
+
+It hands the command to the launcher (a file in `/data/run/cmd`), waits for it to run and prints what the server logged for it. Everything the Windows server's console does is reachable this way (see the server's `SERVER.txt`).
+An administration web page is planned (off by default); it will use the same channel.
+
+## Logs
+
+`docker compose logs` shows every component on one stream, **one JSON object per line**: `{"ts":"2026-11-19T15:46:34.409Z","level":"info","component":"launcher","msg":"WinClient#1 joined the session"}`
+(`ts` in UTC; `level` `debug`, `info`, `warn` or `error`; `component` `entrypoint` for this container's scripts, `launcher` for MPFever). `SRV_LOG_FORMAT=text` gives plain lines instead. The files are in the data volume
+(`srv/logs/launcher-*.log`, `srv/launcher.out`, Dock's `srv/dock.log`); the Docker log rotates (20 MB, 5 files). Any JSON log collector (Loki, Elasticsearch, `jq`) reads the stream as it is.
+
+## Updates
+
+The server looks for a new MPFever release every 30 minutes (`SRV_UPDATE_CHECK=notify`, the default; `off` stops the check) and **announces it once in the log** (`level` `warn`: "MPFever 0.9.2 is published; this server does not install it"). It never installs it by itself:
+the image is updated (`docker compose pull && docker compose up -d`), so the version of the launcher, the module, the mod and Dock stay one tested set. Players need the client of the server's version.
 
 ## Steam sign-in
 

@@ -1041,12 +1041,13 @@ namespace MPFever
         /// <summary>A release published on GitHub while this launcher is open (checked every 30 minutes): installed when the
         /// game closes (a player's launcher), or by a dedicated server once nobody is connected (see ServerTick).</summary>
         volatile UpdateInfo pendingUpdate;
+        string notifiedVersion;
         DateTime gameStartedAt = DateTime.Now;
         System.Threading.Timer updateWatch;
 
         void StartUpdateWatch()
         {
-            if (updateWatch != null || autotest || Dev || !Updater.Enabled || !Updater.InReleaseFolder) return;
+            if (updateWatch != null || autotest || Dev || (!Updater.Enabled && !Updater.Notify) || !Updater.InReleaseFolder) return;
             var period = TimeSpan.FromMinutes(Updater.RecheckMinutes);
             updateWatch = new System.Threading.Timer(_ =>
             {
@@ -1056,6 +1057,16 @@ namespace MPFever
                     if (u == null) return;
                     var known = pendingUpdate;
                     if (known != null && Updater.CompareVersions(Updater.ParseVersion(u.Version), Updater.ParseVersion(known.Version)) <= 0) return;
+                    if (Updater.Notify)
+                    {
+                        // (autoupdate=notify: announced once per release, never installed: the administrator updates the image)
+                        if (notifiedVersion != u.Version)
+                        {
+                            notifiedVersion = u.Version;
+                            Log.Warn(F("MPFever {0} est publié ; ce serveur ne l'installe pas (autoupdate=notify) : mettez l'image à jour.", "MPFever {0} is published; this server does not install it (autoupdate=notify): update the image.", u.Version));
+                        }
+                        return;
+                    }
                     pendingUpdate = u;
                     if (ServerMode && !serverStarted)
                     {

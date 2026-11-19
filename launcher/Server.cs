@@ -740,6 +740,32 @@ namespace MPFever
                     return;
                 }
             }
+            // (Linux server, server/) administration from outside: MPFEVER_CMDDIR holds one file per console command (*.cmd, its text is the command line, as
+            // typed under the log of the server window); each is run as that console command, then <name>.done is written. `mpfever-admin` of the image does it.
+            if (GameInstall.IsLinux)
+            {
+                var cmdDir = Environment.GetEnvironmentVariable("MPFEVER_CMDDIR");
+                if (!string.IsNullOrEmpty(cmdDir) && Directory.Exists(cmdDir))
+                {
+                    string[] files = new string[0];
+                    try { files = Directory.GetFiles(cmdDir, "*.cmd"); Array.Sort(files, StringComparer.Ordinal); } catch { }
+                    foreach (var cf in files)
+                    {
+                        string cmdLine;
+                        try { cmdLine = File.ReadAllText(cf).Trim(); File.Delete(cf); } catch { continue; }
+                        var doneFile = Path.ChangeExtension(cf, ".done");
+                        try
+                        {
+                            BeginInvoke((Action)(() =>
+                            {
+                                try { ServerCommand(cmdLine); }
+                                finally { try { File.WriteAllText(doneFile, DateTime.UtcNow.ToString("o")); } catch { } }
+                            }));
+                        }
+                        catch { }
+                    }
+                }
+            }
             bool st, paused; int sp;
             lock (sessionGate) { st = started; paused = pauseAt.HasValue; sp = speed; }
             if (!st)

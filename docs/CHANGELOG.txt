@@ -9,7 +9,9 @@ MPFever - Changelog
     (MPFEVER_WINE=1, MPFEVER_DOCK) and a stop file (MPFEVER_STOPFILE: the world is saved, then the server stops, as the console's "stop"); nothing changes on
     Windows. The image (ghcr.io/ampynjord/mpfever-server, tagged with the MPFever version and "experimental") holds no game or Valve file; install-game,
     login (QR code, no password), import-save and status are its administration commands. Validated end to end for short sessions with a real Windows
-    client; long runs, several clients and large worlds are not yet (see the guide). CI: ci.yml (jobs docker-server-checks and docker-server) and, to publish the image, release.yml (option docker_server).
+    client; long runs, several clients and large worlds are not yet (see the guide). For the Docker server the launcher also has MPFEVER_LOG_JSON=1 (one JSON object
+    per line in its log file: ts, level, component, msg), MPFEVER_CMDDIR (one file per console command: `mpfever-admin` runs the commands of the server window from
+    outside) and autoupdate=notify (a new release is announced in the log, never installed). CI: ci.yml (jobs docker-server-checks and docker-server) and, to publish the image, release.yml (option docker_server).
   - BUILD (code signing, 2026-11-19: SignPath Foundation accepted MPFever; their first step is a signature with their
     self-signed test certificate, then they review the setup and import the Foundation's certificate): the Release build
     workflow asks for the signing policy, test-signing by default, release-signing once the certificate is in. Archives signed

@@ -16,9 +16,19 @@ CLIENT_URL=https://client-update.akamai.steamstatic.com/bins_win32.zip.23e34a6d4
 CLIENT_ZIP_SHA256=8b712b2a3412a9066b7725f4e1c5cef9a7ca5b187b6585a5b92d25d09df0ba62
 CLIENT_DLL_SHA256=71b391fe9f3e2006cbc81a5c75eef3eb4186012deabfdb2c8b7e8d4850ecf640
 
-log()  { echo "$(date -u +%H:%M:%S) [mpfever-server] $*"; }
-warn() { echo "$(date -u +%H:%M:%S) [mpfever-server] WARNING: $*" >&2; }
-die()  { echo "$(date -u +%H:%M:%S) [mpfever-server] ERROR: $1" >&2; exit "${2:-1}"; }
+# Logs: one JSON object per line on stdout/stderr, {"ts","level","component","msg"}, the same shape as the launcher's (SRV_LOG_FORMAT=text, set in .env: "HH:MM:SS LEVEL message").
+emit() {
+  local level=$1; shift
+  if [ "${LOG_FORMAT:-json}" = json ]; then
+    local m; m=$(printf '%s' "$*" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    printf '{"ts":"%s","level":"%s","component":"entrypoint","msg":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$level" "$m"
+  else
+    printf '%s %-5s %s\n' "$(date -u +%H:%M:%S)" "$(echo "$level" | tr a-z A-Z)" "$*"
+  fi
+}
+log()  { emit info "$*"; }
+warn() { emit warn "$*" >&2; }
+die()  { emit error "$1" >&2; exit "${2:-1}"; }
 
 sha256_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 

@@ -258,10 +258,36 @@ namespace MPFever
         public static void Err(string s) => Write(s, LogLevel.Error);
         public static void Dim(string s) => Write(s, LogLevel.Muted);
 
+        /// <summary>MPFEVER_LOG_JSON=1 (the Docker server): each line of the log file is one JSON object {"ts","level","component","msg"} (UTC time; level debug, info, warn
+        /// or error) instead of "HH:mm:ss.fff text"; the lines shown in a window are unchanged.</summary>
+        static readonly bool Json = Environment.GetEnvironmentVariable("MPFEVER_LOG_JSON") == "1";
+
+        static string JsonEscape(string s)
+        {
+            var b = new System.Text.StringBuilder();
+            foreach (var c in s ?? "")
+            {
+                if (c == '"') b.Append("\\\"");
+                else if (c == '\\') b.Append("\\\\");
+                else if (c == '\n') b.Append("\\n");
+                else if (c == '\r') b.Append("\\r");
+                else if (c == '\t') b.Append("\\t");
+                else if (c < ' ') b.Append("\\u" + ((int)c).ToString("x4"));
+                else b.Append(c);
+            }
+            return b.ToString();
+        }
+
         public static void Write(string s, LogLevel level)
         {
             var l = DateTime.Now.ToString("HH:mm:ss.fff") + " " + s;
-            lock (Gate) { try { if (file != null) File.AppendAllText(file, l + Environment.NewLine); } catch { } }
+            var fileLine = l;
+            if (Json)
+            {
+                var lv = level == LogLevel.Warning ? "warn" : level == LogLevel.Error ? "error" : level == LogLevel.Muted ? "debug" : "info";
+                fileLine = "{\"ts\":\"" + DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'") + "\",\"level\":\"" + lv + "\",\"component\":\"launcher\",\"msg\":\"" + JsonEscape(s) + "\"}";
+            }
+            lock (Gate) { try { if (file != null) File.AppendAllText(file, fileLine + Environment.NewLine); } catch { } }
             Line?.Invoke(l);
             Entry?.Invoke(l, level);
         }

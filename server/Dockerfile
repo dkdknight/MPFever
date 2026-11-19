@@ -62,7 +62,8 @@ COPY --from=vklayer /libVkLayer_mpf_nulldraw.so /opt/mpfever/libVkLayer_mpf_null
 COPY vklayer/VkLayer_mpf_nulldraw.json /etc/vulkan/implicit_layer.d/VkLayer_mpf_nulldraw.json
 COPY scripts/ /opt/mpfever/scripts/
 COPY config/ /opt/mpfever/config/
-RUN sed -i 's/\r$//' /opt/mpfever/scripts/*.sh && chmod 755 /opt/mpfever/scripts/*.sh
+RUN sed -i 's/\r$//' /opt/mpfever/scripts/*.sh /opt/mpfever/scripts/mpfever-admin && chmod 755 /opt/mpfever/scripts/*.sh /opt/mpfever/scripts/mpfever-admin \
+ && ln -s /opt/mpfever/scripts/mpfever-admin /usr/local/bin/mpfever-admin
 
 ARG VCS_REF=unknown
 ARG SOURCE_REPO=https://github.com/dkdknight/MPFever

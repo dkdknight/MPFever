@@ -66,6 +66,8 @@ check_settings() {
   need_choice PLAYER_SPEED_CONTROL "${PLAYER_SPEED_CONTROL:-true}" true false
   need_choice COMPANY_MODE "${COMPANY_MODE:-shared}" shared separate
   need_choice START_SPEED "${START_SPEED:-1}" 1 2 4
+  need_choice LOG_FORMAT "${LOG_FORMAT:-json}" json text
+  need_choice UPDATE_CHECK "${UPDATE_CHECK:-notify}" notify off
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
 
@@ -130,7 +132,9 @@ cmd_run() {
   # the launcher package of this image version, and the server settings from the environment (the file is rewritten at every start)
   cp -a "$OPT/pkg/." "$SRV/"
   cd "$SRV" || die "cannot enter $SRV" 10
-  printf 'servermode=headless\nautoupdate=0\n' > mpfever_settings.txt
+  # autoupdate=notify: the launcher looks for a new MPFever release and announces it in the log, never installs it (the image is updated); 0: no check
+  [ "${UPDATE_CHECK:-notify}" = notify ] && au=notify || au=0
+  printf 'servermode=headless\nautoupdate=%s\n' "$au" > mpfever_settings.txt
   {
     echo "server-name=${SERVER_NAME:-MPFever Server}"
     echo "world=$WORLD"
@@ -160,6 +164,9 @@ cmd_run() {
   export MADEIRA_STEAM_HOST_LOG=$SRV/dock.log
   export MPFEVER_DOCK='Z:\opt\mpfever\dockhost.exe'
   export MPFEVER_WINE=1 MPFEVER_STEAMPATH="$STEAM_DIR" MPFEVER_JOINREVIEW=0 MPFEVER_STOPFILE=$STOPFILE
+  export MPFEVER_CMDDIR=$RUN/cmd; mkdir -p "$MPFEVER_CMDDIR"; rm -f "$MPFEVER_CMDDIR"/*   # the commands of `mpfever-admin`
+  # logs: the launcher writes the same JSON lines as this script (SRV_LOG_FORMAT=text: plain lines)
+  if [ "${LOG_FORMAT:-json}" = json ]; then export MPFEVER_LOG_JSON=1; else unset MPFEVER_LOG_JSON; fi
   # no 3D output: software Vulkan with a layer that makes every draw and copy a no-op and gives back the GPU memory nobody reads;
   # MPF_VKNULL=0 (docker compose: GPU=1) leaves a real GPU alone
   export MPF_VKNULL=${MPF_VKNULL:-1} MPF_VKNULL_MODE=all MPF_VKNULL_TRIM=${MPF_VKNULL_TRIM:-1}
