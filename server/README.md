@@ -59,10 +59,16 @@ Images are tagged by version (`ghcr.io/dkdknight/mpfever-server:<version>`) and 
 `MPFEVER_IMAGE=ghcr.io/dkdknight/mpfever-server:<previous version>` in `.env` and `docker compose up -d`; the data volume is untouched. Players need the MPFever client of the server's version.
 See [docs/OPERATIONS.md](docs/OPERATIONS.md) for backups, Valve updates, security and troubleshooting.
 
+## Versions and tags
+
+The image always carries the **latest official MPFever release** (the package is built from that release's tag, with the launcher changes of this branch applied until a release contains them), so players on the official client can join.
+Tags: `<mpfever version>-server.<n>` (for example `0.9.1-server.1`, `n` counts rebuilds of the same release) and `experimental` (the latest build). Pin a version tag in production.
+Publishing is deliberate: pushing the git tag `dedicated-server-v<mpfever version>-<n>` (or a manual workflow run) publishes after the checks pass; a push or a pull request never does.
+
 ## Build it yourself
 
-`build.bat` at the repository root builds the launcher and package (`release/MPFever-<version>-server.zip`); copy it to `server/dist/MPFever-server.zip` and run
-`docker compose -f compose.yaml -f compose.build.yaml build`. The same steps run in CI (`.github/workflows/dedicated-server.yml`).
+`.github/workflows/dedicated-server.yml` does it all (static checks, package of the latest release with the launcher changes, image, smoke tests). To build locally, put a package built by `build.bat`
+(`release/MPFever-<version>-server.zip`) in `server/dist/MPFever-server.zip` and run `docker compose -f compose.yaml -f compose.build.yaml build`.
 
 ## Licence
 

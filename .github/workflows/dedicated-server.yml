@@ -1,6 +1,12 @@
-# The Linux dedicated server (server/): static checks, the package built from this repository, the Docker image built and smoke-tested.
-# NOTHING IS PUBLISHED by a push or a pull request. The image is pushed to GHCR only by a manual run (workflow_dispatch) with
-# "publish" ticked, on the upstream repository, after the checks and the smoke tests below pass.
+# The Linux dedicated server (server/): static checks, the package, the Docker image built and smoke-tested.
+#
+# The image always carries the LATEST OFFICIAL MPFever release: the package is built from that release's tag (build.bat) with the launcher
+# changes of this branch applied on top (they disappear from the patch once a release contains them). So players on the official release can join.
+#
+# Publication to GHCR (ghcr.io/<owner>/mpfever-server) happens ONLY on purpose, after every job above has passed:
+#   - pushing a tag  dedicated-server-v<mpfever version>-<n>   (for example dedicated-server-v0.9.1-1): tags "<mpfever version>-server.<n>" and "experimental"
+#   - or a manual run (workflow_dispatch, workflow file on the default branch) with "publish" ticked.
+# A push or a pull request never publishes.
 name: Dedicated server
 
 on:
@@ -8,15 +14,20 @@ on:
     paths: ["server/**", "launcher/**", ".github/workflows/dedicated-server.yml"]
   push:
     branches: [main, "feature/dedicated-server"]
+    tags: ["dedicated-server-v*"]
     paths: ["server/**", "launcher/**", ".github/workflows/dedicated-server.yml"]
   workflow_dispatch:
     inputs:
       publish:
-        description: "Push the image to GHCR (only the upstream repository, only after the tests pass)"
+        description: "Push the image to GHCR (only after the tests pass)"
         type: boolean
         default: false
-      version:
-        description: "Version tag to publish besides 'experimental' (for example 0.9.1-server.1); empty: only 'experimental'"
+      version_tag:
+        description: "Image tag besides 'experimental' (for example 0.9.1-server.1); empty: only 'experimental'"
+        type: string
+        default: ""
+      mpfever_ref:
+        description: "MPFever release tag to build the package from; empty: the latest official release"
         type: string
         default: ""
 
@@ -26,6 +37,9 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  UPSTREAM: https://github.com/dkdknight/MPFever.git
 
 jobs:
   static:
@@ -39,24 +53,49 @@ jobs:
         run: bash server/tests/check.sh
 
   package:
-    # The same build as ci.yml (native module, launcher with warnings as errors, tests, archives); the server archive is the input of the image.
+    # The same build as ci.yml (native module, launcher with warnings as errors, tests, archives), of the latest official release + this branch's launcher changes.
     runs-on: windows-2022
     timeout-minutes: 40
+    outputs:
+      mpfever_version: ${{ steps.ref.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m pip install lupa==2.8
+      - name: Release to build, and the launcher changes of this branch
+        id: ref
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANTED: ${{ inputs.mpfever_ref }}
+        run: |
+          set -eu
+          tag="${WANTED:-}"
+          [ -n "$tag" ] || tag=$(gh release view --repo dkdknight/MPFever --json tagName --jq .tagName)
+          echo "official release: $tag"
+          git remote add upstream "$UPSTREAM" 2>/dev/null || true
+          git fetch -q upstream main "refs/tags/$tag:refs/tags/upstream-$tag"
+          git diff "upstream/main...HEAD" -- launcher > "$RUNNER_TEMP/launcher.patch"
+          git worktree add -q --detach release-src "upstream-$tag"
+          cd release-src
+          if [ ! -s "$RUNNER_TEMP/launcher.patch" ]; then echo "no launcher changes to apply"
+          elif git apply --reverse --check --ignore-whitespace "$RUNNER_TEMP/launcher.patch" 2>/dev/null; then echo "the release already contains the launcher changes"
+          else git apply --ignore-whitespace "$RUNNER_TEMP/launcher.patch" && echo "launcher changes applied"; fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
       - name: Build, test, pack
         shell: pwsh
+        working-directory: release-src
         run: |
           cmd /c build.bat 2>&1 | Tee-Object -FilePath build.log
           if ($LASTEXITCODE -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:
           name: server-package
-          path: release/*-server.zip
+          path: release-src/release/*-server.zip
           retention-days: 14
           if-no-files-found: error
 
@@ -78,7 +117,7 @@ jobs:
         run: |
           ls -l
           cp ./*-server.zip MPFever-server.zip
-          echo "PKG_VERSION=$(ls ./*-server.zip | head -1 | sed -E 's#.*MPFever-(.*)-server\.zip#\1#')" >> "$GITHUB_ENV"
+          echo "PKG_VERSION=${{ needs.package.outputs.mpfever_version }}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
       - name: Build the image (not pushed)
         uses: docker/build-push-action@v6
@@ -114,17 +153,30 @@ jobs:
           test $rc -eq 40 && echo "$out" | grep -q "run  login"
           # the Dock build is the pinned one, the Vulkan layer loads
           docker run --rm --entrypoint sh "$img" -c 'ls -l /opt/mpfever/libVkLayer_mpf_nulldraw.so /etc/vulkan/implicit_layer.d/'
+      - name: Decide the tags to publish
+        id: tags
+        run: |
+          set -eu
+          owner=$(echo "${{ github.repository_owner }}" | tr 'A-Z' 'a-z')
+          pub=false; vtag=""
+          if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.publish }}" = true ]; then pub=true; vtag="${{ inputs.version_tag }}"; fi
+          if [ "${{ github.ref_type }}" = tag ]; then
+            pub=true; t="${{ github.ref_name }}"; t="${t#dedicated-server-v}"        # 0.9.1-1
+            vtag="${t%-*}-server.${t##*-}"                                            # 0.9.1-server.1
+          fi
+          echo "publish=$pub" >> "$GITHUB_OUTPUT"; echo "repo=ghcr.io/$owner/mpfever-server" >> "$GITHUB_OUTPUT"; echo "vtag=$vtag" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
-        if: github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'dkdknight/MPFever'
+        if: steps.tags.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish (manual run only)
-        if: github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'dkdknight/MPFever'
+      - name: Publish (tag push or manual run only)
+        if: steps.tags.outputs.publish == 'true'
         run: |
           set -eu
-          repo=ghcr.io/dkdknight/mpfever-server
+          repo=${{ steps.tags.outputs.repo }}; vtag=${{ steps.tags.outputs.vtag }}
           docker tag mpfever-server:ci "$repo:experimental"; docker push "$repo:experimental"
-          if [ -n "${{ inputs.version }}" ]; then docker tag mpfever-server:ci "$repo:${{ inputs.version }}"; docker push "$repo:${{ inputs.version }}"; fi
+          if [ -n "$vtag" ]; then docker tag mpfever-server:ci "$repo:$vtag"; docker push "$repo:$vtag"; fi
+          echo "published $repo:experimental ${vtag:+and $repo:$vtag}" >> "$GITHUB_STEP_SUMMARY"
