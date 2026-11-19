@@ -1063,7 +1063,7 @@ namespace MPFever
                         if (notifiedVersion != u.Version)
                         {
                             notifiedVersion = u.Version;
-                            Log.Warn(F("MPFever {0} est publié ; ce serveur ne l'installe pas (autoupdate=notify) : mettez l'image à jour.", "MPFever {0} is published; this server does not install it (autoupdate=notify): update the image.", u.Version));
+                            Log.Warn("MPFever " + u.Version + " is published; this server does not install it (autoupdate=notify): update the image.");   // (an administrator's log line, English only)
                         }
                         return;
                     }
