@@ -2,6 +2,13 @@ MPFever - Changelog
 ===================
 
 0.9.1 - (in progress)
+  - FIX (a slow drift, "script:progression", seen in a test of 58 minutes with one game held now and then): the game's company
+    growth script keeps, as the company's experience, the highest world population it has seen, and counts it at every call of
+    its update. The engine calls it once a step, in the middle of the step, and also with no time in the batches where a game
+    stands at its stop point: a game that waited for another counted the population as the step before had left it, a moment
+    the other game never looked at (experience 25159 against 25156). Gone at the next check there, but a population that fell
+    back would have kept it: another rank on one game, other ticket prices. Its update is now called with the steps only in a
+    session, as the contracts' and the landmarks'. MPFEVER_GROWTHDT0=1: as before. Test: tests/test_growthdt0091.py.
   - DIAGNOSTIC (#150, report #431: two games with the same batches parted in the animals' moves, and the client had applied one
     command in that batch, the host none, without anything telling which): the drift rings now note each command the simulation
     applies with its kind, among the entities (drift_<check>_ops.txt: "<step> c<kind> loop|script -"), and tools/drift_diff.py

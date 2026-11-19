@@ -2560,6 +2560,27 @@ function DET.wrapModEvents()
 			end
 			log("the game's contracts script: update called with the steps only")
 		end
+		-- (0.9.1, #150 test N1) The game's company growth script keeps, as the savegame company's experience, the highest world
+		-- population it has seen (company_growth.script.tl: "if numResidents > experience then experience = numResidents"), counted at
+		-- every call of its update, dt 0 too. A game standing at a stop point got calls with dt 0 between the steps and counted the
+		-- population at moments the other game never looked at: test N1 (2026-11-19, Test Leawood, the client held at random),
+		-- "script:progression" differed at check 173, experience 25159 on the client and 25156 on the host, alike again at the next
+		-- check once the population grew past it; a population that fell back would have kept it (another rank on one game, other
+		-- ticket prices, other money). Its update is called with the steps only in a session, as the contracts' and the landmarks'.
+		-- MPFEVER_GROWTHDT0=1: every call, as before
+		if k == "::/game_mechanics/company/company_growth.script" and type(v) == "table" and type(v.update) == "function"
+			and not v.__mpfGrowDt and os.getenv("MPFEVER_GROWTHDT0") ~= "1" then
+			v.__mpfGrowDt = true
+			local origG = v.update
+			v.update = function(u, st, dt, ...)
+				if dt == 0 and (C.ROLE == "host" or C.ROLE == "client") then
+					SIM.growthDt0 = (SIM.growthDt0 or 0) + 1
+					return
+				end
+				return origG(u, st, dt, ...)
+			end
+			log("the game's company growth script: update called with the steps only")
+		end
 		-- (0.8.6, Elias, #276) "Deutsche Signale" (tf3_signale_de_1): after every load its engine sweeps the lamps no signal keeps,
 		-- 400 entities an evaluation at most but stopping once 2 ms of the PC's clock have gone (its CLOCK, os.clock): each PC
 		-- finished at another step, destroyed the orphan lamps at other steps, and the freed ids went to other entities (a resync a
