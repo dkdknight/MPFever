@@ -1,4 +1,4 @@
-# The Linux dedicated server (server/): static checks, the package, the Docker image built and smoke-tested.
+# The dedicated server in Docker (server/, docs/DOCKER-SERVER.md): static checks (shell, Python, Dock's unit tests, Compose, no secrets), the package, the image built (Dock built from server/dock/, with its tests) and smoke-tested.
 #
 # The image always carries the LATEST OFFICIAL MPFever release: the package is built from that release's tag (build.bat) with the launcher
 # changes of this branch applied on top (they disappear from the patch once a release contains them). So players on the official release can join.

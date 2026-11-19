@@ -89,7 +89,7 @@ rebuilt at any time with `install-game`). Back up `mpfever-data`.
 |---|---|---|
 | Game | `TransportFever3.exe` under Wine 11 (pinned package) on Ubuntu 24.04 | A native Linux game drifts from Windows clients (different C++ library, `std::` distributions inlined in the game): the same executable keeps the same simulation. No Proton, no DXVK: rendering is a no-op. |
 | Launcher | `MPFever.exe --server --server-start headless` under Mono, with a Linux/Wine mode (`GameInstall.WineMode`, `MPFEVER_WINE=1`; `MPFEVER_STOPFILE` for a clean stop) | The same host logic, `winhttp.dll` module and mod as the players'. |
-| Steam | [Madeira Dock](https://github.com/willfaust/madeira-dock) (`dockhost.exe`, built from source at a pinned commit) driving **Valve's own `steamclient64.dll`** | The game requires a running Valve client. Dock signs in with the owner's refresh token, asks Valve's client for the licence and has it start the game: no `steam.exe`, no web helper (about 280 MB instead of 2.7 GB). No Steamworks emulation, no DRM bypass: every decision is Valve's. |
+| Steam | Madeira Dock (`dockhost.exe`, built in the image from our copy in `server/dock/`, which we maintain; origin [willfaust/madeira-dock](https://github.com/willfaust/madeira-dock)) driving **Valve's own `steamclient64.dll`** | The game requires a running Valve client. Dock signs in with the owner's refresh token, asks Valve's client for the licence and has it start the game: no `steam.exe`, no web helper (about 280 MB instead of 2.7 GB). No Steamworks emulation, no DRM bypass: every decision is Valve's. |
 | Rendering | Lavapipe (software Vulkan) and the layer `server/vklayer/` (`MPF_VKNULL=1`, `MPF_VKNULL_MODE=all`, `MPF_VKNULL_TRIM=1`), `MPFEVER_HEADLESS_NORENDER=1;MPFEVER_HEADLESS_FPS=10` | Draws, copies and render passes become no-ops; mapped GPU memory nobody reads is given back. A real GPU is used if the layer is off (`compose.gpu.yaml`, not validated). |
 | Disk | the "lite" install (`server/scripts/mklite.py`) | The engine reads archives at fixed offsets, so archives keep their layout: textures, audio and blobs become file holes (sparse), images stay valid but empty. Generated from the host's own copy, never distributed. |
 | Display | `Xvfb` only | The game closes without an X server. Nothing is exposed: no VNC, no remote desktop. |
@@ -114,11 +114,11 @@ other (result 30, before any sign-in). The image pins the January 2026 build:
 |---|---|
 | `steamclient64.dll` | 25 546 904 bytes, SHA-256 `71b391fe9f3e2006cbc81a5c75eef3eb4186012deabfdb2c8b7e8d4850ecf640` |
 | Package fetched from Valve | `https://client-update.akamai.steamstatic.com/bins_win32.zip.23e34a6d4b10596a44561a5100dac5585d2517da`, SHA-256 `8b712b2a3412a9066b7725f4e1c5cef9a7ca5b187b6585a5b92d25d09df0ba62` (checked before use) |
-| Madeira Dock | github.com/willfaust/madeira-dock, commit `67780ba92e60dbfac4fe80eaf2ce34b9ea1a1c60` (GPL-3.0-or-later) |
+| Madeira Dock | `server/dock/`, imported unmodified from github.com/willfaust/madeira-dock commit `67780ba92e60dbfac4fe80eaf2ce34b9ea1a1c60` (GPL-3.0-or-later), maintained here; unit-tested and built in the image build |
 
 Dock never starts `steam.exe`, so the pinned client is never updated by Steam. Valve could remove that archive or change its authentication protocol: the server then stops with an explicit message
-(hash mismatch, download failure, or Dock's refusal in `srv/dock.log`). There is no second Steam implementation: the remedy is a new Dock revision with a verified layout and a new pinned hash
-(`server/scripts/lib.sh`, `server/Dockerfile`). Dock is a young third-party project, not endorsed by Valve; overlay, cloud saves and achievements are not supported (the server does not use them).
+(hash mismatch, download failure, or Dock's refusal in `srv/dock.log`). There is no second Steam implementation: the remedy is to add the new client build to our copy of Dock's layout table and to change the pin
+(`server/dock/MAINTAINING.md` lists the steps; the pin is in `server/scripts/lib.sh`). Dock is not endorsed by Valve; overlay, cloud saves and achievements are not supported (the server does not use them).
 One Steam account plays one game at a time: playing on it elsewhere while the server runs can interrupt it (a few minutes of both was tolerated, no guarantee): use a dedicated account.
 
 ## Update, roll back, security
@@ -127,7 +127,7 @@ One Steam account plays one game at a time: playing on it elsewhere while the se
   Players must run the MPFever client of the server's version.
 - The container runs as uid 1001 with a read-only root file system, all capabilities dropped, `no-new-privileges`, only the game port published. `.env` holds the server password: keep it out of version control.
 - Exit codes: 20/21 Valve client download or hash, 30 game missing, 40/41 Steam session missing or expired, 42 savegame missing, 50 launcher failing repeatedly. Reports: `docker compose logs`, `srv/launcher.out`,
-  `srv/logs/`, and Dock's `srv/dock.log` (stage names and numbers only; result codes in madeira-dock's README).
+  `srv/logs/`, and Dock's `srv/dock.log` (stage names and numbers only; result codes in `server/dock/README.upstream.md`).
 
 ## Measured
 
@@ -152,7 +152,7 @@ stopping while a client has vanished, the GPU variant.
 
 ## Build and tests
 
-`.github/workflows/dedicated-server.yml` runs the static checks (`server/tests/check.sh`: shell, Python tests, Compose, no secrets or binaries), builds the package from the latest official release with the
-Linux server's launcher changes, builds the image, smoke-tests it (unprivileged, no game or Valve file inside, explicit errors on empty volumes) and publishes only when a tag
+`.github/workflows/dedicated-server.yml` runs the static checks (`server/tests/check.sh`: shell, Python tests, Compose, no secrets or binaries), runs Dock's unit tests, builds the package from the latest official release with the
+Docker server's launcher changes, builds the image, smoke-tests it (unprivileged, no game or Valve file inside, explicit errors on empty volumes) and publishes only when a tag
 `dedicated-server-v<version>` is pushed or the workflow is run by hand with "publish" ticked. Locally: put a package built by `build.bat` in `server/dist/MPFever-server.zip` and
 `docker compose -f compose.yaml -f compose.build.yaml build` (`APT_MIRROR` can name another Ubuntu mirror).

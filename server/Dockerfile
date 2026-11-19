@@ -10,17 +10,14 @@
 
 ARG UBUNTU=ubuntu:24.04
 
-# ---------------------------------------------------------------- Madeira Dock, from source at a pinned commit (GPL-3.0-or-later)
+# ---------------------------------------------------------------- Madeira Dock, from this repository's copy (dock/, GPL-3.0-or-later): unit tests, then the build
 FROM ${UBUNTU} AS dock
 ARG APT_MIRROR=
 RUN if [ -n "$APT_MIRROR" ]; then sed -i "s#http://archive.ubuntu.com/ubuntu#$APT_MIRROR#g; s#http://security.ubuntu.com/ubuntu#$APT_MIRROR#g" /etc/apt/sources.list.d/ubuntu.sources; fi
-ARG DOCK_REPO=https://github.com/willfaust/madeira-dock.git
-ARG DOCK_REF=67780ba92e60dbfac4fe80eaf2ce34b9ea1a1c60
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates git gcc-mingw-w64-x86-64 >/dev/null \
- && git clone -q "$DOCK_REPO" /src && git -C /src checkout -q "$DOCK_REF" && test "$(git -C /src rev-parse HEAD)" = "$DOCK_REF"
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends gcc libc6-dev gcc-mingw-w64-x86-64 >/dev/null
+COPY dock/ /src/
 WORKDIR /src
-RUN x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wno-cast-function-type -static -s -o /dockhost.exe \
-      src/main.c src/probe.c src/session.c src/launch.c src/validation.c src/auth.c src/client_layout.c src/scm.c src/hold.c -ladvapi32 -luser32
+RUN bash check.sh && bash build.sh /dockhost.exe
 
 # ---------------------------------------------------------------- the Vulkan layer that makes drawing a no-op
 FROM ${UBUNTU} AS vklayer
@@ -60,7 +57,7 @@ RUN python3 -m zipfile -e /tmp/mpfever-server.zip /tmp/pkg && mkdir -p /opt/mpfe
  && rm -rf /tmp/pkg /tmp/mpfever-server.zip
 
 COPY --from=dock /dockhost.exe /opt/mpfever/dockhost.exe
-COPY --from=dock /src/LICENSE /src/COPYING /src/LICENSE-EXCEPTION.md /opt/mpfever/licenses/madeira-dock/
+COPY --from=dock /src/LICENSE /src/COPYING /src/LICENSE-EXCEPTION.md /src/THIRD-PARTY-NOTICES.md /src/notices /opt/mpfever/licenses/madeira-dock/
 COPY --from=vklayer /libVkLayer_mpf_nulldraw.so /opt/mpfever/libVkLayer_mpf_nulldraw.so
 COPY vklayer/VkLayer_mpf_nulldraw.json /etc/vulkan/implicit_layer.d/VkLayer_mpf_nulldraw.json
 COPY scripts/ /opt/mpfever/scripts/

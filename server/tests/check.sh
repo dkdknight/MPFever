@@ -14,6 +14,10 @@ python3 -m py_compile scripts/*.py || fail=1
 python3 -m unittest -q tests.test_steam_session 2>&1 | tail -3 || fail=1
 python3 tests/selftest_lite.py | tail -2 || fail=1
 
+step "madeira dock (unit tests, tools)"
+bash dock/check.sh | tail -2 || fail=1
+python3 -m py_compile dock/tools/check-client-layout.py || fail=1
+
 step "compose"
 WORLD=check docker compose -f compose.yaml config -q || fail=1
 WORLD=check docker compose -f compose.yaml -f compose.build.yaml config -q || fail=1
