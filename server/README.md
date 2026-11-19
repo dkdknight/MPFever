@@ -1,7 +1,7 @@
-# MPFever dedicated server for Linux (experimental)
+# MPFever dedicated server in Docker (experimental)
 
-Docker packaging of the Linux dedicated server: Dockerfile, Compose files, entrypoint and administration commands, Vulkan layer, tests.
-**The guide (install, settings, how it works, risks, validation status) is [docs/LINUX-SERVER.md](../docs/LINUX-SERVER.md).**
+Docker packaging of the dedicated server (a Linux container): Dockerfile, Compose files, entrypoint and administration commands, Vulkan layer, tests.
+**The guide (install, settings, how it works, risks, validation status) is [docs/DOCKER-SERVER.md](../docs/DOCKER-SERVER.md).**
 
 | Path | |
 |---|---|

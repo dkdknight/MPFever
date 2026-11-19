@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # MPFever dedicated server (experimental): the Windows game under Wine 11 on Linux, Steam through Madeira Dock (Valve's own client library),
-# no GPU needed. See docs/LINUX-SERVER.md.
+# no GPU needed. See docs/DOCKER-SERVER.md.
 #
 # Build context: this folder. The MPFever package (launcher, native module, mod, built from this repository by build.bat / CI) is an input:
 #   server/dist/MPFever-server.zip   (the release\MPFever-<version>-server.zip of a build)

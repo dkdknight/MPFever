@@ -44,7 +44,7 @@ ensure_client() {  # Valve's pinned client library, fetched from Valve's own ser
 }
 
 link_game() {
-  [ -f "$GAME/TransportFever3.exe" ] || die "no game install in $GAME: run  install-game  (docs/LINUX-SERVER.md, quick start step 2)" 30
+  [ -f "$GAME/TransportFever3.exe" ] || die "no game install in $GAME: run  install-game  (docs/DOCKER-SERVER.md, quick start step 2)" 30
   [ -f "$STEAM_DIR/steamapps/appmanifest_$APPID.acf" ] || die "the Steam app manifest is missing: run  install-game  again" 30
   [ -L "$GAME_LINK" ] || { rmdir "$GAME_LINK" 2>/dev/null; ln -sfn "$GAME" "$GAME_LINK"; }
   if [ ! -f "$STEAM_DIR/steamapps/libraryfolders.vdf" ]; then   # the single library the Valve client needs to find the game
@@ -101,15 +101,15 @@ cmd_import_save() {
 cmd_run() {
   ensure_dirs
   : "${WORLD:?set WORLD to the name of a savegame (without .sav)}"
-  [ -f "$SESSION_FILE" ] || die "no Steam session: run  login  first (docs/LINUX-SERVER.md, quick start step 3)" 40
+  [ -f "$SESSION_FILE" ] || die "no Steam session: run  login  first (docs/DOCKER-SERVER.md, quick start step 3)" 40
   python3 "$OPT/scripts/steam_session.py" status --file "$SESSION_FILE" >/dev/null \
     || die "the Steam session has expired: run  login  again" 41
-  [ -f "$GAME/TransportFever3.exe" ] || die "no game install in $GAME: run  install-game  (docs/LINUX-SERVER.md, quick start step 2)" 30
+  [ -f "$GAME/TransportFever3.exe" ] || die "no game install in $GAME: run  install-game  (docs/DOCKER-SERVER.md, quick start step 2)" 30
   supports_sparse "$GAME" || warn "$GAME has no sparse-file support: only a full copy of the game works there"
   local ram; ram=$(awk '/MemTotal/ {printf "%d", $2/1048576}' /proc/meminfo)
   [ "$ram" -ge 12 ] || warn "only $ram GB of RAM visible: the game needs about 11 GB"
   init_prefix; ensure_client; link_game
-  [ -f "$(save_dir)/$WORLD.sav" ] || die "savegame '$WORLD.sav' not found: run  import-save  (docs/LINUX-SERVER.md, quick start step 4)" 42
+  [ -f "$(save_dir)/$WORLD.sav" ] || die "savegame '$WORLD.sav' not found: run  import-save  (docs/DOCKER-SERVER.md, quick start step 4)" 42
   # the game's settings: a minimal profile (lowest graphics) the first time; MPFever activates its mod in it
   mkdir -p "$(local_dir)/mods" "$(save_dir)"   # where the game and MPFever look for the mod and the saves (a new profile has none of them)
   [ -f "$(local_dir)/settings.lua" ] || cp "$OPT/config/settings.lua" "$(local_dir)/settings.lua"

@@ -1,24 +1,35 @@
-# MPFever dedicated server for Linux (`mpfever-server`, experimental)
+# MPFever dedicated server in Docker (`mpfever-server`, experimental)
 
-The dedicated server on Linux: the **real Transport Fever 3 simulation** (the Windows game, under Wine) in one Docker container. No GPU, no screen, no
+A dedicated server in a Linux container: the **real Transport Fever 3 simulation** (the Windows game, under Wine) in one Docker container. No GPU, no screen, no
 Steam desktop. Players join it with the usual MPFever client, from Windows, exactly as they join the Windows dedicated server.
 
 > **Status: experimental.** Validated end to end on the built image for short sessions on a small world with a real Windows client (see
 > [What is validated](#what-is-validated)). Long runs, several clients and large worlds are not validated yet. It needs **your own** Transport Fever 3
 > licence: the image contains no game file and no Valve file.
 
-## Dedicated server on Windows, on Linux, or relay
+## Where it runs
 
-| | Dedicated server (Windows) | Dedicated server (Linux, this page) | Relay ([RELAY.md](RELAY.md)) |
+"Linux" is the system inside the container. The host is any machine that runs Linux containers for x86-64:
+
+| Host | |
+|---|---|
+| Linux x86-64 (server, VPS) | yes, the target |
+| Windows with Docker Desktop (WSL2) | yes (give WSL2 at least 12 GB of RAM for the container: a Docker Desktop setting) |
+| macOS Intel | probably, not tried |
+| macOS Apple Silicon, other ARM hosts | no: the image is x86-64 and emulated Wine is far too slow |
+
+## Dedicated server on Windows, in Docker, or relay
+
+| | Dedicated server (Windows) | Dedicated server (Docker, this page) | Relay ([RELAY.md](RELAY.md)) |
 |---|---|---|---|
 | Download | `MPFever-<version>-server.zip` | Docker image `mpfever-server` | `Relay-MPFever-<version>-...` or its Docker image |
 | Runs the game and the world | yes | yes (Windows game under Wine) | no: the hosting player's PC does |
-| Needs | Windows, the game installed | Linux x86-64 with Docker, about 12 GB of RAM, your game files once | nothing but the program |
+| Needs | Windows, the game installed | an x86-64 host with Docker, about 12 GB of RAM, your game files once | nothing but the program |
 | Steam | the desktop client | Valve's client library only (about 280 MB) | none |
 
 ## Quick start
 
-You need a Linux x86-64 host or VPS with Docker (Compose v2), 12 GB of RAM or more for the container, about 1 core, a file system with sparse-file support
+You need an x86-64 host with Docker (Compose v2; a Linux server or VPS, or Windows with Docker Desktop), 12 GB of RAM or more for the container, about 1 core, a file system with sparse-file support
 (ext4, xfs, btrfs), about 6 GB of disk, a Steam account that owns Transport Fever 3 with the Steam mobile app (to approve the sign-in once), a copy of the game
 on a PC where it is installed, and a savegame (`.sav`) of the world to host. Use an account that is not played on at the same time as the server.
 

@@ -2,7 +2,7 @@ MPFever - Changelog
 ===================
 
 0.9.2 - (in progress)
-  - NEW (experimental, server/, docs/LINUX-SERVER.md): a dedicated server on Linux, in one Docker container: the Windows game under Wine, started through
+  - NEW (experimental, server/, docs/DOCKER-SERVER.md): a dedicated server in one Linux Docker container (any x86-64 Docker host): the Windows game under Wine, started through
     Madeira Dock (Valve's own client library: real sign-in and licence check, no Steam desktop, about 280 MB), software Vulkan with a layer that makes drawing a
     no-op, a "lite" game install (66 GB become about 1 GB), no GPU. Players join it like any dedicated server. The launcher gets a Linux/Wine start mode
     (MPFEVER_WINE=1, MPFEVER_DOCK) and a stop file (MPFEVER_STOPFILE: the world is saved, then the server stops, as the console's "stop"); nothing changes on
