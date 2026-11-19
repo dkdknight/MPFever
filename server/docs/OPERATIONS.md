@@ -20,7 +20,7 @@ Dock never starts `steam.exe`, so the pinned client is **never updated by Steam 
 
 ## Update, roll back, back up
 
-- Update: `docker compose pull && docker compose up -d`. Roll back: `MPFEVER_IMAGE=ghcr.io/dkdknight/mpfever-server:<version>` in `.env`. The launcher package is replaced at each start; `.env` and the volumes stay.
+- Update: `docker compose pull && docker compose up -d`. Roll back: `MPFEVER_IMAGE=ghcr.io/ampynjord/mpfever-server:<version>` in `.env`. The launcher package is replaced at each start; `.env` and the volumes stay.
 - Players must run the MPFever client of the server's version (the launcher says "other version than the host's" otherwise).
 - Back up the `mpfever-data` volume (saves, `srv/backups`, session). Never copy `secrets/steam.json` anywhere else; revoke it from your Steam account (Settings, Security, devices) if it leaks.
 - Resetting: remove the volumes (`docker compose down -v`) to start from nothing; the game volume is rebuilt by `install-game`.

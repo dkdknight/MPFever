@@ -19,8 +19,8 @@ Players join it with the usual MPFever client (same version) from Windows.
 
 ```
 mkdir mpfever-server && cd mpfever-server
-curl -fsSLO https://raw.githubusercontent.com/dkdknight/MPFever/main/server/compose.yaml
-curl -fsSL  https://raw.githubusercontent.com/dkdknight/MPFever/main/server/.env.example -o .env
+curl -fsSLO https://raw.githubusercontent.com/ampynjord/MPFever/feature/dedicated-server/server/compose.yaml
+curl -fsSL  https://raw.githubusercontent.com/ampynjord/MPFever/feature/dedicated-server/server/.env.example -o .env
 ```
 
 Edit `.env` (at least `WORLD`, the savegame's name without `.sav`). Then, once:
@@ -55,14 +55,14 @@ with `install-game` at any time. Server console commands (`save`, `kick`, ...) a
 
 ## Update and roll back
 
-Images are tagged by version (`ghcr.io/dkdknight/mpfever-server:<version>`) and `experimental`. Update: `docker compose pull && docker compose up -d`. Roll back: set
-`MPFEVER_IMAGE=ghcr.io/dkdknight/mpfever-server:<previous version>` in `.env` and `docker compose up -d`; the data volume is untouched. Players need the MPFever client of the server's version.
+Images are tagged by version (`ghcr.io/ampynjord/mpfever-server:<version>`) and `experimental`. Update: `docker compose pull && docker compose up -d`. Roll back: set
+`MPFEVER_IMAGE=ghcr.io/ampynjord/mpfever-server:<previous version>` in `.env` and `docker compose up -d`; the data volume is untouched. Players need the MPFever client of the server's version.
 See [docs/OPERATIONS.md](docs/OPERATIONS.md) for backups, Valve updates, security and troubleshooting.
 
 ## Versions and tags
 
 The image always carries the **latest official MPFever release** (the package is built from that release's tag, with the launcher changes of this branch applied until a release contains them), so players on the official client can join.
-The image is named like the relay's (`mpfever-relay`): `ghcr.io/<owner>/mpfever-server`. Tags: the MPFever version (for example `0.9.1`; `0.9.1-2` for a rebuild of the same release) and `experimental` (the latest build). Pin a version tag in production.
+The image is `ghcr.io/ampynjord/mpfever-server` (named like the relay's `mpfever-relay`; published from the maintainer's fork, a project that builds it elsewhere publishes `ghcr.io/<owner>/mpfever-server`). Tags: the MPFever version (for example `0.9.1`; `0.9.1-2` for a rebuild of the same release) and `experimental` (the latest build). Pin a version tag in production.
 Publishing is deliberate: pushing the git tag `dedicated-server-v<mpfever version>[-<n>]` (or a manual workflow run) publishes after the checks pass; a push or a pull request never does.
 
 ## Build it yourself
