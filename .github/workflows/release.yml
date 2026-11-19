@@ -87,7 +87,9 @@ jobs:
 
       - name: Signature (SignPath)
         if: env.SIGNPATH_ON == 'true'
-        uses: signpath/github-action-submit-signing-request@v2
+        # (v3: SignPath's current connector; v2 went to the old one, which answered "There is no published artifact with id ..."
+        # for an artifact uploaded a second before, in the first test-signing run of 2026-11-19)
+        uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
