@@ -257,7 +257,7 @@ MPFever has no account, no advertising and no statistics. By itself, it contacts
 ## Code signing policy
 
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-*Applied for: the releases are signed once SignPath Foundation has accepted MPFever. Earlier releases are not signed.*
+*SignPath Foundation accepted MPFever on 2026-11-19; the signing is being set up, and the first signed release follows. Earlier releases are not signed.*
 
 - `MPFever.exe` and `winhttp.dll`, in the players' and the dedicated server's archives, are signed. They are built on GitHub from this repository's code by the [Release build](.github/workflows/release.yml) workflow; every signature is approved by hand.
 - Committers and reviewers: [dkdknight](https://github.com/dkdknight). A pull request from anyone else is reviewed by a committer before it is merged.
