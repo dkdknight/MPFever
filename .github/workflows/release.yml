@@ -4,6 +4,10 @@
 # configuration of the SignPath project). Each signature waits for an approver's yes in SignPath. Nothing is published: the
 # archives and the relay (Linux x64 and Windows x64; the relay is not the dedicated server: it runs no game) stay in the run's artifacts, to be tested, then attached to a GitHub release by hand. The one exception is the relay's Docker image, pushed to ghcr.io only when "docker" is ticked at the start (off by default). Without SignPath set up
 # (secret SIGNPATH_API_TOKEN and variable SIGNPATH_ORGANIZATION_ID of the repository), the archives are left unsigned.
+# (0.9.2) SignPath Foundation accepted MPFever on 2026-11-19: the setup is checked first with SignPath's self-signed test
+# certificate (signing policy test-signing, the default below), and only then does SignPath import the Foundation's certificate
+# (release-signing). Archives signed with the test certificate are for checking the setup only: they are named
+# TEST-SIGNED-MPFever-..., never MPFever-<version>.zip, so that no updater can take them, and must never be published.
 name: Release build
 
 on:
@@ -13,6 +17,13 @@ on:
         description: "Also publish the relay's Docker image (x64 and arm64) to ghcr.io/<owner>/mpfever-relay-docker, tagged with the version and latest"
         type: boolean
         default: false
+      signing_policy:
+        description: "SignPath's signing policy: test-signing (SignPath's self-signed test certificate, to check the setup: NEVER publish those archives) or release-signing (SignPath Foundation's certificate, once SignPath has imported it)"
+        type: choice
+        options:
+          - test-signing
+          - release-signing
+        default: test-signing
 
 jobs:
   release:
@@ -76,7 +87,7 @@ jobs:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: MPFever
-          signing-policy-slug: release-signing
+          signing-policy-slug: ${{ inputs.signing_policy }}
           artifact-configuration-slug: release
           github-artifact-id: ${{ steps.tosign.outputs.artifact-id }}
           parameters: |
@@ -90,11 +101,17 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ steps.version.outputs.version }}"
+          # (the test certificate is self-signed: Windows does not trust it, so its signature is only checked to be there;
+          # with the Foundation's certificate the signature must be valid)
+          $release = "${{ inputs.signing_policy }}" -eq 'release-signing'
+          $pre = if ($release) { '' } else { 'TEST-SIGNED-' }
           New-Item -ItemType Directory -Force signed | Out-Null
-          foreach ($p in @(@('signed-folders\dist\MPFever', "MPFever-$v.zip"), @('signed-folders\dist-server\MPFever-Server', "MPFever-$v-server.zip"))) {
+          foreach ($p in @(@('signed-folders\dist\MPFever', "${pre}MPFever-$v.zip"), @('signed-folders\dist-server\MPFever-Server', "${pre}MPFever-$v-server.zip"))) {
             foreach ($f in 'MPFever.exe', 'winhttp.dll') {
               $sig = Get-AuthenticodeSignature (Join-Path $p[0] $f)
-              if ($sig.Status -ne 'Valid') { throw "$($p[0])\$f is not signed: $($sig.Status)" }
+              if ($release -and $sig.Status -ne 'Valid') { throw "$($p[0])\$f is not signed: $($sig.Status)" }
+              if (-not $sig.SignerCertificate) { throw "$($p[0])\$f has no signature" }
+              Write-Host "$($p[0])\$f signed by $($sig.SignerCertificate.Subject) ($($sig.Status))"
             }
             # (Windows PowerShell's zip, as build.bat makes it)
             powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path '$($p[0])'), (Join-Path (Resolve-Path 'signed') '$($p[1])'), 'Optimal', `$true)"
@@ -105,7 +122,7 @@ jobs:
         if: env.SIGNPATH_ON == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MPFever-${{ steps.version.outputs.version }}-signed
+          name: ${{ inputs.signing_policy == 'release-signing' && format('MPFever-{0}-signed', steps.version.outputs.version) || format('TEST-SIGNED-MPFever-{0}-do-not-publish', steps.version.outputs.version) }}
           path: signed/*.zip
           if-no-files-found: error
           retention-days: 30
@@ -116,9 +133,12 @@ jobs:
         run: |
           $v = "${{ steps.version.outputs.version }}"
           $signed = $env:SIGNPATH_ON -eq 'true'
+          $release = "${{ inputs.signing_policy }}" -eq 'release-signing'
           $dir = if ($signed) { 'signed' } else { 'release' }
-          $lines = @("## MPFever $v ($(if ($signed) { 'signed' } else { 'NOT signed: SignPath is not set up' }))", "")
-          foreach ($f in "MPFever-$v.zip", "MPFever-$v-server.zip") {
+          $pre = if ($signed -and -not $release) { 'TEST-SIGNED-' } else { '' }
+          $what = if (-not $signed) { 'NOT signed: SignPath is not set up' } elseif ($release) { 'signed' } else { "signed with SignPath's TEST certificate: do not publish" }
+          $lines = @("## MPFever $v ($what)", "")
+          foreach ($f in "${pre}MPFever-$v.zip", "${pre}MPFever-$v-server.zip") {
             $h = (Get-FileHash (Join-Path $dir $f) -Algorithm SHA256).Hash
             $lines += "- ``$f``, SHA-256 ``$h``"
           }

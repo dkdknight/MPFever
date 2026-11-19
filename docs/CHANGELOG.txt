@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.9.2 - (in progress)
+  - BUILD (code signing, 2026-11-19: SignPath Foundation accepted MPFever; their first step is a signature with their
+    self-signed test certificate, then they review the setup and import the Foundation's certificate): the Release build
+    workflow asks for the signing policy, test-signing by default, release-signing once the certificate is in. Archives signed
+    with the test certificate are named TEST-SIGNED-MPFever-..., so that no updater ever takes them, and their signature is
+    only checked to be there (Windows does not trust a self-signed certificate); release-signing still requires a valid one.
+    README: "Applied for" became "accepted". Test: tests/test_signpolicy092.py.
 
 0.9.1 - 2026-11-19: a drift right at the start of a session (#426), the companies' progression, the update from 0.8.17 (exact archive names), MPFever inside the game's folder (#427), the commands in the drift logs (#150)
   - FIX (a slow drift, "script:progression", seen in a test of 58 minutes with one game held now and then): the game's company
