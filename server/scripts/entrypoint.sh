@@ -70,6 +70,7 @@ check_settings() {
   need_choice LOG_FORMAT "${LOG_FORMAT:-json}" json text
   need_choice UPDATE_CHECK "${UPDATE_CHECK:-notify}" notify off
   need_choice MODS_SYNC "${MODS_SYNC:-auto}" auto off
+  need_choice GAME_LOG "${GAME_LOG:-warn}" off error warn info debug
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
 
@@ -199,6 +200,13 @@ cmd_run() {
   Xvfb :1 -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 & XVFB=$!
   sleep 2
 
+  # the game's and Dock's own logs join the stream (SRV_GAME_LOG: off, error, warn (default), info or debug): components "game" and "dock"
+  SHIPPERS=()
+  if [ "${GAME_LOG:-warn}" != off ]; then
+    python3 "$OPT/scripts/logship.py" game "$(local_dir)/crash_dump/stdout.txt" "${GAME_LOG:-warn}" & SHIPPERS+=($!)
+    python3 "$OPT/scripts/logship.py" dock "$SRV/dock.log" "${GAME_LOG:-warn}" & SHIPPERS+=($!)
+  fi
+
   STOPPING=0; LAUNCHER=0
   on_term() {
     STOPPING=1; log "stop requested: saving the world and closing the game"
@@ -222,7 +230,7 @@ cmd_run() {
     [ "$quick" -lt 5 ] || { kill "$FEEDER" "$XVFB" 2>/dev/null; die "the launcher stopped 5 times within a minute (last status $rc): see $SRV/launcher.out and $SRV/dock.log" 50; }
     log "the launcher stopped (status $rc): starting it again in 10 s"; sleep 10
   done
-  kill "$FEEDER" "$XVFB" 2>/dev/null; wineserver -k 2>/dev/null
+  kill "$FEEDER" "$XVFB" "${SHIPPERS[@]}" 2>/dev/null; wineserver -k 2>/dev/null
   log "stopped"
 }
 
