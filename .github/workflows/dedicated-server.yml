@@ -3,8 +3,8 @@
 # The image always carries the LATEST OFFICIAL MPFever release: the package is built from that release's tag (build.bat) with the launcher
 # changes of this branch applied on top (they disappear from the patch once a release contains them). So players on the official release can join.
 #
-# Publication to GHCR (ghcr.io/<owner>/mpfever-server) happens ONLY on purpose, after every job above has passed:
-#   - pushing a tag  dedicated-server-v<mpfever version>-<n>   (for example dedicated-server-v0.9.1-1): tags "<mpfever version>-server.<n>" and "experimental"
+# Publication to GHCR (ghcr.io/<owner>/mpfever-server-docker, named like the relay's mpfever-relay-docker) happens ONLY on purpose, after every job above has passed:
+#   - pushing a tag  dedicated-server-v<mpfever version>[-<n>]   (for example dedicated-server-v0.9.1): image tags "<mpfever version>[-<n>]" and "experimental"
 #   - or a manual run (workflow_dispatch, workflow file on the default branch) with "publish" ticked.
 # A push or a pull request never publishes.
 name: Dedicated server
@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       version_tag:
-        description: "Image tag besides 'experimental' (for example 0.9.1-server.1); empty: only 'experimental'"
+        description: "Image tag besides 'experimental' (the MPFever version, for example 0.9.1); empty: only 'experimental'"
         type: string
         default: ""
       mpfever_ref:
@@ -94,8 +94,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:
-          name: server-package
-          path: release-src/release/*-server.zip
+          name: MPFever-server-package-${{ github.sha }}
+          path: release-src/release/MPFever-*-server.zip
           retention-days: 14
           if-no-files-found: error
 
@@ -110,7 +110,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: server-package
+          name: MPFever-server-package-${{ github.sha }}
           path: server/dist
       - name: Package for the image
         working-directory: server/dist
@@ -162,10 +162,9 @@ jobs:
           pub=false; vtag=""
           if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.publish }}" = true ]; then pub=true; vtag="${{ inputs.version_tag }}"; fi
           if [ "${{ github.ref_type }}" = tag ]; then
-            pub=true; t="${{ github.ref_name }}"; t="${t#dedicated-server-v}"        # 0.9.1-1
-            vtag="${t%-*}-server.${t##*-}"                                            # 0.9.1-server.1
+            pub=true; vtag="${{ github.ref_name }}"; vtag="${vtag#dedicated-server-v}"   # 0.9.1 or 0.9.1-2
           fi
-          echo "publish=$pub" >> "$GITHUB_OUTPUT"; echo "repo=ghcr.io/$owner/mpfever-server" >> "$GITHUB_OUTPUT"; echo "vtag=$vtag" >> "$GITHUB_OUTPUT"
+          echo "publish=$pub" >> "$GITHUB_OUTPUT"; echo "repo=ghcr.io/$owner/mpfever-server-docker" >> "$GITHUB_OUTPUT"; echo "vtag=$vtag" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         if: steps.tags.outputs.publish == 'true'
         uses: docker/login-action@v3

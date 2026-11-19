@@ -1,7 +1,9 @@
 # MPFever dedicated server (experimental). Setup and first start: README.md.   docker compose up -d
+name: mpfever-server
+
 services:
   mpfever-server:
-    image: ${MPFEVER_IMAGE:-ghcr.io/dkdknight/mpfever-server:experimental}
+    image: ${MPFEVER_IMAGE:-ghcr.io/dkdknight/mpfever-server-docker:experimental}
     container_name: ${CONTAINER_NAME:-mpfever-server}
     restart: unless-stopped
     init: true
