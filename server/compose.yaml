@@ -4,32 +4,32 @@ name: mpfever-server
 services:
   mpfever-server:
     image: ${MPFEVER_IMAGE:-ghcr.io/ampynjord/mpfever-server:experimental}
-    container_name: ${CONTAINER_NAME:-mpfever-server}
+    container_name: ${SRV_CONTAINER_NAME:-mpfever-server}
     restart: unless-stopped
     init: true
     stop_grace_period: 120s           # the world is saved and the game closed on `docker compose stop`
     ports:
-      - "${PORT:-28090}:${PORT:-28090}"
+      - "${SRV_PORT:-28090}:${SRV_PORT:-28090}"
     environment:
-      WORLD: ${WORLD:?set WORLD in .env (the savegame to host)}
-      SERVER_NAME: ${SERVER_NAME:-MPFever Server}
-      PORT: ${PORT:-28090}
-      PASSWORD: ${PASSWORD:-}
-      MAX_PLAYERS: ${MAX_PLAYERS:-8}
-      COMPANY_MODE: ${COMPANY_MODE:-shared}
-      START_SPEED: ${START_SPEED:-1}
-      PAUSE_WHEN_EMPTY: ${PAUSE_WHEN_EMPTY:-false}
-      PLAYER_SPEED_CONTROL: ${PLAYER_SPEED_CONTROL:-true}
-      AUTOSAVE_MINUTES: ${AUTOSAVE_MINUTES:-10}
-      BACKUPS: ${BACKUPS:-10}
-      PUBLIC: ${PUBLIC:-false}
-      PUBLIC_ADDRESS: ${PUBLIC_ADDRESS:-}
-      MOTD: ${MOTD:-}
+      WORLD: ${SRV_WORLD:?set SRV_WORLD in .env (the savegame to host)}
+      SERVER_NAME: ${SRV_SERVER_NAME:-MPFever Server}
+      PORT: ${SRV_PORT:-28090}
+      PASSWORD: ${SRV_PASSWORD:-}
+      MAX_PLAYERS: ${SRV_MAX_PLAYERS:-8}
+      COMPANY_MODE: ${SRV_COMPANY_MODE:-shared}
+      START_SPEED: ${SRV_START_SPEED:-1}
+      PAUSE_WHEN_EMPTY: ${SRV_PAUSE_WHEN_EMPTY:-false}
+      PLAYER_SPEED_CONTROL: ${SRV_PLAYER_SPEED_CONTROL:-true}
+      AUTOSAVE_MINUTES: ${SRV_AUTOSAVE_MINUTES:-10}
+      BACKUPS: ${SRV_BACKUPS:-10}
+      PUBLIC: ${SRV_PUBLIC:-false}
+      PUBLIC_ADDRESS: ${SRV_PUBLIC_ADDRESS:-}
+      MOTD: ${SRV_MOTD:-}
     volumes:
       - data:/data        # Wine prefix, Valve client, Steam session (secrets/), saves, launcher and its logs and backups
       - game:/game        # the "lite" game install (about 1 GB on disk)
-    mem_limit: ${MEM_LIMIT:-14g}
-    cpus: ${CPUS:-2}
+    mem_limit: ${SRV_MEM_LIMIT:-16g}
+    cpus: ${SRV_CPUS:-2}
     read_only: true
     tmpfs:
       - /tmp:size=512m
@@ -42,6 +42,6 @@ services:
 
 volumes:
   data:
-    name: ${DATA_VOLUME:-mpfever-data}
+    name: ${SRV_DATA_VOLUME:-mpfever-data}
   game:
-    name: ${GAME_VOLUME:-mpfever-game}
+    name: ${SRV_GAME_VOLUME:-mpfever-game}

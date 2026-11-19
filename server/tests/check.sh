@@ -19,9 +19,13 @@ bash dock/check.sh | tail -2 || fail=1
 python3 -m py_compile dock/tools/check-client-layout.py || fail=1
 
 step "compose"
-WORLD=check docker compose -f compose.yaml config -q || fail=1
-WORLD=check docker compose -f compose.yaml -f compose.build.yaml config -q || fail=1
-WORLD=check docker compose -f compose.yaml -f compose.gpu.yaml config -q || fail=1
+SRV_WORLD=check docker compose -f compose.yaml config -q || fail=1
+SRV_WORLD=check docker compose -f compose.yaml -f compose.build.yaml config -q || fail=1
+SRV_WORLD=check docker compose -f compose.yaml -f compose.gpu.yaml config -q || fail=1
+
+step "compose reads only SRV_ and MPFEVER_ variables (a host variable such as PUBLIC must never reach the server)"
+bad=$(grep -hoE '\$\{[A-Za-z_]+' compose*.yaml | grep -vE '^\$\{(SRV_|MPFEVER_)' || true)
+[ -z "$bad" ] || { echo "unprefixed variables in compose: $bad"; fail=1; }
 
 step "no secrets, no binaries, no proprietary files"
 if git ls-files --error-unmatch . >/dev/null 2>&1; then files=$(git ls-files .); else files=$(find . -type f -not -path './dist/*' | sed 's#^\./##'); fi

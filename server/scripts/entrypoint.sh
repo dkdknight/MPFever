@@ -57,6 +57,18 @@ account_id() { python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]
 save_dir() { echo "$STEAM_DIR/userdata/$(account_id)/$APPID/local/save"; }
 local_dir() { echo "$STEAM_DIR/userdata/$(account_id)/$APPID/local"; }
 
+# the server settings come from .env through Compose: refuse a value that is not meant (a stray variable of the host once turned the public list on)
+need_choice() { local n=$1 v=$2 a; shift 2; for a in "$@"; do [ "$v" = "$a" ] && return 0; done; die "SRV_$n must be one of: $* (got '$v')" 2; }
+need_int()    { [[ "$2" =~ ^[0-9]+$ ]] || die "SRV_$1 must be a number (got '$2')" 2; }
+check_settings() {
+  need_choice PUBLIC "${PUBLIC:-false}" true false
+  need_choice PAUSE_WHEN_EMPTY "${PAUSE_WHEN_EMPTY:-false}" true false
+  need_choice PLAYER_SPEED_CONTROL "${PLAYER_SPEED_CONTROL:-true}" true false
+  need_choice COMPANY_MODE "${COMPANY_MODE:-shared}" shared separate
+  need_choice START_SPEED "${START_SPEED:-1}" 1 2 4
+  need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
+}
+
 # ---------------------------------------------------------------- modes
 
 cmd_status() {
@@ -100,7 +112,8 @@ cmd_import_save() {
 
 cmd_run() {
   ensure_dirs
-  : "${WORLD:?set WORLD to the name of a savegame (without .sav)}"
+  : "${WORLD:?set SRV_WORLD to the name of a savegame (without .sav)}"
+  check_settings
   [ -f "$SESSION_FILE" ] || die "no Steam session: run  login  first (docs/DOCKER-SERVER.md, quick start step 3)" 40
   python3 "$OPT/scripts/steam_session.py" status --file "$SESSION_FILE" >/dev/null \
     || die "the Steam session has expired: run  login  again" 41

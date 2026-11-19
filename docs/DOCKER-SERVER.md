@@ -42,7 +42,7 @@ curl -fsSLO https://raw.githubusercontent.com/ampynjord/MPFever/feature/dedicate
 curl -fsSL  https://raw.githubusercontent.com/ampynjord/MPFever/feature/dedicated-server/server/.env.example -o .env
 ```
 
-Edit `.env` (at least `WORLD`, the savegame's name without `.sav`). Then, once:
+Edit `.env` (at least `SRV_WORLD`, the savegame's name without `.sav`). Then, once:
 
 1. **Pull the image**: `docker compose pull`
 2. **Import the game** from your own Steam library (read-only mount; the 3D data is left out, 66 GB become about 1 GB on disk):
@@ -67,19 +67,20 @@ Commands for the administrator (the service is `mpfever-server`):
 
 ## Settings
 
-Everything is in `.env` and takes effect with `docker compose up -d`, no rebuild. Only `WORLD` is required.
+Everything is in `.env` and takes effect with `docker compose up -d`, no rebuild. Only `SRV_WORLD` is required. The `SRV_` prefix keeps the names apart from the variables of the machine
+the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`, which once listed a server publicly by mistake).
 
 | Variable | Default | |
 |---|---|---|
-| `WORLD` | | the savegame to host (name without `.sav`) |
-| `SERVER_NAME`, `MOTD` | `MPFever Server`, empty | name and welcome message |
-| `PORT` | `28090` | TCP port |
-| `PASSWORD`, `MAX_PLAYERS` | empty, `8` | |
-| `COMPANY_MODE` | `shared` | `shared` or `separate` (one company per player) |
-| `START_SPEED`, `PAUSE_WHEN_EMPTY`, `PLAYER_SPEED_CONTROL` | `1`, `false`, `true` | |
-| `AUTOSAVE_MINUTES`, `BACKUPS` | `10`, `10` | autosave and copies kept in `srv/backups` |
-| `PUBLIC`, `PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list |
-| `MEM_LIMIT`, `CPUS` | `14g`, `2` | container limits (measured need: about 11 GB and 0.7 core for a small world) |
+| `SRV_WORLD` | | the savegame to host (name without `.sav`) |
+| `SRV_SERVER_NAME`, `SRV_MOTD` | `MPFever Server`, empty | name and welcome message |
+| `SRV_PORT` | `28090` | TCP port |
+| `SRV_PASSWORD`, `SRV_MAX_PLAYERS` | empty, `8` | |
+| `SRV_COMPANY_MODE` | `shared` | `shared` or `separate` (one company per player) |
+| `SRV_START_SPEED`, `SRV_PAUSE_WHEN_EMPTY`, `SRV_PLAYER_SPEED_CONTROL` | `1`, `false`, `true` | |
+| `SRV_AUTOSAVE_MINUTES`, `SRV_BACKUPS` | `10`, `10` | autosave and copies kept in `srv/backups` |
+| `SRV_PUBLIC`, `SRV_PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list |
+| `SRV_MEM_LIMIT`, `SRV_CPUS` | `16g`, `2` | container limits: about 12 GB and 1 CPU for the small world (minimum), 16 GB and 2 CPUs for a world of 120 MB; the CPU also sets how fast it starts and resynchronises |
 | `MPFEVER_IMAGE` | the published image | another image or a version tag (rollback) |
 
 They are written to the server's `mpfever_server.properties` at every start (the game's other server options of SERVER.txt are the launcher's own).
@@ -149,9 +150,21 @@ Small world, no GPU, one real Windows client:
 
 Run end to end on the built image with volumes created empty, a real account and a real Windows client: `install-game`, the QR `login`, the token hand-over to Dock (Steamworks without a Steam
 desktop), first start, `import-save`, world load, a client joining and staying identical, `docker compose stop` (about 10 s, world saved), restart restoring the saved world, the healthcheck, the
-read-only container.
-**Not validated yet:** runs of 30 minutes or more, memory growth over time, several clients (a second Steam account is needed, or local test clients), large worlds, enforced CPU/memory limits,
-stopping while a client has vanished, the GPU variant.
+read-only container. Then a longer run:
+
+| Run | Result |
+|---|---|
+| A real world of 122 MB (1.6 times the small one), 16 GB and 2 CPUs, 40 minutes, no client at the end | 0 desynchronisations, 0 errors, no out-of-memory kill. Game memory (PSS) climbs from 11.2 GB to 12.5 GB in the first 18 minutes of simulation, then stays flat (12.54 GB): a warm-up, not a leak. About 1.1 CPU while it simulates, game speed about x1.0 outside saves and resynchronisations. Container 14.9 GB including 2.7 GB of reclaimable cache: **16 GB is the minimum for this size**, 14 GB (the default) is not enough |
+| The small world, **12 GB and 1 CPU** (the minimum limits) | runs: container peak 11.6 GB of 12 GB, no out-of-memory kill, 0 desynchronisations. Start takes 5 min 17 s (2 min 40 with 2 CPUs); a client's resynchronisation 285 s (96 to 140 s with 2 CPUs) |
+| `docker compose stop` while a client has vanished (killed abruptly) | 71 s, exit code 0, the world saved: the stop waits up to about 60 s for the lost client, inside the 90 s script and 120 s Compose timeouts |
+
+**Known limits found by these runs**
+- **Worlds that use mods:** the server has no way to install a world's mods yet. A real 595 MB world using 15 mod.io mods was refused ("Missing mods: the session ends"). A client whose own game had personal mods stayed stuck on
+  "loading" for 10 minutes on the 122 MB world (the server resumed without it after 616 s). Importing mods is the next piece of work.
+- **Public list and Steam join:** with `SRV_PUBLIC=true` (or a stray host variable, see Settings) the server is announced to MPFever's public list with its Steam ID, and anyone can join through Steam; a
+  stranger did so during the first long run. Keep `SRV_PUBLIC=false` and set `SRV_PASSWORD` for a private server.
+
+**Not validated yet:** several clients at once (local test clients, or a second Steam account), the GPU variant, worlds with mods, runs of several hours.
 
 ## Build, tests, publication
 
