@@ -99,6 +99,8 @@ it is stable enough.
   [ ] Computer companies complete and reliable (passenger trains, signals, electric trains, warehouses)
   [x] GOG and Epic copies (0.8.0): Steam, GOG and Epic players in one game, tested together (keys from Urban Games)
   [ ] A signed MPFever (no more "unknown publisher" warning)
+      (SignPath Foundation accepted MPFever on 2026-11-19 and the signing works with their test certificate: the first signed
+      release comes once their certificate is in)
   [ ] The dedicated server tested in long real games; the list of checked mods up to date
 
 0.3 - Playing with friends
