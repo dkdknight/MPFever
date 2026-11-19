@@ -2,6 +2,11 @@ MPFever - Changelog
 ===================
 
 0.9.1 - (in progress)
+  - DIAGNOSTIC (#150, report #431: two games with the same batches parted in the animals' moves, and the client had applied one
+    command in that batch, the host none, without anything telling which): the drift rings now note each command the simulation
+    applies with its kind, among the entities (drift_<check>_ops.txt: "<step> c<kind> loop|script -"), and tools/drift_diff.py
+    shows the commands of both games just before the first step that differs, marking those that are not the same. Nothing the
+    simulation decides changes. MPFEVER_DRIFTCMDS=0: not noted. Test: tests/test_driftcmds091.py.
   - FIX (#427, MPFever unpacked inside the game's folder, Transport Fever 3\mods\MPFever): the launcher moves another copy of
     its mod found in the game's mods folder into old-mod-copies next to MPFever.exe, and that folder was then in the game's mods
     folder too: the launcher found the copies it had moved there again at every start, and the game could take one of them. In

@@ -2268,6 +2268,7 @@ static void InstallFamSync()
 }
 
 static u64 ApplyBody(void* a, void* b, bool inLoop);
+static void DriftCmd(u32 kind, bool loop);   // (0.9.1, #150 diagnostic, see DriftOp)
 extern "C" u64 ApplyDetour(void* a, void* b)
 {
     // (read here, where the engine's call returns to: the loop of RunGameSimLoop, or a caller applying one command at once)
@@ -2290,6 +2291,7 @@ extern "C" u64 ApplyDetour(void* a, void* b)
     g_cmdTid = sim && (inLoop || (script && freshScript)) ? g_simTid : 0;
     g_cmdKind = 1;
     g_scriptTid = sim && script ? g_simTid : 0;
+    if (sim && (inLoop || script)) { u8* pay = b ? *(u8**)b : 0; DriftCmd(pay ? *(u8*)(pay + 0x9b8) : 255, inLoop); }
     u64 r = ApplyBody(a, b, inLoop);
     g_cmdTid = prevCmd; g_cmdKind = prevKind; g_scriptTid = prevScript;
     SetApplyingState(prev);
@@ -4315,6 +4317,21 @@ static void DriftOp(int entity, bool add, void* ret)
     g_stepSet += MixId(entity, add ? 1 : 0);
 }
 
+// (0.9.1, #150 diagnostic) each command the simulation applies is noted in the operations ring with its kind (the byte at +0x9b8 of
+// its payload: 27 a script's event, 52 a build, 42 a vehicle bought, 57 exact steps...), "loop" for the loop's commands (applied at
+// the start of a batch, the players' and this game's own), "script" for those a game script sends during a step. Report #431: at
+// the step where the games parted, the client had applied one loop command in that batch and the host none, and nothing told which.
+// Written "<step> c<kind> loop|script -" in drift_<check>_ops.txt, in its place among the entities; the steps' counts and hashes
+// are left as they are (a command of this game only, its speed or its own events, changes nothing in them). MPFEVER_DRIFTCMDS=0: not noted
+static bool g_driftCmds = true;
+static void DriftCmd(u32 kind, bool loop)
+{
+    if (!g_dOps || !g_driftCmds) return;
+    long i = g_dOpN++ & (DIAG_OPS - 1);
+    DiagOp& o = g_dOps[i];
+    o.step = g_diagStep; o.id = 0; o.sys = 0; o.add = loop ? 2 : 3; o.caller = kind;
+}
+
 static bool QueueDigest(u8* eng, u32* size, u64* sum, u32* hash)
 {
     u8* q = eng + 0xd8;
@@ -4501,13 +4518,15 @@ static DWORD WINAPI DriftWriter(void* p)
     h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h != INVALID_HANDLE_VALUE) {
         Buf l; l.str("drift diagnostic of check ").dec(d->check).str(": the last ").dec(d->nOps).str(" entities the simulation's engine added (+) or removed (-)\r\n")
-            .str("<step> <+|-><entity> <engine system whose update made it, - for none> <caller rva>\r\n");
+            .str("<step> <+|-><entity> <engine system whose update made it, - for none> <caller rva>; a command applied: <step> c<kind> loop|script -\r\n");
         DWORD w; WriteFile(h, l.s, (DWORD)l.n, &w, 0);
         static char chunk[1 << 16];
         int cn = 0;
         for (long i = 0; i < d->nOps; i++) {
             const DiagOp& o = d->ops[(d->opEnd - d->nOps + i) & (DIAG_OPS - 1)];
-            Buf b; b.dec((i64)o.step).str(o.add ? " +" : " -").dec((i64)o.id).str(" ").str(o.sys && o.sys < d->sysN ? d->names[o.sys] : "-").str(" ").hex(o.caller).str("\r\n");
+            Buf b;
+            if (o.add >= 2) b.dec((i64)o.step).str(" c").dec((i64)o.caller).str(o.add == 2 ? " loop -" : " script -").str("\r\n");
+            else b.dec((i64)o.step).str(o.add ? " +" : " -").dec((i64)o.id).str(" ").str(o.sys && o.sys < d->sysN ? d->names[o.sys] : "-").str(" ").hex(o.caller).str("\r\n");
             if (cn + b.n > (int)sizeof(chunk)) { WriteFile(h, chunk, (DWORD)cn, &w, 0); cn = 0; }
             memcpy(chunk + cn, b.s, b.n); cn += b.n;
         }
@@ -4586,6 +4605,7 @@ static void InstallDriftDiag()
     g_entDetours = true;
     g_driftOn = true;
     { char df[4] = {}; if (GetEnvironmentVariableA("MPFEVER_DRIFTFIRST", df, 3) == 1 && df[0] == '0') g_driftFirstOn = false; }
+    { char dc[4] = {}; if (GetEnvironmentVariableA("MPFEVER_DRIFTCMDS", dc, 3) == 1 && dc[0] == '0') g_driftCmds = false; }
     {
         char sd[4] = {};
         if (!(GetEnvironmentVariableA("MPFEVER_STEPSDIGEST", sd, 3) > 0 && sd[0] == '0')) {
@@ -4594,7 +4614,7 @@ static void InstallDriftDiag()
         }
         Buf sb; sb.str(g_winOn ? "steps' digests: every 10 steps, written to native_steps.txt (MPFEVER_STEPSDIGEST)" : "steps' digests: off"); LogLine(sb);
     }
-    Buf b; b.str("drift diagnostic: on (entity operations ring ").dec(DIAG_OPS).str(", steps ring ").dec(DIAG_STEPS).str(", system loop at ").hex(loop).str(")"); LogLine(b);
+    Buf b; b.str("drift diagnostic: on (entity operations ring ").dec(DIAG_OPS).str(", steps ring ").dec(DIAG_STEPS).str(", system loop at ").hex(loop).str(g_driftCmds ? "; the commands applied noted with their kind)" : "; the commands not noted, MPFEVER_DRIFTCMDS=0)"); LogLine(b);
 }
 
 struct OrderFix { const char* name; const char* sig; int offset; int steal; SpliceFn fn; };

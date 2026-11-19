@@ -4,12 +4,14 @@ When the host's check finds a lasting difference, every game writes, in its sess
     drift_<check>_steps.txt   the digest of each of the last 16384 simulation steps: the free-id queue (size, sum, hash) and the
                               step's entity additions and removals (counts, an order-free hash of their ids)
     drift_<check>_ops.txt     the last 131072 entities the simulation's engine added (+) or removed (-): step, id, the engine
-                              system whose update made it (its class name, the same on Steam, GOG and Epic), caller
+                              system whose update made it (its class name, the same on Steam, GOG and Epic), caller; since
+                              0.9.1 also each command the simulation applied ("<step> c<kind> loop|script -")
     sdump_drift_<0..2>.txt    the mod's dump of that check (people, town buildings, vehicles, game scripts)
 This compares two games' files of the same check:
   1. the first step whose additions/removals differ (an entity made or removed on one game only, or at another step);
   2. that step's operations on each game, those of one game only first, with the system that made them;
-  3. the first step whose free-id queue differs (from there every new entity takes another id: people, town buildings).
+  3. the commands each game applied just before that step (0.9.1: a command of one game only is marked);
+  4. the first step whose free-id queue differs (from there every new entity takes another id: people, town buildings).
 
     python tools/drift_diff.py <folder of game A> <folder of game B> [check]
     (a folder: a session folder, or a report's folder, or a player's folder in a report; searched below for drift_*_steps.txt)
@@ -47,6 +49,8 @@ STEP = re.compile(r"step (\d+) queue (\d+) (\d+) (\d+) adds (\d+) rems (\d+) set
 # commands applied in that batch
 BATCH = re.compile(r" batch s(\d)k(\d+) cmds (\d+)")
 OP = re.compile(r"(\d+) ([+-])(-?\d+) (\S+) (\S+)")
+# (0.9.1, #150) a command the simulation applied, its kind ("loop": at the start of a batch; "script": sent by a game script)
+CMD = re.compile(r"(\d+) c(\d+) (loop|script) -")
 
 
 def steps(path):
@@ -71,6 +75,17 @@ def ops(path):
         m = OP.match(l)
         if m and int(m.group(1)) != 0:
             by[int(m.group(1))].append((m.group(2) + m.group(3), m.group(4), m.group(5)))
+    return by
+
+
+def cmds(path):
+    """The commands noted in each step's entry (0.9.1): {step: ["27 loop", ...]} (an entry holds the step, then the commands
+    applied before the next one)."""
+    by = collections.defaultdict(list)
+    for l in open(path, encoding="utf-8", errors="replace"):
+        m = CMD.match(l)
+        if m and int(m.group(1)) != 0:
+            by[int(m.group(1))].append(m.group(2) + " " + m.group(3))
     return by
 
 
@@ -133,6 +148,18 @@ def compare(dir_a, dir_b, check=None, out=print):
                 ba, bb = sa[x].get("batch"), sb[x].get("batch")
                 out("    step %d  A s%dk%d cmds %d | B s%dk%d cmds %d" % ((x,) + (ba or (-1, -1, -1)) + (bb or (-1, -1, -1))))
             res["batches_same_cut"], res["batches_same_state"], res["batches_window"] = same_cut, same_state, len(win)
+    # (0.9.1, #150) the commands each game applied just before the first difference (a command of one game only there?): the
+    # entry of step X holds the commands applied before step X + 1
+    if ref is not None:
+        qa, qb = cmds(os.path.join(pa, "drift_%d_ops.txt" % na)), cmds(os.path.join(pb, "drift_%d_ops.txt" % nb))
+        if qa or qb:
+            rows = []
+            for x in range(ref - 3, ref + 1):
+                la, lb = qa.get(x, []), qb.get(x, [])
+                rows.append((x, la, lb))
+                out("  commands applied after step %d: A %s | B %s%s" % (x, ", ".join(la) or "-", ", ".join(lb) or "-",
+                                                                        "" if sorted(la) == sorted(lb) else "   <- NOT THE SAME"))
+            res["commands"] = rows
     if first_q is not None:
         out("first step whose free-id queue differs: %d (A %s, B %s)" % (first_q, sa[first_q]["queue"], sb[first_q]["queue"]))
     else:
