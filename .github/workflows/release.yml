@@ -30,6 +30,11 @@ jobs:
     runs-on: windows-2022
     # (the signature waits for an approver: up to 2 hours below)
     timeout-minutes: 180
+    # (SignPath reads the job's details and downloads the folders to sign with this job's token: the repository's tokens are
+    # read-only by default, without the actions' artifacts)
+    permissions:
+      contents: read
+      actions: read
     env:
       SIGNPATH_ON: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:

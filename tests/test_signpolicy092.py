@@ -65,6 +65,11 @@ for v in ("0.9.2", "1.0.0"):
     for f in ("TEST-SIGNED-MPFever-%s.zip" % v, "TEST-SIGNED-MPFever-%s-server.zip" % v):
         check("no updater takes " + f, not old_rule_takes(f))
 
+rel = re.search(r"\n  release:\n(.*?)\n    steps:", wf, re.S)
+rel = rel.group(1) if rel else ""
+check("SignPath can read the job and its artifact (actions: read)", "      actions: read" in rel, rel)
+check("the job can still check out the code", "      contents: read" in rel, rel)
+
 check("README: no longer 'Applied for'", "*Applied for:" not in readme)
 check("README: says accepted", "SignPath Foundation accepted MPFever" in readme)
 
