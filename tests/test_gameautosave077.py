@@ -35,9 +35,13 @@ def check(cond, name):
 
 
 SIG = "80 BE 70 11 00 00 00 75 ?? 48 3B 86 38 0E 00 00 7D ?? 48 8B CE E8"
+# (0.9.2, build 40444: CGameUI grew, the same test reads +0x1188 and +0xe40 there) the offsets left out of the signature, the
+# counter's read from the test's "cmp rax,[rsi+disp32]"; MPFEVER_GASFIXED=1: 40425's signature and offset (see test_build40444_092.py)
+SIGANY = "80 BE ?? ?? 00 00 00 75 ?? 48 3B 86 ?? ?? 00 00 7D ?? 48 8B CE E8"
 inst = nat[nat.index("static void InstallNoGameAutosave()"):]
 inst = inst[:inst.index("\n}\n")]
-check('FindSigRva("' + SIG + '")' in inst, "the site found by its bytes, with the offsets 0x1170 and 0xe38 in them (FindSigRva: exactly once)")
+check('FindSigRva("' + SIGANY + '")' in inst and 'FindSigRva("' + SIG + '")' in inst,
+      "the site found by its bytes (FindSigRva: exactly once), its offsets left out (0.9.2), 40425's with MPFEVER_GASFIXED=1")
 check("Splice(mem, at, 7, GameAutosaveGate)" in inst, "  the 7-byte test stolen, run after the gate (its flags for the jump that follows)")
 check('GetEnvironmentVariableA("MPFEVER_GAMEAUTOSAVE", v, 3) > 0 && v[0] == \'1\'' in inst, "  MPFEVER_GAMEAUTOSAVE=1: the game's own autosave kept")
 check("NOT found (the game still saves on its own in a session)" in inst, "  not found: nothing changed, and the log says it")
@@ -46,7 +50,9 @@ g = g[:g.index("\n}\n")]
 check(g.startswith("static void GameAutosaveGate(SavedRegs* r)\n{\n    if (!g_enabled) return;"), "the gate: nothing outside a session (holding off)")
 check('KeptHandle(g_gasAliveFile, "bridge_alive.txt")' in g and "if (!g_gasAliveAt || now - g_gasAliveAt > 10000) return;" in g,
       "  nor without the mod's heartbeat for 10 s (its own file handle: no race with the other readers)")
-check("i64* counted = (i64*)(ui + 0xe38);" in g and g.rstrip().endswith("*counted = 0;"), "  the time counted set back to 0: the game's test never passes")
+check("i64* counted = (i64*)(ui + g_gasCountedOff);" in g and g.rstrip().endswith("*counted = 0;"), "  the time counted set back to 0: the game's test never passes")
+check("static u32 g_gasCountedOff = 0xe38;" in nat and "u32 off = *(u32*)(g_base + at + 12);" in inst,
+      "  (0.9.2) the time counted at the offset the test itself reads (0xe38 in 40425, 0xe40 in 40444)")
 check("u8* ui = (u8*)r->rsi;" in g and "i64 interval = (i64)r->rax;" in g, "  the game UI in rsi, the interval in rax (computed just before)")
 ins = nat[nat.index("    PatchSaveCleanup();\n    InstallNoGameAutosave();"):][:200]
 check(bool(ins), "installed at start, after the saves' clean-up patch")
@@ -54,12 +60,14 @@ check(bool(ins), "installed at start, after the saves' clean-up patch")
 exe = os.path.join(ROOT, "..", "TransportFever3.exe")
 if os.path.exists(exe):
     d = open(exe, "rb").read()
-    pat = b"".join(b"." if t == "??" else re.escape(bytes([int(t, 16)])) for t in SIG.split())
+    pat = b"".join(b"." if t == "??" else re.escape(bytes([int(t, 16)])) for t in SIGANY.split())
     hits = [m.start() for m in re.finditer(pat, d, re.S)]
     check(len(hits) == 1, f"the installed game: the signature found exactly once ({len(hits)})")
     if len(hits) == 1:
         h = hits[0]
-        check(d[h:h + 7] == bytes.fromhex("80BE701100000000")[:7] and d[h + 7] == 0x75, "  the stolen bytes are one whole instruction (cmp byte [rsi+0x1170],0), then the jne")
+        check(d[h:h + 2] == b"\x80\xbe" and d[h + 4:h + 7] == b"\0\0\0" and d[h + 7] == 0x75, "  the stolen bytes are one whole instruction (cmp byte [rsi+disp32],0), then the jne")
+        off = struct.unpack_from("<I", d, h + 12)[0]
+        check(d[h + 9:h + 12] == b"\x48\x3b\x86" and 0x100 <= off < 0x10000, "  the counter's offset read from cmp rax,[rsi+disp32] (%#x)" % off)
         rel = struct.unpack_from("<i", d, h + 22)[0]
         check(d[h + 21] == 0xE8 and rel < 0, "  the call of AutoSave right after (backwards in the code)")
 else:

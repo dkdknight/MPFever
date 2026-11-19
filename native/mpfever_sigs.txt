@@ -102,3 +102,14 @@ site20c 4 0 0 6 0 8B 80 0C 02 00 00 EB 02 8B C3 89 85 48 09 00 00
 site20c 4 3 0 6 0 8B 98 0C 02 00 00 89 9D F0 09 00 00
 site20c 4 0 0 6 0 8B 80 0C 02 00 00 89 85 50 09 00 00
 site20c 4 0 7 6 0 8B 87 0C 02 00 00 89 43 04 48 8B 5C 24 30
+# (0.9.2) build 40444 of 2026-11-19 (Steam, link timestamp 6af6fd97): the places whose signatures above find nothing there,
+# found again in that executable and made by tools/mksigs.py's signature() (each matches once in 40444, never in 40425):
+# UI::LaneModifier::Apply's three Add calls (return addresses), then four readings of the local-player word (the lane
+# modifier's two, CGameUI's at 0x65c5ec with edi instead of ebx, and an entity window's builtin's).
+uisite 0 48 8D 4D 80 E8 ?? ?? ?? ?? 90 48 8B 8D 58 01 00 00
+uisite 0 48 8D 4C 24 58 E8 ?? ?? ?? ?? 90 E9 ?? ?? ?? ?? 48 98
+uisite 0 48 8D 4C 24 58 E8 ?? ?? ?? ?? 90 48 8B 4D 70
+site20c 20 8 0 7 0 44 8B 80 0C 02 00 00 48 8D 95 B0 02 00 00
+site20c 20 8 0 7 0 44 8B 80 0C 02 00 00 48 8D 94 24 A0 04 00 00
+site20c 20 7 0 6 0 8B B8 0C 02 00 00 B9 E0 06 00 00 E8
+site20c 4 1 0 6 0 8B 88 0C 02 00 00 89 4C 24 78 48 8D 54 24 78

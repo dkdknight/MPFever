@@ -39,7 +39,7 @@ check("internal static bool WaitedFor(HashSet<string> waiting, string name, bool
 jr = main[main.index('case "joinready":'):main.index('case "resync_have":')]
 check('JoinDuringResync(resyncing, bytesNow != null, resyncSending, resyncBytesId, saveCancel,' in jr
       and 'Environment.GetEnvironmentVariable("MPFEVER_JOINMIDRESYNC") == "0"' in jr, "2. a player joining during a resynchronisation: decided by JoinDuringResync")
-check('if (jd == "pending") joinPending = true;' in jr and "SendSave(resyncBytesId, bytesNow," in jr
+check('if (jd == "pending") SetJoinPending(from.Name);' in jr and "SendSave(resyncBytesId, bytesNow," in jr
       and "resyncWaiting.RemoveWhere(w => BaseName(w) == BaseName(from.Name)); resyncWaiting.Add(from.Name);" in jr,
       "2. it gets the game being sent, waited for in the place of its old connection")
 rl = main[main.index("void ResyncLocked(string reason)"):main.index("void SendSave(int id, byte[] bytes, string sha, IEnumerable<string> names)")]

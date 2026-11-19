@@ -5698,6 +5698,25 @@ G.countLine = function(uid, got, expected, since)
 	return " SEGMENT COUNT DIFFERS"
 end
 
+-- (0.9.2) the entities a build made: the callback's third argument ({entity, revision} pairs, both builds), else the command's
+-- resultEntities (40425: {entity, revision} pairs; 40444: entities, the constructions added only). MPFEVER_RESULTARG=0: the
+-- command's list only, as before
+G.madeEntities = function(res, ear)
+	local out = {}
+	local function take(list)
+		pcall(function()
+			for i = 1, #list do
+				local e = list[i]
+				if type(e) ~= "number" then e = e[1] end
+				if type(e) == "number" then out[#out + 1] = e end
+			end
+		end)
+	end
+	if ear ~= nil and os.getenv("MPFEVER_RESULTARG") ~= "0" then take(ear) end
+	if #out == 0 and res ~= nil then pcall(function() take(res.resultEntities) end) end
+	return out
+end
+
 local function replaySend(cmd, cb, noGate)
 	-- (0.8: a dry run, marked just before this call, is not the replay's build)
 	if G.gateDryNext then noGate = true; G.gateDryNext = nil end
@@ -11303,7 +11322,7 @@ local function replayAssets(a)
 		return
 	end
 	toSim("replaying", { nots = true })
-	replaySend(cmd, function(res, success)
+	replaySend(cmd, function(res, success, ear)
 		local why = ""
 		if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 		G.assetReplays = (G.assetReplays or 0) + 1
@@ -11319,14 +11338,8 @@ local function replayAssets(a)
 		end
 		if not success then return end
 		-- (what the engine made of the trees, for H.assetdescribe: an AssetGroup or not)
-		local made, isMade = {}, {}
-		pcall(function()
-			for i = 1, #res.resultEntities do
-				local e = res.resultEntities[i]
-				if type(e) ~= "number" then e = e[1] end
-				if type(e) == "number" then made[#made + 1] = e; isMade[e] = true end
-			end
-		end)
+		local made, isMade = G.madeEntities(res, ear), {}
+		for _, e in ipairs(made) do isMade[e] = true end
 		G.assetReplayed = G.assetReplayed or {}
 		for _, e in ipairs(made) do G.assetReplayed[#G.assetReplayed + 1] = e end
 		while #G.assetReplayed > 20 do table.remove(G.assetReplayed, 1) end
@@ -16506,6 +16519,74 @@ H.skysync = function(from, p)
 	end }
 end
 
+-- (0.9.2, build 40444) The railroad crossing's and the signal's windows (MPFEVER_SCENARIO=rcsig, a world with a level crossing
+-- and a signal): in 40425 they were the engine's own components; in 40444 they are game scripts that send a world build with
+-- makeWorldBuildProposalCmd, held and shipped by MPFever as any player's build. The host's part: the world's first crossing (by
+-- id) given another type, then its first signal made one-way or not, through the interface's own code of those windows
+-- (ui_win_req.txt, see U.pollWinReq); then both games say what they have: the crossing's type and the signal's kind, which must
+-- be the same on both and the asked ones.
+H.rcsig = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST rcsig: " .. t); AUTO.results[#AUTO.results + 1] = "rcsig " .. tostring(C.ROLE) .. ": " .. t end
+	local CT = api.type.ComponentType
+	-- (the engine refuses to loop over RAILROAD_CROSSING and SIGNAL_LIST: "Cannot loop over this component type". The segments
+	-- are looped over instead: a segment's crossing from the crossings' system, its signals among its edge objects)
+	local function firsts()
+		local rc, sig, n = nil, nil, 0
+		local ok, err = pcall(function()
+			for _, e in ipairs(R.allEdges()) do
+				n = n + 1
+				pcall(function()
+					local c = api.engine.system.railRoadCrossingSystem.getRailroadCrossingForEdge(e)
+					if type(c) == "number" and c >= 0 and (not rc or c < rc) then rc = c end
+				end)
+				pcall(function()
+					for _, o in ipairs(api.engine.getComponent(e, CT.BASE_EDGE).objects or {}) do
+						local oe = o[1]
+						if (not sig or oe < sig) and api.engine.getComponent(oe, CT.SIGNAL_LIST) then sig = oe end
+					end
+				end)
+			end
+		end)
+		if not ok then say("segments not read: " .. tostring(err):sub(1, 160)) end
+		AUTO.rcsigN = tostring(n) .. " segment(s)"
+		return rc, sig
+	end
+	local function state()
+		local rc, sig = firsts()
+		local t, kind = nil, nil
+		pcall(function() t = api.engine.getComponent(rc, CT.RAILROAD_CROSSING).typeIndex end)
+		pcall(function() kind = api.engine.getComponent(sig, CT.SIGNAL_LIST).signals[1].type end)
+		return rc, t, sig, kind
+	end
+	local rc, t0, sig, k0 = state()
+	local oneWay = nil
+	pcall(function() oneWay = (k0 == api.type.Signal.Type.ONE_WAY_SIGNAL) end)
+	say("before: crossing " .. tostring(rc) .. " type " .. tostring(t0) .. ", signal " .. tostring(sig) .. " kind " .. tostring(k0) .. " (one-way " .. tostring(oneWay) .. "; entities seen: " .. tostring(AUTO.rcsigN) .. ")")
+	if C.ROLE ~= "host" then autoFinish(); return end
+	local nTypes = 0
+	pcall(function() nTypes = #api.res.railroadCrossingTypeRep.getAll() end)
+	-- (the repository's size may not be readable: then type 0 <-> 1)
+	local want = nil
+	if type(t0) == "number" then want = nTypes > 1 and ((t0 + 1) % nTypes) or (t0 == 0 and 1 or 0) end
+	local function ask(line)
+		local f = C.IO.open(C.DIR .. BS .. "ui_win_req.txt", "wb")
+		if f then f:write(line); f:close() end
+	end
+	if rc and want then ask("rc" .. C.TAB .. rc .. C.TAB .. want .. C.TAB .. "1") else say("no crossing to change (" .. tostring(nTypes) .. " type(s))") end
+	G.waits[#G.waits + 1] = { at = G.frames + 300, fn = function()
+		if sig and oneWay ~= nil then ask("sig" .. C.TAB .. sig .. C.TAB .. (oneWay and 0 or 1) .. C.TAB .. "2") else say("no signal to change") end
+		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
+			local _, t1, _, k1 = state()
+			say("asked: crossing type " .. tostring(want) .. ", signal one-way " .. tostring(oneWay == false) .. "; after: crossing type " .. tostring(t1) .. ", signal kind " .. tostring(k1))
+			autoFinish()
+		end }
+	end }
+end
+
 -- Builds from windows that no game can replay (MPFEVER_SCENARIO=badui, with MPFEVER_PAUSED=1 and a build after it, e.g.
 -- "badui,newroad"): in a pause they left their replay counted, and the player's next build at the same time was taken as a
 -- replay and never shipped (a station on one game only, a session of the friends)
@@ -19197,15 +19278,13 @@ H.assettest = function(from, p)
 		end
 		sp.constructionsToAdd = cons
 		local ctx = playerContext()
-		deferredSend(G.wbp(sp, ctx, os.getenv("MPFEVER_ASSETIE") == "1", true), function(res, success)
+		deferredSend(G.wbp(sp, ctx, os.getenv("MPFEVER_ASSETIE") == "1", true), function(res, success, ear)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			say("mod construction: " .. (success and "BUILT" or ("refused " .. why)) .. ", result entities " .. C.ser(C.marshal(res.resultEntities)):sub(1, 200) .. ", now " .. assetCount())
 			G.waits[#G.waits + 1] = { at = G.frames + 30, fn = function()
 				pcall(function()
-					for i = 1, #res.resultEntities do
-						local e = res.resultEntities[i]
-						if type(e) ~= "number" then e = e[1] end
+					for _, e in ipairs(G.madeEntities(res, ear)) do
 						local have = {}
 						for _, n in ipairs({ "CONSTRUCTION", "MODEL_INSTANCE_LIST", "PLAYER_OWNED", "NAME", "SUBCONSTRUCTION", "TOWN_BUILDING", "BOUNDING_VOLUME", "TRANSFORM" }) do
 							local okc, cc = pcall(function() return api.engine.getComponent(e, api.type.ComponentType[n]) end)
@@ -19474,18 +19553,11 @@ H.treeerase = function(from, p)
 			end
 			P = sp
 		end
-		local function built(res, success)
+		local function built(res, success, ear)
 			local why = ""
 			if not success then pcall(function() why = C.ser(C.marshal(res.resultProposalData.errorState.messages)) end) end
 			say(what .. ": " .. (success and "BUILT" or ("refused " .. why)))
-			local made = {}
-			pcall(function()
-				for i = 1, #res.resultEntities do
-					local e = res.resultEntities[i]
-					if type(e) ~= "number" then e = e[1] end
-					if type(e) == "number" then made[#made + 1] = e end
-				end
-			end)
+			local made = G.madeEntities(res, ear)
 			G.waits[#G.waits + 1] = { at = G.frames + 30, fn = function()
 				if g then
 					local reused = false
@@ -19507,7 +19579,7 @@ H.treeerase = function(from, p)
 			G.treeProposal({ g }, kept, playerContext(), true, dry, function(cmd, how, builtDry)
 				say(how)
 				if not cmd then G.waits[#G.waits + 1] = { at = G.frames + 30, fn = autoFinish } return end
-				deferredSend(cmd, function(res, success) G.treeDryRes = nil built(res, success) end)
+				deferredSend(cmd, function(res, success, ear) G.treeDryRes = nil built(res, success, ear) end)
 			end)
 			return true
 		end

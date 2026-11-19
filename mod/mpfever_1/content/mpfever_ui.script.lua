@@ -214,6 +214,31 @@ local function install()
 			missing[#missing + 1] = name .. "(" .. type(fn) .. ")"
 		end
 	end
+	-- (0.9.2, build 40444) The railroad crossing's and the signal's windows are game scripts now: they make their proposal with
+	-- api.engine.util.proposal.makeRailroadCrossingProposal / makeSignalTypeProposal and send it as a world build. Shipped and
+	-- rebuilt as any build, the crossing's new type (node2rcType) was lost, and the signal's new object came without its model:
+	-- the old signal was removed and no new one added, on every game (autotest rcsig, 2026-11-19). Their proposals are marked
+	-- here and refused in a session, the player told; on this game alone as before outside a session.
+	-- MPFEVER_WINPROPOSAL=1: shipped as any build
+	U.winProps = setmetatable({}, { __mode = "k" })
+	if os.getenv("MPFEVER_WINPROPOSAL") ~= "1" then
+		pcall(function()
+			local up = api.engine.util.proposal
+			for _, pair in ipairs({ { "makeRailroadCrossingProposal", "crossing" }, { "makeSignalTypeProposal", "signal" } }) do
+				local fn = nil
+				pcall(function() fn = up[pair[1]] end)
+				if fn ~= nil and isCallable(fn) then
+					pcall(function()
+						up[pair[1]] = function(...)
+							local p = fn(...)
+							if p ~= nil then pcall(function() U.winProps[p] = pair[2] end) end
+							return p
+						end
+					end)
+				end
+			end
+		end)
+	end
 	-- (0.7.0) the debug factories are tagged too (they go to the engine as before, but a mod's are refused in a session, see
 	-- tag.debug below)
 	if U.modAutoOn then
@@ -255,6 +280,21 @@ local function install()
 				return
 			end
 			return O.sendCommand(cmd, cb, progress)
+		end
+		-- (0.9.2) a railroad crossing's or a signal's window build (see U.winProps): refused in a session, the player told
+		if tag.name == "makeWorldBuildProposalCmd" and tag.args[1] ~= nil then
+			local okW, what = pcall(function() return U.winProps[tag.args[1]] end)
+			if okW and what then
+				log("window build of a " .. tostring(what) .. " refused in the session (not shipped to the other players yet)")
+				if U.onChatNews then
+					pcall(U.onChatNews, { { kind = "msg", name = "MPFever", text = what == "crossing"
+						and C.T("Le type d'un passage à niveau ne peut pas encore être changé en multijoueur.", "A level crossing's type cannot be changed in multiplayer yet.")
+						or C.T("Un signal ne peut pas encore être rendu à sens unique depuis sa fenêtre en multijoueur : utilisez l'outil des signaux.",
+							"A signal cannot be made one-way from its window in multiplayer yet: use the signal tool.") } })
+				end
+				if cb then pcall(cb, nil, false, {}) end
+				return
+			end
 		end
 		-- notification events (popup sound, dismiss) are sent automatically by each game's own interface: local only
 		if tag.name == "makeScriptingSendEventCmd" and tag.args[2] == "Notifications" then
@@ -3357,6 +3397,41 @@ U.pollTabReq = function()
 		log("autotest: window shown for the " .. tab .. " tab")
 	end
 end
+-- (0.9.2, autotests: MPFEVER_SCENARIO=rcsig) a window's build asked by the bridge (ui_win_req.txt: "rc TAB entity TAB type TAB
+-- number" or "sig TAB entity TAB 0|1 TAB number"), sent with the very code of build 40444's windows: the railroad crossing's
+-- (gui/entity_window/railroad_crossing.tl: makeRailroadCrossingProposal, makeWorldBuildProposalCmd(proposal, context, false,
+-- true, true)) and the signal's one-way toggle (make_entity_window.tl: makeSignalTypeProposal, (proposal, context, false, false,
+-- true), no player in its context). The command goes through this interface's interception, as a player's.
+U.pollWinReq = function()
+	if not os.getenv("MPFEVER_SCENARIO") then return end
+	local now = os.clock()
+	if U.winReqAt and now - U.winReqAt < 0.5 then return end
+	U.winReqAt = now
+	local f = C.IO.open(C.DIR .. C.BS .. "ui_win_req.txt", "rb")
+	if not f then return end
+	local s = f:read("*a") or ""
+	f:close()
+	local kind, ent, arg, seq = s:match("^(%a+)" .. C.TAB .. "(%d+)" .. C.TAB .. "(%d+)" .. C.TAB .. "(%d+)")
+	if not kind or seq == U.winReqSeq then return end
+	U.winReqSeq = seq
+	ent, arg = tonumber(ent), tonumber(arg)
+	local ok, err = pcall(function()
+		local proposal, cmd
+		local context = api.type.Context.new()
+		if kind == "rc" then
+			proposal = api.engine.util.proposal.makeRailroadCrossingProposal(ent, arg)
+			if not proposal then error("no proposal") end
+			cmd = api.cmd.makeWorldBuildProposalCmd(proposal, context, false, true, true)
+		else
+			proposal = api.engine.util.proposal.makeSignalTypeProposal(ent, arg == 1)
+			if not proposal then error("no proposal") end
+			cmd = api.cmd.makeWorldBuildProposalCmd(proposal, context, false, false, true)
+		end
+		api.cmd.sendCommand(cmd, function(_, success) log("autotest: window build " .. kind .. " answered " .. tostring(success)) end)
+	end)
+	log("autotest: window build " .. kind .. " " .. tostring(ent) .. " " .. tostring(arg) .. ": " .. (ok and "sent" or ("NOT sent: " .. tostring(err))))
+end
+
 -- (pages: the Hub's pages of this session, "a,b,c", after the rows: the window scenario then visits each of them)
 U.ackTabReq = function(shown, result, nRows, pages)
 	if not U.tabReqSeq or U.tabReqDone == U.tabReqSeq then return end
@@ -6768,6 +6843,40 @@ local function installSession(react, builtin)
 		local okM, rid = pcall(function() return api.gui.react.detail.makeRecipeId("PauseMainPage") end)
 		if okM and rid ~= nil and rr.originalRecipeFn[rid] then id, how = rid, "recipe name" end
 	end
+	-- 3. (0.9.2) Build 40444 draws the pause menu's page in a Lua state of its own that mods cannot reach (bootstrap_pause.tl,
+	-- pause_menu.tl asserts its privileged APIs): this state only has its frame, the recipe "PauseWrap" of pause_menu_tool.tl,
+	-- which holds builtin.PauseMenuHost. The cards are drawn over that frame, at the page's right as before; a card's click opens
+	-- the window, then the frame's own onClose closes the menu. MPFEVER_PAUSEHOST=0: no card on 40444 (the bar's icon only)
+	if not id and builtin.PauseMenuHost ~= nil and os.getenv("MPFEVER_PAUSEHOST") ~= "0" then
+		-- (its id caught while it registered: mpfever_pause.lua, loaded by the native module in front of pause_menu_tool.tl; the
+		-- engine gives a name's id only once, makeRecipeId("PauseWrap") gives another one)
+		local okW, rid = pcall(function() return package.loaded["mpfever_pausewrap_id"] end)
+		if not (okW and rid ~= nil and rr.originalRecipeFn[rid]) then
+			local okM, mid = pcall(function() return api.gui.react.detail.makeRecipeId("PauseWrap") end)
+			rid = okM and mid or nil
+		end
+		if rid ~= nil and rr.originalRecipeFn[rid] then
+			local wrapOrig = rr.originalRecipeFn[rid]
+			rr.recipeReplace[rid] = function(params, ...)
+				local node = wrapOrig(params, ...)
+				if not C.ACTIVE then return node end
+				local cp = { onClose = function() pcall(params.onClose) end }
+				return builtin.FloatingLayout {
+					children = {
+						builtin.FloatingLayoutChild { h = -1, v = -1, item = node },
+						builtin.FloatingLayoutChild { h = 0.97, v = 0.5, item = builtin.BoxLayout { orientation = builtin.type.Orientation.Vertical, children = {
+							Card { commonParams = cp },
+							builtin.Component { meta = { styleSheet = style { size = { 600, 12 } } } },
+							ChatCard { commonParams = cp },
+						} } },
+					},
+				}
+			end
+			log("session: MPFever's card added over the pause menu (40444: the page in its own Lua state, its frame PauseWrap here)")
+			return
+		end
+		log("session: the pause menu's frame PauseWrap was not found (40444)")
+	end
 	if not id then
 		log("session: the pause menu's page was not found: MPFever's window cannot be opened in game")
 		return
@@ -7455,6 +7564,7 @@ local function tick(pendingState)
 	local okA, errA = pcall(U.autoOpenTick)
 	if not okA and not U.autoOpenFailed then U.autoOpenFailed = true; log("window: not opened by itself: " .. tostring(errA)) end
 	pcall(U.pollTabReq)
+	pcall(U.pollWinReq)
 	local okc, errc = pcall(pollControl)
 	if not okc then log("control poll failed: " .. tostring(errc)) end
 	if not U.stepping then U.stepping = true; log("periodic UI hook active") end

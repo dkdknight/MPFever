@@ -283,7 +283,10 @@ function hub.install(m)
 			local okr, failed = pcall(function()
 				if result:isSuccess() then return nil end
 				local e = result:getError()
-				return e and e.message or "?"
+				-- (0.9.2: build 40444's error has localizedMessage and debugMessage instead of message; each read in pcall,
+				-- a field the build lacks is nil)
+				local function f(k) local okf, v = pcall(function() return e[k] end) return okf and v or nil end
+				return e and (f("localizedMessage") or f("debugMessage") or f("message")) or "?"
 			end)
 			if okr and failed == nil then
 				hub.installs[m.hub] = { state = "subscribed" }

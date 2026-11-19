@@ -937,6 +937,13 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             C(MainForm.JoinDuringResync(true, true, true, 3, 3, false) == "pending", "join once the wait is over: a resynchronisation of its own afterwards");
             C(MainForm.JoinDuringResync(true, true, false, 3, 2, false) == "pending", "join after the sending: one of its own afterwards");
             C(MainForm.JoinDuringResync(true, true, true, 3, 2, true) == "none", "MPFEVER_JOINMIDRESYNC=0: nothing, as before");
+            // (0.9.2, #440) a player who joined before the game was saved, then listed by that resynchronisation: no second one
+            var jp = new HashSet<string> { "Andy#3" };
+            C(MainForm.JoinOnce(true, jp, new[] { "berni1212#1", "Andy#3" }) && jp.Count == 0, "#440: the joiner listed by the resynchronisation under way gets it, no second one");
+            jp = new HashSet<string> { "Andy#3", "Bob#4" };
+            C(!MainForm.JoinOnce(true, jp, new[] { "Andy#3" }) && jp.SetEquals(new[] { "Bob#4" }), "  another joiner not listed (still reviewing): still a resynchronisation for them after");
+            C(!MainForm.JoinOnce(false, new HashSet<string> { "Andy#3" }, new[] { "Andy#3" }) && !MainForm.JoinOnce(true, new HashSet<string>(), new[] { "Andy#3" }),
+              "  nothing pending, or pending without a name: as before");
             C(MainForm.StopCutsResync(true, false) && !MainForm.StopCutsResync(false, false) && !MainForm.StopCutsResync(true, true),
                 "a stop or restart cuts a resynchronisation short (MPFEVER_STOPRESYNC=0: not)");
             // (MODIOROOT) the folders mod.io keeps the Mod Hub mods in, as its settings move them

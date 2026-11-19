@@ -443,12 +443,41 @@ local function visibleTo(info, me)
 	return (info.owner or 1) == me
 end
 
+-- (0.9.2) the line a passenger's started trip is on, as the game's deliver_passengers script finds it (getLineEntity)
+local function simLine(simEntity)
+	local ok, v = pcall(api.engine.getComponent, simEntity, api.type.ComponentType.SIM_ENTITY_AT_VEHICLE)
+	if ok and v and v.line then return v.line end
+	local ok2, t = pcall(api.engine.getComponent, simEntity, api.type.ComponentType.SIM_ENTITY_AT_TERMINAL)
+	return (ok2 and t) and t.line or nil
+end
+CO.simLine = simLine
+
 local function wrapContractType(env, t, name)
 	if t.__mpfCo then return end
 	t.__mpfCo = true
 	local oh = t.handleEvent
 	if type(oh) == "function" then
 		t.handleEvent = function(src, id, ename, param, s, ...)
+			-- (0.9.2) A passenger contract is reached by a line between its two towns (deliver_passengers' OnStartedLineUsage):
+			-- any company's line reached any company's contract, its 2x income then followed that line, of another company (the
+			-- ticket events are this contract's company's lines only, see below). Build 40444 also keeps the first line found
+			-- once the contract is completed ("if not state.acceptedTime or state.completedTime then return"): a contract reached
+			-- by another company's line kept it, and its company never had the income. Only the trips on its company's lines
+			-- reach it now. MPFEVER_CONTRACTLINE=0: as before
+			if ename == "OnStartedLineUsage" and type(param) == "table" and type(param.entities) == "table" and os.getenv("MPFEVER_CONTRACTLINE") ~= "0" then
+				local ent = ownerEntity(env, s and s.mpfOwner or 1)
+				if ent then
+					local keep = {}
+					for _, el in ipairs(param.entities) do
+						local okl, lo = pcall(function() return lineOwner(simLine(el[1])) end)
+						if okl and lo == ent then keep[#keep + 1] = el end
+					end
+					if #keep < #param.entities then
+						if #keep == 0 then return nil end
+						return oh(src, id, ename, { entities = keep }, s, ...)
+					end
+				end
+			end
 			if ename == "OnCalcTicketPrice" and param ~= nil then
 				local ent = ownerEntity(env, s and s.mpfOwner or 1)
 				if ent then
