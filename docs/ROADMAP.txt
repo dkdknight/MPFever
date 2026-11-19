@@ -84,7 +84,9 @@ it is stable enough.
 0.9 - Long sessions, more players (the road to 1.0)
   [ ] Sessions of several hours between two different PCs without a resynchronisation (#150 confirmed by your reports)
       (0.9.0: the cause found in the animals' figures and fixed, with the same batches on every game; to confirm with your sessions)
+      (0.9.1: the companies' progression counted alike on every game; the drift logs list each game's commands)
   [ ] Sessions of 3 players or more without a resynchronisation; tests and fixes for 3 to 8 players
+      (0.9.1: a drift from the first step of a session, one game making its first step otherwise, fixed: #426)
   [ ] Big station edits and their replays without their last freeze
   [ ] Computer companies' track planner: their passenger trains on most maps, then lines that pay better
   [ ] The dedicated server in long real games
