@@ -11,7 +11,7 @@ export APPID=3493540
 GAME_LINK="$STEAM_DIR/steamapps/common/Transport Fever 3"
 OPT=/opt/mpfever
 
-# Valve's Steam client build driven by Madeira Dock, pinned (docs/COMPATIBILITY.md). Never updated by itself.
+# Valve's Steam client build driven by Madeira Dock, pinned (docs/LINUX-SERVER.md). Never updated by itself.
 CLIENT_URL=https://client-update.akamai.steamstatic.com/bins_win32.zip.23e34a6d4b10596a44561a5100dac5585d2517da
 CLIENT_ZIP_SHA256=8b712b2a3412a9066b7725f4e1c5cef9a7ca5b187b6585a5b92d25d09df0ba62
 CLIENT_DLL_SHA256=71b391fe9f3e2006cbc81a5c75eef3eb4186012deabfdb2c8b7e8d4850ecf640

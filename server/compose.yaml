@@ -1,4 +1,4 @@
-# MPFever dedicated server (experimental). Setup and first start: README.md.   docker compose up -d
+# MPFever dedicated server (experimental). Setup and first start: docs/LINUX-SERVER.md.   docker compose up -d
 name: mpfever-server
 
 services:

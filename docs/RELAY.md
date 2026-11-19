@@ -42,8 +42,8 @@ They are two different things:
 | Public server list, autosaves, restarts | Yes | No |
 
 Use the dedicated server when a Windows PC can run the game all the time. Use the relay when the host has no port to open, when you want a
-stable address, or when you want a cheap always-on meeting point on a small machine. A Linux dedicated server (the game itself on Linux) does not
-exist: the relay is not that, and the game's native module (`winhttp.dll`) has no Linux version.
+stable address, or when you want a cheap always-on meeting point on a small machine. The relay is not a Linux dedicated server; that one now exists
+(experimental): the Windows game under Wine in a Docker container, see [LINUX-SERVER.md](LINUX-SERVER.md).
 
 ## Quick start
 
