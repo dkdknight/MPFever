@@ -62,8 +62,10 @@ else:
         return [va + mm.start() for n, va, vs, ro, rs in secs if n.startswith(b".tex") for mm in re.finditer(pat, d[ro:ro + rs], re.S)]
 
     lv, bf = find(LV), find(BF)
-    check(lv == [0x32dec4], "the game: the level's load found once, at 0x32dec4 (" + ",".join(hex(x) for x in lv) + ")")
-    check(bf == [0x32e021], "the game: the buffer's found once, its mov at 0x32e024 (" + ",".join(hex(x + 3) for x in bf) + ")")
+    # (0.9.2) found once whatever the build (the native module looks for them by these signatures): 0x32dec4 and 0x32e024 in
+    # 40425, 0x32e224 and 0x32e384 in 40444 (the game update of 2026-11-19)
+    check(len(lv) == 1, "the game: the level's load found once (" + ",".join(hex(x) for x in lv) + ")")
+    check(len(bf) == 1, "the game: the buffer's found once, its mov at (" + ",".join(hex(x + 3) for x in bf) + ")")
     if len(lv) == 1:
         o = off(lv[0])
         c = lv[0] + 6 + struct.unpack_from("<i", d, o + 2)[0]

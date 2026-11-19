@@ -129,7 +129,12 @@ end
         up = sub[sub.index("update = function"):sub.index("handleEvent = function")]
         check("the game's update completes a contract at the call's game time, dt 0 too (only the new offers need dt > 0)",
               "v.completedTime = currentGameTime" in up and up.count("dt > 0.0") == 1 and "trySpawnRandom" in up[up.index("dt > 0.0"):])
-        check("deliver_passengers: a line's event marks the contract reached", "OnStartedLineUsage" in dp and "s.lineEntity = " in dp)
+        # (0.9.2: build 40444 renamed the state's local, s -> deliverPassengerState, and ignores the event once the contract is
+        # completed or not accepted: checked by its structure, the same on 40425 and 40444)
+        ev = dp[dp.index('"OnStartedLineUsage" then'):dp.index('"OnCalcTicketPrice" then')] if '"OnStartedLineUsage" then' in dp and '"OnCalcTicketPrice" then' in dp else ""
+        check("deliver_passengers: a line's event marks the contract reached",
+              re.search(r"\b\w+\.lineEntity\s*=\s*entity_util\.makeEntityAndRevision\(", ev) is not None
+              and re.search(r"isComplete\s*=\s*function.*?if\s+state\.lineEntity\s+then\s*\n\s*return\s+true", dp, re.S) is not None)
     else:
         print("(the game's scripts not found next to the repository: part 3 skipped)")
 

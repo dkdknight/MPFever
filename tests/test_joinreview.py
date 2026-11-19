@@ -133,7 +133,7 @@ def launcher():
     # 2. the join review, host side
     check("host: a game running asks the review in its welcome", "bool review = menuMode && !lobbyOpen && JoinReviewOn;" in form and '(review ? ",[\\"review\\"]=true" : "")' in form)
     check("host: the player waits in the review, no game sent", re.search(r"else if \(review\)\s*\{\s*lock \(reviewing\) reviewing\.Add\(p\.Name\);", form) is not None)
-    check("host: joinready sends it the game", re.search(r'case "joinready":.*?reviewing\.Remove\(from\.Name\).*?joinPending = true;', form, re.S) is not None)
+    check("host: joinready sends it the game", re.search(r'case "joinready":.*?reviewing\.Remove\(from\.Name\).*?SetJoinPending\(from\.Name\);', form, re.S) is not None)
     check("host: a resynchronisation meanwhile skips it", "all = all.Where(n => !reviewing.Contains(n)).ToArray();" in form)
     # (found in game, 2026-11-05: a dedicated server dropped every message of a player whose game had not loaded its world yet)
     check("server: the player's word and DLCs taken before its game loads", 'm.Kind != "joinready" && m.Kind != "dlccheck"' in form)

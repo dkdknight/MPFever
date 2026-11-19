@@ -385,10 +385,20 @@ end
 
 -- whether a passenger line with vehicles already links two towns directly: the game's own test before it offers its passenger
 -- subsidy (subvention_util.areTownsConnected + cargo_util.hasLineVehicleWithCapacity); unknown: not linked
+-- (0.9.2) Build 40444 marks areTownsConnected deprecated ("use getLinesConnectingTowns") and its own test now looks at every
+-- direct passenger line between the towns, not the first one found: a town pair linked by a second line with vehicles while the
+-- first had none was offered a tender. Every line is looked at when the game has getLinesConnectingTowns (40444), as before
+-- otherwise. MPFEVER_TENDERLINES=0: the first line only
 function W.connected(a, b)
 	local ok, yes = pcall(function()
 		local su = ug_require("/game_mechanics/subventions/subvention_util.tl")
 		local cu = ug_require("::/gui/main/cargo_util.tl")
+		if type(su.getLinesConnectingTowns) == "function" and os.getenv("MPFEVER_TENDERLINES") ~= "0" then
+			for _, l in ipairs(su.getLinesConnectingTowns(a, b, true) or {}) do
+				if cu.hasLineVehicleWithCapacity(l, cu.getPassengerCargoTypeId()) then return true end
+			end
+			return false
+		end
 		local line = su.areTownsConnected(a, b, true)
 		return line ~= nil and cu.hasLineVehicleWithCapacity(line, cu.getPassengerCargoTypeId())
 	end)

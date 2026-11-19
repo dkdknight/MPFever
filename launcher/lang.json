@@ -26494,6 +26494,45 @@
       "ko": "릴레이...",
       "zh-CN": "中继...",
       "zh-TW": "中繼..."
+    },
+    "The players who arrived during this resynchronisation get it: no other one for them after it.": {
+      "de": "Die Spieler, die während dieser Resynchronisierung angekommen sind, erhalten sie: danach keine weitere für sie.",
+      "es": "Los jugadores que llegaron durante esta resincronización la reciben: no habrá otra para ellos después.",
+      "it": "I giocatori arrivati durante questa risincronizzazione la ricevono: nessun'altra per loro dopo.",
+      "nl": "De spelers die tijdens deze hersynchronisatie binnenkwamen, krijgen deze: daarna geen andere voor hen.",
+      "pl": "Gracze, którzy dołączyli podczas tej ponownej synchronizacji, otrzymują ją: potem nie będzie dla nich kolejnej.",
+      "pt-BR": "Os jogadores que chegaram durante esta ressincronização a recebem: nenhuma outra para eles depois.",
+      "ru": "Игроки, пришедшие во время этой повторной синхронизации, получают её: после неё другой для них не будет.",
+      "ja": "この再同期中に参加したプレイヤーはこの再同期を受け取ります。その後、彼らのための再同期はありません。",
+      "ko": "이 재동기화 중에 들어온 플레이어는 이것을 받습니다. 이후 그들을 위한 다른 재동기화는 없습니다.",
+      "zh-CN": "在此次重新同步期间加入的玩家将获得本次同步：之后不会再为他们进行另一次。",
+      "zh-TW": "在此次重新同步期間加入的玩家將獲得本次同步：之後不會再為他們進行另一次。"
+    },
+    "A level crossing's type cannot be changed in multiplayer yet.": {
+      "de": "Der Typ eines Bahnübergangs kann im Mehrspielermodus noch nicht geändert werden.",
+      "es": "El tipo de un paso a nivel aún no se puede cambiar en multijugador.",
+      "it": "Il tipo di un passaggio a livello non può ancora essere cambiato in multigiocatore.",
+      "nl": "Het type van een overweg kan in multiplayer nog niet worden gewijzigd.",
+      "pl": "Typu przejazdu kolejowego nie można jeszcze zmienić w trybie wieloosobowym.",
+      "pt-BR": "O tipo de uma passagem de nível ainda não pode ser alterado no multijogador.",
+      "ru": "Тип железнодорожного переезда пока нельзя изменить в мультиплеере.",
+      "ja": "踏切の種類はマルチプレイではまだ変更できません。",
+      "ko": "건널목의 종류는 멀티플레이에서 아직 바꿀 수 없습니다.",
+      "zh-CN": "多人游戏中暂时还不能更改铁路道口的类型。",
+      "zh-TW": "多人遊戲中暫時還不能更改鐵路平交道的類型。"
+    },
+    "A signal cannot be made one-way from its window in multiplayer yet: use the signal tool.": {
+      "de": "Ein Signal kann im Mehrspielermodus noch nicht über sein Fenster zur Einbahn gemacht werden: Verwende das Signalwerkzeug.",
+      "es": "En multijugador aún no se puede hacer una señal de sentido único desde su ventana: usa la herramienta de señales.",
+      "it": "In multigiocatore un segnale non può ancora essere reso a senso unico dalla sua finestra: usa lo strumento dei segnali.",
+      "nl": "Een sein kan in multiplayer nog niet vanuit zijn venster eenrichting worden gemaakt: gebruik het seingereedschap.",
+      "pl": "W trybie wieloosobowym nie można jeszcze ustawić sygnału jako jednokierunkowego z jego okna: użyj narzędzia sygnałów.",
+      "pt-BR": "No multijogador, ainda não é possível tornar um sinal de mão única pela janela dele: use a ferramenta de sinais.",
+      "ru": "В мультиплеере пока нельзя сделать сигнал односторонним из его окна: используйте инструмент сигналов.",
+      "ja": "マルチプレイでは、信号のウィンドウから一方通行にすることはまだできません。信号ツールを使ってください。",
+      "ko": "멀티플레이에서는 아직 신호 창에서 일방통행으로 바꿀 수 없습니다. 신호 도구를 사용하세요.",
+      "zh-CN": "多人游戏中暂时还不能在信号窗口中将信号设为单向：请使用信号工具。",
+      "zh-TW": "多人遊戲中暫時還不能在號誌視窗中將號誌設為單向：請使用號誌工具。"
     }
   }
 }

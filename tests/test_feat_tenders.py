@@ -634,7 +634,8 @@ def main():
     check(events and all(e.startswith("f_tenders") for e in events), f"its events start with f_tenders: {sorted(events)}")
     code = re.sub(r"(?m)--.*$", "", SRC)
     check(not re.search(r"math\.random|os\.clock|os\.time|io\.open|io\.lines", code), "no random, clock or file in the module")
-    check(re.findall(r"os\.getenv\(\"(\w+)\"\)", code) == ["MPFEVER_TDGOAL"], "os.getenv only for the host's test goal")
+    # (0.9.2: MPFEVER_TENDERLINES, the switch of W.connected's lines on build 40444, read by the host's choice only)
+    check(sorted(re.findall(r"os\.getenv\(\"(\w+)\"\)", code)) == ["MPFEVER_TDGOAL", "MPFEVER_TENDERLINES"], "os.getenv only for the host's test goal and its town test's switch")
 
     g1 = Game(0, True, "Host", 1, True)       # the host's game, in French
     g2 = Game(1, False, "Bob", 2, False)      # a client's game (Bob, company 2), in English, other entity ids

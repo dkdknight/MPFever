@@ -152,7 +152,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.9.2";
+        public const string Version = "0.9.3";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -175,6 +175,10 @@ namespace MPFever
         GameLink menuGame;
         string menuPhase = "idle", menuText = "", menuLoad = "", menuLoadSeq = "", lastMenuReq;
         volatile bool joinPending;
+        /// <summary>(0.9.2, #440) The players whose arrival set joinPending (none: set before 0.9.2's names, see JoinOnce).</summary>
+        readonly HashSet<string> joinPendingFor = new HashSet<string>();
+        void SetJoinPending(string name) { lock (joinPendingFor) { joinPending = true; if (name != null) joinPendingFor.Add(name); } }
+        void ClearJoinPending() { lock (joinPendingFor) { joinPending = false; joinPendingFor.Clear(); } }
         /// <summary>(host migration) set by StartClient: this player's launcher stops acting as a client (its game and its connection are taken over by PromoteToHost).</summary>
         Action detachGuest;
         int promoting;   // (host migration) 1 while this launcher takes over as the host
@@ -2093,6 +2097,18 @@ namespace MPFever
         /// game not saved yet, or its wait over); "send", the game being sent now goes to it too and is waited for (chris#12 on
         /// the user's server, 2026-11-07 20:03:16, got nothing: the game was on its way to the others, and nothing was left to do
         /// for it afterwards either). old (MPFEVER_JOINMIDRESYNC=0): as before ("none" during a resynchronisation).</summary>
+        /// <summary>(0.9.2, #440) Whether the resynchronisation that lists the games in <paramref name="listed"/> is the one the
+        /// players of <paramref name="pendingFor"/> asked for: they are taken out of it, and true when nobody else is left (the
+        /// new-player resynchronisation asked for is not needed any more). False when nothing is pending, or it was set without a
+        /// name.</summary>
+        internal static bool JoinOnce(bool pending, HashSet<string> pendingFor, IEnumerable<string> listed)
+        {
+            if (!pending || pendingFor.Count == 0) return false;
+            var l = new HashSet<string>(listed ?? new string[0]);
+            pendingFor.RemoveWhere(n => l.Contains(n));
+            return pendingFor.Count == 0;
+        }
+
         internal static string JoinDuringResync(bool resyncing, bool hasBytes, bool sending, int bytesId, int cancelled, bool old)
         {
             if (!resyncing || !hasBytes) return "pending";
@@ -2368,7 +2384,7 @@ namespace MPFever
                     }
                     if (joinPending && started && !resyncing)
                     {
-                        joinPending = false;
+                        ClearJoinPending();
                         resyncing = true;
                         new Thread(() => Resync(T("nouveau joueur", "new player"))) { IsBackground = true, Name = "Resync" }.Start();
                     }
@@ -2930,7 +2946,7 @@ namespace MPFever
             lock (hashes) { hashCostRecent.Clear(); hashCostOf.Clear(); }
             hashApart = false;
             resyncing = false; resyncDropping = false; resyncSending = false; resyncWaiting.Clear(); ignoredParts.Clear(); unmeasuredParts.Clear(); postResyncHashN = -1; driftSince = -1; diffStreak = 0; lastDiffKeys = ""; stepsDumped = false; lock (partStreak) partStreak.Clear();
-            joinPending = false; riskyAnnounced = "";
+            ClearJoinPending(); riskyAnnounced = "";
             lock (reviewing) reviewing.Clear();
             reviewSend = null; reviewAccepted = null;
             lock (lobbyColorOf) lobbyColorOf.Clear();
@@ -3670,7 +3686,7 @@ namespace MPFever
                     // live relay cannot lose the message: if it were broken the host connection would be gone and a new migration would start.
                     if (r0 is RemoteRelay rr0 && !rr0.WaitPlayersAnnounced(15000)) Log.Warn(T("Changement d'hôte : la liste des joueurs n'est pas arrivée en 15 s, on continue.", "Host change: the list of players did not arrive within 15 s, going on."));
                     if (relay != r0 || resyncing) return;
-                    joinPending = false;
+                    ClearJoinPending();
                     resyncing = true;
                     Log.W(T("Changement d'hôte : resynchronisation de tous les joueurs", "Host change: resynchronising every player"));
                     Resync(T("changement d'hôte", "host change"));
@@ -3790,7 +3806,7 @@ namespace MPFever
                         lock (reviewing) reviewing.Add(p.Name);
                         Log.W(F("{0} regarde les mods et les DLC de la partie avant de la rejoindre", "{0} looks at the game's mods and DLCs before joining it", BaseName(p.Name)));
                     }
-                    else if (!resyncing || resyncBytes == null) joinPending = true;
+                    else if (!resyncing || resyncBytes == null) SetJoinPending(p.Name);
                     MenuStatus();
                 }
             };
@@ -4463,7 +4479,9 @@ namespace MPFever
         /// every game: its own (chat.txt) and the clients' ("chatmsg").</summary>
         /// <summary>The game builds MPFever was made and checked for (an update of the game changes the engine's code: until
         /// MPFever follows, its fixes may not all work there).</summary>
-        static readonly string[] KnownBuilds = { "40408", "40420", "40423", "40425" };   // (40425: the places found by signature, checked 2026-10-24/25)
+        static readonly string[] KnownBuilds = { "40408", "40420", "40423", "40425", "40444" };   // (40425: the places found by signature, checked 2026-10-24/25)
+        // (0.9.2: 40444, the game update of 2026-11-19, Steam stamp 6af6fd97: every place of the native module found again, see
+        // native/mpfever_sigs.txt and tests/test_build40444_092.py)
         readonly HashSet<string> buildsWarned = new HashSet<string>();
 
         /// <summary>A game ready on a build MPFever does not know (the game was updated): every player is told, once.</summary>
@@ -5143,7 +5161,7 @@ namespace MPFever
                         var bytesNow = resyncBytes;
                         string jd = JoinDuringResync(resyncing, bytesNow != null, resyncSending, resyncBytesId, saveCancel,
                             Environment.GetEnvironmentVariable("MPFEVER_JOINMIDRESYNC") == "0");
-                        if (jd == "pending") joinPending = true;
+                        if (jd == "pending") SetJoinPending(from.Name);
                         else if (jd == "send")
                         {
                             lock (resyncWaiting) { resyncWaiting.RemoveWhere(w => BaseName(w) == BaseName(from.Name)); resyncWaiting.Add(from.Name); }
@@ -5169,7 +5187,7 @@ namespace MPFever
                         if (hid == 0 && !resyncSending) break;
                         if (bytes == null || hid != resyncBytesId || hid == 0 || !(h.TryGetValue("missing", out var mv) && mv is string ms))
                         {
-                            joinPending = true;
+                            SetJoinPending(from.Name);
                             break;
                         }
                         int parts = (bytes.Length + ResyncChunk - 1) / ResyncChunk;
@@ -5800,6 +5818,24 @@ namespace MPFever
                     {
                         lock (resyncWaiting) foreach (var n in joining) resyncWaiting.Add(n);
                         Log.W(F("Resynchronisation : on attend aussi {0}, qui rejoint la partie", "Resynchronisation: also waiting for {0}, who is joining", string.Join(", ", joining)));
+                    }
+                }
+                // (0.9.2, #440) the players whose arrival during this resynchronisation (before its game was saved) asked for another
+                // one get this one: listed here, they are sent its game and waited for. They asked for a second whole one right after
+                // (Andy on a dedicated server, 2026-11-19 19:07: joined 9 s after the first had started, sent its game and loaded it,
+                // then "Resynchronisation #2 (new player)": berni1212 received the 118 MB again at 0.5 MB/s, 4.5 min more for
+                // everybody). A player who asked and is not listed (still looking at the mods, or gone) still gets its own after.
+                // MPFEVER_JOINONCE=0: as before
+                if (Environment.GetEnvironmentVariable("MPFEVER_JOINONCE") != "0")
+                {
+                    lock (joinPendingFor)
+                    {
+                        if (JoinOnce(joinPending, joinPendingFor, all))
+                        {
+                            joinPending = false;
+                            Log.W(T("Les joueurs arrivés pendant cette resynchronisation la reçoivent : pas d'autre resynchronisation pour eux après.",
+                                "The players who arrived during this resynchronisation get it: no other one for them after it."));
+                        }
                     }
                 }
                 // (the whole game to the others at once; the differences worked out meanwhile)
