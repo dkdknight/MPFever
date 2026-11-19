@@ -5,7 +5,7 @@ services:
     container_name: ${CONTAINER_NAME:-mpfever-server}
     restart: unless-stopped
     init: true
-    stop_grace_period: 60s            # the world is saved and the game closed on `docker compose stop`
+    stop_grace_period: 120s           # the world is saved and the game closed on `docker compose stop`
     ports:
       - "${PORT:-28090}:${PORT:-28090}"
     environment:

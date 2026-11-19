@@ -111,7 +111,8 @@ cmd_run() {
   init_prefix; ensure_client; link_game
   [ -f "$(save_dir)/$WORLD.sav" ] || die "savegame '$WORLD.sav' not found: run  import-save  (README.md, step 4)" 42
   # the game's settings: a minimal profile (lowest graphics) the first time; MPFever activates its mod in it
-  [ -f "$(local_dir)/settings.lua" ] || { mkdir -p "$(local_dir)"; cp "$OPT/config/settings.lua" "$(local_dir)/settings.lua"; }
+  mkdir -p "$(local_dir)/mods" "$(save_dir)"   # where the game and MPFever look for the mod and the saves (a new profile has none of them)
+  [ -f "$(local_dir)/settings.lua" ] || cp "$OPT/config/settings.lua" "$(local_dir)/settings.lua"
 
   # the launcher package of this image version, and the server settings from the environment (the file is rewritten at every start)
   cp -a "$OPT/pkg/." "$SRV/"
@@ -159,7 +160,7 @@ cmd_run() {
   on_term() {
     STOPPING=1; log "stop requested: saving the world and closing the game"
     touch "$STOPFILE"
-    local t=0; while kill -0 "$LAUNCHER" 2>/dev/null && [ "$t" -lt "${STOP_TIMEOUT:-50}" ]; do sleep 1; t=$((t + 1)); done
+    local t=0; while kill -0 "$LAUNCHER" 2>/dev/null && [ "$t" -lt "${STOP_TIMEOUT:-90}" ]; do sleep 1; t=$((t + 1)); done
     kill "$LAUNCHER" 2>/dev/null; wineserver -k 2>/dev/null
   }
   trap on_term TERM INT
