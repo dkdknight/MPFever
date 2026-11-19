@@ -3,7 +3,7 @@
 # The image always carries the LATEST OFFICIAL MPFever release: the package is built from that release's tag (build.bat) with the launcher
 # changes of this branch applied on top (they disappear from the patch once a release contains them). So players on the official release can join.
 #
-# Publication to GHCR (ghcr.io/<owner>/mpfever-server-docker, named like the relay's mpfever-relay-docker) happens ONLY on purpose, after every job above has passed:
+# Publication to GHCR (ghcr.io/<owner>/mpfever-server, named like the relay's mpfever-relay) happens ONLY on purpose, after every job above has passed:
 #   - pushing a tag  dedicated-server-v<mpfever version>[-<n>]   (for example dedicated-server-v0.9.1): image tags "<mpfever version>[-<n>]" and "experimental"
 #   - or a manual run (workflow_dispatch, workflow file on the default branch) with "publish" ticked.
 # A push or a pull request never publishes.
@@ -164,7 +164,7 @@ jobs:
           if [ "${{ github.ref_type }}" = tag ]; then
             pub=true; vtag="${{ github.ref_name }}"; vtag="${vtag#dedicated-server-v}"   # 0.9.1 or 0.9.1-2
           fi
-          echo "publish=$pub" >> "$GITHUB_OUTPUT"; echo "repo=ghcr.io/$owner/mpfever-server-docker" >> "$GITHUB_OUTPUT"; echo "vtag=$vtag" >> "$GITHUB_OUTPUT"
+          echo "publish=$pub" >> "$GITHUB_OUTPUT"; echo "repo=ghcr.io/$owner/mpfever-server" >> "$GITHUB_OUTPUT"; echo "vtag=$vtag" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         if: steps.tags.outputs.publish == 'true'
         uses: docker/login-action@v3
