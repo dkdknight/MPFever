@@ -9,6 +9,9 @@ Steam desktop. Players join it with the usual MPFever client, from Windows, exac
 
 ## Where it runs
 
+Docker is the only supported way: the image pins Wine, Mono and the rest, runs the server unprivileged and starts it with one command. Another OCI engine (Podman, Kubernetes) should work but is not tried;
+running the pieces directly on a Linux host (the Dockerfile is the recipe) is neither scripted nor supported.
+
 "Linux" is the system inside the container. The host is any machine that runs Linux containers for x86-64:
 
 | Host | |
