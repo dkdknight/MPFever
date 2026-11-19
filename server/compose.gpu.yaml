@@ -1,0 +1,9 @@
+# Optional: use a real GPU (Intel/AMD through /dev/dri) instead of software rendering. Not validated.
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
+services:
+  mpfever-server:
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      MPF_VKNULL: "0"
+      MPFEVER_ENV_HOST: ""

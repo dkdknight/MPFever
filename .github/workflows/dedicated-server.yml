@@ -1,0 +1,128 @@
+# The Linux dedicated server (server/): static checks, the package built from this repository, the Docker image built and smoke-tested.
+# NOTHING IS PUBLISHED by a push or a pull request. The image is pushed to GHCR only by a manual run (workflow_dispatch) with
+# "publish" ticked, on the upstream repository, after the checks and the smoke tests below pass.
+name: Dedicated server
+
+on:
+  pull_request:
+    paths: ["server/**", "launcher/**", ".github/workflows/dedicated-server.yml"]
+  push:
+    branches: [main, "feature/dedicated-server"]
+    paths: ["server/**", "launcher/**", ".github/workflows/dedicated-server.yml"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Push the image to GHCR (only the upstream repository, only after the tests pass)"
+        type: boolean
+        default: false
+      version:
+        description: "Version tag to publish besides 'experimental' (for example 0.9.1-server.1); empty: only 'experimental'"
+        type: string
+        default: ""
+
+concurrency:
+  group: dedicated-server-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - name: Static checks (shell, Python, Compose, no secrets, no binaries)
+        run: bash server/tests/check.sh
+
+  package:
+    # The same build as ci.yml (native module, launcher with warnings as errors, tests, archives); the server archive is the input of the image.
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install lupa==2.8
+      - name: Build, test, pack
+        shell: pwsh
+        run: |
+          cmd /c build.bat 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-package
+          path: release/*-server.zip
+          retention-days: 14
+          if-no-files-found: error
+
+  image:
+    needs: [static, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-package
+          path: server/dist
+      - name: Package for the image
+        working-directory: server/dist
+        run: |
+          ls -l
+          cp ./*-server.zip MPFever-server.zip
+          echo "PKG_VERSION=$(ls ./*-server.zip | head -1 | sed -E 's#.*MPFever-(.*)-server\.zip#\1#')" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          load: true
+          tags: mpfever-server:ci
+          build-args: |
+            VERSION=${{ env.PKG_VERSION }}
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke tests
+        run: |
+          set -eu
+          img=mpfever-server:ci
+          # runs unprivileged
+          test "$(docker run --rm --entrypoint id "$img" -u)" = 1001
+          # contains no game file, no Valve file, no secret
+          docker run --rm --entrypoint find "$img" / -xdev \( -iname 'TransportFever3.exe' -o -iname 'steamclient*.dll' -o -iname 'steam.exe' -o -iname 'steam.json' -o -iname '*.sav' \) -not -path '/proc/*' | tee /tmp/found
+          test ! -s /tmp/found
+          # licence texts and Dock are present, a healthcheck is defined
+          docker run --rm --entrypoint sh "$img" -c 'test -f /opt/mpfever/dockhost.exe && test -f /opt/mpfever/licenses/madeira-dock/COPYING && test -f /opt/mpfever/pkg/MPFever.exe && test -f /opt/mpfever/pkg/winhttp.dll'
+          docker inspect --format '{{.Config.Healthcheck.Test}}' "$img" | grep -q healthcheck.sh
+          # an empty volume gives explicit messages, not a crash
+          docker volume create ci-data >/dev/null; docker volume create ci-game >/dev/null
+          set +e
+          out=$(docker run --rm -v ci-data:/data -v ci-game:/game "$img" status 2>&1); echo "$out"
+          echo "$out" | grep -q "login" && echo "$out" | grep -q "install-game"
+          out=$(docker run --rm -e WORLD=x -v ci-data:/data -v ci-game:/game "$img" run 2>&1); rc=$?; echo "$out"
+          test $rc -eq 40 && echo "$out" | grep -q "run  login"
+          # the Dock build is the pinned one, the Vulkan layer loads
+          docker run --rm --entrypoint sh "$img" -c 'ls -l /opt/mpfever/libVkLayer_mpf_nulldraw.so /etc/vulkan/implicit_layer.d/'
+      - name: Log in to GHCR
+        if: github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'dkdknight/MPFever'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish (manual run only)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish && github.repository == 'dkdknight/MPFever'
+        run: |
+          set -eu
+          repo=ghcr.io/dkdknight/mpfever-server
+          docker tag mpfever-server:ci "$repo:experimental"; docker push "$repo:experimental"
+          if [ -n "${{ inputs.version }}" ]; then docker tag mpfever-server:ci "$repo:${{ inputs.version }}"; docker push "$repo:${{ inputs.version }}"; fi

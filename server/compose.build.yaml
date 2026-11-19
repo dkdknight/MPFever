@@ -1,0 +1,8 @@
+# Local build instead of the published image:   docker compose -f compose.yaml -f compose.build.yaml build
+# Needs dist/MPFever-server.zip (see Dockerfile).
+services:
+  mpfever-server:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-local}

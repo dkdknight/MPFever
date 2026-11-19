@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -876,6 +876,27 @@ namespace MPFever
                     int eq = kv.IndexOf('=');
                     if (eq > 0) psi.EnvironmentVariables[kv.Substring(0, eq).Trim()] = kv.Substring(eq + 1);
                 }
+            if (GameInstall.WineMode)
+            {
+                // Linux dedicated server (server/): the Windows game runs under Wine. With MPFEVER_DOCK (the Windows path of Madeira Dock's
+                // dockhost.exe) Valve's own client library signs in, checks the licence and starts the game with these arguments, as Steam would;
+                // otherwise the game's executable is started directly (a Steam client must then already run in the Wine prefix).
+                var dock = Environment.GetEnvironmentVariable("MPFEVER_DOCK");
+                psi.FileName = "wine";
+                if (!string.IsNullOrEmpty(dock))
+                {
+                    psi.EnvironmentVariables["MADEIRA_STEAM_HOST_ARGUMENTS"] = psi.Arguments;
+                    psi.EnvironmentVariables["MADEIRA_STEAM_HOST_LAUNCH"] = "1";
+                    psi.Arguments = "\"" + dock + "\"";
+                }
+                else
+                    psi.Arguments = "\"" + exe + "\" " + psi.Arguments;
+                psi.EnvironmentVariables["WINEDLLOVERRIDES"] = "winhttp=n,b;mscoree,mshtml=";
+                psi.EnvironmentVariables["WINEDEBUG"] = "-all";
+                psi.EnvironmentVariables["MPFEVER_DIR"] = GameInstall.WinPath(Dir);
+                if (psi.EnvironmentVariables["MPFEVER_SIGS"] != null) psi.EnvironmentVariables["MPFEVER_SIGS"] = GameInstall.WinPath(psi.EnvironmentVariables["MPFEVER_SIGS"]);
+                Log.W("Wine: " + psi.FileName + " " + psi.Arguments);
+            }
             if (Reporter.OtherGamesRunning(-1) > 0) OtherGameSeen = true;
             proc = Process.Start(psi);
             proc.EnableRaisingEvents = true;
@@ -2395,6 +2416,12 @@ namespace MPFever
     static class GameInstall
     {
         public const string AppId = "3493540";
+        /// <summary>This launcher runs on Linux (under Mono): the dedicated server of server/.</summary>
+        public static readonly bool IsLinux = Environment.OSVersion.Platform == PlatformID.Unix;
+        /// <summary>MPFEVER_WINE=1: this Linux launcher starts the Windows game under Wine (same executable and same winhttp.dll module as the players').</summary>
+        public static readonly bool WineMode = IsLinux && Environment.GetEnvironmentVariable("MPFEVER_WINE") == "1";
+        /// <summary>A Linux path as Wine sees it (Z: is the Linux root).</summary>
+        public static string WinPath(string p) => string.IsNullOrEmpty(p) ? p : "Z:" + p.Replace('/', '\\');
 
         /// <summary>(0.6.3) The game folder the player chose by hand (setting "gamedir"), for a game MPFever does not find itself (a
         /// GOG copy, a folder of its own): looked at after the usual places only. MPFEVER_GOG=0: not.</summary>
@@ -2635,6 +2662,7 @@ namespace MPFever
             // library was left, so the mod went nowhere and no savegame was found): the first of these that holds steam.exe,
             // then the running Steam's folder
             var cands = new List<string>();
+            if (WineMode) { var ws = Environment.GetEnvironmentVariable("MPFEVER_STEAMPATH"); if (!string.IsNullOrEmpty(ws)) cands.Add(ws); }
             try { cands.Add(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string); } catch { }
             try { cands.Add(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath", null) as string); } catch { }
             try { cands.Add(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Valve\Steam", "InstallPath", null) as string); } catch { }

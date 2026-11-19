@@ -728,6 +728,18 @@ namespace MPFever
         void ServerTick()
         {
             if (server == null || hostGame == null) return;
+            // (Linux server, server/) a container stop cannot close the window: MPFEVER_STOPFILE, when that file appears, stops the server
+            // properly (the world is saved first, the players are told), exactly as the console's "stop" does
+            if (GameInstall.IsLinux)
+            {
+                var stopFile = Environment.GetEnvironmentVariable("MPFEVER_STOPFILE");
+                if (!string.IsNullOrEmpty(stopFile) && File.Exists(stopFile))
+                {
+                    try { File.Delete(stopFile); } catch { }
+                    StopServer(true);
+                    return;
+                }
+            }
             bool st, paused; int sp;
             lock (sessionGate) { st = started; paused = pauseAt.HasValue; sp = speed; }
             if (!st)

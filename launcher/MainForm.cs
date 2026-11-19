@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -5725,6 +5725,19 @@ namespace MPFever
                 if (!(saveDone.TryGetValue("ok", out var okv) && okv is bool ok && ok)) { Log.Err(T("Resynchronisation abandonnée : sauvegarde refusée.", "Resynchronisation cancelled: save refused.")); return; }
                 Thread.Sleep(1000);   // the file is closed by the game after its callback
                 string file = GameInstall.FindSave(ResyncSaveName);
+                if (GameInstall.IsLinux)
+                {
+                    // (Linux server) the game's save file may still be written after its callback: wait for it and for its size to stop moving
+                    long last = -1; int still = 0;
+                    for (int w = 0; w < 120 && still < 4; w++)
+                    {
+                        file = GameInstall.FindSave(ResyncSaveName);
+                        long sz = -1; try { if (file != null && File.GetLastWriteTimeUtc(file) >= t0.AddSeconds(-5)) sz = new FileInfo(file).Length; } catch { }
+                        if (sz > 0 && sz == last) still++; else still = 0;
+                        last = sz;
+                        Thread.Sleep(500);
+                    }
+                }
                 if (file == null || File.GetLastWriteTimeUtc(file) < t0.AddSeconds(-5))
                 {
                     Log.Err(F("Resynchronisation abandonnée : fichier « {0}.sav » introuvable.", "Resynchronisation cancelled: file « {0}.sav » not found.", ResyncSaveName));
