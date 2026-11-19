@@ -37,7 +37,7 @@ RUN dpkg --add-architecture i386 \
  && apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends ca-certificates curl wget gnupg2 procps xvfb xauth \
       libvulkan1 mesa-vulkan-drivers libgl1 libasound2t64 libgnutls30t64 libfreetype6 fonts-dejavu-core \
-      python3-minimal python3-qrcode mono-runtime libmono-system-windows-forms4.0-cil libmono-system-drawing4.0-cil \
+      python3-minimal python3-qrcode python3-zstandard mono-runtime libmono-system-windows-forms4.0-cil libmono-system-drawing4.0-cil \
       libmono-system-core4.0-cil libmono-system-io-compression4.0-cil libmono-system-io-compression-filesystem4.0-cil \
       libmono-security4.0-cil ca-certificates-mono libgdiplus \
  && mkdir -pm755 /etc/apt/keyrings \

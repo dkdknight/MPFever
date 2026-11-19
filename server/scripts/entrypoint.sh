@@ -4,6 +4,7 @@
 #   login                    sign in to Steam once with a QR code (no password, no GUI); the session is remembered
 #   install-game <steamapps> build the lite game install from your own Steam library folder (mounted read-only)
 #   import-save <file.sav>.. copy savegame files into the server account's save folder
+#   mods login|list|sync|status   the mods of the worlds, from mod.io with your own API key (see mods.py)
 #   status                   check everything the server needs and print what is missing
 #   shell                    a shell in the container
 set -u
@@ -68,6 +69,7 @@ check_settings() {
   need_choice START_SPEED "${START_SPEED:-1}" 1 2 4
   need_choice LOG_FORMAT "${LOG_FORMAT:-json}" json text
   need_choice UPDATE_CHECK "${UPDATE_CHECK:-notify}" notify off
+  need_choice MODS_SYNC "${MODS_SYNC:-auto}" auto off
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
 
@@ -105,6 +107,20 @@ cmd_install_game() {
   log "game installed ($(du -sh --apparent-size "$GAME" | cut -f1) apparent, $(du -sh "$GAME" | cut -f1) on disk)"
 }
 
+cmd_mods() {
+  ensure_dirs
+  local sub=${1:-status}; [ $# -gt 0 ] && shift
+  case "$sub" in
+    login|status|setup-root) exec python3 "$OPT/scripts/mods.py" "$sub" "$@" ;;
+    list|sync)
+      local w=${1:-${WORLD:-}}; [ -n "$w" ] || die "usage: mods $sub <world>" 2
+      [ -f "$SESSION_FILE" ] || die "sign in first (login): the save folder depends on the Steam account" 40
+      [ $# -gt 0 ] && shift
+      exec python3 "$OPT/scripts/mods.py" "$sub" "$(save_dir)/$w.sav" "$@" ;;
+    *) die "mods: login | list <world> | sync <world> [--check] | status" 2 ;;
+  esac
+}
+
 cmd_import_save() {
   [ $# -gt 0 ] || die "usage: import-save <file.sav> [more files of the same save]" 2
   [ -f "$SESSION_FILE" ] || die "sign in first (login): the save folder depends on the Steam account" 40
@@ -128,6 +144,12 @@ cmd_run() {
   # the game's settings: a minimal profile (lowest graphics) the first time; MPFever activates its mod in it
   mkdir -p "$(local_dir)/mods" "$(save_dir)"   # where the game and MPFever look for the mod and the saves (a new profile has none of them)
   [ -f "$(local_dir)/settings.lua" ] || cp "$OPT/config/settings.lua" "$(local_dir)/settings.lua"
+  # the world's mods: the launcher and the game both look for mod.io mods in /data/modio; with a mod.io key (mods login) the world's mods are installed or updated first
+  python3 "$OPT/scripts/mods.py" setup-root
+  if [ "${MODS_SYNC:-auto}" = auto ] && [ -f "$SECRETS/modio.json" ]; then
+    log "mods: installing or updating the world's mods from mod.io"
+    python3 "$OPT/scripts/mods.py" sync "$(save_dir)/$WORLD.sav" || warn "mods: not every mod could be updated (the installed versions are used)"
+  fi
 
   # the launcher package of this image version, and the server settings from the environment (the file is rewritten at every start)
   cp -a "$OPT/pkg/." "$SRV/"
@@ -208,7 +230,8 @@ case "$MODE" in
   login)        cmd_login ;;
   install-game) cmd_install_game "$@" ;;
   import-save)  cmd_import_save "$@" ;;
+  mods)         cmd_mods "$@" ;;
   status)       cmd_status ;;
   shell)        exec bash ;;
-  *)            die "unknown mode '$MODE' (run, login, install-game, import-save, status, shell)" 2 ;;
+  *)            die "unknown mode '$MODE' (run, login, install-game, import-save, mods, status, shell)" 2 ;;
 esac

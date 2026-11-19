@@ -27,6 +27,7 @@ services:
       MOTD: ${SRV_MOTD:-}
       LOG_FORMAT: ${SRV_LOG_FORMAT:-json}
       UPDATE_CHECK: ${SRV_UPDATE_CHECK:-notify}
+      MODS_SYNC: ${SRV_MODS_SYNC:-auto}
     volumes:
       - data:/data        # Wine prefix, Valve client, Steam session (secrets/), saves, launcher and its logs and backups
       - game:/game        # the "lite" game install (about 1 GB on disk)

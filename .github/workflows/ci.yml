@@ -139,7 +139,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck python3-zstandard
 
       - name: Static checks
         run: bash server/tests/check.sh
