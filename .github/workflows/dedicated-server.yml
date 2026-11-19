@@ -128,6 +128,7 @@ jobs:
           build-args: |
             VERSION=${{ env.PKG_VERSION }}
             VCS_REF=${{ github.sha }}
+            SOURCE_REPO=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke tests
