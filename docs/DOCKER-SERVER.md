@@ -94,8 +94,8 @@ rebuilt at any time with `install-game`). Back up `mpfever-data`.
 | Disk | the "lite" install (`server/scripts/mklite.py`) | The engine reads archives at fixed offsets, so archives keep their layout: textures, audio and blobs become file holes (sparse), images stay valid but empty. Generated from the host's own copy, never distributed. |
 | Display | `Xvfb` only | The game closes without an X server. Nothing is exposed: no VNC, no remote desktop. |
 
-The image is **versioned by the MPFever release** it carries (`0.9.1`, `0.9.1-2` for a rebuild) plus `experimental`: it is built from the latest official release's sources with the launcher
-changes of the Linux server applied, so the players' official client can join. The image holds no secret, no Transport Fever 3 file and no Valve file; the Valve client library is
+The image is **versioned by the MPFever version** it is built from (`ghcr.io/<owner>/mpfever-server:<version>`) plus `experimental`: it is built by the Release build workflow from the release's own server
+archive (run it on the release's tag), so the players' client of that version can join; the version the server and the players run must be the same. The image holds no secret, no Transport Fever 3 file and no Valve file; the Valve client library is
 fetched from Valve at the first start (pinned build, hash-checked). Start (`server/scripts/entrypoint.sh run`): checks (disk, sparse support, RAM, game, session, savegame), first-start
 Wine prefix, the launcher restarted when it exits (five failures within a minute stop the container with a message), `SIGTERM` writes the stop file: the world is saved, the game closed, then the container exits.
 
@@ -150,9 +150,14 @@ read-only container.
 **Not validated yet:** runs of 30 minutes or more, memory growth over time, several clients (a second Steam account is needed, or local test clients), large worlds, enforced CPU/memory limits,
 stopping while a client has vanished, the GPU variant.
 
-## Build and tests
+## Build, tests, publication
 
-`.github/workflows/dedicated-server.yml` runs the static checks (`server/tests/check.sh`: shell, Python tests, Compose, no secrets or binaries), runs Dock's unit tests, builds the package from the latest official release with the
-Docker server's launcher changes, builds the image, smoke-tests it (unprivileged, no game or Valve file inside, explicit errors on empty volumes) and publishes only when a tag
-`dedicated-server-v<version>` is pushed or the workflow is run by hand with "publish" ticked. Locally: put a package built by `build.bat` in `server/dist/MPFever-server.zip` and
-`docker compose -f compose.yaml -f compose.build.yaml build` (`APT_MIRROR` can name another Ubuntu mirror).
+The project's two workflows cover it, like the relay's image:
+
+- `ci.yml`, on every push and pull request: **`docker-server-checks`** (`server/tests/check.sh`: shell and shellcheck, Python tests, Madeira Dock's unit tests, Compose files, no secrets, no
+  binaries) and **`docker-server`**, which builds the image from the commit's server archive (the `build` job) and smoke-tests it (`server/tests/smoke.sh`: unprivileged, no game or Valve file
+  inside, pinned runtimes, explicit errors on empty volumes). Nothing is pushed.
+- `release.yml` (Release build, started by hand): tick **`docker_server`** to also publish `ghcr.io/<owner>/mpfever-server:<version>` and `:experimental`, built from that run's unsigned server archive
+  and smoke-tested first (`docker` is the relay's image). Run it on the tag of a release to get the image of that release; the package's visibility is set on its page on GitHub.
+
+Locally: put a package built by `build.bat` in `server/dist/MPFever-server.zip` and `docker compose -f compose.yaml -f compose.build.yaml build` (`APT_MIRROR` can name another Ubuntu mirror).

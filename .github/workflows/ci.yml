@@ -129,3 +129,53 @@ jobs:
 
       - name: Compose file
         run: MPFEVER_RELAY_PASSWORD=ci docker compose -f relay/compose.yaml config -q
+
+  # The dedicated server in Docker (server/, docs/DOCKER-SERVER.md): shell (shellcheck), Python, Madeira Dock's unit tests, Compose files, no secrets, no
+  # binaries, no game or Valve file.
+  docker-server-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      - name: Static checks
+        run: bash server/tests/check.sh
+
+  # ... and its image, built from this commit's server archive (the job "build" above), then smoke-tested: it runs unprivileged, holds no game or
+  # Valve file, and an empty volume gives explicit messages. Nothing is pushed: the image is published by the Release build workflow.
+  docker-server:
+    needs: [build, docker-server-checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MPFever-${{ github.sha }}
+          path: server/dist
+
+      - name: The server archive is the image's input
+        working-directory: server/dist
+        run: |
+          ls -l
+          cp ./MPFever-*-server.zip MPFever-server.zip
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          load: true
+          tags: mpfever-server:ci
+          build-args: |
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke tests
+        run: bash server/tests/smoke.sh mpfever-server:ci

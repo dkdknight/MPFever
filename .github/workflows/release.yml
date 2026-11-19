@@ -24,6 +24,10 @@ on:
           - test-signing
           - release-signing
         default: test-signing
+      docker_server:
+        description: "Also publish the dedicated server's Docker image (x64; server/Dockerfile, docs/DOCKER-SERVER.md) to ghcr.io/<owner>/mpfever-server, tagged with the version and experimental"
+        type: boolean
+        default: false
 
 jobs:
   release:
@@ -288,3 +292,68 @@ jobs:
           path: release/Relay-MPFever-${{ steps.version.outputs.version }}-win-x64.zip
           if-no-files-found: error
           retention-days: 30
+
+  # (optional, off unless "docker_server" is ticked when the workflow is started: the dedicated server's image (server/Dockerfile), x64, on GitHub's
+  # container registry under the owner of the repository. It is built from this run's unsigned server archive (the image takes MPFever.exe, winhttp.dll and
+  # the mod from it; the signatures are for Windows), smoke-tested, then pushed as <version> and experimental. It holds no Transport Fever 3 or Valve
+  # file: the game is imported from the user's own install and Valve's client library is fetched from Valve at the first start. The package's visibility is
+  # set on its page on GitHub)
+  docker-server:
+    if: ${{ inputs.docker_server }}
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version and image name
+        id: v
+        run: |
+          echo "version=$(sed -n 's/^set "VERSION=\([^"]*\)".*/\1/p' build.bat | tr -d '\r')" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mpfever-server" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MPFever-${{ steps.v.outputs.version }}-unsigned
+          path: server/dist
+
+      - name: The server archive is the image's input
+        working-directory: server/dist
+        run: cp "MPFever-${{ steps.v.outputs.version }}-server.zip" MPFever-server.zip
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          load: true
+          tags: mpfever-server:release
+          build-args: |
+            VERSION=${{ steps.v.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_REPO=https://github.com/${{ github.repository }}
+
+      - name: Smoke tests
+        run: bash server/tests/smoke.sh mpfever-server:release
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        run: |
+          for t in "${{ steps.v.outputs.version }}" experimental; do
+            docker tag mpfever-server:release "${{ steps.v.outputs.image }}:$t"
+            docker push "${{ steps.v.outputs.image }}:$t"
+          done
+
+      - name: Summary
+        run: |
+          bt='`'
+          echo "- Docker image $bt${{ steps.v.outputs.image }}:${{ steps.v.outputs.version }}$bt (and $bt:experimental$bt), x64" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -6,7 +6,7 @@ fail=0
 step() { echo "== $*"; }
 
 step "shell syntax"
-for f in scripts/*.sh tests/check.sh; do bash -n "$f" || fail=1; done
+for f in scripts/*.sh tests/check.sh tests/smoke.sh; do bash -n "$f" || fail=1; done
 if command -v shellcheck >/dev/null; then step "shellcheck"; shellcheck -S warning scripts/*.sh || fail=1; fi
 
 step "python"
