@@ -15,7 +15,7 @@ MODE=${1:-run}; [ $# -gt 0 ] && shift
 
 ensure_dirs() {
   mkdir -p "$DATA" "$SRV" "$RUN" "$STEAM_DIR/steamapps/common" "$STEAM_DIR/config" 2>/dev/null \
-    && mkdir -p -m 700 "$SECRETS" 2>/dev/null && [ -w "$DATA" ] \
+    && mkdir -p "$SECRETS" && chmod 700 "$SECRETS" && [ -w "$DATA" ] \
     || die "$DATA is not writable by uid $(id -u): fix the volume ownership (chown -R $(id -u):$(id -g) <volume>)" 10
 }
 
@@ -159,7 +159,7 @@ cmd_run() {
   on_term() {
     STOPPING=1; log "stop requested: saving the world and closing the game"
     touch "$STOPFILE"
-    local i; for i in $(seq 1 "${STOP_TIMEOUT:-50}"); do kill -0 "$LAUNCHER" 2>/dev/null || break; sleep 1; done
+    local t=0; while kill -0 "$LAUNCHER" 2>/dev/null && [ "$t" -lt "${STOP_TIMEOUT:-50}" ]; do sleep 1; t=$((t + 1)); done
     kill "$LAUNCHER" 2>/dev/null; wineserver -k 2>/dev/null
   }
   trap on_term TERM INT

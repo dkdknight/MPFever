@@ -2,7 +2,7 @@
 services:
   mpfever-server:
     image: ${MPFEVER_IMAGE:-ghcr.io/dkdknight/mpfever-server:experimental}
-    container_name: mpfever-server
+    container_name: ${CONTAINER_NAME:-mpfever-server}
     restart: unless-stopped
     init: true
     stop_grace_period: 60s            # the world is saved and the game closed on `docker compose stop`

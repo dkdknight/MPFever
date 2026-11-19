@@ -6,11 +6,14 @@
 #   server/dist/MPFever-server.zip   (the release\MPFever-<version>-server.zip of a build)
 # The image contains no Transport Fever 3 file and no Valve file: the game is imported from the user's own copy (install-game) and Valve's
 # client library is fetched from Valve at the first start.
+# --build-arg APT_MIRROR=http://<mirror>/ubuntu uses another Ubuntu mirror (when archive.ubuntu.com is unreachable).
 
 ARG UBUNTU=ubuntu:24.04
 
 # ---------------------------------------------------------------- Madeira Dock, from source at a pinned commit (GPL-3.0-or-later)
 FROM ${UBUNTU} AS dock
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s#http://archive.ubuntu.com/ubuntu#$APT_MIRROR#g; s#http://security.ubuntu.com/ubuntu#$APT_MIRROR#g" /etc/apt/sources.list.d/ubuntu.sources; fi
 ARG DOCK_REPO=https://github.com/willfaust/madeira-dock.git
 ARG DOCK_REF=67780ba92e60dbfac4fe80eaf2ce34b9ea1a1c60
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates git gcc-mingw-w64-x86-64 >/dev/null \
@@ -21,12 +24,16 @@ RUN x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wno-cast-function-type -static -s
 
 # ---------------------------------------------------------------- the Vulkan layer that makes drawing a no-op
 FROM ${UBUNTU} AS vklayer
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s#http://archive.ubuntu.com/ubuntu#$APT_MIRROR#g; s#http://security.ubuntu.com/ubuntu#$APT_MIRROR#g" /etc/apt/sources.list.d/ubuntu.sources; fi
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends gcc libc6-dev libvulkan-dev >/dev/null
 COPY vklayer/vk_nulldraw.c /src/vk_nulldraw.c
 RUN gcc -O2 -shared -fPIC -Wall -Werror -o /libVkLayer_mpf_nulldraw.so /src/vk_nulldraw.c -lpthread
 
 # ---------------------------------------------------------------- runtime
 FROM ${UBUNTU} AS runtime
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s#http://archive.ubuntu.com/ubuntu#$APT_MIRROR#g; s#http://security.ubuntu.com/ubuntu#$APT_MIRROR#g" /etc/apt/sources.list.d/ubuntu.sources; fi
 ARG WINE_VERSION=11.0.0.0~noble-1
 ENV DEBIAN_FRONTEND=noninteractive
 RUN dpkg --add-architecture i386 \

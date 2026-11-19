@@ -1,4 +1,4 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2034
 # Shared definitions of the MPFever dedicated server scripts (sourced by entrypoint.sh).
 
 export HOME=/data
