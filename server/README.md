@@ -4,8 +4,8 @@ A server that runs the **real Transport Fever 3 simulation** in one Docker conta
 [Madeira Dock](https://github.com/willfaust/madeira-dock) and Valve's own Steam client library. No GPU, no screen, no Steam desktop.
 Players join it with the usual MPFever client (same version) from Windows.
 
-> **Status: experimental.** It works for short sessions on a small world with a real Windows client (see "Validation" in
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It needs **your own** Transport Fever 3 licence: the image contains no game file and no Valve file.
+> **Status: experimental.** Validated end to end on the built image for short sessions on a small world with a real Windows client (see "Validation" in
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): long runs, several clients and large worlds are not validated). It needs **your own** Transport Fever 3 licence: the image contains no game file and no Valve file.
 
 ## What you need
 
@@ -43,7 +43,8 @@ Edit `.env` (at least `WORLD`, the savegame's name without `.sav`). Then, once:
    ```
 5. **Start**: `docker compose up -d`. It restarts by itself after a reboot or a crash. `docker compose logs -f` shows the server's log.
 
-Check at any time what is missing: `docker compose run --rm mpfever-server status`.
+Check at any time what is missing: `docker compose run --rm mpfever-server status`. Memory and CPU: `docker compose exec mpfever-server /opt/mpfever/scripts/measure.sh`.
+The very first start takes a few minutes longer (Wine prefix, Valve client download) and the game restarts once by itself.
 Players connect to `<host>:28090` (forward the TCP port on your router for the Internet). Stop with `docker compose stop` (the world is saved first).
 
 ## Configuration

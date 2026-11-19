@@ -21,23 +21,30 @@
 - **Start** (`scripts/entrypoint.sh run`): checks (disk, sparse support, RAM, game, session, save), first-start prefix creation (marker file, so a restart reinstalls nothing), pinned Valve client,
   launcher with restart-on-exit (5 quick failures in a minute stop the container with a message), `SIGTERM` writes the stop file: the world is saved, the game closed, then the container exits.
 
-## Measured (small world, MPFever 0.9.0 package, no GPU, one real Windows client)
+## Measured (small world, MPFever 0.9.2 package, no GPU, built image, fresh volumes)
 
 | | |
 |---|---|
-| Game RAM | 10.1 to 10.3 GB (11.0 to 11.2 GB before the GPU-memory trim); heap of about 9 GB is the game's own |
-| Steam side (Dock + Valve service) | about 280 MB (Steam desktop under Wine: 2.7 GB) |
-| CPU | about 0.7 core at x0.98 game speed |
-| Disk | about 0.9 GB game + about 3 GB prefix and client |
-| Sync with a real Windows client | `IDENTICAL on 2 games`, 0 desynchronisations, runs of 3 to 13 minutes |
+| Container (cgroup, game running, no client) | about 10.6 to 11.8 GB: anonymous 9.5 GB, page cache 1 to 2 GB (reclaimable), shared 0.7 GB |
+| Game process | RSS 10.1 GB, PSS 10.0 GB (the heap of about 9 GB is the game's own; the Vulkan layer's trim returns about 0.7 GB of mapped GPU memory) |
+| Dock (`dockhost.exe`) | RSS 256 MB, PSS 193 MB; its CPU is 0.02 core |
+| Other processes | launcher (Mono) 107 MB, Wine desktop 87 MB, Xvfb 23 MB, session feeder 20 MB, wineserver 15 MB |
+| CPU | game 0.6 core at x0.98 game speed |
+| Disk | game 1.3 GB on disk (66 GB apparent), prefix and Valve client about 3 GB |
+| Image | 3.5 GB (Wine 11 with its i386 part 1.5 GB, Mesa/LLVM about 0.3 GB, Mono runtime subset); was 4.3 GB with `mono-complete` |
+| Start | image to "game ready" about 2.5 minutes with a warm cache, plus about 1.5 minutes the very first time (prefix creation, Valve client download, one extra game start) |
+| Sync with a real Windows client (0.9.2) | join, resynchronisation 140 s, then `IDENTICAL on 2 games`, 0 desynchronisations, 6 minutes observed |
+
+`scripts/measure.sh` prints these figures from inside the container (`docker compose exec mpfever-server /opt/mpfever/scripts/measure.sh`).
+Tried and dropped: `MADV_REMOVE` on the mapped GPU memory (no gain), a Wine without its i386 package (the launcher binaries ship in the package that depends on it), fewer or no Lavapipe threads (CPU worse).
 
 ## Validation status (honest)
 
-Validated on the maintainer's machine with the earlier hand-prepared volumes: Dock sign-in with the cached Steam session, licence check, launch, restart after a game crash, cold start of the container, synchronisation
-with a real Windows 0.9.0 client for short runs (join, resynchronisation, identical checks).
-**Not validated yet**: first start on an empty volume with `install-game`, `login` (QR) and the token transfer to Dock; `import-save`; graceful stop through the stop file; runs of 30 minutes or more;
-several clients (a Steam account plays one game at a time: a second account is needed); large worlds; forced CPU/memory minimums; a full image rebuild (the image was last assembled on top of an older Wine layer);
-the GPU variant; the published image (nothing is published until the checklist of the pull request is done).
+Run end to end on the built image, on volumes created empty: `install-game` from a real Steam library (2 min), Steam QR `login` (real account, token kept 0600, valid until the printed date),
+`import-save`, first start (Wine prefix, Valve client download with hash check), **token hand-over to Dock and Steamworks initialisation without any Steam desktop**, launch of Transport Fever 3 under Wine, MPFever server mode,
+world load, a real Windows client joining with resynchronisation and identical checks, `docker compose stop` (9 s, exit 0, world saved at stop), restart restoring the saved world time, healthcheck healthy, read-only root and no capabilities.
+**Not validated yet**: runs of 30 minutes or more; several clients (a Steam account plays one game at a time: a second account is needed); large worlds; forced CPU/memory minimums (limits are set, behaviour under pressure not tested);
+the GPU variant; the published image (nothing is published); stopping while a client is connected and has vanished (the stop waits for it up to about 45 s, the timeouts allow it); the CI image job (see the pull request).
 
 ## Decisions not to redo
 

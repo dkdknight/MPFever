@@ -40,13 +40,15 @@ RUN dpkg --add-architecture i386 \
  && apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends ca-certificates curl wget gnupg2 procps xvfb xauth \
       libvulkan1 mesa-vulkan-drivers libgl1 libasound2t64 libgnutls30t64 libfreetype6 fonts-dejavu-core \
-      python3-minimal python3-qrcode mono-complete libgdiplus \
+      python3-minimal python3-qrcode mono-runtime libmono-system-windows-forms4.0-cil libmono-system-drawing4.0-cil \
+      libmono-system-core4.0-cil libmono-system-io-compression4.0-cil libmono-system-io-compression-filesystem4.0-cil \
+      libmono-security4.0-cil ca-certificates-mono libgdiplus \
  && mkdir -pm755 /etc/apt/keyrings \
  && wget -qO /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
  && wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources \
  && apt-get update -qq \
- && apt-get install -y -qq --install-recommends \
-      winehq-stable=${WINE_VERSION} wine-stable=${WINE_VERSION} wine-stable-amd64=${WINE_VERSION} wine-stable-i386=${WINE_VERSION} \
+ && apt-get install -y -qq --no-install-recommends wine-stable=${WINE_VERSION} wine-stable-amd64=${WINE_VERSION} wine-stable-i386=${WINE_VERSION} \
+ && for b in wine wineserver wineboot; do ln -s /opt/wine-stable/bin/$b /usr/local/bin/$b; done \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -m -d /data -u 1001 -s /bin/bash tf3 \
  && mkdir -p /data /game /opt/mpfever && chown tf3:tf3 /data /game

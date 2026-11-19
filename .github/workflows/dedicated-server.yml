@@ -103,6 +103,8 @@ jobs:
           # licence texts and Dock are present, a healthcheck is defined
           docker run --rm --entrypoint sh "$img" -c 'test -f /opt/mpfever/dockhost.exe && test -f /opt/mpfever/licenses/madeira-dock/COPYING && test -f /opt/mpfever/pkg/MPFever.exe && test -f /opt/mpfever/pkg/winhttp.dll'
           docker inspect --format '{{.Config.Healthcheck.Test}}' "$img" | grep -q healthcheck.sh
+          # pinned runtimes
+          docker run --rm --entrypoint sh "$img" -c 'wine --version | grep -q "wine-11.0" && mono --version | head -1 && python3 -c "import qrcode"'
           # an empty volume gives explicit messages, not a crash
           docker volume create ci-data >/dev/null; docker volume create ci-game >/dev/null
           set +e

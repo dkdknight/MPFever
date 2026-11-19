@@ -6,3 +6,4 @@ services:
       context: .
       args:
         VERSION: ${VERSION:-local}
+        APT_MIRROR: ${APT_MIRROR:-}   # e.g. http://fr.archive.ubuntu.com/ubuntu when archive.ubuntu.com is unreachable
