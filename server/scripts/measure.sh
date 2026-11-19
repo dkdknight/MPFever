@@ -7,7 +7,7 @@ if [ -f $cg/memory.current ]; then
   awk -v cur="$(cat $cg/memory.current)" '$1=="anon"{a=$2} $1=="file"{f=$2} $1=="shmem"{s=$2} END{printf "total %.0f MB  anonymous %.0f MB  page cache %.0f MB  shared(shmem) %.0f MB\n", cur/1048576, a/1048576, f/1048576, s/1048576}' $cg/memory.stat
 fi
 echo "== processes (RSS / PSS MB)"
-ps -eo pid=,comm=,args= | while read -r pid comm args; do
+ps -eo pid=,args= | while read -r pid args; do
   [ -r /proc/$pid/smaps_rollup ] || continue
   awk -v p="$pid" -v n="${args:0:46}" '$1=="Rss:"{r=$2} $1=="Pss:"{s=$2} END{printf "%8.0f %8.0f  %s\n", r/1024, s/1024, n}' /proc/$pid/smaps_rollup
 done | sort -rn | head -8
