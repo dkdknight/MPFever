@@ -16,6 +16,9 @@ MPFever - Changelog
     never reads left empty, same paths and sizes) and the full copy kept apart; checked and updated at every start (SRV_MODS_SYNC). The launcher, with MPFEVER_MODSTORE (a Docker server only), offers a
     joining player the mods it lacks in their full version, from that store; the player's MPFever shows the offer and installs them once accepted. The game's mod.io library is given what it needs to list the mods
     (its state file and a local subscription record).
+  - NEW (server/): the game's and Dock's own logs join the server's JSON stream (components game and dock; SRV_GAME_LOG); `mods import <folder>` brings the administrator's local mods (full copy for the players,
+    reduced one for the game; `mods list` shows what is missing); an administration page (SRV_ADMIN_UI=on, off by default; token, loopback port through compose.admin.yaml, the console's commands except stop,
+    audited in the log). No launcher change.
   - BUILD (code signing, 2026-11-19: SignPath Foundation accepted MPFever; their first step is a signature with their
     self-signed test certificate, then they review the setup and import the Foundation's certificate): the Release build
     workflow asks for the signing policy, test-signing by default, release-signing once the certificate is in. Archives signed

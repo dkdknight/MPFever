@@ -6,6 +6,7 @@
   docker compose exec mpfever-server mpfever-admin say "Restart in 5 minutes"
   docker compose exec mpfever-server mpfever-admin kick <player>
   docker compose exec mpfever-server mpfever-admin save
+  docker compose exec mpfever-server mpfever-admin token      # the token of the administration page (SRV_ADMIN_UI=on)
 
 The command is handed to the launcher through a file in the command folder (MPFEVER_CMDDIR); the launcher runs it and writes <name>.done. Exit status: 0 done, 1 the server did not answer."""
 import glob, json, os, sys, time
@@ -33,6 +34,14 @@ def newest_log():
 
 
 def run(command, out=sys.stdout):
+    if command.strip() == "token":                           # the administration page's token (SRV_ADMIN_UI=on), made at its first start
+        try:
+            with open(os.environ.get("MPFEVER_ADMIN_TOKEN_FILE", "/data/secrets/admin-token")) as f:
+                print(f.read().strip(), file=out)
+            return 0
+        except OSError:
+            print("no token yet: the administration page is off (SRV_ADMIN_UI=off) or has not started", file=sys.stderr)
+            return 1
     if not command.strip():
         print(__doc__.split("\n\n")[0], file=sys.stderr)
         return 1

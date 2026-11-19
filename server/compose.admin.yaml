@@ -1,0 +1,7 @@
+# Optional: the administration page. Off unless SRV_ADMIN_UI=on in .env; this file only publishes its port, on this machine's loopback address (127.0.0.1) and nowhere else.
+# The page is plain HTTP with a token (`mpfever-admin token`): to reach it from another machine, use an SSH tunnel or a reverse proxy that adds TLS.
+#   docker compose -f compose.yaml -f compose.admin.yaml up -d      (or COMPOSE_FILE=compose.yaml:compose.admin.yaml in .env)
+services:
+  mpfever-server:
+    ports:
+      - "127.0.0.1:${SRV_ADMIN_PORT:-8080}:8080"

@@ -233,7 +233,7 @@ def copy_plain(src, dst):
 
 
 def import_mods(src, dest_mods, log=print):
-    """Imports mods of the administrator's PC (a mods folder or one mod folder, for example the game's local\mods): the full copy is kept for the players, the reduced one goes to the game's own
+    """Imports mods of the administrator's PC (a mods folder or one mod folder, for example the game's local/mods folder): the full copy is kept for the players, the reduced one goes to the game's own
     mods folder (dest_mods). Returns [(id, 'new' | 'updated')]."""
     done = []
     for folder in find_mod_folders(src):

@@ -71,6 +71,7 @@ check_settings() {
   need_choice UPDATE_CHECK "${UPDATE_CHECK:-notify}" notify off
   need_choice MODS_SYNC "${MODS_SYNC:-auto}" auto off
   need_choice GAME_LOG "${GAME_LOG:-warn}" off error warn info debug
+  need_choice ADMIN_UI "${ADMIN_UI:-off}" on off
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
 
@@ -210,6 +211,11 @@ cmd_run() {
   if [ "${GAME_LOG:-warn}" != off ]; then
     python3 "$OPT/scripts/logship.py" game "$(local_dir)/crash_dump/stdout.txt" "${GAME_LOG:-warn}" & SHIPPERS+=($!)
     python3 "$OPT/scripts/logship.py" dock "$SRV/dock.log" "${GAME_LOG:-warn}" & SHIPPERS+=($!)
+  fi
+
+  # the administration page, only when asked (SRV_ADMIN_UI=on): see docs/DOCKER-SERVER.md
+  if [ "${ADMIN_UI:-off}" = on ]; then
+    python3 "$OPT/scripts/webadmin.py" & SHIPPERS+=($!)
   fi
 
   STOPPING=0; LAUNCHER=0

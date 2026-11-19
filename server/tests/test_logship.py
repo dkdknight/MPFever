@@ -33,6 +33,7 @@ class Shape(unittest.TestCase):
         s = logship.Shaper("dock")
         self.assertEqual(s.shape("[steam-host] ml1830 engine005-present=1")[1:3], ("debug", "dock"))
         self.assertEqual(s.shape("[steam-host] login failed: denied")[1], "warn")
+        self.assertEqual(s.shape("[steam-host] ml1830 launch-client-error=0")[1], "debug")      # a result code of 0 is no error
         self.assertIsNone(s.shape("   "))
 
 

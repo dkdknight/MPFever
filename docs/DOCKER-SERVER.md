@@ -83,6 +83,8 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_PUBLIC`, `SRV_PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list |
 | `SRV_LOG_FORMAT` | `json` | `json` (one JSON object per line) or `text` |
 | `SRV_UPDATE_CHECK` | `notify` | `notify` (new MPFever release announced in the log, never installed) or `off` |
+| `SRV_GAME_LOG` | `warn` | the game's and Dock's logs in the stream: `off`, `error`, `warn`, `info` or `debug` |
+| `SRV_ADMIN_UI`, `SRV_ADMIN_PORT` | `off`, `8080` | the administration page (see Administering); it listens only when `on`, and `compose.admin.yaml` publishes it on 127.0.0.1 |
 | `SRV_MODS_SYNC` | `auto` | `auto` (the world's mod.io mods are installed or updated at every start, when `mods login` was done) or `off` |
 | `SRV_MEM_LIMIT`, `SRV_CPUS` | `16g`, `2` | container limits: about 12 GB and 1 CPU for the small world (minimum), 16 GB and 2 CPUs for a world of 120 MB; the CPU also sets how fast it starts and resynchronises |
 | `MPFEVER_IMAGE` | the published image | another image or a version tag (rollback) |
@@ -121,7 +123,15 @@ docker compose exec mpfever-server mpfever-admin save
 ```
 
 It hands the command to the launcher (a file in `/data/run/cmd`), waits for it to run and prints what the server logged for it. Everything the Windows server's console does is reachable this way (see the server's `SERVER.txt`).
-An administration web page is planned (off by default); it will use the same channel.
+The administration page uses the same channel (next section).
+
+### The administration page (off by default)
+
+`SRV_ADMIN_UI=on` starts a small page (status, save, pause/resume, speed, resync, restart, a message to every player, kick, the live log) that hands the same console commands to the launcher. Nothing listens
+unless it is on. `compose.admin.yaml` publishes its port on **this machine's `127.0.0.1` only** (`docker compose -f compose.yaml -f compose.admin.yaml up -d`, port `SRV_ADMIN_PORT`, 8080 by default); from another machine, use an SSH
+tunnel or a reverse proxy that adds TLS (the page is plain HTTP). Every call needs the token made at the first start in `secrets/admin-token` (mode 0600; `mpfever-admin token` prints it). Only the verbs
+`status list say save pause resume speed kick resync restart` are accepted (never `stop`), one line each; every command and every refused call is in the log (component `admin-ui`). The page is one file of
+the image (`scripts/webadmin.py`, standard library only, no external resource, strict content policy).
 
 ## Mods
 
@@ -136,7 +146,16 @@ docker compose run --rm mpfever-server mods status         # what is installed
 
 `login` checks the key against mod.io and keeps it in `secrets/modio.json` of the data volume (mode 0600). Each mod is downloaded (size and hash checked) into **two copies**: the game runs from a
 **reduced copy** (`/data/modio`: every file keeps its path and size, the textures, models, sounds and other files a headless server never reads are left empty, as in the lite game install), and the
-**full copy** stays in `/data/mods/full` for the players. Mods published to the Steam Workshop or kept on a PC are not fetched (import of a local mod is not done yet).
+**full copy** stays in `/data/mods/full` for the players.
+
+Mods that are **not** on mod.io (the ones in the game's `local/mods` folder of your PC) are imported from a folder you mount into the container:
+
+```
+docker compose run --rm -v "C:\Users\me\...\local\mods:/import:ro" mpfever-server mods import /import     # a mods folder, or one mod's folder
+```
+
+Each mod (a folder with `mod.lua`) gets the same two copies: reduced for the game (`local/mods` of the server's profile), full for the players; importing again updates it. `mods list <world>` shows for each mod of
+a world whether this server has it. The game has no Steam Workshop for Transport Fever 3 (mods come from mod.io or are local), so nothing else needs importing.
 
 - **At every start** (`SRV_MODS_SYNC=auto`, the default; `off` skips it): the world's mods are checked against mod.io and the newer versions installed, so mods follow the server's updates. A mod.io outage
   never stops the server: the installed copies are used.
@@ -151,6 +170,9 @@ docker compose run --rm mpfever-server mods status         # what is installed
 `docker compose logs` shows every component on one stream, **one JSON object per line**: `{"ts":"2026-11-19T15:46:34.409Z","level":"info","component":"launcher","msg":"WinClient#1 joined the session"}`
 (`ts` in UTC; `level` `debug`, `info`, `warn` or `error`; `component` `entrypoint` for this container's scripts, `launcher` for MPFever). `SRV_LOG_FORMAT=text` gives plain lines instead. The files are in the data volume
 (`srv/logs/launcher-*.log`, `srv/launcher.out`, Dock's `srv/dock.log`); the Docker log rotates (20 MB, 5 files). Any JSON log collector (Loki, Elasticsearch, `jq`) reads the stream as it is.
+
+The **game's and Dock's own logs** join the same stream (`component` `game` and `dock`; the game's lines keep their own time, its VERBOSE/MESSAGE/WARNING/ERROR levels become `debug`/`info`/`warn`/`error`). By default only
+`warn` and above are shown, `SRV_GAME_LOG=off|error|warn|info|debug` changes that (`debug` is very verbose, mainly at the start). The files themselves stay in the data volume.
 
 ## Updates
 
