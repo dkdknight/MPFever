@@ -37,6 +37,7 @@ check("test-signing is offered", "- test-signing" in block, block)
 check("release-signing is offered", "- release-signing" in block, block)
 check("test-signing is the default", re.search(r"default: test-signing\s*$", block) is not None, block)
 
+check("the action is v3 (SignPath's current connector)", "uses: signpath/github-action-submit-signing-request@v3" in wf)
 check("SignPath gets the chosen policy", "signing-policy-slug: ${{ inputs.signing_policy }}" in wf)
 check("no policy written in the request", "signing-policy-slug: release-signing" not in wf)
 
