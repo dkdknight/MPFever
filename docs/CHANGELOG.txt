@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.9.2 - (in progress)
+  - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
+    (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
+    names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
+    under the old name by the project; a package pushed to it earlier can be deleted.
   - BUILD (code signing, 2026-11-19: SignPath Foundation accepted MPFever; their first step is a signature with their
     self-signed test certificate, then they review the setup and import the Foundation's certificate): the Release build
     workflow asks for the signing policy, test-signing by default, release-signing once the certificate is in. Archives signed
