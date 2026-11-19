@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.9.3 - (in progress)
+
 0.9.2 - 2026-11-19: Transport Fever 3's build 40444 (every place of the native module found again, the pause menu's cards), a second resync for a player joining during one (#440), passenger contracts per company, code signing set up
   - FIX (Transport Fever 3's build 40444, the game update of 2026-11-19, reports #437 to #440): MPFever 0.9.1 found its 100
     signatures there, but not 3 interface tools of 12, 4 readings of the local-player word of 59, the game's autosave test and
