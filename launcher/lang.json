@@ -24064,6 +24064,19 @@
       "zh-CN": "模组副本已移动：{0} -> {1}",
       "zh-TW": "模組副本已移動：{0} -> {1}"
     },
+    "MPFever is installed inside the game's folder ({0}): put it in a folder of its own, outside the game. The old copies of its mod go to {1}.": {
+      "de": "MPFever ist im Ordner des Spiels installiert ({0}): lege es in einen eigenen Ordner außerhalb des Spiels. Die alten Kopien seines Mods kommen nach {1}.",
+      "es": "MPFever está instalado dentro de la carpeta del juego ({0}): ponlo en una carpeta propia, fuera del juego. Las copias antiguas de su mod van a {1}.",
+      "it": "MPFever è installato nella cartella del gioco ({0}): mettilo in una cartella tutta sua, fuori dal gioco. Le vecchie copie della sua mod vanno in {1}.",
+      "nl": "MPFever is in de map van het spel geïnstalleerd ({0}): zet het in een eigen map, buiten het spel. De oude kopieën van de mod gaan naar {1}.",
+      "pl": "MPFever jest zainstalowany w folderze gry ({0}): umieść go we własnym folderze, poza grą. Stare kopie jego moda trafią do {1}.",
+      "pt-BR": "O MPFever está instalado dentro da pasta do jogo ({0}): coloque-o numa pasta própria, fora do jogo. As cópias antigas do seu mod vão para {1}.",
+      "ru": "MPFever установлен в папке игры ({0}): поместите его в отдельную папку вне игры. Старые копии его мода перемещаются в {1}.",
+      "ja": "MPFever がゲームのフォルダー内にインストールされています（{0}）：ゲームの外にある専用のフォルダーに置いてください。Mod の古いコピーは {1} に移動されます。",
+      "ko": "MPFever가 게임 폴더 안에 설치되어 있습니다({0}): 게임 밖의 별도 폴더에 두세요. 모드의 오래된 사본은 {1}(으)로 옮겨집니다.",
+      "zh-CN": "MPFever 安装在游戏文件夹内（{0}）：请把它放到游戏之外的独立文件夹。其模组的旧副本会移到 {1}。",
+      "zh-TW": "MPFever 安裝在遊戲資料夾內（{0}）：請把它放到遊戲之外的獨立資料夾。其模組的舊副本會移到 {1}。"
+    },
     "Could not move the copy of the mod ({0}): delete {1} yourself, with the game closed.": {
       "de": "Kopie des Mods konnte nicht verschoben werden ({0}): lösche {1} selbst, bei geschlossenem Spiel.",
       "es": "No se pudo mover la copia del mod ({0}): borra {1} tú mismo, con el juego cerrado.",

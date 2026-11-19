@@ -88,6 +88,7 @@ namespace MPFever
             ok &= RunTrim0717();
             ok &= RunPlatforms0718();
             ok &= RunOldCopy081();
+            ok &= RunOldCopiesOut091();
             ok &= RunLuaGate081();
             ok &= RunModStop088();
             ok &= RunPersonalWorld0817();
@@ -132,6 +133,53 @@ namespace MPFever
             }
             catch (Exception e) { C(false, "exception " + e.Message); }
             finally { try { Directory.Delete(dir, true); } catch { } }
+            return ok;
+        }
+
+        /// <summary>(0.9.1, #427) MPFever unpacked into the game's mods folder: the copies of the mod it moves out go out of the game,
+        /// and are not found again at the next start (MPFEVER_OLDCOPIESOUT=0: next to MPFever.exe, found again, the bug).</summary>
+        static bool RunOldCopiesOut091()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.9.1 old copies out of the game (#427): " + what); ok &= c; }
+            var root = Path.Combine(Path.GetTempPath(), "mpfever-selftest-427-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            var was = Environment.GetEnvironmentVariable("MPFEVER_OLDCOPIESOUT");
+            try
+            {
+                void Mod(string dir, string bridge)
+                {
+                    Directory.CreateDirectory(Path.Combine(dir, "content"));
+                    File.WriteAllText(Path.Combine(dir, "mod.json"), "{\"modId\": \"mpfever_1\"}");
+                    File.WriteAllText(Path.Combine(dir, "content", "mpfever_bridge.script.lua"), bridge);
+                }
+                var game = Path.Combine(root, "Transport Fever 3");
+                var mp = Path.Combine(game, "mods", "MPFever");          // MPFever.exe there, as the player of #427 had it
+                var src = Path.Combine(mp, "mod", "mpfever_1");
+                Mod(src, "-- bridge 0.9.1");
+                Mod(Path.Combine(game, "mods", "release", "mpfever_1"), "-- bridge 0.8.17, older");
+                var outside = Path.Combine(root, "LocalAppData", "MPFever");
+                C(ModCopies.InsideGame(mp, game) && !ModCopies.InsideGame(Path.Combine(root, "MPFever"), game)
+                    && !ModCopies.InsideGame(Path.Combine(root, "Transport Fever 3 copy", "MPFever"), game), "MPFever's folder inside the game's seen (a folder whose name only begins like the game's is not)");
+                // the bug: moved next to MPFever.exe, in the game's mods folder, and found again at the next start
+                Environment.SetEnvironmentVariable("MPFEVER_OLDCOPIESOUT", "0");
+                var d0 = ModCopies.OldCopiesDir(mp, game, outside);
+                var first = ModCopies.Stale(game, src);
+                C(first.Count == 1, "an old copy of the mod found (" + string.Join("; ", first) + ")");
+                foreach (var c in first) ModCopies.MoveAside(c, d0);
+                var again = ModCopies.Stale(game, src);
+                C(d0.StartsWith(game, StringComparison.OrdinalIgnoreCase) && again.Count == 1 && again[0].IndexOf("old-mod-copies", StringComparison.OrdinalIgnoreCase) >= 0,
+                    "before (MPFEVER_OLDCOPIESOUT=0): moved into MPFever's old-mod-copies, inside the game's mods folder, and found again");
+                // the fix
+                Environment.SetEnvironmentVariable("MPFEVER_OLDCOPIESOUT", null);
+                var d1 = ModCopies.OldCopiesDir(mp, game, outside);
+                C(string.Equals(d1, Path.Combine(outside, "old-mod-copies"), StringComparison.OrdinalIgnoreCase), "after: the copies go out of the game, to the user's own MPFever folder");
+                foreach (var c in again) ModCopies.MoveAside(c, d1);
+                C(ModCopies.Stale(game, src).Count == 0, "  moved once, none found at the next start");
+                C(string.Equals(ModCopies.OldCopiesDir(Path.Combine(root, "MPFever"), game, outside), Path.Combine(root, "MPFever", "old-mod-copies"), StringComparison.OrdinalIgnoreCase),
+                    "MPFever in a folder of its own: next to MPFever.exe, as before");
+            }
+            catch (Exception e) { C(false, "exception " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_OLDCOPIESOUT", was); try { Directory.Delete(root, true); } catch { } }
             return ok;
         }
 

@@ -53,6 +53,28 @@ namespace MPFever
             }
         }
 
+        /// <summary>(0.9.1, #427) Where the copies moved out go: old-mod-copies next to MPFever.exe, unless MPFever itself is inside
+        /// the game's folder. A player had unpacked MPFever into Transport Fever 3\mods\MPFever: its old-mod-copies folder was in the
+        /// game's mods folder, the launcher found the copies it had moved there again at every start and moved them again (and
+        /// the game, which looks into the mods folder's subfolders, could take one of them). Then they go to the user's own MPFever
+        /// folder (%LOCALAPPDATA%\MPFever\old-mod-copies), out of the game. MPFEVER_OLDCOPIESOUT=0: next to MPFever.exe, as before.</summary>
+        public static string OldCopiesDir(string baseDir, string gameDir, string outsideRoot = null)
+        {
+            var here = Path.Combine(baseDir ?? "", "old-mod-copies");
+            if (Environment.GetEnvironmentVariable("MPFEVER_OLDCOPIESOUT") == "0" || !InsideGame(baseDir, gameDir)) return here;
+            var root = outsideRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MPFever");
+            return Path.Combine(root, "old-mod-copies");
+        }
+
+        /// <summary>(0.9.1, #427) Whether a folder (MPFever's own) is inside the game's folder (a folder whose name only begins
+        /// like the game's is not).</summary>
+        public static bool InsideGame(string dir, string gameDir)
+        {
+            if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(gameDir)) return false;
+            string Norm(string p) { try { return Path.GetFullPath(p).TrimEnd('\\', '/') + "\\"; } catch { return p; } }
+            return Norm(dir).StartsWith(Norm(gameDir), StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>Whether two copies of the mod have the same files (names and sizes, and the same bridge script).</summary>
         public static bool Same(string a, string b)
         {
@@ -106,6 +128,11 @@ namespace MPFever
         /// <summary>(0.7.9) InitInstall: the other copies of the mod (see ModCopies).</summary>
         void FindStaleMods()
         {
+            // (0.9.1, #427) MPFever unpacked inside the game's folder: said once at the start (see ModCopies.OldCopiesDir)
+            if (Environment.GetEnvironmentVariable("MPFEVER_OLDCOPIESOUT") != "0" && ModCopies.InsideGame(AppDomain.CurrentDomain.BaseDirectory, gameDir))
+                Log.Warn(F("MPFever est installé dans le dossier du jeu ({0}) : mettez-le dans un dossier à lui, hors du jeu. Les anciennes copies de son mod vont dans {1}.",
+                    "MPFever is installed inside the game's folder ({0}): put it in a folder of its own, outside the game. The old copies of its mod go to {1}.",
+                    AppDomain.CurrentDomain.BaseDirectory, ModCopies.OldCopiesDir(AppDomain.CurrentDomain.BaseDirectory, gameDir)));
             if (Environment.GetEnvironmentVariable("MPFEVER_STALEMODS") == "0") return;
             try
             {
@@ -137,7 +164,7 @@ namespace MPFever
             foreach (var c in list)
                 try
                 {
-                    var to = ModCopies.MoveAside(c, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "old-mod-copies"));
+                    var to = ModCopies.MoveAside(c, ModCopies.OldCopiesDir(AppDomain.CurrentDomain.BaseDirectory, gameDir));
                     Log.Ok(F("Copie du mod déplacée : {0} -> {1}", "Copy of the mod moved: {0} -> {1}", c, to));
                 }
                 catch (Exception e) { Log.Err(F("Copie du mod impossible à déplacer ({0}) : supprimez {1} vous-même, le jeu fermé.", "Could not move the copy of the mod ({0}): delete {1} yourself, with the game closed.", e.Message, c)); }

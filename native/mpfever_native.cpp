@@ -1288,12 +1288,18 @@ static bool BatchLog() { if (g_batchLog < 0) g_batchLog = GetEnvironmentVariable
 static void DriftPoll();   // (0.8.2, the drift diagnostic, see InstallDriftDiag)
 static void MaintIterStart();   // (0.8.15, the shared maintenance's table, see InstallSharedMaint)
 static void MaintIterGs(void* gs);   // (0.8.17, #388: the first iteration of a game just loaded, see MaintAtLoad)
+// (0.9.1, #426) the update the engine makes as it loads a game makes no step (load_step.h): set by ReplDetour's load, ended by the
+// loop's next iteration, read by StepsForBatch. MPFEVER_LOADSTEP=1: as before
+#include "load_step.h"
+static LoadStep g_loadStep = {};
+static int g_loadStepOn = 1;
 extern "C" u64 PreIterDetour(void* a)
 {
     g_iter++;
     MaintIterGs(a ? *(void**)((u8*)a + 8) : 0);
     MaintIterStart();
     g_simTid = (long)GetCurrentThreadId();
+    LoadStepIter(&g_loadStep);
     if (g_entWatch) { static long it = 0; if (++it % 250 == 0) EntFlush(); }
     if (g_iter == 1) { Buf t; t.str("simulation thread ").dec(GetCurrentThreadId()).str(", interface thread ").dec(g_mainTid); LogLine(t); }
     ClearOthersIn(a ? *(u8**)((u8*)a + 8) : 0, true);
@@ -2216,6 +2222,8 @@ extern "C" u64 ReplDetour(void* src, void* dst, u64 flag)
         g_uiWord = 0;
         // (0.9.0, #425: the two states of this game, see g_loadGs)
         g_loadGs[0] = src; g_loadGs[1] = dst;
+        // (0.9.1, #426: the update that follows makes no step, see load_step.h)
+        LoadStepSeen(&g_loadStep);
         // (0.7.5) and this machine's company, the savegame's and the other companies' with it: they belong to the game before.
         // Kept until the first iteration of the new one (see ApplyLocalPlayer), the interface read this machine's company of the
         // game before while it made itself, and the money popups' HUD item keeps the player it is made for: a client that played
@@ -6719,6 +6727,19 @@ extern "C" u32 StepsForBatch(void* time, u32 speed, u32 asked)
         }
         g_alignLastS = S1;
     }
+    // (0.9.1, #426) the update the engine makes as it loads a game, before the loop's first iteration: no step, whatever was left
+    // from before (a stop point of the session before held it on one game, another made its steps there, on a thread that is not
+    // the simulation's: see load_step.h). Counted as the batch of no step it is for the aligned batches. MPFEVER_LOADSTEP=1: as before
+    if (g_loadStepOn && g_loadStep.pending) {
+        LoadStepSteps(&g_loadStep, sp, 1);
+        if (g_alignOn == 1) AlignBatch(&g_align, 0, sp, 0, g_alignParity);
+        if (sp > 0) {
+            Buf l; l.str("a game loaded: its update at the load makes no step (").dec((long)sp).str(" at its speed); the loop's first batch makes it, on the simulation's thread, as on every game (")
+                .dec((long)g_loadStep.held).str(" load(s) so far)");
+            LogLine(l);
+        }
+        return 0;
+    }
     if (g_stopSeq < 0 || !g_getUpdRva || !time || !StopAlive()) {
         // (no session: nothing changed, the batch only counted)
         if (g_alignOn == 1) { if (sp == 0) { g_align.stillRun++; g_align.stills++; } else g_align.stillRun = 0; }
@@ -6829,6 +6850,9 @@ static void InstallNativeStop()
     AlignInit();
     if (g_alignOn) Fx("alignbatch");
     if (g_alignParity) Fx("alignparity");
+    { char e[4] = {}; g_loadStepOn = (GetEnvironmentVariableA("MPFEVER_LOADSTEP", e, 3) == 1 && e[0] == '1') ? 0 : 1; }
+    if (g_loadStepOn) Fx("loadstep");
+    { Buf a; a.str("loaded games: ").str(g_loadStepOn ? "the update at a load makes no step, the loop makes the first ones (as on every game)" : "the update at a load makes its steps, as before (MPFEVER_LOADSTEP=1)"); LogLine(a); }
     { Buf a; a.str("aligned batches: ").str(g_alignOn ? (g_alignParity ? "on (ends at the multiples of the speed, even runs of still batches)" : "ends only (MPFEVER_ALIGNPARITY=0)") : "off (MPFEVER_ALIGNBATCH=0)"); LogLine(a); }
     Buf b; b.str("stop point: the steps function's number of steps at ").hex(at + 8).str(" decided here (stop points of native_stop.txt)").str(g_standSkipOn ? "; a stand skips the scripts' update" : "; the still batch not as expected, a stand runs the scripts as before"); LogLine(b);
 }

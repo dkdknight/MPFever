@@ -2,6 +2,21 @@ MPFever - Changelog
 ===================
 
 0.9.1 - (in progress)
+  - FIX (#427, MPFever unpacked inside the game's folder, Transport Fever 3\mods\MPFever): the launcher moves another copy of
+    its mod found in the game's mods folder into old-mod-copies next to MPFever.exe, and that folder was then in the game's mods
+    folder too: the launcher found the copies it had moved there again at every start, and the game could take one of them. In
+    that case the copies now go to %LOCALAPPDATA%\MPFever\old-mod-copies, out of the game, and the launcher says once at the start
+    that MPFever should be in a folder of its own. MPFEVER_OLDCOPIESOUT=0: as before. Tests: tests/test_oldcopies427.py, the
+    launcher's self-test.
+  - FIX (#426, three players, the host back from the main menu: one client's game drifted from the first step of the session,
+    a resync after two minutes): as a game is loaded, the engine runs one update of it at once, outside the simulation loop.
+    That update made the savegame's steps on the host's game (in the main menu for more than 10 s, its stop point left alone)
+    and on chris's (the first game of its process), but not on dujuk's (held by the stop point of its session before): dujuk's
+    game made that step later, in the loop. A game script's new entity of that step got the free-id queue's id on the first two
+    and a fresh id on dujuk's, and from then on every vehicle and line made by a command had another id on dujuk's game. Now
+    that update makes no step on any game: every game makes its first steps after a load in the loop, with the same rules.
+    MPFEVER_LOADSTEP=1: as before. Test: tests/test_loadstep091.py (the three games of the report: their ids before, the same
+    ids with the fix).
   - FIX (the update from 0.8.17 to 0.9.0 failed for everyone, "MPFever.exe is missing from the update", 2026-11-18): the updater
     takes the first asset of the release named MPFever*.zip that is not the server's, and GitHub listed 0.9.0's new
     MPFever-0.9.0-relay-win-x64.zip first ("-" sorts before "."): the players downloaded the Windows relay. The asset was
