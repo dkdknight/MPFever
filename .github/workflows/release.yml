@@ -17,6 +17,10 @@ on:
         description: "Also publish the relay's Docker image (x64 and arm64) to ghcr.io/<owner>/mpfever-relay-docker, tagged with the version and latest"
         type: boolean
         default: false
+      docker_server:
+        description: "Also publish the dedicated server's Docker image (x64; server/Dockerfile, docs/DOCKER-SERVER.md) to ghcr.io/<owner>/mpfever-server, tagged with the version and experimental"
+        type: boolean
+        default: false
       signing_policy:
         description: "SignPath's signing policy: test-signing (SignPath's self-signed test certificate, to check the setup: NEVER publish those archives) or release-signing (SignPath Foundation's certificate, once SignPath has imported it)"
         type: choice
@@ -24,10 +28,6 @@ on:
           - test-signing
           - release-signing
         default: test-signing
-      docker_server:
-        description: "Also publish the dedicated server's Docker image (x64; server/Dockerfile, docs/DOCKER-SERVER.md) to ghcr.io/<owner>/mpfever-server, tagged with the version and experimental"
-        type: boolean
-        default: false
 
 jobs:
   release:
