@@ -118,7 +118,12 @@ cmd_mods() {
       [ -f "$SESSION_FILE" ] || die "sign in first (login): the save folder depends on the Steam account" 40
       [ $# -gt 0 ] && shift
       exec python3 "$OPT/scripts/mods.py" "$sub" "$(save_dir)/$w.sav" "$@" ;;
-    *) die "mods: login | list <world> | sync <world> [--check] | status" 2 ;;
+    import)
+      [ $# -gt 0 ] || die "usage: mods import <folder>   (mount your mods folder: docker compose run --rm -v <folder>:/import:ro mpfever-server mods import /import)" 2
+      [ -f "$SESSION_FILE" ] || die "sign in first (login): the game's mods folder depends on the Steam account" 40
+      mkdir -p "$(local_dir)/mods"
+      exec python3 "$OPT/scripts/mods.py" import "$1" --dest "$(local_dir)/mods" ;;
+    *) die "mods: login | list <world> | sync <world> [--check] | import <folder> | status" 2 ;;
   esac
 }
 

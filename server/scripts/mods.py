@@ -10,11 +10,12 @@
 Each mod is kept twice: the full version as mod.io publishes it (<data>/mods/full/<mod number>/: what the server sends to a joining player) and the version the game loads
 (<data>/modio/<game>/mods/<mod number>/): the same files, sizes and scripts, but the data a headless server never uses (textures, sounds) left out (see mklite.py).
 Only the mod.io API (the administrator's key) is contacted."""
-import argparse, getpass, hashlib, html, json, os, shutil, struct, sys, tempfile, time, urllib.error, urllib.request, zipfile
+import argparse, getpass, hashlib, html, json, os, re, shutil, struct, sys, tempfile, time, urllib.error, urllib.request, zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mklite
 
+MOD_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 GAME_ID = 10640                                          # Transport Fever 3 on mod.io
 WINE_ROOT = "C:\\modio"                                   # LITE as the game (Wine) sees it
 DATA = os.environ.get("DATA", "/data")
@@ -212,6 +213,56 @@ def register(m, f, lite_dir):
     os.replace(path + ".tmp", path)
 
 
+def find_mod_folders(src):
+    """The folders of mods under src: src itself when it holds mod.lua, else each of its sub-folders that does."""
+    if os.path.isfile(os.path.join(src, "mod.lua")):
+        return [src]
+    return [os.path.join(src, d) for d in sorted(os.listdir(src)) if os.path.isfile(os.path.join(src, d, "mod.lua"))]
+
+
+def copy_plain(src, dst):
+    """A folder copied as plain files and folders: links are left out (a mod must not reach outside its own folder)."""
+    for root, dirs, files in os.walk(src):
+        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+        out = os.path.join(dst, os.path.relpath(root, src))
+        os.makedirs(out, exist_ok=True)
+        for name in files:
+            path = os.path.join(root, name)
+            if not os.path.islink(path):
+                shutil.copyfile(path, os.path.join(out, name))
+
+
+def import_mods(src, dest_mods, log=print):
+    """Imports mods of the administrator's PC (a mods folder or one mod folder, for example the game's local\mods): the full copy is kept for the players, the reduced one goes to the game's own
+    mods folder (dest_mods). Returns [(id, 'new' | 'updated')]."""
+    done = []
+    for folder in find_mod_folders(src):
+        mod_id = os.path.basename(os.path.normpath(folder))
+        if not MOD_ID.match(mod_id):
+            log("skipped %s: a mod's folder name uses letters, digits, _ . - only" % mod_id)
+            continue
+        work = tempfile.mkdtemp(prefix="mod-", dir=os.path.join(DATA, "mods") if os.path.isdir(os.path.join(DATA, "mods")) else None)
+        try:
+            full_new, lite_new = os.path.join(work, "full"), os.path.join(work, "lite")
+            copy_plain(folder, full_new)
+            with open(os.path.join(full_new, ".modio.json"), "w") as fh:
+                json.dump({"mod_id": 0, "name": mod_id, "title": mod_id, "source": "import", "installed": int(time.time())}, fh)
+            lite_tree(full_new, lite_new)
+            os.remove(os.path.join(lite_new, ".modio.json"))
+            full_dir, lite_dir = os.path.join(FULL, mod_id), os.path.join(dest_mods, mod_id)
+            have = os.path.isdir(full_dir)
+            for target, new in ((full_dir, full_new), (lite_dir, lite_new)):
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                if os.path.isdir(target):
+                    shutil.rmtree(target)
+                shutil.move(new, target)
+            done.append((mod_id, "updated" if have else "new"))
+            log("%s: %s" % ("updated" if have else "imported", mod_id))
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    return done
+
+
 def install(conf, mod_id, force=False, check=False, log=print):
     """Installs or updates one mod.io mod; returns 'new', 'updated', 'current' (or 'would-install' / 'would-update' with check)."""
     m, f = live_file(conf, mod_id)
@@ -280,9 +331,28 @@ def modio_mods(path):
     return lst
 
 
+def cmd_import(a):
+    if not os.path.isdir(a.path):
+        print("%s is not a folder (mount your mods folder into the container: -v <folder>:/import:ro)" % a.path, file=sys.stderr)
+        return 2
+    done = import_mods(a.path, a.dest)
+    if not done:
+        print("no mod found in %s (a mod's folder holds mod.lua)" % a.path, file=sys.stderr)
+        return 1
+    subscribe()
+    return 0
+
+
 def cmd_list(a):
+    """The mods of a world, and for each whether this server has it: mod.io mods and imported ones are kept in full for the players."""
     for mid, origin, hub, name in modio_mods(a.save):
-        print("%-8s %-14s %-9s %s" % (origin, mid[:14], hub or "-", name))
+        if origin == "BuiltInMods":
+            state = "game"
+        elif origin == "mod.io":
+            state = "installed" if hub and installed(hub) else "MISSING"
+        else:
+            state = "installed" if os.path.isdir(os.path.join(FULL, mid)) else "MISSING (mods import)"
+        print("%-8s %-14s %-9s %-10s %s" % (origin, mid[:14], hub or "-", state, name))
     return 0
 
 
@@ -380,11 +450,12 @@ def main(argv=None):
     p = sub.add_parser("login"); p.add_argument("--host")
     p = sub.add_parser("list"); p.add_argument("save")
     p = sub.add_parser("sync"); p.add_argument("save"); p.add_argument("--check", action="store_true")
+    p = sub.add_parser("import"); p.add_argument("path"); p.add_argument("--dest", required=True)
     sub.add_parser("status")
     sub.add_parser("setup-root")
     a = ap.parse_args(argv)
     try:
-        return {"login": cmd_login, "list": cmd_list, "sync": cmd_sync, "status": cmd_status, "setup-root": cmd_setup_root}[a.cmd](a)
+        return {"login": cmd_login, "list": cmd_list, "sync": cmd_sync, "status": cmd_status, "import": cmd_import, "setup-root": cmd_setup_root}[a.cmd](a)
     except (RuntimeError, OSError) as e:
         print("error: %s" % e, file=sys.stderr)
         return 1

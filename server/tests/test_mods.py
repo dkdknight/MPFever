@@ -152,6 +152,24 @@ class Install(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("big.dds", warnings[0])
 
+    def test_import_of_a_folder_of_local_mods(self):
+        d = self.tmp.name
+        src, dest = os.path.join(d, "pc", "mods"), os.path.join(d, "game", "mods")
+        for name, tex in (("my_mod_1", 3000), ("other mod", 10)):
+            os.makedirs(os.path.join(src, name, "res"))
+            open(os.path.join(src, name, "mod.lua"), "w").write("function data() return {} end")
+            open(os.path.join(src, name, "res", "t.dds"), "wb").write(b"D" * tex)
+        os.makedirs(os.path.join(src, "not_a_mod"))
+        said = []
+        self.assertEqual(mods.import_mods(src, dest, said.append), [("my_mod_1", "new")])
+        self.assertTrue(any("other mod" in m for m in said))                       # a name the game's folders cannot take is refused, said
+        self.assertEqual(os.path.getsize(os.path.join(mods.FULL, "my_mod_1", "res", "t.dds")), 3000)
+        self.assertEqual(os.path.getsize(os.path.join(dest, "my_mod_1", "res", "t.dds")), 3000)    # the reduced copy keeps the size
+        self.assertFalse(os.path.exists(os.path.join(dest, "my_mod_1", ".modio.json")))
+        note = json.load(open(os.path.join(mods.FULL, "my_mod_1", ".modio.json")))
+        self.assertEqual(note["name"], "my_mod_1")                                  # the launcher finds the full copy by this name
+        self.assertEqual(mods.import_mods(os.path.join(src, "my_mod_1"), dest, lambda *a: None), [("my_mod_1", "updated")])   # one mod folder, again
+
     def test_unsafe_archive_is_refused(self):
         b = io.BytesIO()
         with zipfile.ZipFile(b, "w") as z:
