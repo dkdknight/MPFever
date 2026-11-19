@@ -62,6 +62,7 @@ namespace MPFever
             ok &= RunDiag();
             ok &= RunIssue111();
             ok &= RunSession067();
+            ok &= RunModStore();
             ok &= RunDlcs();
             ok &= RunSaveMods();
             ok &= RunServerConfig();
@@ -1649,6 +1650,42 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             }
             catch (Exception e) { Check(false, "diagnostic: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_DIAG", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.9.2) A Docker server keeps each mod.io mod in full beside the reduced copy the game runs from: found by the mod's name, sent without its own note.</summary>
+        static bool RunModStore()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var root = Path.Combine(Path.GetTempPath(), "mpf-store-" + Guid.NewGuid().ToString("N"));
+            var old = Environment.GetEnvironmentVariable("MPFEVER_MODSTORE");
+            try
+            {
+                var dir = Path.Combine(root, "6440137");
+                Directory.CreateDirectory(Path.Combine(dir, "res"));
+                File.WriteAllText(Path.Combine(dir, ".modio.json"), "{\"mod_id\": 6440137, \"name\": \"apasz_zigzag\"}");
+                File.WriteAllText(Path.Combine(dir, "mod.lua"), "x");
+                File.WriteAllBytes(Path.Combine(dir, "res", "big.dds"), new byte[5000]);
+                Environment.SetEnvironmentVariable("MPFEVER_MODSTORE", root);
+                Check(Mods.Store == root, "mod store: the folder comes from MPFEVER_MODSTORE");
+                Check(Mods.StoreDir("apasz_zigzag") == dir, "mod store: a mod is found by its name");
+                Check(Mods.StoreDir("unknown_mod") == null, "mod store: an unknown mod is not found");
+                var zip = Path.Combine(root, "t.zip");
+                Mods.ZipFolder(dir, zip);
+                using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                {
+                    var names = z.Entries.Select(e => e.FullName).OrderBy(x => x).ToList();
+                    Check(string.Join(",", names) == "mod.lua,res/big.dds", "mod store: the zip holds the files, not the store's own note (" + string.Join(",", names) + ")");
+                }
+                Environment.SetEnvironmentVariable("MPFEVER_MODSTORE", "");
+                Check(Mods.Store == "" && Mods.StoreDir("apasz_zigzag") == null, "mod store: none set, none used");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_MODSTORE", old);
+                try { Directory.Delete(root, true); } catch { }
+            }
             return ok;
         }
 

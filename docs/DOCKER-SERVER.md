@@ -83,6 +83,7 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_PUBLIC`, `SRV_PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list |
 | `SRV_LOG_FORMAT` | `json` | `json` (one JSON object per line) or `text` |
 | `SRV_UPDATE_CHECK` | `notify` | `notify` (new MPFever release announced in the log, never installed) or `off` |
+| `SRV_MODS_SYNC` | `auto` | `auto` (the world's mod.io mods are installed or updated at every start, when `mods login` was done) or `off` |
 | `SRV_MEM_LIMIT`, `SRV_CPUS` | `16g`, `2` | container limits: about 12 GB and 1 CPU for the small world (minimum), 16 GB and 2 CPUs for a world of 120 MB; the CPU also sets how fast it starts and resynchronises |
 | `MPFEVER_IMAGE` | the published image | another image or a version tag (rollback) |
 
@@ -121,6 +122,29 @@ docker compose exec mpfever-server mpfever-admin save
 
 It hands the command to the launcher (a file in `/data/run/cmd`), waits for it to run and prints what the server logged for it. Everything the Windows server's console does is reachable this way (see the server's `SERVER.txt`).
 An administration web page is planned (off by default); it will use the same channel.
+
+## Mods
+
+A world that uses mods needs them on the server and on every player's PC, in the same version. The server installs the world's **mod.io** mods itself:
+
+```
+docker compose run --rm mpfever-server mods login        # once: the API path and key of mod.io.com/me/access (typed, never put in a file or the image)
+docker compose run --rm mpfever-server mods list <world>   # the mods the world's savegame uses, and where they come from
+docker compose run --rm mpfever-server mods sync <world>   # installs or updates them (the same at every server start, see below)
+docker compose run --rm mpfever-server mods status         # what is installed
+```
+
+`login` checks the key against mod.io and keeps it in `secrets/modio.json` of the data volume (mode 0600). Each mod is downloaded (size and hash checked) into **two copies**: the game runs from a
+**reduced copy** (`/data/modio`: every file keeps its path and size, the textures, models, sounds and other files a headless server never reads are left empty, as in the lite game install), and the
+**full copy** stays in `/data/mods/full` for the players. Mods published to the Steam Workshop or kept on a PC are not fetched (import of a local mod is not done yet).
+
+- **At every start** (`SRV_MODS_SYNC=auto`, the default; `off` skips it): the world's mods are checked against mod.io and the newer versions installed, so mods follow the server's updates. A mod.io outage
+  never stops the server: the installed copies are used.
+- **A player who joins without a mod** is offered it by the server, at once, in the full version (the launcher's mod sending, as a host's PC does for local mods): the player's MPFever shows the offer and,
+  once accepted, installs the mod in the player's own mods folder. A mod is code, so a player who does not accept it is never sent it. A player whose copy is another version is told to update it.
+- The game's mod.io library only reports the mods its signed-in user is subscribed to. A server has no mod.io account, so `mods sync` writes a local user record subscribed to the installed mods
+  (`AppData/Local/mod.io/10640/<Steam account>/user.json` of the Wine prefix); nothing is sent to mod.io from it. The game also cannot use an existing `Z:` folder as mod.io's root (Wine error 4390), so the
+  root is reached as `C:\modio` (a link to `/data/modio`).
 
 ## Logs
 
@@ -189,12 +213,11 @@ read-only container. Then a longer run:
 | `docker compose stop` while a client has vanished (killed abruptly) | 71 s, exit code 0, the world saved: the stop waits up to about 60 s for the lost client, inside the 90 s script and 120 s Compose timeouts |
 
 **Known limits found by these runs**
-- **Worlds that use mods:** the server has no way to install a world's mods yet. A real 595 MB world using 15 mod.io mods was refused ("Missing mods: the session ends"). A client whose own game had personal mods stayed stuck on
-  "loading" for 10 minutes on the 122 MB world (the server resumed without it after 616 s). Importing mods is the next piece of work.
+- **Worlds that use mods:** a real 595 MB world with 15 mod.io mods runs (`mods sync`, then start: "IN SYNC", no missing mod). Not yet run: a player joining and receiving the mods (the launcher's sending path is tested at the unit level only), mods from the Steam Workshop or local ones, and the long-run memory of such a world. A client whose own game had personal mods stayed stuck on "loading" for 10 minutes on the 122 MB world (the server resumed without it after 616 s).
 - **Public list and Steam join:** with `SRV_PUBLIC=true` (or a stray host variable, see Settings) the server is announced to MPFever's public list with its Steam ID, and anyone can join through Steam; a
   stranger did so during the first long run. Keep `SRV_PUBLIC=false` and set `SRV_PASSWORD` for a private server.
 
-**Not validated yet:** several clients at once (local test clients, or a second Steam account), worlds with mods, runs of several hours. **The GPU variant** (`compose.gpu.yaml`, Intel/AMD through `/dev/dri` on a
+**Not validated yet:** several clients at once (local test clients, or a second Steam account), a player receiving the mods from the server, runs of several hours. **The GPU variant** (`compose.gpu.yaml`, Intel/AMD through `/dev/dri` on a
 Linux host) was not run; on Docker Desktop with WSL2 it cannot work as written (the container gets `/dev/dxg` and no WSL driver libraries): software rendering is the supported mode there.
 
 ## Build, tests, publication

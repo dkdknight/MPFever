@@ -12,6 +12,10 @@ MPFever - Changelog
     client; long runs, several clients and large worlds are not yet (see the guide). For the Docker server the launcher also has MPFEVER_LOG_JSON=1 (one JSON object
     per line in its log file: ts, level, component, msg), MPFEVER_CMDDIR (one file per console command: `mpfever-admin` runs the commands of the server window from
     outside) and autoupdate=notify (a new release is announced in the log, never installed). CI: ci.yml (jobs docker-server-checks and docker-server) and, to publish the image, release.yml (option docker_server).
+  - NEW (server/, mods): the Docker server installs the mod.io mods of its world (`mods login/list/sync/status`; the key is typed once and kept in the data volume only): a reduced copy for the game (files a server
+    never reads left empty, same paths and sizes) and the full copy kept apart; checked and updated at every start (SRV_MODS_SYNC). The launcher, with MPFEVER_MODSTORE (a Docker server only), offers a
+    joining player the mods it lacks in their full version, from that store; the player's MPFever shows the offer and installs them once accepted. The game's mod.io library is given what it needs to list the mods
+    (its state file and a local subscription record).
   - BUILD (code signing, 2026-11-19: SignPath Foundation accepted MPFever; their first step is a signature with their
     self-signed test certificate, then they review the setup and import the Foundation's certificate): the Release build
     workflow asks for the signing policy, test-signing by default, release-signing once the certificate is in. Archives signed

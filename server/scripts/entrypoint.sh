@@ -189,6 +189,7 @@ cmd_run() {
   export MPFEVER_CMDDIR=$RUN/cmd; mkdir -p "$MPFEVER_CMDDIR"; rm -f "$MPFEVER_CMDDIR"/*   # the commands of `mpfever-admin`
   # logs: the launcher writes the same JSON lines as this script (SRV_LOG_FORMAT=text: plain lines)
   if [ "${LOG_FORMAT:-json}" = json ]; then export MPFEVER_LOG_JSON=1; else unset MPFEVER_LOG_JSON; fi
+  export MPFEVER_MODSTORE=$DATA/mods/full   # the mod.io mods in full: the launcher offers them to the players who join (the game itself runs from the reduced copies of /data/modio)
   # no 3D output: software Vulkan with a layer that makes every draw and copy a no-op and gives back the GPU memory nobody reads;
   # MPF_VKNULL=0 (docker compose: GPU=1) leaves a real GPU alone
   export MPF_VKNULL=${MPF_VKNULL:-1} MPF_VKNULL_MODE=all MPF_VKNULL_TRIM=${MPF_VKNULL_TRIM:-1}

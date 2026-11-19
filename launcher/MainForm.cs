@@ -1881,7 +1881,7 @@ namespace MPFever
             // not sent, as before (the chat at the load only)
             string riskyLobby = "";
             try { if (Environment.GetEnvironmentVariable("MPFEVER_MODRISKLOBBY") != "0") riskyLobby = string.Join(",", Mods.RiskyPlan(mods)); } catch { }
-            try { client?.Send(Msg.Make("modcheck", name, "{[\"differs\"]=" + LuaLit.Quote(string.Join(", ", c.Differs)) + ",[\"nohub\"]=" + LuaLit.Quote(string.Join(",", noHub)) + ",[\"risky\"]=" + LuaLit.Quote(riskyLobby) + "}")); } catch { }
+            try { client?.Send(Msg.Make("modcheck", name, "{[\"differs\"]=" + LuaLit.Quote(string.Join(", ", c.Differs)) + ",[\"nohub\"]=" + LuaLit.Quote(string.Join(",", noHub)) + ",[\"missing\"]=" + LuaLit.Quote(string.Join(",", c.MissingIds)) + ",[\"risky\"]=" + LuaLit.Quote(riskyLobby) + "}")); } catch { }
             MenuStatus();
         }
 
@@ -2222,18 +2222,40 @@ namespace MPFever
                     + kv.Value.Split(',').Sum(x => double.TryParse(Mods.SizeMb(x), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0).ToString("0.0", CultureInfo.InvariantCulture)));
         }
 
+        /// <summary>(the host) Offers a player the mods it lacks (it must accept) or says no; a server offers at once, whoever joins.</summary>
+        void OfferMods(string who, bool yes)
+        {
+            string ids; lock (modAsks) { if (!modAsks.TryGetValue(who, out ids)) return; modAsks.Remove(who); modAskDone[who] = yes ? "offered:" + ids : "refused"; }
+            var peer = relay?.Find(who);
+            if (peer == null) return;
+            if (yes)
+            {
+                double mb = ids.Split(',').Sum(x => double.TryParse(Mods.SizeMb(x), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0);
+                relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"ids\"]=" + LuaLit.Quote(ids) + ",[\"mb\"]=" + mb.ToString("0.0", CultureInfo.InvariantCulture) + "}"));
+                modSendText = F("Mods proposés à {0} : il doit accepter.", "Mods offered to {0}: they must accept.", BaseName(who));
+                if (ServerMode) Log.W("Mods offered to " + BaseName(who) + ": " + ids);
+            }
+            else
+            {
+                relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"no\"]=true}"));
+                modSendText = "";
+            }
+            MenuStatus();
+        }
+
         /// <summary>(the host) Each mod's folder, zipped, to one player in parts (as the savegame goes).</summary>
         void SendMods(Peer peer, List<string> ids)
         {
             int sent = 0;
             foreach (var id in ids)
             {
-                var dir = Mods.Dir(id);
+                var dir = Mods.StoreDir(id) ?? (Mods.Store == "" ? Mods.Dir(id) : null);
                 if (dir == null) continue;
                 string tmp = Path.Combine(Path.GetTempPath(), "mpfever-mod-" + Guid.NewGuid().ToString("N") + ".zip");
                 try
                 {
-                    ZipFile.CreateFromDirectory(dir, tmp, CompressionLevel.Optimal, false);
+                    if (Mods.StoreDir(id) == dir) Mods.ZipFolder(dir, tmp);
+                    else ZipFile.CreateFromDirectory(dir, tmp, CompressionLevel.Optimal, false);
                     var bytes = File.ReadAllBytes(tmp);
                     int parts = (bytes.Length + ResyncChunk - 1) / ResyncChunk;
                     for (int i = 0; i < parts; i++)
@@ -2625,21 +2647,7 @@ namespace MPFever
                 string who;
                 lock (modAsks) who = modAsks.Keys.FirstOrDefault(k => k == arg) ?? modAsks.Keys.FirstOrDefault(k => BaseName(k) == arg);
                 if (who == null) return;
-                string ids; lock (modAsks) { ids = modAsks[who]; modAsks.Remove(who); modAskDone[who] = option == "1" ? "offered:" + ids : "refused"; }
-                var peer = relay?.Find(who);
-                if (peer == null) return;
-                if (option == "1")
-                {
-                    double mb = ids.Split(',').Sum(x => double.TryParse(Mods.SizeMb(x), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0);
-                    relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"ids\"]=" + LuaLit.Quote(ids) + ",[\"mb\"]=" + mb.ToString("0.0", CultureInfo.InvariantCulture) + "}"));
-                    modSendText = F("Mods proposés à {0} : il doit accepter.", "Mods offered to {0}: they must accept.", BaseName(who));
-                }
-                else
-                {
-                    relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"no\"]=true}"));
-                    modSendText = "";
-                }
-                MenuStatus();
+                OfferMods(who, option == "1");
             }
             else if (cmd == "takemods")
             {
@@ -4976,10 +4984,16 @@ namespace MPFever
                         var differs = h.TryGetValue("differs", out var dv) && dv is string ds ? ds : "";
                         lock (modIssues) { if (differs != "") modIssues[BaseName(from.Name)] = differs; else modIssues.Remove(BaseName(from.Name)); }
                         var nohub = h.TryGetValue("nohub", out var nv) && nv is string ns ? ns : "";
+                        // (0.9.2, a Docker server) the Mod Hub's mods too, from the server's store of full copies (MPFEVER_MODSTORE): a player who lacks one is offered it
+                        var storeIds = new List<string>();
+                        if (Mods.Store != "" && h.TryGetValue("missing", out var miv) && miv is string mis)
+                            storeIds = mis.Split(',').Select(x => x.Trim()).Where(x => x != "" && Mods.StoreDir(x) != null).ToList();
+                        if (storeIds.Count > 0) nohub = string.Join(",", nohub.Split(',').Select(x => x.Trim()).Where(x => x != "").Union(storeIds, StringComparer.OrdinalIgnoreCase));
+                        bool offerAtOnce = false;
                         lock (modAsks)
                         {
                             // (only mods of this savegame installed here: nothing else is ever sent)
-                            var ids = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && Mods.Dir(x) != null && Mods.Parse(lobbyMods).Any(e => e.Id.Equals(x, StringComparison.OrdinalIgnoreCase))).ToList();
+                            var ids = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && (Mods.StoreDir(x) != null || (Mods.Store == "" && Mods.Dir(x) != null)) && Mods.Parse(lobbyMods).Any(e => e.Id.Equals(x, StringComparison.OrdinalIgnoreCase))).ToList();
                             // (0.6.7) a missing mod this PC cannot send is said, never dropped silently (the host saw nothing on 2026-11-01)
                             var unsendable = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && !ids.Contains(x)).ToList();
                             if (unsendable.Count > 0)
@@ -4988,7 +5002,8 @@ namespace MPFever
                             if (ids.Count > 0 && !modAskDone.ContainsKey(from.Name))
                             {
                                 modAsks[from.Name] = string.Join(",", ids);
-                                Log.Warn(F("{0} n'a pas {1} mod(s) qu'aucun Mod Hub n'a : {2}. Vous pouvez les lui envoyer depuis la page Multijoueur.", "{0} lacks {1} mod(s) no Mod Hub has: {2}. You can send them from the Multiplayer page.", BaseName(from.Name), ids.Count, string.Join(", ", ids)));
+                                if (ServerMode && Mods.Store != "") offerAtOnce = true;
+                                else Log.Warn(F("{0} n'a pas {1} mod(s) qu'aucun Mod Hub n'a : {2}. Vous pouvez les lui envoyer depuis la page Multijoueur.", "{0} lacks {1} mod(s) no Mod Hub has: {2}. You can send them from the Multiplayer page.", BaseName(from.Name), ids.Count, string.Join(", ", ids)));
                             }
                             else if (ids.Count == 0) modAsks.Remove(from.Name);
                         }
@@ -4998,6 +5013,7 @@ namespace MPFever
                         OnPlayerRiskyMods(BaseName(from.Name), risky);
                         BroadcastLobby();
                         MenuStatus();
+                        if (offerAtOnce) OfferMods(from.Name, true);
                     }
                     break;
 
