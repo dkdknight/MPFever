@@ -25,6 +25,14 @@ class Shape(unittest.TestCase):
         rec = s.shape("    + Location: gamelib/src/modhub/ModioModHubBackend.cpp(1911)")
         self.assertEqual((rec[1], rec[2], rec[3]), ("error", "game", "+ Location: gamelib/src/modhub/ModioModHubBackend.cpp(1911)"))
 
+    def test_the_missing_sound_card_is_not_a_warning(self):
+        s = logship.Shaper("game")
+        head = s.shape("[2026-11-19 21:59:46Z - WARNING  -                  - Main           ]+ Could not read ogg file")
+        cont = s.shape("    + Location: train_fever/src/Lib/audio/util/OggPlayer.cpp(184): operator ()")
+        alut = s.shape("[2026-11-19 22:02:30Z - WARNING  -                  - Main           ]  alutCreateBufferFromFile failed for ::/Wind.wav: There is no current AL context (error code: 204).")
+        self.assertEqual([head[1], cont[1], alut[1]], ["debug", "debug", "debug"])
+        self.assertEqual(s.shape(WARN)[1], "warn")                    # the next real warning is one again
+
     def test_mpfever_mod_lines_are_info(self):
         rec = logship.Shaper("game").shape("[MPFEVER-AUTO] loading savegame 'bigworld'")
         self.assertEqual((rec[1], rec[3]), ("info", "[MPFEVER-AUTO] loading savegame 'bigworld'"))

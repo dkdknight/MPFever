@@ -224,6 +224,8 @@ Small world, no GPU, one real Windows client:
 
 ## What is validated
 
+**MPFever 0.9.2 and Transport Fever 3 build 40444** (2026-11-19): the image built from this branch with the 0.9.2 version, `install-game` run again from the updated Steam library, the existing world loaded: "IN SYNC", game build 40444, no error. A client of 0.9.2 joining it was not run yet.
+
 Run end to end on the built image with volumes created empty, a real account and a real Windows client: `install-game`, the QR `login`, the token hand-over to Dock (Steamworks without a Steam
 desktop), first start, `import-save`, world load, a client joining and staying identical, `docker compose stop` (about 10 s, world saved), restart restoring the saved world, the healthcheck, the
 read-only container. Then a longer run:

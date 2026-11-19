@@ -12,6 +12,8 @@ LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
 GAME_LINE = re.compile(r"^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)Z - (\w+)\s*- ([^-]*?)\s*- ([^\]]*?)\s*\]\s?(.*)$")
 GAME_LEVEL = {"VERBOSE": "debug", "DEBUG": "debug", "MESSAGE": "info", "INFO": "info", "WARNING": "warn", "ERROR": "error", "FATAL": "error"}
 NOT_BAD = re.compile(r"\S*(error|fail\w*)=0\b", re.I)               # "launch-client-error=0" is a result code that says all went well
+# what a server without a sound card always says (no audio device: the game cannot read its sounds): debug, not warn
+NOISE = re.compile(r"Ogg(Stream|Player)|ogg file|alutCreateBuffer|AL context")
 BAD_WORDS = re.compile(r"\b(error|failed|fail|fatal|cannot|denied|refused)\b", re.I)
 
 
@@ -34,10 +36,15 @@ class Shaper:
             if m:
                 self.level = GAME_LEVEL.get(m.group(3).upper(), "info")
                 self.ts = "%sT%s.000Z" % (m.group(1), m.group(2))
-                return self.ts, self.level, "game", m.group(6).strip() or "(" + m.group(5) + ")"
+                msg = m.group(6).strip() or "(" + m.group(5) + ")"
+                if NOISE.search(msg):
+                    self.level = "debug"
+                return self.ts, self.level, "game", msg
             if line.startswith("[MPFEVER"):                   # the MPFever mod's own lines, no time stamp
                 self.level, self.ts = "info", None
                 return now(), "info", "game", line
+            if NOISE.search(line):
+                self.level = "debug"
             return self.ts or now(), self.level, "game", line.strip()      # a continuation
         level = "warn" if BAD_WORDS.search(NOT_BAD.sub("", line)) else "debug"
         return now(), level, "dock", line.strip()
