@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.9.1 - (in progress)
+0.9.1 - 2026-11-19: a drift right at the start of a session (#426), the companies' progression, the update from 0.8.17 (exact archive names), MPFever inside the game's folder (#427), the commands in the drift logs (#150)
   - FIX (a slow drift, "script:progression", seen in a test of 58 minutes with one game held now and then): the game's company
     growth script keeps, as the company's experience, the highest world population it has seen, and counts it at every call of
     its update. The engine calls it once a step, in the middle of the step, and also with no time in the batches where a game
