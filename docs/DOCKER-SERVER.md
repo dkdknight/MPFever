@@ -164,7 +164,8 @@ read-only container. Then a longer run:
 - **Public list and Steam join:** with `SRV_PUBLIC=true` (or a stray host variable, see Settings) the server is announced to MPFever's public list with its Steam ID, and anyone can join through Steam; a
   stranger did so during the first long run. Keep `SRV_PUBLIC=false` and set `SRV_PASSWORD` for a private server.
 
-**Not validated yet:** several clients at once (local test clients, or a second Steam account), the GPU variant, worlds with mods, runs of several hours.
+**Not validated yet:** several clients at once (local test clients, or a second Steam account), worlds with mods, runs of several hours. **The GPU variant** (`compose.gpu.yaml`, Intel/AMD through `/dev/dri` on a
+Linux host) was not run; on Docker Desktop with WSL2 it cannot work as written (the container gets `/dev/dxg` and no WSL driver libraries): software rendering is the supported mode there.
 
 ## Build, tests, publication
 
