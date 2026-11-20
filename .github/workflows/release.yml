@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       docker:
-        description: "Also publish the relay's Docker image (x64 and arm64) to ghcr.io/<owner>/mpfever-relay-docker, tagged with the version and latest"
+        description: "Also publish the relay's Docker image (x64 and arm64) to ghcr.io/<owner>/mpfever-relay, tagged with the version and latest"
         type: boolean
         default: false
       signing_policy:
@@ -213,7 +213,7 @@ jobs:
         id: v
         run: |
           echo "version=$(sed -n 's/^set "VERSION=\([^"]*\)".*/\1/p' build.bat | tr -d '\r')" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mpfever-relay-docker" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mpfever-relay" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
 

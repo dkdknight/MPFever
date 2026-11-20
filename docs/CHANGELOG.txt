@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.9.4 - (in progress)
+  - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
+    (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
+    names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
+    under the old name by the project; a package pushed to it earlier can be deleted.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one
