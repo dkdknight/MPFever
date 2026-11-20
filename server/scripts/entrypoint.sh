@@ -72,6 +72,7 @@ check_settings() {
   need_choice MODS_SYNC "${MODS_SYNC:-auto}" auto off
   need_choice GAME_LOG "${GAME_LOG:-info}" off error warn info debug
   need_choice ADMIN_UI "${ADMIN_UI:-off}" on off
+  need_choice SPEED_VOTE "${SPEED_VOTE:-false}" true false
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
 
@@ -200,6 +201,7 @@ cmd_run() {
     echo "start-speed=${START_SPEED:-1}"
     echo "pause-when-empty=${PAUSE_WHEN_EMPTY:-false}"
     echo "player-speed-control=${PLAYER_SPEED_CONTROL:-true}"
+    echo "speed-vote=${SPEED_VOTE:-false}"
     echo "autosave-minutes=${AUTOSAVE_MINUTES:-10}"
     echo "backups=${BACKUPS:-10}"
     echo "restart-on-crash=true"

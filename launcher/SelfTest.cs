@@ -63,6 +63,7 @@ namespace MPFever
             ok &= RunIssue111();
             ok &= RunSession067();
             ok &= RunModStore();
+            ok &= RunSpeedVote();
             ok &= RunDlcs();
             ok &= RunSaveMods();
             ok &= RunServerConfig();
@@ -1657,6 +1658,35 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             }
             catch (Exception e) { Check(false, "diagnostic: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_DIAG", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.9.3) The players' pause and speed requests as votes (speed-vote=true): the property is read and written, and a request is carried by more than half of the connected players.</summary>
+        static bool RunSpeedVote()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var c = new ServerConfig { SpeedVote = true };
+            var problems = new List<string>();
+            var path = Path.Combine(Path.GetTempPath(), "mpf-vote-" + Guid.NewGuid().ToString("N") + ".properties");
+            try
+            {
+                c.Save(path);
+                var r = ServerConfig.Load(path, problems, out _);
+                Check(r.SpeedVote && !new ServerConfig().SpeedVote, "speed vote: written and read, off by default");
+            }
+            finally { try { File.Delete(path); } catch { } }
+            var v = new MainForm.SpeedVotes();
+            int n, need;
+            Check(v.Cast("Ann", 2, 1, 0, out n, out need) && need == 1, "speed vote: one player alone decides at once");
+            Check(!v.Cast("Ann", 0, 3, 0, out n, out need) && n == 1 && need == 2, "speed vote: 1 of 3 is not enough (2 needed)");
+            Check(v.Cast("Bob", 0, 3, 10, out n, out need) && n == 2, "speed vote: a second player asking the same carries it");
+            Check(!v.Cast("Ann", 0, 3, 20, out n, out need) && n == 1, "speed vote: the votes were cleared when it was carried");
+            Check(!v.Cast("Bob", 4, 3, 30, out n, out need) && n == 1, "speed vote: another speed is another vote");
+            Check(!v.Cast("Cid", 0, 3, 100, out n, out need) && n == 1, "speed vote: votes older than a minute no longer count (Ann's pause at 20, Bob's x4 at 30)");
+            Check(!v.Cast("Ann", 2, 2, 200, out n, out need) && need == 2, "speed vote: 2 players need both");
+            v.Forget("Ann");
+            Check(!v.Cast("Bob", 2, 2, 210, out n, out need) && n == 1, "speed vote: the vote of a player who left is forgotten");
             return ok;
         }
 

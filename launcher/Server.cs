@@ -34,6 +34,8 @@ namespace MPFever
         public int StartSpeed = 1;
         public bool PauseWhenEmpty = true;
         public bool PlayerSpeedControl = true;
+        // (0.9.3) with player-speed-control: a player's pause or speed request needs the agreement of most of the connected players (false: one player is enough, as before)
+        public bool SpeedVote = false;
         public int AutosaveMinutes = 10;
         public int Backups = 10;
         public bool RestartOnCrash = true;
@@ -112,6 +114,10 @@ namespace MPFever
             "",
             "# true: the players may pause the game and change its speed. false: only the server console may.",
             "player-speed-control=" + B(PlayerSpeedControl),
+            "",
+            "# true: a player's pause or speed request needs most of the connected players to ask the same within a minute (one player alone: at once).",
+            "# false: any player's request is enough. The server console always can.",
+            "speed-vote=" + B(SpeedVote),
             "",
             "# Minutes between two saves of the world (0: no autosave). The world stops for a few seconds while it is saved.",
             "autosave-minutes=" + I(AutosaveMinutes),
@@ -192,6 +198,7 @@ namespace MPFever
                     return true;
                 case "pause-when-empty": return Bool(v, ref PauseWhenEmpty);
                 case "player-speed-control": return Bool(v, ref PlayerSpeedControl);
+                case "speed-vote": return Bool(v, ref SpeedVote);
                 case "autosave-minutes": return Int(v, 0, 1440, ref AutosaveMinutes);
                 case "backups": return Int(v, 0, 1000, ref Backups);
                 case "restart-on-crash": return Bool(v, ref RestartOnCrash);
@@ -1100,7 +1107,31 @@ namespace MPFever
             return r.Admitted().Count(o => o != p && !string.Equals(BaseName(o.Name), me, StringComparison.OrdinalIgnoreCase));
         }
 
+        /// <summary>(0.9.3, speed-vote=true) The players' pause and speed requests as votes: a request is the player's vote for that speed (0 is the pause) and counts for
+        /// a minute; the world follows when more than half of the connected players have asked the same. One player alone decides at once.</summary>
+        internal sealed class SpeedVotes
+        {
+            public const double WindowSeconds = 60;
+            readonly Dictionary<string, KeyValuePair<int, double>> votes = new Dictionary<string, KeyValuePair<int, double>>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>A player asks for a speed (0: pause). True when the request is carried (the votes are then cleared).</summary>
+            public bool Cast(string player, int speed, int players, double now, out int count, out int need)
+            {
+                need = Math.Max(1, players) / 2 + 1;
+                foreach (var k in votes.Where(v => now - v.Value.Value > WindowSeconds).Select(v => v.Key).ToList()) votes.Remove(k);
+                votes[player] = new KeyValuePair<int, double>(speed, now);
+                count = votes.Count(v => v.Value.Key == speed);
+                if (count < need) return false;
+                votes.Clear();
+                return true;
+            }
+
+            public void Forget(string player) { votes.Remove(player); }
+        }
+
         /// <summary>A player's game is in the world: the message of the day, once per connection.</summary>
+        readonly SpeedVotes speedVotes = new SpeedVotes();
+
         void ServerGreet(Peer p)
         {
             lock (greeted) if (!greeted.Add(BaseName(p.Name))) return;
@@ -1113,6 +1144,7 @@ namespace MPFever
         void ServerPlayerLeft(Peer p)
         {
             lock (greeted) greeted.Remove(BaseName(p.Name));
+            lock (speedVotes) speedVotes.Forget(BaseName(p.Name));
         }
 
         /// <summary>A player's own game as host: a guest on another version is refused (the "denied" payload), else null.</summary>

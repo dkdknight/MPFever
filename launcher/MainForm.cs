@@ -5386,6 +5386,19 @@ namespace MPFever
                             // a request for the speed already in effect changes nothing (and must not echo back)
                             bool same; lock (sessionGate) same = d > 0 && !pauseAt.HasValue && (int)d == speed || d <= 0 && pauseAt.HasValue;
                             if (same) break;
+                            // (0.9.3, speed-vote=true) the players decide together: this request is a vote, carried when most of the connected players ask the same
+                            if (server != null && server.SpeedVote && from != null)
+                            {
+                                int want = d <= 0 ? 0 : (int)d, count, need; bool carried;
+                                lock (speedVotes) carried = speedVotes.Cast(BaseName(from.Name), want, Math.Max(1, relay?.AdmittedCount ?? 1), Now, out count, out need);
+                                string what = want == 0 ? "pause" : "speed x" + want;
+                                if (!carried)
+                                {
+                                    HostChat("msg", server.Name, BaseName(from.Name) + " asks for " + what + " (" + count + "/" + need + "): ask for the same to agree, within a minute.");
+                                    break;
+                                }
+                                if (need > 1) HostChat("msg", server.Name, "Vote carried: " + what + " (" + count + "/" + need + ").");
+                            }
                             if (d <= 0) Pause(m.From); else SetSpeed((int)d, m.From);
                         }
                         break;

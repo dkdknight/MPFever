@@ -22,6 +22,8 @@ MPFever - Changelog
   - NEW (server/): what a bug report needs is kept: the launcher's session folder (in.log, mod.log, native.log ...) is copied from the container's memory to the data volume (every 5 minutes, at the launcher's exit and
     at the stop) and the game's log of each start is kept; `mpfever-admin bundle` makes one zip of it with the other logs and the crash reports, without any secret; the game's log is shipped at `info` by default
     (what a server always says, like the missing sound card and mod.io account, is info and no longer an error). The Release build workflow takes docker_server_revision (tag <version>-2 for a new server image of the same version).
+  - NEW (dedicated server): speed-vote=true in mpfever_server.properties: the players' pause and speed requests become votes, carried when more than half of the connected players ask the same within a
+    minute (a player alone decides at once; the server announces the progress in the chat; the console and `mpfever-admin` always can). Off by default. Docker: SRV_SPEED_VOTE.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one
