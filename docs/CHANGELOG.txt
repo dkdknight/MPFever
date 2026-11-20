@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.9.3 - (in progress)
+0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one
     after the other in a pause, the first with two signals. The host's game was saving (11 s on a 445 MB map) when the first
     one's dry run reached its engine; after 600 frames without an answer MPFever let the hold go, which also ended the queue's
