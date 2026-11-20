@@ -38,6 +38,11 @@ namespace MPFever
         public bool SpeedVote = false;
         // (0.9.3) seconds of warning in the chat before a stop or a restart while players are connected (0: none, as before)
         public int ShutdownWarning = 0;
+        // (0.9.3) a dedicated server behind a router that lets nothing in (a mobile box, CGNAT) hosts through an MPFever relay (relay/, docs/RELAY.md): it connects out to it,
+        // the players join the relay's address. relay-host-key: the key the relay (--host-key) wants from its host; relay-password: the relay's password, when it has one.
+        public string Relay = "", RelayPassword = "", RelayHostKey = "";
+        /// <summary>The address the public list shows: public-address, else the relay's.</summary>
+        public string ListedAddress => PublicAddress != "" ? PublicAddress : Relay;
         public int AutosaveMinutes = 10;
         public int Backups = 10;
         public bool RestartOnCrash = true;
@@ -124,6 +129,12 @@ namespace MPFever
             "# Seconds of warning in the chat before the server stops or restarts while players are connected (0: none; nobody connected: none).",
             "shutdown-warning=" + I(ShutdownWarning),
             "",
+            "# Host through an MPFever relay (host or host:port) instead of listening on this PC: for a server behind a router that lets nothing in. The players join the relay's",
+            "# address (shown in the public list). relay-host-key is the key the relay (--host-key) wants from its host, relay-password the relay's password when it has one.",
+            "relay=" + One(Relay),
+            "relay-host-key=" + One(RelayHostKey),
+            "relay-password=" + One(RelayPassword),
+            "",
             "# Minutes between two saves of the world (0: no autosave). The world stops for a few seconds while it is saved.",
             "autosave-minutes=" + I(AutosaveMinutes),
             "",
@@ -205,6 +216,9 @@ namespace MPFever
                 case "player-speed-control": return Bool(v, ref PlayerSpeedControl);
                 case "speed-vote": return Bool(v, ref SpeedVote);
                 case "shutdown-warning": return Int(v, 0, 3600, ref ShutdownWarning);
+                case "relay": Relay = v.Trim(); return true;
+                case "relay-host-key": RelayHostKey = v.Trim(); return true;
+                case "relay-password": RelayPassword = v.Trim(); return true;
                 case "autosave-minutes": return Int(v, 0, 1440, ref AutosaveMinutes);
                 case "backups": return Int(v, 0, 1000, ref Backups);
                 case "restart-on-crash": return Bool(v, ref RestartOnCrash);
@@ -510,6 +524,7 @@ namespace MPFever
             {
                 Log.Err(T("Impossible d'héberger : ", "Cannot host: ") + e.Message);
                 menuPhase = "error"; menuText = T("Impossible d'héberger : ", "Cannot host: ") + e.Message; MenuStatus();
+                if (server.Relay != "" && !serverStopping) ServerRelayRetry(launch);
                 return false;
             }
             Log.W(F("=== Serveur dédié « {0} » : chargement du monde « {1} » ===", "=== Dedicated server « {0} »: loading the world « {1} » ===", server.Name, server.World));
@@ -611,6 +626,29 @@ namespace MPFever
         /// <summary>"restart": the settings are read again, the world is saved, then the game starts again with it (the
         /// players are reconnected by their MPFever).</summary>
         volatile bool shutdownWarning;
+        volatile bool relayRetryPending;
+
+        /// <summary>(0.9.3, relay=) The relay could not be reached when the world started (the box lost its link, the relay is restarting): tried again every 30 s, as long as the server runs.</summary>
+        void ServerRelayRetry(bool launch)
+        {
+            if (relayRetryPending) return;
+            relayRetryPending = true;
+            Log.Warn("The relay " + server.Relay + " could not be used: trying again in 30 s.");
+            new Thread(() =>
+            {
+                try { Thread.Sleep(30000); }
+                finally { relayRetryPending = false; }
+                if (!serverStopping && hostGame == null) BeginServerWorld(launch);
+            }) { IsBackground = true, Name = "Relay retry" }.Start();
+        }
+
+        /// <summary>(0.9.3, relay=) The connection to the relay was lost while the world runs: the relay ends the session when its host leaves, so the world is hosted again (saved first;
+        /// the players come back by themselves when the relay has its host again).</summary>
+        void ServerRelayLost(string why)
+        {
+            Log.Warn("Connection to the relay lost (" + why + "): the world restarts to host again.");
+            RestartWorld(true);
+        }
 
         /// <summary>(0.9.3, shutdown-warning=N) A stop or a restart while players are connected: they are told in the chat, at the start and as the time runs down (the last minute,
         /// 30 s, 15 s, 10 s, then each of the last 5 seconds), and it happens after N seconds, or at once when everybody has left. True when this took the request over (it is
@@ -1227,6 +1265,12 @@ namespace MPFever
             try
             {
                 int port = server.Port;
+                if (server.Relay != "")
+                {
+                    serverAddresses = server.ListedAddress;
+                    Log.Ok("Players join the server through the relay: " + server.ListedAddress);
+                    return;
+                }
                 var list = new List<string>();
                 var pub = PublicAddress();
                 if (!string.IsNullOrEmpty(pub)) list.Add(NetAddr.Show(pub, port));

@@ -3738,6 +3738,7 @@ namespace MPFever
                 case "password": return T("Mot de passe du relais refusé (relaypw= dans mpfever_settings.txt).", "The relay's password was refused (relaypw= in mpfever_settings.txt).");
                 case "version": return T("Le relais utilise une autre version de MPFever.", "The relay runs another MPFever version.");
                 case "relay": return DeniedText(new Dictionary<object, object> { ["reason"] = "relay" });
+                case "hostkey": return "The relay refused this server's host key (relay-host-key= in mpfever_server.properties).";
                 case "full": return T("Le relais est plein.", "The relay is full.");
                 default: return e.Message;
             }
@@ -3747,7 +3748,8 @@ namespace MPFever
         {
             ParseRelayAddress(spec, out string relayHost, out int relayPort);
             Log.W(F("Hébergement par le relais {0}:{1}...", "Hosting through the relay {0}:{1}...", relayHost, relayPort));
-            remote.NoHandover = !HandoverAllowed();
+            remote.NoHandover = server != null || !HandoverAllowed();   // (a dedicated server's session ends with it: no player takes over)
+            if (server != null) remote.HostKey = server.RelayHostKey;
             try { remote.Connect(relayHost, relayPort, name, password, migrationToken); }
             catch (Exception e)
             {
@@ -3755,7 +3757,7 @@ namespace MPFever
                 try { r?.Dispose(); } catch { }
                 throw new InvalidOperationException(ServerWhy(e));
             }
-            remote.Lost += why => { try { BeginInvoke((Action)(() => { if (relay == remote) EndSession(T("=== Connexion au relais perdue : fin de la session ===", "=== Connection to the relay lost: the session ends ===")); })); } catch { } };
+            remote.Lost += why => { try { BeginInvoke((Action)(() => { if (relay == remote) { if (server != null) ServerRelayLost(why); else EndSession(T("=== Connexion au relais perdue : fin de la session ===", "=== Connection to the relay lost: the session ends ===")); } })); } catch { } };
             remoteAddress = NetAddr.Show(relayHost, relayPort);
             Log.Ok(F("Hébergement par le relais {0}:{1} : les joueurs rejoignent à cette adresse.", "Hosting through the relay {0}:{1}: players join at that address.", relayHost, relayPort));
         }
@@ -3770,6 +3772,8 @@ namespace MPFever
             // (a host that has a relay in mpfever_settings.txt hosts through it: no port to open, one address for everybody)
             string relayPw = null;
             string relaySpec = server == null ? RelaySetting(out relayPw) : null;
+            // (0.9.3) a dedicated server whose relay= is set hosts through it (the players join the relay: no port to open, nothing of this PC reachable)
+            if (server != null && server.Relay != "") { relaySpec = server.Relay; relayPw = server.RelayPassword; }
             if (relayOverride != null) { relaySpec = relayOverride; relayPw = relayPasswordOverride ?? ""; }
             RemoteRelay remote = relaySpec != null ? new RemoteRelay() : null;
             relay = remote != null ? (IRelay)remote : new Relay();

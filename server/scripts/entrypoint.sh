@@ -72,6 +72,7 @@ check_settings() {
   need_choice MODS_SYNC "${MODS_SYNC:-auto}" auto off
   need_choice GAME_LOG "${GAME_LOG:-info}" off error warn info debug
   need_choice ADMIN_UI "${ADMIN_UI:-off}" on off
+  need_choice STEAM_MODE "${STEAM_MODE:-online}" online offline
   need_choice SPEED_VOTE "${SPEED_VOTE:-false}" true false
   need_int SHUTDOWN_WARNING "${SHUTDOWN_WARNING:-60}"
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
@@ -208,6 +209,9 @@ cmd_run() {
     echo "player-speed-control=${PLAYER_SPEED_CONTROL:-true}"
     echo "speed-vote=${SPEED_VOTE:-false}"
     echo "shutdown-warning=${SHUTDOWN_WARNING:-60}"
+    echo "relay=${RELAY:-}"
+    echo "relay-host-key=${RELAY_HOST_KEY:-}"
+    echo "relay-password=${RELAY_PASSWORD:-}"
     echo "autosave-minutes=${AUTOSAVE_MINUTES:-10}"
     echo "backups=${BACKUPS:-10}"
     echo "restart-on-crash=true"
@@ -230,6 +234,9 @@ cmd_run() {
   export MPFEVER_CMDDIR=$RUN/cmd; mkdir -p "$MPFEVER_CMDDIR"; rm -f "$MPFEVER_CMDDIR"/*   # the commands of `mpfever-admin`
   # logs: the launcher writes the same JSON lines as this script (SRV_LOG_FORMAT=text: plain lines)
   if [ "${LOG_FORMAT:-json}" = json ]; then export MPFEVER_LOG_JSON=1; else unset MPFEVER_LOG_JSON; fi
+  # STEAM_MODE=offline (experimental): Valve's client logs the account on offline (its own offline logon ticket, as desktop Steam's Offline Mode), so Steam's servers see no session
+  # for the game and the owner can play the same account elsewhere; a refusal (Dock result 50, 51, 52) is reported in srv/dock.log. See docs/DOCKER-SERVER.md.
+  if [ "${STEAM_MODE:-online}" = offline ]; then export MADEIRA_DOCK_OFFLINE=1; else unset MADEIRA_DOCK_OFFLINE; fi
   export MPFEVER_MODSTORE=$DATA/mods/full   # the mod.io mods in full: the launcher offers them to the players who join (the game itself runs from the reduced copies of /data/modio)
   # no 3D output: software Vulkan with a layer that makes every draw and copy a no-op and gives back the GPU memory nobody reads;
   # MPF_VKNULL=0 (docker compose: GPU=1) leaves a real GPU alone

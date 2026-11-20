@@ -1742,6 +1742,9 @@ namespace MPFever
         /// <summary>(a host through a relay) the host does not want a player to take over when it leaves: the relay ends the session then (host migration, docs/RELAY.md).</summary>
         public bool NoHandover;
 
+        /// <summary>(0.9.3) The key a host shows to a relay that has --host-key (the "hk" of its join); empty: none.</summary>
+        public string HostKey;
+
         public void Connect(string host, int port, string name, string password = null, bool resume = false, bool tunnelHost = false, bool canTakeOver = false, string migrationToken = null)
         {
             // "steam:<id>" entries: through the host's Steam (the game's module, SteamNet), tried at the same time as the
@@ -1812,7 +1815,7 @@ namespace MPFever
             else Link.Reset(null);   // (a new player: the host counts from this join; what waited is dropped)
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
-                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (tunnelHost && NoHandover ? ",[\"nomig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
+                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" + (string.IsNullOrEmpty(HostKey) ? "" : ",[\"hk\"]=" + LuaLit.Quote(HostKey)) : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (tunnelHost && NoHandover ? ",[\"nomig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
             viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             usedDirect = viaSteam ? null : used;
             gotAny = false;

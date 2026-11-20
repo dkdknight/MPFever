@@ -37,6 +37,9 @@ namespace MPFever.StandaloneRelay
         /// <summary>EXPERIMENTAL: a key that lets another player read the save and host from it when nobody hosts.</summary>
         public string CheckpointRecoveryKey = "";
         public bool ResumeWithoutHost;
+        /// <summary>(0.9.3) A key the host must show to host this relay (--host-key): a dedicated server behind a router that lets nothing in connects out to the relay
+        /// and hosts there, while the players need no password. Empty: any player may host (the first in), as before.</summary>
+        public string HostKey = "";
     }
 
     /// <summary>
@@ -150,6 +153,8 @@ namespace MPFever.StandaloneRelay
             }
             if (opt.Password != "" && LockedOut(ip)) reason = "password";   // (too many wrong ones from this address: even the right one waits)
             else if (opt.Password != "" && !SamePassword(S("pw"), opt.Password)) { reason = "password"; NoteBadPassword(ip); }
+            else if (WantsHost(t) && opt.HostKey != "" && LockedOut(ip)) reason = "hostkey";   // (too many wrong host keys from this address)
+            else if (WantsHost(t) && opt.HostKey != "" && !SamePassword(S("hk"), opt.HostKey)) { reason = "hostkey"; NoteBadPassword(ip); }
             else if (others >= opt.MaxPlayers) { reason = "full"; extra = ",[\"max\"]=" + opt.MaxPlayers; }
             else if (WantsHost(t) && HasHost && !IsAwaitedSuccessor(me, S("mtok"))) reason = "hosted";   // somebody hosts this relay already: join it
             else if (!WantsHost(t) && !HasHost) reason = "nohost";    // nobody hosts it yet: somebody must host first

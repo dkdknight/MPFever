@@ -19,9 +19,10 @@ namespace MPFever.StandaloneRelay
             public readonly List<Msg> Got = new List<Msg>();
             public string DeniedReason;
             public volatile bool Closed;
-            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null, bool noHandover = false)
+            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null, bool noHandover = false, string hostKey = null)
             {
                 C.NoHandover = noHandover;
+                C.HostKey = hostKey;
                 C.Received += m => { lock (Got) Got.Add(m); };
                 C.Denied += d => { DeniedReason = d.TryGetValue("reason", out var r) ? r as string : "?"; };
                 C.Closed += () => Closed = true;
@@ -54,6 +55,7 @@ namespace MPFever.StandaloneRelay
 
         public static int Run()
         {
+            HostKey();
             Tunnel();
             Remote();
             Migration();
@@ -384,6 +386,41 @@ namespace MPFever.StandaloneRelay
                 }
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
+        }
+
+        /// <summary>(0.9.3) --host-key: only the holder of the key hosts; the players need no password; wrong keys count like wrong passwords.</summary>
+        static void HostKey()
+        {
+            Console.WriteLine("host key");
+            var opt = new RelayOptions { HostKey = "host-key-0123456789", MaxPlayers = 3, MaxBadPasswords = 3 };
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, opt);
+                relay.Start(0);
+                int port = relay.Port;
+                using (var none = new Player(port, "Eve", null, true))
+                    Check("a host without the key is refused, with its reason", none.Wait(() => none.DeniedReason != null) && none.DeniedReason == "hostkey");
+                using (var bad = new Player(port, "Mal", null, true, false, null, false, "wrong-key"))
+                    Check("a host with a wrong key is refused", bad.Wait(() => bad.DeniedReason != null) && bad.DeniedReason == "hostkey");
+                using (var early = new Player(port, "Early", null))
+                    Check("a player is still refused while nobody hosts", early.Wait(() => early.DeniedReason != null) && early.DeniedReason == "nohost");
+                var h = new Player(port, "Srv", null, true, false, null, true, "host-key-0123456789");
+                Check("the host with the key is let in as the host", h.Wait(() => h.Of("tun_host").Length == 1) && core.HostPlayer == h.Me);
+                using (var p = new Player(port, "Ann", null))
+                    Check("players join without any password", p.Wait(() => p.Of("welcome").Length == 1 || p.Of("tun_join").Length == 0 && p.DeniedReason == null));
+                Thread.Sleep(200);
+                Check("and the host was told of the player", h.Wait(() => h.Of("tun_join").Length == 1));
+                using (var thief = new Player(port, "Thief", null, true, false, null, false, "host-key-0123456789"))
+                    Check("even with the right key a second host is refused while one hosts", thief.Wait(() => thief.DeniedReason != null) && thief.DeniedReason == "hosted");
+                h.Dispose();
+            }
+            Check("a host key equal to the password, or with --migration, is refused",
+                Program.Validate(new RelayOptions { HostKey = "same-secret-value", Password = "same-secret-value" }) != null
+                && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", Migration = true }) != null
+                && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", Password = "player-password" }) == null);
+            var env = new RelayOptions();
+            Program.ApplyEnvironment(env, n => n == "MPFEVER_RELAY_HOST_KEY" ? "from-the-environment-key" : null);
+            Check("the host key can come from the environment", env.HostKey == "from-the-environment-key");
         }
 
         static void Tunnel()

@@ -161,7 +161,7 @@ namespace MPFever
                         var body = "{\"name\":" + JsonStr(server.Name) + ",\"port\":" + server.Port + ",\"version\":" + JsonStr(Version) + ",\"build\":" + JsonStr(build)
                             + ",\"mode\":" + JsonStr(server.CompanyMode) + ",\"world\":" + JsonStr(server.World) + ",\"motd\":" + JsonStr(server.Motd)
                             + ",\"players\":" + (relay?.AdmittedCount ?? 0) + ",\"max\":" + server.MaxPlayers + ",\"password\":" + (server.Password != "" ? "true" : "false")
-                            + ",\"steam\":" + JsonStr(hostSteamId ?? "") + ",\"address\":" + JsonStr(server.PublicAddress) + ",\"token\":" + JsonStr(listToken ?? "") + "}";
+                            + ",\"steam\":" + JsonStr(hostSteamId ?? "") + ",\"address\":" + JsonStr(server.ListedAddress) + ",\"token\":" + JsonStr(listToken ?? "") + "}";
                         var d = Json.Parse(ListRequest(url + "/api/announce", body)) as Dictionary<string, object>;
                         if (d != null && d.TryGetValue("ok", out var ok) && ok is bool okb && okb)
                         {

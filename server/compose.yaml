@@ -22,6 +22,9 @@ services:
       PLAYER_SPEED_CONTROL: ${SRV_PLAYER_SPEED_CONTROL:-true}
       SPEED_VOTE: ${SRV_SPEED_VOTE:-false}
       SHUTDOWN_WARNING: ${SRV_SHUTDOWN_WARNING:-60}
+      RELAY: ${SRV_RELAY:-}
+      RELAY_HOST_KEY: ${SRV_RELAY_HOST_KEY:-}
+      RELAY_PASSWORD: ${SRV_RELAY_PASSWORD:-}
       AUTOSAVE_MINUTES: ${SRV_AUTOSAVE_MINUTES:-10}
       BACKUPS: ${SRV_BACKUPS:-10}
       PUBLIC: ${SRV_PUBLIC:-false}
@@ -32,6 +35,7 @@ services:
       MODS_SYNC: ${SRV_MODS_SYNC:-auto}
       GAME_LOG: ${SRV_GAME_LOG:-info}
       ADMIN_UI: ${SRV_ADMIN_UI:-off}
+      STEAM_MODE: ${SRV_STEAM_MODE:-online}
     volumes:
       - data:/data        # Wine prefix, Valve client, Steam session (secrets/), saves, launcher and its logs and backups
       - game:/game        # the "lite" game install (about 1 GB on disk)

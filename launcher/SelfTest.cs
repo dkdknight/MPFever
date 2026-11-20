@@ -1666,7 +1666,7 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
         {
             bool ok = true;
             void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
-            var c = new ServerConfig { SpeedVote = true, ShutdownWarning = 45 };
+            var c = new ServerConfig { SpeedVote = true, ShutdownWarning = 45, Relay = "relay.example.org:28091", RelayHostKey = "host-key-123", RelayPassword = "relay-pw" };
             var problems = new List<string>();
             var path = Path.Combine(Path.GetTempPath(), "mpf-vote-" + Guid.NewGuid().ToString("N") + ".properties");
             try
@@ -1675,6 +1675,8 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 var r = ServerConfig.Load(path, problems, out _);
                 Check(r.SpeedVote && !new ServerConfig().SpeedVote, "speed vote: written and read, off by default");
                 Check(r.ShutdownWarning == 45 && new ServerConfig().ShutdownWarning == 0, "shutdown warning: written and read, none by default");
+                Check(r.Relay == "relay.example.org:28091" && r.RelayHostKey == "host-key-123" && r.RelayPassword == "relay-pw" && new ServerConfig().Relay == "", "server relay: written and read, none by default");
+                Check(r.ListedAddress == "relay.example.org:28091" && new ServerConfig { PublicAddress = "mp.example.org:1", Relay = "r:2" }.ListedAddress == "mp.example.org:1", "server relay: the list shows the public address, else the relay's");
             }
             finally { try { File.Delete(path); } catch { } }
             var v = new MainForm.SpeedVotes();
