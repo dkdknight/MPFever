@@ -191,6 +191,12 @@ def make(exe, build="40420", targets_path=None, out=None):
         lines.append("site20c %d %d %d %d %d %s" % (rule, dst, regbase, ln, off, text_of(sig)))
         print("ok  site20c      %#9x  +%-3d %d bytes" % (rva, off, len(sig)))
     out = out or os.path.join(ROOT, "native", "mpfever_sigs.txt")
+    # (0.9.2) the places of later builds found by hand (from "# (0.9.2) build 40444" on) are kept: this executable has none of them
+    if os.path.exists(out):
+        kept = open(out, encoding="utf-8").read().split("\n")
+        at = next((i for i, l in enumerate(kept) if l.startswith("# (0.9.2) build 40444")), None)
+        if at is not None:
+            lines += [l for l in kept[at:] if l.strip()]
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
     print("%s: %d signatures, %d places without one" % (out, len(lines) - 4, failed))

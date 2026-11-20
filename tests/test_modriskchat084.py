@@ -43,7 +43,7 @@ check('clients.FirstOrDefault()?.Send(Msg.Make("chat", game.Name, "{[\\"text\\"]
       "  sent as a chat message: the host numbers it and sends it to every player")
 check("this game runs WITHOUT {0} (mods taken for personal by hand)" in blk and "this game runs WITH {0} too" in blk
       and "this game runs WITHOUT {0} and WITH {1} too" in blk, "  the three texts (without, with, both)")
-check("joinPending = false; riskyAnnounced = \"\";" in mf, "the told list is forgotten when the session ends")
+check("ClearJoinPending(); riskyAnnounced = \"\";" in mf, "the told list is forgotten when the session ends")
 check(mf.index("var plan = Mods.LoadPlan(lobbyMods);") < mf.index("var risky = Mods.RiskyPlan(lobbyMods);"),
       "told after the load plan is written (the same load)")
 

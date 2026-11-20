@@ -2624,7 +2624,12 @@ extern "C" void* AddDetour(void* list, void* out, void* cmd, void* done, void* p
                     if (eoOn < 0) { char v[4] = {}; eoOn = (GetEnvironmentVariableA("MPFEVER_EOCLICK", v, 3) == 1 && v[0] == '0') ? 0 : 1; }
                     u8* pay = *(u8**)h->cmd;
                     // (the layout was read on Steam's 40425, stamp 6ad9ce10: another build reads nothing, its stops go the usual way)
-                    if (eoOn && g_buildStamp == 0x6ad9ce10u && pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) {
+                    // (0.9.2) and on Steam's 40444 of 2026-11-19, stamp 6af6fd97: the build command's move and the proposal's
+                    // copies (0x9ece80, 0x4cfc70 and the 9 functions it calls in 40425) are the same code there, instruction for
+                    // instruction. MPFEVER_EO40444=0: 40425 only, as before.
+                    static int eo44 = -1;
+                    if (eo44 < 0) { char v[4] = {}; eo44 = (GetEnvironmentVariableA("MPFEVER_EO40444", v, 3) == 1 && v[0] == '0') ? 0 : 1; }
+                    if (eoOn && (g_buildStamp == 0x6ad9ce10u || (eo44 && g_buildStamp == 0x6af6fd97u)) && pay && Readable(pay, 0x9c0) && *(u8*)(pay + 0x9b8) == 52) {
                         u64 eb = *(const u64*)(pay + 0x128), ee = *(const u64*)(pay + 0x130);
                         if (eb > 0x10000 && ee > eb && (ee - eb) % 0x1a0 == 0 && (ee - eb) / 0x1a0 <= 16 && Readable((void*)eb, (u32)(ee - eb))) {
                             u32 n = (u32)((ee - eb) / 0x1a0);
@@ -4899,6 +4904,11 @@ static void PatchSaveCleanup()
 // pause of every game instead (HostAutosave). Outside a session: the game's own test, as always. The site is found by its
 // bytes (the offsets 0x1170 and 0xe38 in them), once in the code, else nothing is changed. MPFEVER_GAMEAUTOSAVE=1: the
 // game's own autosave kept.
+// (0.9.2, build 40444 of 2026-11-19) CGameUI grew: the same test reads [ui+0x1188] and [ui+0xe40] there, and the signature
+// with the offsets of 40425 found nothing ("its test NOT found": the game saved on its own in every session again). The
+// signature now leaves both offsets out, and the counter's offset is read from the test's own "cmp rax,[rsi+disp32]" (the
+// same code in both builds, once in each). MPFEVER_GASFIXED=1: the signature and the offset 0xe38 of 40425, as before.
+static u32 g_gasCountedOff = 0xe38;
 static KeptFile g_gasAliveFile = { 0, 0 };
 static char g_gasLast[24];
 static int g_gasN = -1;
@@ -4923,7 +4933,7 @@ static void GameAutosaveGate(SavedRegs* r)
     if (!g_gasAliveAt || now - g_gasAliveAt > 10000) return;
     u8* ui = (u8*)r->rsi;
     i64 interval = (i64)r->rax;      // (the interval in microseconds, computed just before the test)
-    i64* counted = (i64*)(ui + 0xe38);
+    i64* counted = (i64*)(ui + g_gasCountedOff);
     if (interval > 0 && *counted >= interval) {
         _InterlockedIncrement(&g_gasSkipped);
         if (!g_gasLogged) {
@@ -5353,11 +5363,18 @@ static void InstallNoGameAutosave()
 {
     char v[4] = {};
     if (GetEnvironmentVariableA("MPFEVER_GAMEAUTOSAVE", v, 3) > 0 && v[0] == '1') { Buf b; b.str("game autosave: kept in sessions (MPFEVER_GAMEAUTOSAVE=1)"); LogLine(b); return; }
-    u32 at = FindSigRva("80 BE 70 11 00 00 00 75 ?? 48 3B 86 38 0E 00 00 7D ?? 48 8B CE E8");
+    // (0.9.2) the offsets left out of the signature; the counter's read from the test (see g_gasCountedOff)
+    bool fixed = GetEnvironmentVariableA("MPFEVER_GASFIXED", v, 3) > 0 && v[0] == '1';
+    u32 at = fixed ? FindSigRva("80 BE 70 11 00 00 00 75 ?? 48 3B 86 38 0E 00 00 7D ?? 48 8B CE E8")
+                   : FindSigRva("80 BE ?? ?? 00 00 00 75 ?? 48 3B 86 ?? ?? 00 00 7D ?? 48 8B CE E8");
+    if (at && !fixed) {
+        u32 off = *(u32*)(g_base + at + 12);
+        if (off >= 0x100 && off < 0x10000) g_gasCountedOff = off; else at = 0;
+    }
     u8* mem = at ? AllocNear(0x100) : 0;
     bool ok = mem && Splice(mem, at, 7, GameAutosaveGate);
     Buf b;
-    if (ok) b.str("game autosave: off in sessions (the test at ").hex(at).str(")");
+    if (ok) b.str("game autosave: off in sessions (the test at ").hex(at).str(", the time counted at +").hex(g_gasCountedOff).str(fixed ? ", MPFEVER_GASFIXED" : "").str(")");
     else b.str("game autosave: its test NOT found (the game still saves on its own in a session)");
     LogLine(b);
 }
@@ -6289,6 +6306,21 @@ static void InstallVehicleWear()
     LogLine(b);
 }
 
+// (0.9.2) the bulldozer's step from its vtable: store = the "lea rax,[vtable]" of its constructor (see InstallToolCompany)
+static u32 BulldozerStepByVtable(u32 store)
+{
+    if (!store) return 0;
+    const u8* q = (const u8*)(g_base + store);
+    if (q[0] != 0x48 || q[1] != 0x8D || q[2] != 0x05) return 0;
+    uptr vt = g_base + store + 7 + *(const i32*)(q + 3);
+    if (vt < g_textEnd || !Readable((void*)vt, 6 * 8)) return 0;     // (a vtable is in .rdata, after the code)
+    uptr fn = *(const uptr*)(vt + 5 * 8);
+    if (fn < g_textStart || fn + 7 > g_textEnd) return 0;
+    static const u8 head[] = { 0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x20 };
+    if (memcmp((const void*)fn, head, sizeof(head)) != 0) return 0;
+    return (u32)(fn - g_base);
+}
+
 static void InstallToolCompany()
 {
     if (GetEnvironmentVariableA("MPFEVER_NOTOOLCO", 0, 0) > 0) { Buf b; b.str("tools' company: off (MPFEVER_NOTOOLCO)"); LogLine(b); return; }
@@ -6314,9 +6346,17 @@ static void InstallToolCompany()
     bool ownerList = FindSigRva("49 89 BE 98 00 00 00 49 89 BE A0 00 00 00 4D 8D BE A8 00 00 00 49 89 3F 49 89 7F 08 49 89 7F 10") != 0;
     if (filter) g_bullVtable = (u32)(filter + 7 + *(i32*)(g_base + filter + 3));
     Buf b; b.str("tools' company (from TPF3-MP):");
+    // (0.9.2, build 40444 of 2026-11-19) the bulldozer's step got a larger frame ("lea rbp,[rax-0xf08]", 0xed8 before): its
+    // signature found nothing and the bulldozer stayed OFF (in separate companies its proposals and queries were the
+    // savegame's company's). Its step is slot 5 of the vtable its constructor stores (the "store" signature's lea, found in
+    // both builds), taken when it starts with the 7 bytes the splice moves ("mov rax,rsp; mov [rax+20h],rbx").
+    // MPFEVER_BULLVT=0: the signature only, as before.
+    bool bullVt = true;
+    { char v[4] = {}; if (GetEnvironmentVariableA("MPFEVER_BULLVT", v, 3) == 1 && v[0] == '0') bullVt = false; }
     for (int i = 0; i < (int)(sizeof(tools) / sizeof(tools[0])); i++) {
         const Tool& t = tools[i];
         u32 step = FindSigRva(t.step);
+        if (!step && i == 5 && bullVt) step = BulldozerStepByVtable(FindSigRva(t.store));
         bool ok = step && FindSigRva(t.store) && !(i == 5 && (!filter || !ownerList)) && Splice(mem, step, t.steal, t.fn);
         b.str(" ").str(t.name).str(ok ? " on" : " OFF").str(i + 1 < (int)(sizeof(tools) / sizeof(tools[0])) ? "," : "");
     }
@@ -7489,6 +7529,8 @@ static volatile long g_menuInjected = 0;
 // the id of its main page as it is registered, so that mpfever_ui.script.lua can put MPFever's card beside it
 static const char PAUSE_PREFIX[] = "do local s, m = _ug_filePathRequireStack, _currentModIdTr local n = s and #s local ok, e = pcall(require, \"mpfever_1::/mpfever_pause.lua\") if not ok then if s then for i = #s, n + 1, -1 do s[i] = nil end end _currentModIdTr = m print(\"[MPFEVER-PAUSE] \" .. tostring(e)) end end ";
 static volatile long g_pauseInjected = 0;
+static volatile long g_pauseToolInjected = 0;
+static bool EnvIsZero(const char* name) { char v[4] = {}; return GetEnvironmentVariableA(name, v, 3) == 1 && v[0] == '0'; }
 
 struct MenuReader { LuaReader reader; void* data; int stage; const char* held; size_t heldSize; const char* prefix; size_t prefixSize; };
 
@@ -7527,6 +7569,15 @@ extern "C" int LuaLoadDetour(void* L, LuaReader reader, void* data, const char* 
         MenuReader m = { reader, data, 0, 0, 0, PAUSE_PREFIX, sizeof(PAUSE_PREFIX) - 1 };
         int r = g_luaLoadOrig(L, MenuReaderFn, &m, chunkname, mode);
         if (_InterlockedIncrement(&g_pauseInjected) == 1) { Buf b; b.str("pause menu: MPFever card hook added (").str(chunkname).str(")"); LogLine(b); }
+        return r;
+    }
+    // (0.9.2) build 40444 draws the pause menu's page in a Lua state of its own; the game's UI state has its frame, the recipe
+    // PauseWrap of gui/main/pause_menu_tool.tl: mpfever_pause.lua catches that recipe's id the same way (see the pause card in
+    // mpfever_ui.script.lua). MPFEVER_PAUSEHOST=0: not hooked
+    if (chunkname && EndsWith(chunkname, "gui/main/pause_menu_tool.tl") && !EnvIsZero("MPFEVER_PAUSEHOST")) {
+        MenuReader m = { reader, data, 0, 0, 0, PAUSE_PREFIX, sizeof(PAUSE_PREFIX) - 1 };
+        int r = g_luaLoadOrig(L, MenuReaderFn, &m, chunkname, mode);
+        if (_InterlockedIncrement(&g_pauseToolInjected) == 1) { Buf b; b.str("pause menu (40444): MPFever card hook added on its frame (").str(chunkname).str(")"); LogLine(b); }
         return r;
     }
     return g_luaLoadOrig(L, reader, data, chunkname, mode);

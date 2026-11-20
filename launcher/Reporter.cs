@@ -228,7 +228,7 @@ namespace MPFever
                     int pe = BitConverter.ToInt32(b, 0x3c);
                     uint stamp = BitConverter.ToUInt32(b, pe + 8);
                     // (0.8.17, #407: GOG's executable of 40425 is known too)
-                    string known = stamp == 0x6ad9ce10 ? "40425" : stamp == 0x6ad9e27e ? "40425 GOG" : stamp == 0x6ad0e4e5 ? "40423" : stamp == 0x6ac50427 ? "40420" : stamp == 0x6ab69fe5 ? "40408" : "unknown build";
+                    string known = stamp == 0x6af6fd97 ? "40444" : stamp == 0x6ad9ce10 ? "40425" : stamp == 0x6ad9e27e ? "40425 GOG" : stamp == 0x6ad0e4e5 ? "40423" : stamp == 0x6ac50427 ? "40420" : stamp == 0x6ab69fe5 ? "40408" : "unknown build";
                     // (0.7.7, issue #135: a GOG copy, build 40393, read "unknown build (6ab3eec7)": the game's own log says which,
                     // and whether Steam installed it. MPFEVER_REPORTBUILD=0: as before)
                     string extra = "";
@@ -263,7 +263,7 @@ namespace MPFever
                     int pe = BitConverter.ToInt32(b, 0x3c);
                     stamp = BitConverter.ToUInt32(b, pe + 8);
                 }
-                string known = stamp == 0x6ad9ce10 || stamp == 0x6ad9e27e ? "40425" : stamp == 0x6ad0e4e5 ? "40423" : stamp == 0x6ac50427 ? "40420" : stamp == 0x6ab69fe5 ? "40408" : null;
+                string known = stamp == 0x6af6fd97 ? "40444" : stamp == 0x6ad9ce10 || stamp == 0x6ad9e27e ? "40425" : stamp == 0x6ad0e4e5 ? "40423" : stamp == 0x6ac50427 ? "40420" : stamp == 0x6ab69fe5 ? "40408" : null;
                 var tag = stamp.ToString("x8") + "|" + (known ?? BuildInLog(GameLog()) ?? "?") + "|" + (GameInstall.NotSteamCopy(gameDir) ? "other" : "steam");
                 // (an unknown build whose number the log does not give yet: not kept, the log may have it at the next call)
                 if (!tag.Contains("|?|")) lock (buildTagCache) buildTagCache[key] = tag;
@@ -278,7 +278,7 @@ namespace MPFever
         {
             switch ((stamp ?? "").ToLowerInvariant())
             {
-                case "6ad9ce10": case "6ad0e4e5": case "6ac50427": case "6ab69fe5": return "Steam";
+                case "6af6fd97": case "6ad9ce10": case "6ad0e4e5": case "6ac50427": case "6ab69fe5": return "Steam";   // (0.9.2: 6af6fd97 = 40444)
                 case "6ad9e27e": return "GOG";
                 default: return null;
             }
