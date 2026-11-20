@@ -30,6 +30,17 @@ local A = {}
 
 A.API_VERSION = 1
 
+-- (0.9.3, #448) the game's interface state has no rawget: A.declaredOf failed there ("attempt to call global 'rawget'"), so the
+-- interface's check of every command a mod sends by itself failed, and each such command left from every game (none of
+-- mpfever_modauto.lua's rules). The API's own tables have no metatable: a plain read is the same there.
+-- MPFEVER_APIRAWGET=0: as before (the check fails in that state)
+local rawget = rawget
+if rawget == nil then
+	local off = false
+	pcall(function() off = os.getenv("MPFEVER_APIRAWGET") == "0" end)
+	if not off then rawget = function(t, k) return t[k] end end
+end
+
 -- a source file path as debug.getinfo gives it, lower case, "/" separators, without the leading "@"
 local function norm(src)
 	return (tostring(src or ""):gsub("\\", "/"):lower():gsub("^[@=]", ""))

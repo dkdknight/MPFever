@@ -1439,6 +1439,24 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		end)
 		log("action " .. tostring(a.uid) .. " rebuilt as '" .. label .. "'" .. (#errs > 0 and (" after " .. #errs .. " refused form(s)") or ""))
 		if #C.errors > 0 then log("  notes: " .. table.concat(C.errors, " ; "):sub(1, 300)) end
+		-- (0.9.3, #444 #445) A build that replaces segments and whose stop or signal cannot be rebuilt (an edge object without a
+		-- model: in Transport Fever 3's build 40444 the windows of a level crossing's or a signal's type send such builds, refused
+		-- at their maker since MPFever 0.9.2) is refused on every game. Rebuilt, it removed the signal and added none; alex's game,
+		-- 2026-11-19 21:24:43: Angelo#11:5 (0.9.1) did so, Angelo#11:6 changed it again and every game stopped on the assertion
+		-- "it != components.end()" (entity 56613); started again with 0.9.2 over that session, the old action came back and stopped
+		-- the game again (#445). Every game rebuilds the same shipped form, so every game refuses it. MPFEVER_EOGUARD=0: rebuilt
+		-- without them, as before
+		if os.getenv("MPFEVER_EOGUARD") ~= "0" then
+			local lost, removed = 0, 0
+			for _, e in ipairs(C.errors) do if tostring(e):find("without model (not replicated)", 1, true) then lost = lost + 1 end end
+			pcall(function() removed = #((a.args[1].proposal or {}).removedSegments or {}) end)
+			if lost > 0 and removed > 0 then
+				result.err = "its " .. lost .. " stop(s) or signal(s) cannot be rebuilt (no model): it would remove them from the "
+					.. removed .. " segment(s) it replaces"
+				log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " refused on every game: " .. result.err)
+				return result
+			end
+		end
 		-- (0.7.7, issue #133) what this form builds, when it is not what was shipped (fewer node configurations: see C.rebuiltSig):
 		-- the engine's second application of it is recognised too, not shipped by every game. Said before the command goes,
 		-- the engine applies it after. MPFEVER_REBUILTSIG=0: the shipped build's signature only, as before
@@ -5729,6 +5747,8 @@ local function replaySend(cmd, cb, noGate)
 	if G.lagCommand then pcall(G.lagCommand) end
 	G.replayOut = (G.replayOut or 0) + 1
 	G.replaySince = G.frames
+	-- (0.9.3, #447: counted until its answer, whatever the game's hold does, see G.replayPendingBusy)
+	pcall(G.replayPendSent)
 	-- (another player's build reaches the engine here: a build this game holds was computed before it, see G.restale)
 	G.worldFrame = G.frames
 	local who, rf = G.actor, G.refund
@@ -5738,6 +5758,7 @@ local function replaySend(cmd, cb, noGate)
 	O.sendCommand(cmd, function(...)
 		if G.lagAnswer then pcall(G.lagAnswer) end
 		G.replayOut = math.max(0, (G.replayOut or 1) - 1)
+		pcall(G.replayPendAnswered)
 		-- room for a follow-up command (next segment, next form); a longer hold for an edge-object count is kept (G.eoCheckHold)
 		G.replayQuiet = G.eoHoldOwn and math.max(G.replayQuiet or 0, G.frames + 3) or (G.frames + 3)
 		pcall(buildEffects, ...)
@@ -9313,8 +9334,16 @@ local function nativeHoldAt()
 	for _, w in ipairs(G.natWait) do local t = approach(w.at) if m == nil or t < m then m = t end end
 	-- other players' builds already received: this game must stop exactly at their time
 	if (G.replayOut or 0) > 0 and G.frames - (G.replaySince or 0) > 600 then
-		log("replay without engine answer for 600 frames: hold released")
-		G.replayOut = 0
+		-- (0.9.3, #447: not while the engine makes no handshake, a save of the game: its answer comes after, see G.replayPendingBusy)
+		if G.replayPendingBusy ~= nil and G.replayPendingBusy() then
+			if not G.replayPend.holdTold then
+				G.replayPend.holdTold = true
+				log("replay without engine answer for 600 frames, the engine made " .. (G.replayPend.shakes or 0) .. " handshake(s) since (a save makes none): still held")
+			end
+		else
+			log("replay without engine answer for 600 frames: hold released")
+			G.replayOut = 0
+		end
 	end
 	-- (stops and signals placed again after a build: all in its step, see G.placeStopsAfter; not more than a minute)
 	if G.stopsAfterBusy and G.frames - G.stopsAfterBusy > 3600 then log("stops placed again: still busy after a minute, hold released"); G.stopsAfterBusy = nil end
@@ -11516,8 +11545,73 @@ end
 -- for the stops placed again after a street, and now waits for them too. MPFEVER_OWNAFTERREPLAY=0: as before (released, and said
 -- once: "OWN BUILD ... released while a replay is in the engine's hands"; a paused build not held by the stops placed again, the
 -- frames after a two-step street part not lengthened).
+-- (0.9.3, #447) A replay's command not answered yet: the next builds and paused actions wait for its answer while the engine
+-- does not run (nativeHoldAt let the game go after 600 frames without an answer and set G.replayOut to 0, so the queue went on
+-- after 10 s instead of the 20 s meant). yoyo's game, 2026-11-19 22:19:42: YkeWoudstra#6:1, a paused track with two signals, sent
+-- its dry run as the game was saving (« The COOP game.sav », 11.2 s; tickCount did not move meanwhile); the hold went at
+-- 22:19:50, YkeWoudstra#6:2 came, named the new tracks of #6:1 that were not built yet here and was SKIPPED ("unresolved"), then
+-- #6:1 was built: edges 13519 here and 13522 on YkeWoudstra's game, a 5-minute resynchronisation.
+-- Now the wait counts the engine's handshakes since the command: the new copies of GameTime the interface takes over (its
+-- tickCount changes once per handshake, see G.simTick; read every frame while a command is out, G.replayPendSample). A game that
+-- saves makes none, and neither the game's hold (nativeHoldAt) nor the queue's wait runs out then. Given up after
+-- REPLAY_PEND_SHAKES handshakes (an engine that runs and does not answer: by the 600 frames of the hold it made far more, so
+-- nothing changes there), after REPLAY_PEND_FRAMES frames in any case, after 600 frames as before when tickCount cannot be read.
+-- MPFEVER_REPLAYORDER=0: as before (the hold released after 600 frames whatever the engine does, and the queue going once
+-- G.replayOut is 0).
+G.REPLAY_PEND_SHAKES = 25      -- about 5 s of an engine that runs (a handshake every 200 ms)
+G.REPLAY_PEND_FRAMES = 3600    -- 60 s
+G.replayPend = { n = 0 }
+G.replayOrderOn = function() return os.getenv("MPFEVER_REPLAYORDER") ~= "0" end
+-- (every frame while a command is out, see guiUpdateBody; asked again in the same frame it counts nothing more)
+G.replayPendSample = function()
+	local P = G.replayPend
+	local tick = G.simTick and G.simTick() or nil
+	if tick == nil then return end
+	if P.tick == nil then P.tick = tick elseif tick ~= P.tick then P.tick, P.shakes = tick, (P.shakes or 0) + 1 end
+end
+-- a replay's command handed to the engine (replaySend), and its answer
+G.replayPendSent = function()
+	local P = G.replayPend
+	P.n, P.since, P.tick, P.shakes, P.holdTold, P.waited = P.n + 1, G.frames, G.simTick and G.simTick() or nil, 0, nil, nil
+end
+G.replayPendAnswered = function()
+	local P = G.replayPend
+	P.n = math.max(0, P.n - 1)
+	if P.n == 0 and P.waited then
+		log("replay order: the answer came " .. (G.frames - (P.since or G.frames)) .. " frames after its command (" .. (P.shakes or 0)
+			.. " handshake(s) of the engine since): the next builds go on [frame " .. G.frames .. "]")
+		P.waited = nil
+		-- (the few frames after the answer count as after any answer: the queue's 20 s are counted from it)
+		G.replaySince = G.frames
+	end
+end
+G.replayPendingBusy = function()
+	local P = G.replayPend
+	if P.n <= 0 or not G.replayOrderOn() then return false end
+	G.replayPendSample()
+	local age = G.frames - (P.since or G.frames)
+	if age >= (P.tick == nil and 600 or G.REPLAY_PEND_FRAMES) or (P.shakes or 0) >= G.REPLAY_PEND_SHAKES then
+		if age > 600 then
+			log("replay order: no answer " .. age .. " frames and " .. (P.shakes or 0) .. " handshake(s) of the engine after a replay's command: the next builds go on (desync risk) [frame " .. G.frames .. "]")
+		end
+		P.n, P.waited = 0, nil
+		return false
+	end
+	if age > 600 and not P.waited then
+		P.waited = true
+		log("replay order: a replay's command still unanswered after " .. age .. " frames (" .. (P.shakes or 0) .. " handshake(s) of the engine since, a save makes none): the next builds and paused actions wait for it [frame " .. G.frames .. "]")
+	end
+	return true
+end
+-- the queue of the other players' builds: busy while a replay is in the engine's hands (as before: its command sent, the few frames
+-- after its answer, the stops placed again after a street; 20 s at most) or its command still unanswered (above)
+G.replayQueueBusy = function()
+	return (((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)) and G.frames - (G.replaySince or 0) < 1200) or G.stopsAfterBusy ~= nil
+		or G.replayPendingBusy()
+end
+
 G.ownWaitsReplay = function(r)
-	local busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil
+	local busy = (G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil or (G.replayPendingBusy ~= nil and G.replayPendingBusy())
 	if not busy then return false end
 	if os.getenv("MPFEVER_OWNAFTERREPLAY") == "0" then
 		if not r.ownRaceLogged then
@@ -11543,7 +11637,8 @@ local function runNativeReplays()
 	-- a native replay still in the engine's hands (its commands answer in callbacks, a form or a step after the other): the
 	-- next build waits for it, as it may refer to what it makes (four quick edits of one station: the second was translated
 	-- before the first was built, issue #19). Not forever: an engine that never answers lets the queue go after 20 s.
-	local function replayBusy() return (((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0)) and G.frames - (G.replaySince or 0) < 1200) or G.stopsAfterBusy ~= nil end
+	-- (0.9.3, #447: also while its command is still unanswered, see G.replayQueueBusy)
+	local function replayBusy() return G.replayQueueBusy() end
 	for _, a in ipairs(G.nativeQueue) do
 		-- (a paused build: in its turn, see G.pt)
 		local seq = a.paused and (a.pseq or (a.natId ~= nil and G.pt.of[G.ptKey(a.origin, a.natId)])) or nil
@@ -13289,7 +13384,8 @@ local function runPausedActions()
 		-- (0.7.13: an action applied before a paused action of its player goes in that action's turn, which has come, see G.pullHold)
 		local turn = nil
 		if a.pullOf == nil then turn = G.actTurn(a) end
-		local busy = (turn or a.pullOf) and ((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil)
+		-- (0.9.3, #447: nor while a replay's command is still unanswered, see G.replayPendingBusy)
+		local busy = (turn or a.pullOf) and ((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil or (G.replayPendingBusy ~= nil and G.replayPendingBusy()))
 		local go = a.at <= now and not creating and turn ~= false and (turn == nil or (not busy and G.ptMayGo(turn))) and not (a.pullOf and busy)
 			and not (pullWait and a.pullOf == nil and not (G.pull ~= nil and G.pull.uid == a.uid))
 		-- (0.7.13, #168: its player's earlier actions still in the queue first, see G.pullHold; an error there: as before)
@@ -24352,6 +24448,8 @@ G.guiUpdateBody = function(userParams, state, guiState)
 	if G.api == nil then pcall(G.installApi) end
 	if not C.ACTIVE then return end
 	G.frames = G.frames + 1
+	-- (0.9.3, #447: the engine's handshakes while a replay's command is out, see G.replayPendingBusy)
+	if G.replayPend and G.replayPend.n > 0 then pcall(G.replayPendSample) end
 	local gp = G.gpOn
 	if gp then G.gpLast = os.clock() end
 	-- ((0.7.15, #174) this frame, for the builds an interface sends in one frame, see executeActionOnce)

@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.9.3 - (in progress)
+0.9.4 - (in progress)
   - NEW (experimental, server/, docs/DOCKER-SERVER.md): a dedicated server in one Linux Docker container (any x86-64 Docker host): the Windows game under Wine, started through
     Madeira Dock (Valve's own client library: real sign-in and licence check, no Steam desktop, about 280 MB; its sources are in server/dock/,
     unmodified at the import and maintained by this project: server/dock/MAINTAINING.md), software Vulkan with a layer that makes drawing a
@@ -19,6 +19,26 @@ MPFever - Changelog
   - NEW (server/): the game's and Dock's own logs join the server's JSON stream (components game and dock; SRV_GAME_LOG); `mods import <folder>` brings the administrator's local mods (full copy for the players,
     reduced one for the game; `mods list` shows what is missing); an administration page (SRV_ADMIN_UI=on, off by default; token, loopback port through compose.admin.yaml, the console's commands except stop,
     audited in the log). No launcher change.
+
+0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
+  - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one
+    after the other in a pause, the first with two signals. The host's game was saving (11 s on a 445 MB map) when the first
+    one's dry run reached its engine; after 600 frames without an answer MPFever let the hold go, which also ended the queue's
+    wait: the second track was replayed first, named the first one's new tracks (not built yet there) and was skipped
+    ("unresolved"), so the games differed by 3 segments. Now a replay's command is counted until its answer, and while the
+    engine makes no handshake since it was sent (a save makes none) the game stays held and the next builds, the player's own
+    paused builds and the paused actions wait for it; an engine that runs and does not answer lets them go after 600 frames as
+    before, 60 s in any case (MPFEVER_REPLAYORDER=0: as before). Test: tests/test_replayorder093.py.
+  - FIX (#444 #445, alex and Angelo, separate companies): every game stopped on the engine's assertion
+    "it != components.end()" after Angelo (MPFever 0.9.1) made a signal one-way from its window twice: rebuilt, the window's
+    build removed the signal and added none (its signal has no model), and the second change named the signal gone. 0.9.2
+    refuses those windows at their maker, but alex started the same session again with 0.9.2 and the old action of its stream
+    stopped the game again. Now a shipped build that replaces segments and whose stop or signal cannot be rebuilt is refused on
+    every game (MPFEVER_EOGUARD=0: rebuilt without them, as before). Test: tests/test_eoguard093.py.
+  - FIX (#448, a regression of 0.8.17): the interface's check of the commands a mod sends by itself failed ("attempt to call
+    global 'rawget'": the game's interface Lua state has no rawget, the mod API called it): such commands left from every game
+    instead of one. The mod API now reads its tables plainly there (MPFEVER_APIRAWGET=0: as before). Test:
+    tests/test_apirawget093.py.
 
 0.9.2 - 2026-11-19: Transport Fever 3's build 40444 (every place of the native module found again, the pause menu's cards), a second resync for a player joining during one (#440), passenger contracts per company, code signing set up
   - FIX (Transport Fever 3's build 40444, the game update of 2026-11-19, reports #437 to #440): MPFever 0.9.1 found its 100
