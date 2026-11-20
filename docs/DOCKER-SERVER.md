@@ -76,11 +76,12 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_WORLD` | | the savegame to host (name without `.sav`) |
 | `SRV_SERVER_NAME`, `SRV_MOTD` | `MPFever Server`, empty | name and welcome message |
 | `SRV_PORT` | `28090` | TCP port |
+| `SRV_BIND` | `0.0.0.0` | the host address the port is published on; `127.0.0.1` keeps it off the network (players join through Steam) |
 | `SRV_PASSWORD`, `SRV_MAX_PLAYERS` | empty, `8` | |
 | `SRV_COMPANY_MODE` | `shared` | `shared` or `separate` (one company per player) |
 | `SRV_START_SPEED`, `SRV_PAUSE_WHEN_EMPTY`, `SRV_PLAYER_SPEED_CONTROL` | `1`, `false`, `true` | |
 | `SRV_AUTOSAVE_MINUTES`, `SRV_BACKUPS` | `10`, `10` | autosave and copies kept in `srv/backups` |
-| `SRV_PUBLIC`, `SRV_PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list |
+| `SRV_PUBLIC`, `SRV_PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list; the list shows `SRV_PUBLIC_ADDRESS` (a name and port) or, empty, the IP address the announce came from: for a server on a home PC that players reach through Steam, give a placeholder (for example `steam-only.invalid:28090`) so that the list does not publish your IP address |
 | `SRV_LOG_FORMAT` | `json` | `json` (one JSON object per line) or `text` |
 | `SRV_UPDATE_CHECK` | `notify` | `notify` (new MPFever release announced in the log, never installed) or `off` |
 | `SRV_GAME_LOG` | `info` | the game's and Dock's logs in the stream: `off`, `error`, `warn`, `info` or `debug` |
@@ -219,6 +220,10 @@ One Steam account plays one game at a time: playing on it elsewhere while the se
 - Update: `docker compose pull && docker compose up -d`. Roll back: `MPFEVER_IMAGE=ghcr.io/ampynjord/mpfever-server:<version>` in `.env`. The launcher package is replaced at each start; `.env` and the volumes stay.
   Players must run the MPFever client of the server's version.
 - The container runs as uid 1001 with a read-only root file system, all capabilities dropped, `no-new-privileges`, only the game port published. `.env` holds the server password: keep it out of version control.
+- **A public server on a home PC.** What protects the PC: the game runs only inside the container (no host folder, no Docker socket, read-only root, no capability, `no-new-privileges`, at most 1024 processes, memory and CPU limits);
+  `SRV_BIND=127.0.0.1` leaves nothing reachable from the network (players join through Steam, no router port is needed); `SRV_PUBLIC_ADDRESS` stops the public list from showing your IP address; the administration page stays off;
+  secrets (Steam session, mod.io key) are in the data volume only. What remains: the game and MPFever speak to strangers (a flaw in them is the risk the container contains, not removes), and the container can still
+  reach your network and the Internet outwards (Docker Desktop has no outbound filter): use a Steam account made for the server, without payment method or friends, and keep Docker Desktop and the image up to date.
 - Exit codes: 20/21 Valve client download or hash, 30 game missing, 40/41 Steam session missing or expired, 42 savegame missing, 50 launcher failing repeatedly. Reports: `docker compose logs`, `srv/launcher.out`,
   `srv/logs/`, and Dock's `srv/dock.log` (stage names and numbers only; result codes in `server/dock/README.upstream.md`).
 

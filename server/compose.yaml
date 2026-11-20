@@ -9,7 +9,7 @@ services:
     init: true
     stop_grace_period: 120s           # the world is saved and the game closed on `docker compose stop`
     ports:
-      - "${SRV_PORT:-28090}:${SRV_PORT:-28090}"
+      - "${SRV_BIND:-0.0.0.0}:${SRV_PORT:-28090}:${SRV_PORT:-28090}"     # SRV_BIND=127.0.0.1: reachable from this machine only (players then join through Steam)
     environment:
       WORLD: ${SRV_WORLD:?set SRV_WORLD in .env (the savegame to host)}
       SERVER_NAME: ${SRV_SERVER_NAME:-MPFever Server}
@@ -40,6 +40,7 @@ services:
     tmpfs:
       - /tmp:size=512m
     cap_drop: [ALL]
+    pids_limit: 1024                  # a runaway process cannot take the host down
     security_opt:
       - no-new-privileges:true
     logging:
