@@ -31,6 +31,10 @@ MPFever - Changelog
     relay-password= in mpfever_server.properties; Docker: SRV_RELAY, SRV_RELAY_HOST_KEY, SRV_RELAY_PASSWORD): for a server behind a mobile box or CGNAT. Optional: without relay= the server listens itself, as before. Tried again every
     30 s while the relay is unreachable; the world is hosted again after a lost connection.
   - NEW (Docker server, experimental): SRV_STEAM_MODE=offline starts the game through Valve's own offline logon (Dock's MADEIRA_DOCK_OFFLINE): the account's game can run on the owner's PC at the same time, with the same licence.
+  - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
+    (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
+    names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
+    under the old name by the project; a package pushed to it earlier can be deleted.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one
