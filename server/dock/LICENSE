@@ -1,0 +1,27 @@
+Madeira Dock
+Copyright 2026 125hz
+
+SPDX-License-Identifier: GPL-3.0-or-later
+Licensed GPL-3.0-or-later with the Madeira Converter Exception.
+
+Madeira Dock is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See COPYING for the full licence text.
+
+Additional permission under GNU GPL version 3 section 7: 125hz, the copyright
+holder of Madeira Dock, grants for Madeira Dock the additional permission in
+the section "Madeira Converter Exception, version 1" of LICENSE-EXCEPTION.md.
+That file is reproduced unmodified from the Madeira application; its adoption
+line and "Scope and authority" section describe the Madeira repository and are
+kept for reference. This grant, by the Dock copyright holder, is what attaches
+the same permission to Madeira Dock's code, effective 2026-09-27.
+
+Madeira Dock is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+No rights to Valve software, Steam, game content or trademarks are granted.
+Valve's client components and games are obtained separately under Valve's and
+their publishers' terms and are not part of this repository or its releases.
+Third-party notices: THIRD-PARTY-NOTICES.md and notices/.

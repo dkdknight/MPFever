@@ -34,6 +34,15 @@ namespace MPFever
         public int StartSpeed = 1;
         public bool PauseWhenEmpty = true;
         public bool PlayerSpeedControl = true;
+        // (0.9.3) with player-speed-control: a player's pause or speed request needs the agreement of most of the connected players (false: one player is enough, as before)
+        public bool SpeedVote = false;
+        // (0.9.3) seconds of warning in the chat before a stop or a restart while players are connected (0: none, as before)
+        public int ShutdownWarning = 0;
+        // (0.9.3) a dedicated server behind a router that lets nothing in (a mobile box, CGNAT) hosts through an MPFever relay (relay/, docs/RELAY.md): it connects out to it,
+        // the players join the relay's address. relay-host-key: the key the relay (--host-key) wants from its host; relay-password: the relay's password, when it has one.
+        public string Relay = "", RelayPassword = "", RelayHostKey = "";
+        /// <summary>The address the public list shows: public-address, else the relay's.</summary>
+        public string ListedAddress => PublicAddress != "" ? PublicAddress : Relay;
         public int AutosaveMinutes = 10;
         public int Backups = 10;
         public bool RestartOnCrash = true;
@@ -112,6 +121,19 @@ namespace MPFever
             "",
             "# true: the players may pause the game and change its speed. false: only the server console may.",
             "player-speed-control=" + B(PlayerSpeedControl),
+            "",
+            "# true: a player's pause or speed request needs most of the connected players to ask the same within a minute (one player alone: at once).",
+            "# false: any player's request is enough. The server console always can.",
+            "speed-vote=" + B(SpeedVote),
+            "",
+            "# Seconds of warning in the chat before the server stops or restarts while players are connected (0: none; nobody connected: none).",
+            "shutdown-warning=" + I(ShutdownWarning),
+            "",
+            "# Host through an MPFever relay (host or host:port) instead of listening on this PC: for a server behind a router that lets nothing in. The players join the relay's",
+            "# address (shown in the public list). relay-host-key is the key the relay (--host-key) wants from its host, relay-password the relay's password when it has one.",
+            "relay=" + One(Relay),
+            "relay-host-key=" + One(RelayHostKey),
+            "relay-password=" + One(RelayPassword),
             "",
             "# Minutes between two saves of the world (0: no autosave). The world stops for a few seconds while it is saved.",
             "autosave-minutes=" + I(AutosaveMinutes),
@@ -192,6 +214,11 @@ namespace MPFever
                     return true;
                 case "pause-when-empty": return Bool(v, ref PauseWhenEmpty);
                 case "player-speed-control": return Bool(v, ref PlayerSpeedControl);
+                case "speed-vote": return Bool(v, ref SpeedVote);
+                case "shutdown-warning": return Int(v, 0, 3600, ref ShutdownWarning);
+                case "relay": Relay = v.Trim(); return true;
+                case "relay-host-key": RelayHostKey = v.Trim(); return true;
+                case "relay-password": RelayPassword = v.Trim(); return true;
                 case "autosave-minutes": return Int(v, 0, 1440, ref AutosaveMinutes);
                 case "backups": return Int(v, 0, 1000, ref Backups);
                 case "restart-on-crash": return Bool(v, ref RestartOnCrash);
@@ -497,6 +524,7 @@ namespace MPFever
             {
                 Log.Err(T("Impossible d'héberger : ", "Cannot host: ") + e.Message);
                 menuPhase = "error"; menuText = T("Impossible d'héberger : ", "Cannot host: ") + e.Message; MenuStatus();
+                if (server.Relay != "" && !serverStopping) ServerRelayRetry(launch);
                 return false;
             }
             Log.W(F("=== Serveur dédié « {0} » : chargement du monde « {1} » ===", "=== Dedicated server « {0} »: loading the world « {1} » ===", server.Name, server.World));
@@ -597,9 +625,63 @@ namespace MPFever
 
         /// <summary>"restart": the settings are read again, the world is saved, then the game starts again with it (the
         /// players are reconnected by their MPFever).</summary>
-        void RestartWorld()
+        volatile bool shutdownWarning;
+        volatile bool relayRetryPending;
+
+        /// <summary>(0.9.3, relay=) The relay could not be reached when the world started (the box lost its link, the relay is restarting): tried again every 30 s, as long as the server runs.</summary>
+        void ServerRelayRetry(bool launch)
+        {
+            if (relayRetryPending) return;
+            relayRetryPending = true;
+            Log.Warn("The relay " + server.Relay + " could not be used: trying again in 30 s.");
+            new Thread(() =>
+            {
+                try { Thread.Sleep(30000); }
+                finally { relayRetryPending = false; }
+                if (!serverStopping && hostGame == null) BeginServerWorld(launch);
+            }) { IsBackground = true, Name = "Relay retry" }.Start();
+        }
+
+        /// <summary>(0.9.3, relay=) The connection to the relay was lost while the world runs: the relay ends the session when its host leaves, so the world is hosted again (saved first;
+        /// the players come back by themselves when the relay has its host again).</summary>
+        void ServerRelayLost(string why)
+        {
+            Log.Warn("Connection to the relay lost (" + why + "): the world restarts to host again.");
+            RestartWorld(true);
+        }
+
+        /// <summary>(0.9.3, shutdown-warning=N) A stop or a restart while players are connected: they are told in the chat, at the start and as the time runs down (the last minute,
+        /// 30 s, 15 s, 10 s, then each of the last 5 seconds), and it happens after N seconds, or at once when everybody has left. True when this took the request over (it is
+        /// made again when the time is up, with warned=true); false when it must happen now (nobody connected, no warning set, or already warned).</summary>
+        bool WarnPlayers(string what, bool warned, Action again)
+        {
+            if (warned || server == null || server.ShutdownWarning <= 0 || (relay?.AdmittedCount ?? 0) == 0) return false;
+            if (shutdownWarning) return true;      // a warning is already running: this request is the same one
+            shutdownWarning = true;
+            int total = server.ShutdownWarning;
+            new Thread(() =>
+            {
+                try
+                {
+                    var marks = new HashSet<int> { 600, 300, 120, 60, 30, 15, 10, 5, 4, 3, 2, 1 };
+                    for (int left = total; left > 0; left--)
+                    {
+                        if (left == total || marks.Contains(left))
+                            HostChat("msg", server.Name, "The server " + what + " in " + (left >= 120 ? (left / 60) + " minutes" : left + (left == 1 ? " second" : " seconds")) + ". The world is saved first.");
+                        Thread.Sleep(1000);
+                        if (serverStopping || (relay?.AdmittedCount ?? 0) == 0) break;
+                    }
+                }
+                finally { shutdownWarning = false; }
+                again();
+            }) { IsBackground = true, Name = "Shutdown warning" }.Start();
+            return true;
+        }
+
+        void RestartWorld(bool warned = false)
         {
             if (serverStopping) return;
+            if (WarnPlayers("restarts", warned, () => RestartWorld(true))) return;
             CutResyncShort(T("redémarrage", "restart"));
             new Thread(() =>
             {
@@ -627,9 +709,10 @@ namespace MPFever
         /// <summary>"stop" (or the window closed): the world is saved, the players are told and the game closes. Then the
         /// window closes, or (the stop button, the console's "stop") opens again with the server stopped: MPFever starts
         /// again, which leaves nothing of the stopped session behind.</summary>
-        void StopServer(bool closeWindow)
+        void StopServer(bool closeWindow, bool warned = false)
         {
             if (serverStopping) return;
+            if (WarnPlayers("stops", warned, () => StopServer(closeWindow, true))) return;
             serverStopping = true;
             serverStoppedByHand = true;
             CutResyncShort(T("arrêt", "stop"));
@@ -728,6 +811,44 @@ namespace MPFever
         void ServerTick()
         {
             if (server == null || hostGame == null) return;
+            // (Linux server, server/) a container stop cannot close the window: MPFEVER_STOPFILE, when that file appears, stops the server
+            // properly (the world is saved first, the players are told), exactly as the console's "stop" does
+            if (GameInstall.IsLinux)
+            {
+                var stopFile = Environment.GetEnvironmentVariable("MPFEVER_STOPFILE");
+                if (!string.IsNullOrEmpty(stopFile) && File.Exists(stopFile))
+                {
+                    try { File.Delete(stopFile); } catch { }
+                    StopServer(true);
+                    return;
+                }
+            }
+            // (Linux server, server/) administration from outside: MPFEVER_CMDDIR holds one file per console command (*.cmd, its text is the command line, as
+            // typed under the log of the server window); each is run as that console command, then <name>.done is written. `mpfever-admin` of the image does it.
+            if (GameInstall.IsLinux)
+            {
+                var cmdDir = Environment.GetEnvironmentVariable("MPFEVER_CMDDIR");
+                if (!string.IsNullOrEmpty(cmdDir) && Directory.Exists(cmdDir))
+                {
+                    string[] files = new string[0];
+                    try { files = Directory.GetFiles(cmdDir, "*.cmd"); Array.Sort(files, StringComparer.Ordinal); } catch { }
+                    foreach (var cf in files)
+                    {
+                        string cmdLine;
+                        try { cmdLine = File.ReadAllText(cf).Trim(); File.Delete(cf); } catch { continue; }
+                        var doneFile = Path.ChangeExtension(cf, ".done");
+                        try
+                        {
+                            BeginInvoke((Action)(() =>
+                            {
+                                try { ServerCommand(cmdLine); }
+                                finally { try { File.WriteAllText(doneFile, DateTime.UtcNow.ToString("o")); } catch { } }
+                            }));
+                        }
+                        catch { }
+                    }
+                }
+            }
             bool st, paused; int sp;
             lock (sessionGate) { st = started; paused = pauseAt.HasValue; sp = speed; }
             if (!st)
@@ -1062,7 +1183,31 @@ namespace MPFever
             return r.Admitted().Count(o => o != p && !string.Equals(BaseName(o.Name), me, StringComparison.OrdinalIgnoreCase));
         }
 
+        /// <summary>(0.9.3, speed-vote=true) The players' pause and speed requests as votes: a request is the player's vote for that speed (0 is the pause) and counts for
+        /// a minute; the world follows when more than half of the connected players have asked the same. One player alone decides at once.</summary>
+        internal sealed class SpeedVotes
+        {
+            public const double WindowSeconds = 60;
+            readonly Dictionary<string, KeyValuePair<int, double>> votes = new Dictionary<string, KeyValuePair<int, double>>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>A player asks for a speed (0: pause). True when the request is carried (the votes are then cleared).</summary>
+            public bool Cast(string player, int speed, int players, double now, out int count, out int need)
+            {
+                need = Math.Max(1, players) / 2 + 1;
+                foreach (var k in votes.Where(v => now - v.Value.Value > WindowSeconds).Select(v => v.Key).ToList()) votes.Remove(k);
+                votes[player] = new KeyValuePair<int, double>(speed, now);
+                count = votes.Count(v => v.Value.Key == speed);
+                if (count < need) return false;
+                votes.Clear();
+                return true;
+            }
+
+            public void Forget(string player) { votes.Remove(player); }
+        }
+
         /// <summary>A player's game is in the world: the message of the day, once per connection.</summary>
+        readonly SpeedVotes speedVotes = new SpeedVotes();
+
         void ServerGreet(Peer p)
         {
             lock (greeted) if (!greeted.Add(BaseName(p.Name))) return;
@@ -1075,6 +1220,7 @@ namespace MPFever
         void ServerPlayerLeft(Peer p)
         {
             lock (greeted) greeted.Remove(BaseName(p.Name));
+            lock (speedVotes) speedVotes.Forget(BaseName(p.Name));
         }
 
         /// <summary>A player's own game as host: a guest on another version is refused (the "denied" payload), else null.</summary>
@@ -1119,6 +1265,12 @@ namespace MPFever
             try
             {
                 int port = server.Port;
+                if (server.Relay != "")
+                {
+                    serverAddresses = server.ListedAddress;
+                    Log.Ok("Players join the server through the relay: " + server.ListedAddress);
+                    return;
+                }
                 var list = new List<string>();
                 var pub = PublicAddress();
                 if (!string.IsNullOrEmpty(pub)) list.Add(NetAddr.Show(pub, port));

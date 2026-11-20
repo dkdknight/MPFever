@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -1045,12 +1045,13 @@ namespace MPFever
         /// <summary>A release published on GitHub while this launcher is open (checked every 30 minutes): installed when the
         /// game closes (a player's launcher), or by a dedicated server once nobody is connected (see ServerTick).</summary>
         volatile UpdateInfo pendingUpdate;
+        string notifiedVersion;
         DateTime gameStartedAt = DateTime.Now;
         System.Threading.Timer updateWatch;
 
         void StartUpdateWatch()
         {
-            if (updateWatch != null || autotest || Dev || !Updater.Enabled || !Updater.InReleaseFolder) return;
+            if (updateWatch != null || autotest || Dev || (!Updater.Enabled && !Updater.Notify) || !Updater.InReleaseFolder) return;
             var period = TimeSpan.FromMinutes(Updater.RecheckMinutes);
             updateWatch = new System.Threading.Timer(_ =>
             {
@@ -1060,6 +1061,16 @@ namespace MPFever
                     if (u == null) return;
                     var known = pendingUpdate;
                     if (known != null && Updater.CompareVersions(Updater.ParseVersion(u.Version), Updater.ParseVersion(known.Version)) <= 0) return;
+                    if (Updater.Notify)
+                    {
+                        // (autoupdate=notify: announced once per release, never installed: the administrator updates the image)
+                        if (notifiedVersion != u.Version)
+                        {
+                            notifiedVersion = u.Version;
+                            Log.Warn("MPFever " + u.Version + " is published; this server does not install it (autoupdate=notify): update the image.");   // (an administrator's log line, English only)
+                        }
+                        return;
+                    }
                     pendingUpdate = u;
                     if (ServerMode && !serverStarted)
                     {
@@ -1874,7 +1885,7 @@ namespace MPFever
             // not sent, as before (the chat at the load only)
             string riskyLobby = "";
             try { if (Environment.GetEnvironmentVariable("MPFEVER_MODRISKLOBBY") != "0") riskyLobby = string.Join(",", Mods.RiskyPlan(mods)); } catch { }
-            try { client?.Send(Msg.Make("modcheck", name, "{[\"differs\"]=" + LuaLit.Quote(string.Join(", ", c.Differs)) + ",[\"nohub\"]=" + LuaLit.Quote(string.Join(",", noHub)) + ",[\"risky\"]=" + LuaLit.Quote(riskyLobby) + "}")); } catch { }
+            try { client?.Send(Msg.Make("modcheck", name, "{[\"differs\"]=" + LuaLit.Quote(string.Join(", ", c.Differs)) + ",[\"nohub\"]=" + LuaLit.Quote(string.Join(",", noHub)) + ",[\"missing\"]=" + LuaLit.Quote(string.Join(",", c.MissingIds)) + ",[\"risky\"]=" + LuaLit.Quote(riskyLobby) + "}")); } catch { }
             MenuStatus();
         }
 
@@ -2227,18 +2238,40 @@ namespace MPFever
                     + kv.Value.Split(',').Sum(x => double.TryParse(Mods.SizeMb(x), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0).ToString("0.0", CultureInfo.InvariantCulture)));
         }
 
+        /// <summary>(the host) Offers a player the mods it lacks (it must accept) or says no; a server offers at once, whoever joins.</summary>
+        void OfferMods(string who, bool yes)
+        {
+            string ids; lock (modAsks) { if (!modAsks.TryGetValue(who, out ids)) return; modAsks.Remove(who); modAskDone[who] = yes ? "offered:" + ids : "refused"; }
+            var peer = relay?.Find(who);
+            if (peer == null) return;
+            if (yes)
+            {
+                double mb = ids.Split(',').Sum(x => double.TryParse(Mods.SizeMb(x), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0);
+                relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"ids\"]=" + LuaLit.Quote(ids) + ",[\"mb\"]=" + mb.ToString("0.0", CultureInfo.InvariantCulture) + "}"));
+                modSendText = F("Mods proposés à {0} : il doit accepter.", "Mods offered to {0}: they must accept.", BaseName(who));
+                if (ServerMode) Log.W("Mods offered to " + BaseName(who) + ": " + ids);
+            }
+            else
+            {
+                relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"no\"]=true}"));
+                modSendText = "";
+            }
+            MenuStatus();
+        }
+
         /// <summary>(the host) Each mod's folder, zipped, to one player in parts (as the savegame goes).</summary>
         void SendMods(Peer peer, List<string> ids)
         {
             int sent = 0;
             foreach (var id in ids)
             {
-                var dir = Mods.Dir(id);
+                var dir = Mods.StoreDir(id) ?? (Mods.Store == "" ? Mods.Dir(id) : null);
                 if (dir == null) continue;
                 string tmp = Path.Combine(Path.GetTempPath(), "mpfever-mod-" + Guid.NewGuid().ToString("N") + ".zip");
                 try
                 {
-                    ZipFile.CreateFromDirectory(dir, tmp, CompressionLevel.Optimal, false);
+                    if (Mods.StoreDir(id) == dir) Mods.ZipFolder(dir, tmp);
+                    else ZipFile.CreateFromDirectory(dir, tmp, CompressionLevel.Optimal, false);
                     var bytes = File.ReadAllBytes(tmp);
                     int parts = (bytes.Length + ResyncChunk - 1) / ResyncChunk;
                     for (int i = 0; i < parts; i++)
@@ -2630,21 +2663,7 @@ namespace MPFever
                 string who;
                 lock (modAsks) who = modAsks.Keys.FirstOrDefault(k => k == arg) ?? modAsks.Keys.FirstOrDefault(k => BaseName(k) == arg);
                 if (who == null) return;
-                string ids; lock (modAsks) { ids = modAsks[who]; modAsks.Remove(who); modAskDone[who] = option == "1" ? "offered:" + ids : "refused"; }
-                var peer = relay?.Find(who);
-                if (peer == null) return;
-                if (option == "1")
-                {
-                    double mb = ids.Split(',').Sum(x => double.TryParse(Mods.SizeMb(x), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0);
-                    relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"ids\"]=" + LuaLit.Quote(ids) + ",[\"mb\"]=" + mb.ToString("0.0", CultureInfo.InvariantCulture) + "}"));
-                    modSendText = F("Mods proposés à {0} : il doit accepter.", "Mods offered to {0}: they must accept.", BaseName(who));
-                }
-                else
-                {
-                    relay.Send(peer, Msg.Make("modoffer", hostName, "{[\"no\"]=true}"));
-                    modSendText = "";
-                }
-                MenuStatus();
+                OfferMods(who, option == "1");
             }
             else if (cmd == "takemods")
             {
@@ -3719,6 +3738,7 @@ namespace MPFever
                 case "password": return T("Mot de passe du relais refusé (relaypw= dans mpfever_settings.txt).", "The relay's password was refused (relaypw= in mpfever_settings.txt).");
                 case "version": return T("Le relais utilise une autre version de MPFever.", "The relay runs another MPFever version.");
                 case "relay": return DeniedText(new Dictionary<object, object> { ["reason"] = "relay" });
+                case "hostkey": return "The relay refused this server's host key (relay-host-key= in mpfever_server.properties).";
                 case "full": return T("Le relais est plein.", "The relay is full.");
                 default: return e.Message;
             }
@@ -3728,7 +3748,8 @@ namespace MPFever
         {
             ParseRelayAddress(spec, out string relayHost, out int relayPort);
             Log.W(F("Hébergement par le relais {0}:{1}...", "Hosting through the relay {0}:{1}...", relayHost, relayPort));
-            remote.NoHandover = !HandoverAllowed();
+            remote.NoHandover = server != null || !HandoverAllowed();   // (a dedicated server's session ends with it: no player takes over)
+            if (server != null) remote.HostKey = server.RelayHostKey;
             try { remote.Connect(relayHost, relayPort, name, password, migrationToken); }
             catch (Exception e)
             {
@@ -3736,7 +3757,7 @@ namespace MPFever
                 try { r?.Dispose(); } catch { }
                 throw new InvalidOperationException(ServerWhy(e));
             }
-            remote.Lost += why => { try { BeginInvoke((Action)(() => { if (relay == remote) EndSession(T("=== Connexion au relais perdue : fin de la session ===", "=== Connection to the relay lost: the session ends ===")); })); } catch { } };
+            remote.Lost += why => { try { BeginInvoke((Action)(() => { if (relay == remote) { if (server != null) ServerRelayLost(why); else EndSession(T("=== Connexion au relais perdue : fin de la session ===", "=== Connection to the relay lost: the session ends ===")); } })); } catch { } };
             remoteAddress = NetAddr.Show(relayHost, relayPort);
             Log.Ok(F("Hébergement par le relais {0}:{1} : les joueurs rejoignent à cette adresse.", "Hosting through the relay {0}:{1}: players join at that address.", relayHost, relayPort));
         }
@@ -3751,6 +3772,8 @@ namespace MPFever
             // (a host that has a relay in mpfever_settings.txt hosts through it: no port to open, one address for everybody)
             string relayPw = null;
             string relaySpec = server == null ? RelaySetting(out relayPw) : null;
+            // (0.9.3) a dedicated server whose relay= is set hosts through it (the players join the relay: no port to open, nothing of this PC reachable)
+            if (server != null && server.Relay != "") { relaySpec = server.Relay; relayPw = server.RelayPassword; }
             if (relayOverride != null) { relaySpec = relayOverride; relayPw = relayPasswordOverride ?? ""; }
             RemoteRelay remote = relaySpec != null ? new RemoteRelay() : null;
             relay = remote != null ? (IRelay)remote : new Relay();
@@ -4983,10 +5006,16 @@ namespace MPFever
                         var differs = h.TryGetValue("differs", out var dv) && dv is string ds ? ds : "";
                         lock (modIssues) { if (differs != "") modIssues[BaseName(from.Name)] = differs; else modIssues.Remove(BaseName(from.Name)); }
                         var nohub = h.TryGetValue("nohub", out var nv) && nv is string ns ? ns : "";
+                        // (0.9.2, a Docker server) the Mod Hub's mods too, from the server's store of full copies (MPFEVER_MODSTORE): a player who lacks one is offered it
+                        var storeIds = new List<string>();
+                        if (Mods.Store != "" && h.TryGetValue("missing", out var miv) && miv is string mis)
+                            storeIds = mis.Split(',').Select(x => x.Trim()).Where(x => x != "" && Mods.StoreDir(x) != null).ToList();
+                        if (storeIds.Count > 0) nohub = string.Join(",", nohub.Split(',').Select(x => x.Trim()).Where(x => x != "").Union(storeIds, StringComparer.OrdinalIgnoreCase));
+                        bool offerAtOnce = false;
                         lock (modAsks)
                         {
                             // (only mods of this savegame installed here: nothing else is ever sent)
-                            var ids = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && Mods.Dir(x) != null && Mods.Parse(lobbyMods).Any(e => e.Id.Equals(x, StringComparison.OrdinalIgnoreCase))).ToList();
+                            var ids = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && (Mods.StoreDir(x) != null || (Mods.Store == "" && Mods.Dir(x) != null)) && Mods.Parse(lobbyMods).Any(e => e.Id.Equals(x, StringComparison.OrdinalIgnoreCase))).ToList();
                             // (0.6.7) a missing mod this PC cannot send is said, never dropped silently (the host saw nothing on 2026-11-01)
                             var unsendable = nohub.Split(',').Select(x => x.Trim()).Where(x => x != "" && !ids.Contains(x)).ToList();
                             if (unsendable.Count > 0)
@@ -4995,7 +5024,8 @@ namespace MPFever
                             if (ids.Count > 0 && !modAskDone.ContainsKey(from.Name))
                             {
                                 modAsks[from.Name] = string.Join(",", ids);
-                                Log.Warn(F("{0} n'a pas {1} mod(s) qu'aucun Mod Hub n'a : {2}. Vous pouvez les lui envoyer depuis la page Multijoueur.", "{0} lacks {1} mod(s) no Mod Hub has: {2}. You can send them from the Multiplayer page.", BaseName(from.Name), ids.Count, string.Join(", ", ids)));
+                                if (ServerMode && Mods.Store != "") offerAtOnce = true;
+                                else Log.Warn(F("{0} n'a pas {1} mod(s) qu'aucun Mod Hub n'a : {2}. Vous pouvez les lui envoyer depuis la page Multijoueur.", "{0} lacks {1} mod(s) no Mod Hub has: {2}. You can send them from the Multiplayer page.", BaseName(from.Name), ids.Count, string.Join(", ", ids)));
                             }
                             else if (ids.Count == 0) modAsks.Remove(from.Name);
                         }
@@ -5005,6 +5035,7 @@ namespace MPFever
                         OnPlayerRiskyMods(BaseName(from.Name), risky);
                         BroadcastLobby();
                         MenuStatus();
+                        if (offerAtOnce) OfferMods(from.Name, true);
                     }
                     break;
 
@@ -5359,6 +5390,19 @@ namespace MPFever
                             // a request for the speed already in effect changes nothing (and must not echo back)
                             bool same; lock (sessionGate) same = d > 0 && !pauseAt.HasValue && (int)d == speed || d <= 0 && pauseAt.HasValue;
                             if (same) break;
+                            // (0.9.3, speed-vote=true) the players decide together: this request is a vote, carried when most of the connected players ask the same
+                            if (server != null && server.SpeedVote && from != null)
+                            {
+                                int want = d <= 0 ? 0 : (int)d, count, need; bool carried;
+                                lock (speedVotes) carried = speedVotes.Cast(BaseName(from.Name), want, Math.Max(1, relay?.AdmittedCount ?? 1), Now, out count, out need);
+                                string what = want == 0 ? "pause" : "speed x" + want;
+                                if (!carried)
+                                {
+                                    HostChat("msg", server.Name, BaseName(from.Name) + " asks for " + what + " (" + count + "/" + need + "): ask for the same to agree, within a minute.");
+                                    break;
+                                }
+                                if (need > 1) HostChat("msg", server.Name, "Vote carried: " + what + " (" + count + "/" + need + ").");
+                            }
                             if (d <= 0) Pause(m.From); else SetSpeed((int)d, m.From);
                         }
                         break;
@@ -5743,6 +5787,19 @@ namespace MPFever
                 if (!(saveDone.TryGetValue("ok", out var okv) && okv is bool ok && ok)) { Log.Err(T("Resynchronisation abandonnée : sauvegarde refusée.", "Resynchronisation cancelled: save refused.")); return; }
                 Thread.Sleep(1000);   // the file is closed by the game after its callback
                 string file = GameInstall.FindSave(ResyncSaveName);
+                if (GameInstall.IsLinux)
+                {
+                    // (Linux server) the game's save file may still be written after its callback: wait for it and for its size to stop moving
+                    long last = -1; int still = 0;
+                    for (int w = 0; w < 120 && still < 4; w++)
+                    {
+                        file = GameInstall.FindSave(ResyncSaveName);
+                        long sz = -1; try { if (file != null && File.GetLastWriteTimeUtc(file) >= t0.AddSeconds(-5)) sz = new FileInfo(file).Length; } catch { }
+                        if (sz > 0 && sz == last) still++; else still = 0;
+                        last = sz;
+                        Thread.Sleep(500);
+                    }
+                }
                 if (file == null || File.GetLastWriteTimeUtc(file) < t0.AddSeconds(-5))
                 {
                     Log.Err(F("Resynchronisation abandonnée : fichier « {0}.sav » introuvable.", "Resynchronisation cancelled: file « {0}.sav » not found.", ResyncSaveName));

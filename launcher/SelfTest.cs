@@ -62,6 +62,8 @@ namespace MPFever
             ok &= RunDiag();
             ok &= RunIssue111();
             ok &= RunSession067();
+            ok &= RunModStore();
+            ok &= RunSpeedVote();
             ok &= RunDlcs();
             ok &= RunSaveMods();
             ok &= RunServerConfig();
@@ -1656,6 +1658,74 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             }
             catch (Exception e) { Check(false, "diagnostic: " + e.Message); }
             finally { Environment.SetEnvironmentVariable("MPFEVER_DIAG", kept); }
+            return ok;
+        }
+
+        /// <summary>(0.9.3) The players' pause and speed requests as votes (speed-vote=true): the property is read and written, and a request is carried by more than half of the connected players.</summary>
+        static bool RunSpeedVote()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var c = new ServerConfig { SpeedVote = true, ShutdownWarning = 45, Relay = "relay.example.org:28091", RelayHostKey = "host-key-123", RelayPassword = "relay-pw" };
+            var problems = new List<string>();
+            var path = Path.Combine(Path.GetTempPath(), "mpf-vote-" + Guid.NewGuid().ToString("N") + ".properties");
+            try
+            {
+                c.Save(path);
+                var r = ServerConfig.Load(path, problems, out _);
+                Check(r.SpeedVote && !new ServerConfig().SpeedVote, "speed vote: written and read, off by default");
+                Check(r.ShutdownWarning == 45 && new ServerConfig().ShutdownWarning == 0, "shutdown warning: written and read, none by default");
+                Check(r.Relay == "relay.example.org:28091" && r.RelayHostKey == "host-key-123" && r.RelayPassword == "relay-pw" && new ServerConfig().Relay == "", "server relay: written and read, none by default");
+                Check(r.ListedAddress == "relay.example.org:28091" && new ServerConfig { PublicAddress = "mp.example.org:1", Relay = "r:2" }.ListedAddress == "mp.example.org:1", "server relay: the list shows the public address, else the relay's");
+            }
+            finally { try { File.Delete(path); } catch { } }
+            var v = new MainForm.SpeedVotes();
+            int n, need;
+            Check(v.Cast("Ann", 2, 1, 0, out n, out need) && need == 1, "speed vote: one player alone decides at once");
+            Check(!v.Cast("Ann", 0, 3, 0, out n, out need) && n == 1 && need == 2, "speed vote: 1 of 3 is not enough (2 needed)");
+            Check(v.Cast("Bob", 0, 3, 10, out n, out need) && n == 2, "speed vote: a second player asking the same carries it");
+            Check(!v.Cast("Ann", 0, 3, 20, out n, out need) && n == 1, "speed vote: the votes were cleared when it was carried");
+            Check(!v.Cast("Bob", 4, 3, 30, out n, out need) && n == 1, "speed vote: another speed is another vote");
+            Check(!v.Cast("Cid", 0, 3, 100, out n, out need) && n == 1, "speed vote: votes older than a minute no longer count (Ann's pause at 20, Bob's x4 at 30)");
+            Check(!v.Cast("Ann", 2, 2, 200, out n, out need) && need == 2, "speed vote: 2 players need both");
+            v.Forget("Ann");
+            Check(!v.Cast("Bob", 2, 2, 210, out n, out need) && n == 1, "speed vote: the vote of a player who left is forgotten");
+            return ok;
+        }
+
+        /// <summary>(0.9.2) A Docker server keeps each mod.io mod in full beside the reduced copy the game runs from: found by the mod's name, sent without its own note.</summary>
+        static bool RunModStore()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
+            var root = Path.Combine(Path.GetTempPath(), "mpf-store-" + Guid.NewGuid().ToString("N"));
+            var old = Environment.GetEnvironmentVariable("MPFEVER_MODSTORE");
+            try
+            {
+                var dir = Path.Combine(root, "6440137");
+                Directory.CreateDirectory(Path.Combine(dir, "res"));
+                File.WriteAllText(Path.Combine(dir, ".modio.json"), "{\"mod_id\": 6440137, \"name\": \"apasz_zigzag\"}");
+                File.WriteAllText(Path.Combine(dir, "mod.lua"), "x");
+                File.WriteAllBytes(Path.Combine(dir, "res", "big.dds"), new byte[5000]);
+                Environment.SetEnvironmentVariable("MPFEVER_MODSTORE", root);
+                Check(Mods.Store == root, "mod store: the folder comes from MPFEVER_MODSTORE");
+                Check(Mods.StoreDir("apasz_zigzag") == dir, "mod store: a mod is found by its name");
+                Check(Mods.StoreDir("unknown_mod") == null, "mod store: an unknown mod is not found");
+                var zip = Path.Combine(root, "t.zip");
+                Mods.ZipFolder(dir, zip);
+                using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                {
+                    var names = z.Entries.Select(e => e.FullName).OrderBy(x => x).ToList();
+                    Check(string.Join(",", names) == "mod.lua,res/big.dds", "mod store: the zip holds the files, not the store's own note (" + string.Join(",", names) + ")");
+                }
+                Environment.SetEnvironmentVariable("MPFEVER_MODSTORE", "");
+                Check(Mods.Store == "" && Mods.StoreDir("apasz_zigzag") == null, "mod store: none set, none used");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_MODSTORE", old);
+                try { Directory.Delete(root, true); } catch { }
+            }
             return ok;
         }
 

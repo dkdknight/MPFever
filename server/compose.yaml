@@ -1,0 +1,59 @@
+# MPFever dedicated server (experimental). Setup and first start: docs/DOCKER-SERVER.md.   docker compose up -d
+name: mpfever-server
+
+services:
+  mpfever-server:
+    image: ${MPFEVER_IMAGE:-ghcr.io/ampynjord/mpfever-server:experimental}
+    container_name: ${SRV_CONTAINER_NAME:-mpfever-server}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 200s           # `docker compose stop`: the players are warned (SRV_SHUTDOWN_WARNING seconds, 60 by default), the world is saved and the game closed
+    ports:
+      - "${SRV_BIND:-0.0.0.0}:${SRV_PORT:-28090}:${SRV_PORT:-28090}"     # SRV_BIND=127.0.0.1: reachable from this machine only (players then join through Steam)
+    environment:
+      WORLD: ${SRV_WORLD:?set SRV_WORLD in .env (the savegame to host)}
+      SERVER_NAME: ${SRV_SERVER_NAME:-MPFever Server}
+      PORT: ${SRV_PORT:-28090}
+      PASSWORD: ${SRV_PASSWORD:-}
+      MAX_PLAYERS: ${SRV_MAX_PLAYERS:-8}
+      COMPANY_MODE: ${SRV_COMPANY_MODE:-shared}
+      START_SPEED: ${SRV_START_SPEED:-1}
+      PAUSE_WHEN_EMPTY: ${SRV_PAUSE_WHEN_EMPTY:-false}
+      PLAYER_SPEED_CONTROL: ${SRV_PLAYER_SPEED_CONTROL:-true}
+      SPEED_VOTE: ${SRV_SPEED_VOTE:-false}
+      SHUTDOWN_WARNING: ${SRV_SHUTDOWN_WARNING:-60}
+      RELAY: ${SRV_RELAY:-}
+      RELAY_HOST_KEY: ${SRV_RELAY_HOST_KEY:-}
+      RELAY_PASSWORD: ${SRV_RELAY_PASSWORD:-}
+      AUTOSAVE_MINUTES: ${SRV_AUTOSAVE_MINUTES:-10}
+      BACKUPS: ${SRV_BACKUPS:-10}
+      PUBLIC: ${SRV_PUBLIC:-false}
+      PUBLIC_ADDRESS: ${SRV_PUBLIC_ADDRESS:-}
+      MOTD: ${SRV_MOTD:-}
+      LOG_FORMAT: ${SRV_LOG_FORMAT:-json}
+      UPDATE_CHECK: ${SRV_UPDATE_CHECK:-notify}
+      MODS_SYNC: ${SRV_MODS_SYNC:-auto}
+      GAME_LOG: ${SRV_GAME_LOG:-info}
+      ADMIN_UI: ${SRV_ADMIN_UI:-off}
+      STEAM_MODE: ${SRV_STEAM_MODE:-online}
+    volumes:
+      - data:/data        # Wine prefix, Valve client, Steam session (secrets/), saves, launcher and its logs and backups
+      - game:/game        # the "lite" game install (about 1 GB on disk)
+    mem_limit: ${SRV_MEM_LIMIT:-16g}
+    cpus: ${SRV_CPUS:-2}
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    cap_drop: [ALL]
+    pids_limit: 1024                  # a runaway process cannot take the host down
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+volumes:
+  data:
+    name: ${SRV_DATA_VOLUME:-mpfever-data}
+  game:
+    name: ${SRV_GAME_VOLUME:-mpfever-game}

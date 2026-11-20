@@ -28,6 +28,24 @@ Optionally (both experimental, both off by default): the next player can **take 
 ([migration](#host-migration-experimental)), and the relay can **keep the latest save** of the session so the game can go on later
 ([keeping the save](#keeping-the-save-on-the-relay-experimental)).
 
+## A dedicated server behind a router that lets nothing in (0.9.3)
+
+A dedicated server (the Docker one, `SRV_RELAY=`; or `relay=` in `mpfever_server.properties`) can host through a relay instead of listening itself: it connects out to the relay as its host and the players join
+the relay's address. Start that relay with `--host-key KEY` (or `MPFEVER_RELAY_HOST_KEY`; `--host-key-file`): only the launcher that shows the key may host (a wrong key is refused with the reason `hostkey`, and counts
+like a wrong password: after a few from one address, even the right one waits), and the players need **no password** (or the `--password` one). A relay with a host key has one host for good: `--host-key` and
+`--migration` cannot be used together, and the server's session ends with it. The key must differ from the password. Without `--host-key` nothing changes: the first player in hosts.
+
+**Showing it in the public list.** The list looks at the address an announce comes from, and a server behind a router that lets nothing in is not reachable there. A relay started with `--list-url
+https://mpfever.knight-hd.fr` (or `MPFEVER_RELAY_LIST_URL`) **together with `--host-key`** announces its host itself, from the relay's public address: the server (its launcher sends `tun_list`, the same data as its own
+announce) is then listed with the relay's address, reachable, with no Steam involved. The relay sends the name, world, mode, version, build, motd, password flag and the places the relay allows; the number of players
+is the relay's own count; there is no Steam ID and no address of the host's choosing. It announces at once, then every 30 s and when a player comes or goes, and takes the entry off the list when the host leaves or stops
+sending for 2 minutes. Without `--list-url` the relay announces nothing. `--list-url` needs `--host-key`: the key is what says the host is the server, not a stranger.
+
+What a dedicated server does not use or does differently behind a relay: **host migration** is off (its session ends with it; `--host-key` refuses `--migration`), the **save kept by the relay** (`--checkpoint-dir`) is not
+used (the server keeps its own saves and backups; `--host-key` refuses `--resume-without-host`, which would let a player host from that save), the host rules sent for a takeover (`hoststate`) are not sent, no router port is opened
+(UPnP), and joining "through Steam" exists only while the server's Steam is online. The server's own `password=` still applies (it is checked by the server, not by the relay), as do its `max-players` and its version check;
+the relay's `--max-players` also caps the players (the smaller number wins).
+
 ## Relay or dedicated server
 
 They are two different things:
@@ -42,8 +60,8 @@ They are two different things:
 | Public server list, autosaves, restarts | Yes | No |
 
 Use the dedicated server when a Windows PC can run the game all the time. Use the relay when the host has no port to open, when you want a
-stable address, or when you want a cheap always-on meeting point on a small machine. A Linux dedicated server (the game itself on Linux) does not
-exist: the relay is not that, and the game's native module (`winhttp.dll`) has no Linux version.
+stable address, or when you want a cheap always-on meeting point on a small machine. The relay is not a dedicated server in Docker; that one now exists
+(experimental): the Windows game under Wine in a Docker container, see [DOCKER-SERVER.md](DOCKER-SERVER.md).
 
 ## Quick start
 
@@ -442,8 +460,8 @@ MPFEVER_RELAY_PASSWORD=SECRET docker compose -f relay/compose.yaml up -d --build
 ```
 
 **A published image.** The Release build workflow can also push the image to the GitHub container registry, only when "docker" is ticked at
-its start (off by default): `ghcr.io/<owner>/mpfever-relay-docker`, tagged with the version and `latest`, for x64 and arm64, self-tested once pushed.
-When the project has published it, nothing has to be built: `docker pull ghcr.io/<owner>/mpfever-relay-docker:<version>`, then the same `docker run`
+its start (off by default): `ghcr.io/<owner>/mpfever-relay`, tagged with the version and `latest`, for x64 and arm64, self-tested once pushed.
+When the project has published it, nothing has to be built: `docker pull ghcr.io/<owner>/mpfever-relay:<version>`, then the same `docker run`
 with that name instead of `mpfever-relay`. The package's visibility is set on its page on GitHub (on the test fork it came out public, like the repository, and could be pulled without signing in).
 
 The password and the keys come from the environment (see [Settings](#secrets-from-the-environment)). The other options are the arguments of

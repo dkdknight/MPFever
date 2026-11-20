@@ -1,0 +1,9 @@
+# Local build instead of the published image:   docker compose -f compose.yaml -f compose.build.yaml build
+# Needs dist/MPFever-server.zip (see Dockerfile).
+services:
+  mpfever-server:
+    build:
+      context: .
+      args:
+        VERSION: ${SRV_BUILD_VERSION:-local}
+        APT_MIRROR: ${SRV_APT_MIRROR:-}   # e.g. http://fr.archive.ubuntu.com/ubuntu when archive.ubuntu.com is unreachable

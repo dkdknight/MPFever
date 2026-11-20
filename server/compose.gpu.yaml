@@ -1,0 +1,10 @@
+# Optional: use a real GPU (Intel/AMD through /dev/dri, Linux hosts) instead of software rendering. NOT validated. On Docker Desktop with WSL2 it cannot work as is:
+# the container then gets /dev/dxg (no /dev/dri) and none of the WSL driver libraries; software rendering (the default) is the supported mode there.
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
+services:
+  mpfever-server:
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      MPF_VKNULL: "0"
+      MPFEVER_ENV_HOST: ""
