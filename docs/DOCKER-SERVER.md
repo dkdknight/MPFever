@@ -242,10 +242,13 @@ Planned, in no promised order (none of it is done unless it says so):
 
 - **Creating a world with no game session to click through.** Today a new world is made in the game's own *New Game* page on a PC and imported (`import-save`): there is no command line or script of the game that
   creates one. Goal: the server creates its world by itself from a few settings (map size, climate, seed, start year, difficulty, terrain and civilisation sliders), headless, so that a fresh container needs no PC with the game
-  open. How is not decided (the game's own New Game flow driven inside the container, or an engine/script interface if one exists); to be proven on a real start before anything is announced.
+  open. Decided: **as much as possible from the command line** (an engine or script interface of the game first, none is known yet); the game's graphical New Game flow, driven inside the container, only as a last
+  resort. To be proven on a real start before anything is announced.
 - **The optional administration page to reach every option of the dedicated server.** It exists (off by default, token, loopback port) with the console's commands. Goal: also read and change every setting of the server
   (the properties file: name, world, players, speed rules, votes, public list, relay, shutdown warning...), the game options of the world, the computer companies, the savegames and backups, the mods, the players (kick, ban)
-  and the logs, with the changes that need a restart said as such and applied on request. Still off by default.
+  and the logs, with the changes that need a restart said as such and applied on request. Still off by default. Scope decided: the server's settings, the game options and the computer companies, the players
+  (kick, ban), the savegames, backups and mods.
+- **On hold for now (the owner's decision, 2026-11-20):** the items below and the split of this work into separate pull requests.
 - **Remaining checks:** a player receiving the mods from the server, several clients at once, runs of several hours, the offline logon ticket's lifetime, a second PC for the owner's game, the GPU variant (Linux hosts only).
 - **Not planned:** a way around Steam's licence or sessions; Steam Workshop mods (Transport Fever 3 has none).
 
