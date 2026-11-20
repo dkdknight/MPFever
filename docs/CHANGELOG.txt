@@ -27,6 +27,10 @@ MPFever - Changelog
   - NEW (server/): only one server instance per data volume (a lock in the volume, exit code 60): two containers on the same volumes would share the Steam session, the savegame and the port.
   - NEW (dedicated server): shutdown-warning=N: a stop or a restart while players are connected is announced in their chat and counted down (the last minute, 30 s, 15 s, 10 s, the last 5 s), then happens;
     at once when nobody is connected. 0 (the default of the file) keeps the immediate stop. Docker: SRV_SHUTDOWN_WARNING (60), `docker compose stop` waits for it.
+  - NEW (relay and dedicated server): the relay's --host-key (MPFEVER_RELAY_HOST_KEY): only the launcher that shows the key may host, the players need no password; and a dedicated server can host through a relay (relay=, relay-host-key=,
+    relay-password= in mpfever_server.properties; Docker: SRV_RELAY, SRV_RELAY_HOST_KEY, SRV_RELAY_PASSWORD): for a server behind a mobile box or CGNAT. Optional: without relay= the server listens itself, as before. Tried again every
+    30 s while the relay is unreachable; the world is hosted again after a lost connection.
+  - NEW (Docker server, experimental): SRV_STEAM_MODE=offline starts the game through Valve's own offline logon (Dock's MADEIRA_DOCK_OFFLINE): the account's game can run on the owner's PC at the same time, with the same licence.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one

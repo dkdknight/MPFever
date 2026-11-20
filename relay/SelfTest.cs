@@ -417,6 +417,7 @@ namespace MPFever.StandaloneRelay
             Check("a host key equal to the password, or with --migration, is refused",
                 Program.Validate(new RelayOptions { HostKey = "same-secret-value", Password = "same-secret-value" }) != null
                 && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", Migration = true }) != null
+                && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", ResumeWithoutHost = true, CheckpointDirectory = "/data", CheckpointOwnerKey = "owner-key-0123456789", CheckpointRecoveryKey = "recovery-key-0123456" }) != null
                 && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", Password = "player-password" }) == null);
             var env = new RelayOptions();
             Program.ApplyEnvironment(env, n => n == "MPFEVER_RELAY_HOST_KEY" ? "from-the-environment-key" : null);

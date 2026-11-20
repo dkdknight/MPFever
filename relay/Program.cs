@@ -46,6 +46,7 @@ See docs/RELAY.md.";
             if (o.ResumeWithoutHost && string.IsNullOrEmpty(o.CheckpointDirectory)) return "--resume-without-host needs --checkpoint-dir";
             // (the host key is the one thing that keeps a stranger from hosting: it is not the password every player knows, and a relay with a host key has one host for good)
             if (o.HostKey != "" && o.HostKey == o.Password) return "the host key must differ from the password: every player knows the password";
+            if (o.HostKey != "" && o.ResumeWithoutHost) return "--host-key and --resume-without-host cannot be used together: with a host key only the server hosts, never a player from the kept save";
             if (o.HostKey != "" && o.Migration) return "--host-key and --migration cannot be used together: with a host key the relay's host is always the one that shows it";
             // (a key that is another key, or the password every player knows, would give the save to whoever has the other)
             if (o.CheckpointOwnerKey != "" && o.CheckpointOwnerKey == o.Password) return "the owner key must differ from the password: every player knows the password";
@@ -158,6 +159,7 @@ See docs/RELAY.md.";
                 if (opt.MaxConnections == 0) Log.Warn("--max-connections 0: no limit on connections. Do not use it on a relay reachable from the Internet.");
                 if (opt.Password == "" && opt.HostKey == "") Log.Warn("No password is set: anybody who can reach this port may join, or host. Use --password on a public relay.");
                 else if (opt.Password == "") Log.Ok("No password: anybody may join as a player; only the launcher that shows the host key may host.");
+                if (opt.HostKey != "" && !string.IsNullOrEmpty(opt.CheckpointDirectory)) Log.Warn("--checkpoint-dir with --host-key: a dedicated server keeps its own saves and does not store one on the relay.");
                 foreach (var weak in WeakSecrets(opt)) Log.Warn("Weak secret: " + weak + ".");
                 var quit = new ManualResetEvent(false);
                 Console.CancelKeyPress += (s, e) => { e.Cancel = true; quit.Set(); };

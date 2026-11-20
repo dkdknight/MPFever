@@ -87,6 +87,8 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_GAME_LOG` | `info` | the game's and Dock's logs in the stream: `off`, `error`, `warn`, `info` or `debug` |
 | `SRV_ADMIN_UI`, `SRV_ADMIN_PORT` | `off`, `8080` | the administration page (see Administering); it listens only when `on`, and `compose.admin.yaml` publishes it on 127.0.0.1 |
 | `SRV_SHUTDOWN_WARNING` | `60` | seconds of warning in the players' chat before a stop or restart (`docker compose stop`, `mpfever-admin restart|stop`) when players are connected; at once when nobody is; `0`: no warning. Check who is connected first with `mpfever-admin status` |
+| `SRV_STEAM_MODE` | `online` | `offline` (experimental): the game starts through Valve's offline logon, so the account's game can run elsewhere at the same time (see "Steam: one licence...") |
+| `SRV_RELAY`, `SRV_RELAY_HOST_KEY`, `SRV_RELAY_PASSWORD` | empty | host through an MPFever relay (optional): its address, the relay's `--host-key`, its password if it has one |
 | `SRV_SPEED_VOTE` | `false` | `true`: the players' pause/play/speed requests are votes (more than half of the connected players within a minute; one player alone decides at once); the administrator can always use `mpfever-admin pause`, `resume` and `speed` |
 | `SRV_MODS_SYNC` | `auto` | `auto` (the world's mod.io mods are installed or updated at every start, when `mods login` was done) or `off` |
 | `SRV_MEM_LIMIT`, `SRV_CPUS` | `16g`, `2` | container limits: about 12 GB and 1 CPU for the small world (minimum), 16 GB and 2 CPUs for a world of 120 MB; the CPU also sets how fast it starts and resynchronises |
@@ -199,6 +201,36 @@ the image is updated (`docker compose pull && docker compose up -d`), so the ver
 `login` uses Steam's own authentication service (the QR flow of the Steam mobile app) and keeps a **refresh token** in `secrets/steam.json` of the data volume (mode 0600). At every game
 start the token is handed to Dock as its one-use transfer file; it never appears on a command line, in the environment or in the image. When it expires the server stops with
 a message (`login` again). Revoke it from your Steam account (Settings, Security) if it leaks.
+
+## Steam: one licence, the server and the owner's own game together
+
+Steam lets an account run Transport Fever 3 on one device at a time: signed in online, the server's game would end the owner's game on another PC ("another session is already playing"). `SRV_STEAM_MODE=offline`
+(experimental, off by default: `online`) starts the game through **Valve's own offline logon**, the mechanism of desktop Steam's Offline Mode: Dock asks Valve's client whether the account may log on offline
+(`CanLogonOffline`: it needs the *offline logon ticket* Steam issued to it during an earlier online start), then `LogOnOffline`, and the licence is answered from the client's own cache; the game starts through the same
+`LaunchApp` call. Nothing is forged or bypassed: no ticket is stored, read or checked by Dock, and a refusal ends the start (Dock results 50, 51, 52 in `srv/dock.log`, see `server/dock/docs/OFFLINE.md`).
+
+Measured on the PC that runs the server (2026-11-20, game build 40444): after an online start `session-offline-ready=1`; with `SRV_STEAM_MODE=offline` the log shows `session-offline-can=1`, `session-offline-logon-result=1`,
+the game listed among 864 cached licences and `launch-game-running=1`, no `session-online` line, and the container holds no connection to Steam's servers; **Transport Fever 3 then started on the same PC with the same account
+without the "another session" question**, and an MPFever client joined the server over TCP (and later through a relay) in sync.
+
+What changes while offline: Steam networking is not available, so **players join by address (TCP) or through a relay, not "through Steam"** (the public list still announces the Steam ID, the join tries the address); the game's
+Steam calls are answered by the client's cache. What is not known: how long Valve keeps the offline logon ticket valid (Valve's client decides; when it expires the start ends with result 50 and one online start renews it:
+set `SRV_STEAM_MODE=online` for a start, then back), and nothing was run for days yet. Nothing changes by default.
+
+## Behind a router that lets nothing in (a mobile box, CGNAT): the relay, optionally
+
+The server listens itself by default. If nothing can reach it (a 4G/5G box, CGNAT, no router access) and Steam networking is not available (offline mode above), it can **host through an MPFever relay** instead
+(see [RELAY.md](RELAY.md)): it connects *out* to the relay and the players join the relay's address. It is optional: with `SRV_RELAY` empty (the default) nothing changes.
+
+```
+SRV_RELAY=relay.example.org:28091          # the relay (host or host:port)
+SRV_RELAY_HOST_KEY=<the relay's --host-key>   # only the holder of this key may host that relay
+SRV_RELAY_PASSWORD=<its password>          # only if the relay has one
+```
+
+Start the relay with `--host-key KEY` (or `MPFEVER_RELAY_HOST_KEY`): players then need **no password** and nobody else can take the host's place (a relay without a host key gives the host to the first
+comer). The public list shows the relay's address unless `SRV_PUBLIC_ADDRESS` is set. If the relay cannot be reached the server tries again every 30 s; if the connection is lost while the world runs, the world is
+saved and hosted again (the players come back by themselves). The server's session ends with its host: no player takes over (`--host-key` and `--migration` exclude each other).
 
 ## Madeira Dock and Valve's client: compatibility and risks
 

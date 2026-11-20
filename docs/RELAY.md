@@ -28,6 +28,18 @@ Optionally (both experimental, both off by default): the next player can **take 
 ([migration](#host-migration-experimental)), and the relay can **keep the latest save** of the session so the game can go on later
 ([keeping the save](#keeping-the-save-on-the-relay-experimental)).
 
+## A dedicated server behind a router that lets nothing in (0.9.3)
+
+A dedicated server (the Docker one, `SRV_RELAY=`; or `relay=` in `mpfever_server.properties`) can host through a relay instead of listening itself: it connects out to the relay as its host and the players join
+the relay's address. Start that relay with `--host-key KEY` (or `MPFEVER_RELAY_HOST_KEY`; `--host-key-file`): only the launcher that shows the key may host (a wrong key is refused with the reason `hostkey`, and counts
+like a wrong password: after a few from one address, even the right one waits), and the players need **no password** (or the `--password` one). A relay with a host key has one host for good: `--host-key` and
+`--migration` cannot be used together, and the server's session ends with it. The key must differ from the password. Without `--host-key` nothing changes: the first player in hosts.
+
+What a dedicated server does not use or does differently behind a relay: **host migration** is off (its session ends with it; `--host-key` refuses `--migration`), the **save kept by the relay** (`--checkpoint-dir`) is not
+used (the server keeps its own saves and backups; `--host-key` refuses `--resume-without-host`, which would let a player host from that save), the host rules sent for a takeover (`hoststate`) are not sent, no router port is opened
+(UPnP), and joining "through Steam" exists only while the server's Steam is online. The server's own `password=` still applies (it is checked by the server, not by the relay), as do its `max-players` and its version check;
+the relay's `--max-players` also caps the players (the smaller number wins).
+
 ## Relay or dedicated server
 
 They are two different things:
