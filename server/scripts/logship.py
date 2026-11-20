@@ -13,7 +13,7 @@ GAME_LINE = re.compile(r"^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)Z - (\w+)\s*- ([^-
 GAME_LEVEL = {"VERBOSE": "debug", "DEBUG": "debug", "MESSAGE": "info", "INFO": "info", "WARNING": "warn", "ERROR": "error", "FATAL": "error"}
 NOT_BAD = re.compile(r"\S*(error|fail\w*)=0\b", re.I)               # "launch-client-error=0" is a result code that says all went well
 # what a server always says (no sound card to read the music with, no mod.io or Paradox account to sign in with): info, not a warning or an error
-NOISE = re.compile(r"Ogg(Stream|Player)|ogg file|\.ogg|error code: -132|Error opening file|alutCreateBuffer|AL context|could not be verified|Could not verify user authentication|Paradox User is not logged in|No session tokens")
+NOISE = re.compile(r"Ogg(Stream|Player)|ogg file|\.ogg|error code: -132|Error opening file|alutCreateBuffer|AL context|could not be verified|Could not verify user authentication|Paradox User is not logged in|No session tokens|cannot re-authenticate")
 BAD_WORDS = re.compile(r"\b(error|failed|fail|fatal|cannot|denied|refused)\b", re.I)
 
 

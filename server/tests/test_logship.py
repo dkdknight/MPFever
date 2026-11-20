@@ -38,6 +38,8 @@ class Shape(unittest.TestCase):
         a = s.shape("[2026-11-20 08:20:10Z - ERROR    -                  - Main           ]+ Modio: User could not be verified (see previous warning), asking the user to log in again")
         b = s.shape("[2026-11-20 08:20:06Z - ERROR    -                  - Main           ]+ Error opening file")
         c = s.shape("    | DetailMessage: fileName='::/music/splash.ogg': error code: -132")
+        e = s.shape("[2026-11-20 08:31:16Z - ERROR    -                  - Main           ]+ Modio: cannot re-authenticate without user interaction")
+        self.assertEqual(e[1], "info")
         d = s.shape("[2026-11-20 08:20:11Z - ERROR    -                  - Main           ]+ Could not initialize Modio")
         self.assertEqual([a[1], b[1], c[1]], ["info", "info", "info"])
         self.assertEqual(d[1], "error")                               # a real mod.io failure stays one
