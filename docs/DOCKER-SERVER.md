@@ -83,7 +83,7 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_PUBLIC`, `SRV_PUBLIC_ADDRESS` | `false`, empty | list the server in MPFever's public list |
 | `SRV_LOG_FORMAT` | `json` | `json` (one JSON object per line) or `text` |
 | `SRV_UPDATE_CHECK` | `notify` | `notify` (new MPFever release announced in the log, never installed) or `off` |
-| `SRV_GAME_LOG` | `warn` | the game's and Dock's logs in the stream: `off`, `error`, `warn`, `info` or `debug` |
+| `SRV_GAME_LOG` | `info` | the game's and Dock's logs in the stream: `off`, `error`, `warn`, `info` or `debug` |
 | `SRV_ADMIN_UI`, `SRV_ADMIN_PORT` | `off`, `8080` | the administration page (see Administering); it listens only when `on`, and `compose.admin.yaml` publishes it on 127.0.0.1 |
 | `SRV_MODS_SYNC` | `auto` | `auto` (the world's mod.io mods are installed or updated at every start, when `mods login` was done) or `off` |
 | `SRV_MEM_LIMIT`, `SRV_CPUS` | `16g`, `2` | container limits: about 12 GB and 1 CPU for the small world (minimum), 16 GB and 2 CPUs for a world of 120 MB; the CPU also sets how fast it starts and resynchronises |
@@ -171,8 +171,20 @@ a world whether this server has it. The game has no Steam Workshop for Transport
 (`ts` in UTC; `level` `debug`, `info`, `warn` or `error`; `component` `entrypoint` for this container's scripts, `launcher` for MPFever). `SRV_LOG_FORMAT=text` gives plain lines instead. The files are in the data volume
 (`srv/logs/launcher-*.log`, `srv/launcher.out`, Dock's `srv/dock.log`); the Docker log rotates (20 MB, 5 files). Any JSON log collector (Loki, Elasticsearch, `jq`) reads the stream as it is.
 
-The **game's and Dock's own logs** join the same stream (`component` `game` and `dock`; the game's lines keep their own time, its VERBOSE/MESSAGE/WARNING/ERROR levels become `debug`/`info`/`warn`/`error`). By default only
-`warn` and above are shown, `SRV_GAME_LOG=off|error|warn|info|debug` changes that (`debug` is very verbose, mainly at the start). The files themselves stay in the data volume.
+The **game's and Dock's own logs** join the same stream (`component` `game` and `dock`; the game's lines keep their own time, its VERBOSE/MESSAGE/WARNING/ERROR levels become `debug`/`info`/`warn`/`error`). By default
+`info` and above are shown (`SRV_GAME_LOG=off|error|warn|info|debug`; `debug` is very verbose, mainly at the start). What a server always says (no sound card to read the music, no mod.io or Paradox account) is shown as
+`info`, not as a warning or an error. The files themselves stay in the data volume.
+
+**What is kept for a bug report.** The launcher's session folder (`in.log`, `mod.log`, `native.log`, `mp_status.txt`, `companies.txt` ... the files that explain a desynchronisation) lives in the container's memory;
+it is copied to the data volume (`srv/sessions/`) every 5 minutes, when the launcher exits and when the container stops (the last 5 are kept). The game rewrites its log at each start: the previous one is kept in
+`srv/gamelogs/` (the last 5). **`mpfever-admin bundle`** makes one zip of it all in `/data/reports/` (the logs, the session files, the game's current and kept logs, Dock's log, the crash reports as text and json,
+the versions and settings, the server's properties with every password, key and token blanked; never the secrets folder, the Steam transfer file, a savegame or a memory dump):
+
+```
+docker compose exec mpfever-server mpfever-admin bundle
+docker compose cp mpfever-server:/data/reports/<the zip it names> .
+```
+What the server says is not all there is: the players' own logs stay on their PCs (their "Report a problem" button makes the zip).
 
 ## Updates
 
@@ -251,7 +263,7 @@ The project's two workflows cover it, like the relay's image:
 - `ci.yml`, on every push and pull request: **`docker-server-checks`** (`server/tests/check.sh`: shell and shellcheck, Python tests, Madeira Dock's unit tests, Compose files, no secrets, no
   binaries) and **`docker-server`**, which builds the image from the commit's server archive (the `build` job) and smoke-tests it (`server/tests/smoke.sh`: unprivileged, no game or Valve file
   inside, pinned runtimes, explicit errors on empty volumes). Nothing is pushed.
-- `release.yml` (Release build, started by hand): tick **`docker_server`** to also publish `ghcr.io/<owner>/mpfever-server:<version>` and `:experimental`, built from that run's unsigned server archive
+- `release.yml` (Release build, started by hand): tick **`docker_server`** to also publish `ghcr.io/<owner>/mpfever-server:<version>` and `:experimental` (`docker_server_revision` = `2` gives `<version>-2` for a new image of the same MPFever version), built from that run's unsigned server archive
   and smoke-tested first (`docker` is the relay's image). Run it on the tag of a release to get the image of that release; the package's visibility is set on its page on GitHub.
 
 Locally: put a package built by `build.bat` in `server/dist/MPFever-server.zip` and `docker compose -f compose.yaml -f compose.build.yaml build` (`APT_MIRROR` can name another Ubuntu mirror).

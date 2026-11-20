@@ -5,7 +5,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
 import logship
 
-WARN = "[2026-11-19 18:10:04Z - WARNING  - ModioAsyncThread - Main           ]  Could not verify user authentication: Invalid user"
+WARN = "[2026-11-19 18:10:04Z - WARNING  - ModioAsyncThread - Main           ]  Texture error: Could not find texture x.dds"
 INFO = "[2026-11-19 18:10:08Z - MESSAGE  - Main Thread      - Main           ]  Main menu is ready"
 VERB = "[2026-11-19 18:10:09Z - VERBOSE  - Main             - ModRep         ]  Found 15 mods"
 ERR = "[2026-11-19 17:53:17Z - ERROR    - Main             - Modio          ]+ Could not initialize Modio"
@@ -14,7 +14,7 @@ ERR = "[2026-11-19 17:53:17Z - ERROR    - Main             - Modio          ]+ C
 class Shape(unittest.TestCase):
     def test_game_levels_and_time(self):
         s = logship.Shaper("game")
-        self.assertEqual(s.shape(WARN), ("2026-11-19T18:10:04.000Z", "warn", "game", "Could not verify user authentication: Invalid user"))
+        self.assertEqual(s.shape(WARN), ("2026-11-19T18:10:04.000Z", "warn", "game", "Texture error: Could not find texture x.dds"))
         self.assertEqual(s.shape(INFO)[1:], ("info", "game", "Main menu is ready"))
         self.assertEqual(s.shape(VERB)[1], "debug")
         self.assertEqual(s.shape(ERR)[1], "error")
@@ -30,8 +30,17 @@ class Shape(unittest.TestCase):
         head = s.shape("[2026-11-19 21:59:46Z - WARNING  -                  - Main           ]+ Could not read ogg file")
         cont = s.shape("    + Location: train_fever/src/Lib/audio/util/OggPlayer.cpp(184): operator ()")
         alut = s.shape("[2026-11-19 22:02:30Z - WARNING  -                  - Main           ]  alutCreateBufferFromFile failed for ::/Wind.wav: There is no current AL context (error code: 204).")
-        self.assertEqual([head[1], cont[1], alut[1]], ["debug", "debug", "debug"])
+        self.assertEqual([head[1], cont[1], alut[1]], ["info", "info", "info"])
         self.assertEqual(s.shape(WARN)[1], "warn")                    # the next real warning is one again
+
+    def test_accounts_a_server_does_not_have_are_not_errors(self):
+        s = logship.Shaper("game")
+        a = s.shape("[2026-11-20 08:20:10Z - ERROR    -                  - Main           ]+ Modio: User could not be verified (see previous warning), asking the user to log in again")
+        b = s.shape("[2026-11-20 08:20:06Z - ERROR    -                  - Main           ]+ Error opening file")
+        c = s.shape("    | DetailMessage: fileName='::/music/splash.ogg': error code: -132")
+        d = s.shape("[2026-11-20 08:20:11Z - ERROR    -                  - Main           ]+ Could not initialize Modio")
+        self.assertEqual([a[1], b[1], c[1]], ["info", "info", "info"])
+        self.assertEqual(d[1], "error")                               # a real mod.io failure stays one
 
     def test_mpfever_mod_lines_are_info(self):
         rec = logship.Shaper("game").shape("[MPFEVER-AUTO] loading savegame 'bigworld'")
@@ -67,7 +76,7 @@ class Follow(unittest.TestCase):
 
     def test_a_file_that_starts_again_is_followed_from_its_start(self):
         lines = self.run_follow(logship.LEVELS["debug"], "json", [(INFO + "\n", "w"), (WARN + "\n", "w")])
-        self.assertEqual([json.loads(l)["msg"] for l in lines], ["Main menu is ready", "Could not verify user authentication: Invalid user"])
+        self.assertEqual([json.loads(l)["msg"] for l in lines], ["Main menu is ready", "Texture error: Could not find texture x.dds"])
 
     def test_a_half_written_line_waits(self):
         lines = self.run_follow(logship.LEVELS["debug"], "json", [(INFO[:30], "w"), (INFO[30:] + "\n", "a")])

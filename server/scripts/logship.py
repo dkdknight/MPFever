@@ -12,8 +12,8 @@ LEVELS = {"debug": 0, "info": 1, "warn": 2, "error": 3}
 GAME_LINE = re.compile(r"^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)Z - (\w+)\s*- ([^-]*?)\s*- ([^\]]*?)\s*\]\s?(.*)$")
 GAME_LEVEL = {"VERBOSE": "debug", "DEBUG": "debug", "MESSAGE": "info", "INFO": "info", "WARNING": "warn", "ERROR": "error", "FATAL": "error"}
 NOT_BAD = re.compile(r"\S*(error|fail\w*)=0\b", re.I)               # "launch-client-error=0" is a result code that says all went well
-# what a server without a sound card always says (no audio device: the game cannot read its sounds): debug, not warn
-NOISE = re.compile(r"Ogg(Stream|Player)|ogg file|alutCreateBuffer|AL context")
+# what a server always says (no sound card to read the music with, no mod.io or Paradox account to sign in with): info, not a warning or an error
+NOISE = re.compile(r"Ogg(Stream|Player)|ogg file|\.ogg|error code: -132|Error opening file|alutCreateBuffer|AL context|could not be verified|Could not verify user authentication|Paradox User is not logged in|No session tokens")
 BAD_WORDS = re.compile(r"\b(error|failed|fail|fatal|cannot|denied|refused)\b", re.I)
 
 
@@ -38,13 +38,13 @@ class Shaper:
                 self.ts = "%sT%s.000Z" % (m.group(1), m.group(2))
                 msg = m.group(6).strip() or "(" + m.group(5) + ")"
                 if NOISE.search(msg):
-                    self.level = "debug"
+                    self.level = "info"
                 return self.ts, self.level, "game", msg
             if line.startswith("[MPFEVER"):                   # the MPFever mod's own lines, no time stamp
                 self.level, self.ts = "info", None
                 return now(), "info", "game", line
             if NOISE.search(line):
-                self.level = "debug"
+                self.level = "info"
             return self.ts or now(), self.level, "game", line.strip()      # a continuation
         level = "warn" if BAD_WORDS.search(NOT_BAD.sub("", line)) else "debug"
         return now(), level, "dock", line.strip()

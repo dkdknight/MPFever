@@ -19,6 +19,9 @@ MPFever - Changelog
   - NEW (server/): the game's and Dock's own logs join the server's JSON stream (components game and dock; SRV_GAME_LOG); `mods import <folder>` brings the administrator's local mods (full copy for the players,
     reduced one for the game; `mods list` shows what is missing); an administration page (SRV_ADMIN_UI=on, off by default; token, loopback port through compose.admin.yaml, the console's commands except stop,
     audited in the log). No launcher change.
+  - NEW (server/): what a bug report needs is kept: the launcher's session folder (in.log, mod.log, native.log ...) is copied from the container's memory to the data volume (every 5 minutes, at the launcher's exit and
+    at the stop) and the game's log of each start is kept; `mpfever-admin bundle` makes one zip of it with the other logs and the crash reports, without any secret; the game's log is shipped at `info` by default
+    (what a server always says, like the missing sound card and mod.io account, is info and no longer an error). The Release build workflow takes docker_server_revision (tag <version>-2 for a new server image of the same version).
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one

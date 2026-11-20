@@ -21,6 +21,10 @@ on:
         description: "Also publish the dedicated server's Docker image (x64; server/Dockerfile, docs/DOCKER-SERVER.md) to ghcr.io/<owner>/mpfever-server, tagged with the version and experimental"
         type: boolean
         default: false
+      docker_server_revision:
+        description: "With docker_server: a revision of the same MPFever version (for example 2 gives the tag <version>-2 instead of <version>), for a new image of the dedicated server without a new MPFever release"
+        type: string
+        default: ""
       signing_policy:
         description: "SignPath's signing policy: test-signing (SignPath's self-signed test certificate, to check the setup: NEVER publish those archives) or release-signing (SignPath Foundation's certificate, once SignPath has imported it)"
         type: choice
@@ -348,7 +352,10 @@ jobs:
 
       - name: Push
         run: |
-          for t in "${{ steps.v.outputs.version }}" experimental; do
+          rev="${{ inputs.docker_server_revision }}"
+          case "$rev" in ""|*[!0-9a-z.]*) [ -z "$rev" ] || { echo "docker_server_revision: letters, digits and dots only"; exit 1; } ;; esac
+          [ -z "$rev" ] || ver="${{ steps.v.outputs.version }}-$rev"
+          for t in "${ver:-${{ steps.v.outputs.version }}}" experimental; do
             docker tag mpfever-server:release "${{ steps.v.outputs.image }}:$t"
             docker push "${{ steps.v.outputs.image }}:$t"
           done

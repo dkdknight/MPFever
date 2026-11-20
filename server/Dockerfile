@@ -68,6 +68,7 @@ RUN sed -i 's/\r$//' /opt/mpfever/scripts/*.sh /opt/mpfever/scripts/mpfever-admi
 ARG VCS_REF=unknown
 ARG SOURCE_REPO=https://github.com/dkdknight/MPFever
 ARG VERSION=experimental
+ENV MPFEVER_IMAGE_VERSION=${VERSION} MPFEVER_IMAGE_REVISION=${VCS_REF}
 LABEL org.opencontainers.image.title="MPFever dedicated server (experimental)" \
       org.opencontainers.image.description="Transport Fever 3 under Wine with Madeira Dock; contains no game or Valve files" \
       org.opencontainers.image.source="${SOURCE_REPO}" \

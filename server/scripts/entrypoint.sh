@@ -70,7 +70,7 @@ check_settings() {
   need_choice LOG_FORMAT "${LOG_FORMAT:-json}" json text
   need_choice UPDATE_CHECK "${UPDATE_CHECK:-notify}" notify off
   need_choice MODS_SYNC "${MODS_SYNC:-auto}" auto off
-  need_choice GAME_LOG "${GAME_LOG:-warn}" off error warn info debug
+  need_choice GAME_LOG "${GAME_LOG:-info}" off error warn info debug
   need_choice ADMIN_UI "${ADMIN_UI:-off}" on off
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
@@ -133,6 +133,32 @@ cmd_import_save() {
   [ -f "$SESSION_FILE" ] || die "sign in first (login): the save folder depends on the Steam account" 40
   local d f; d=$(save_dir); mkdir -p "$d"
   for f in "$@"; do cp -v "$f" "$d/"; done
+}
+
+# The launcher's session folders live in /tmp (memory: gone when the container stops) and hold the files that explain a desynchronisation (in.log, mod.log, native.log, mp_status.txt ...):
+# they are copied to the data volume now and then, when the launcher exits and when the container stops, the last SESSIONS_KEEP (5) kept. The game rewrites its log (stdout.txt) at each start:
+# the previous one is kept in srv/gamelogs, the last GAMELOGS_KEEP (5).
+keep_newest() {   # keep_newest <folder> <n>: removes all but the n newest entries of a folder of this server's data
+  local d=$1 n=$2 e
+  case "$d" in "$SRV"/*) ;; *) return 0 ;; esac
+  while IFS= read -r e; do [ -n "$e" ] && rm -rf -- "$e"; done < <(ls -1dt "$d"/* 2>/dev/null | tail -n +$((n + 1)))
+}
+persist_sessions() {
+  local d name
+  mkdir -p "$SRV/sessions"
+  for d in /tmp/mpfever/*/; do
+    [ -d "$d" ] || continue
+    name=$(basename "$d"); mkdir -p "$SRV/sessions/$name"
+    find "$d" -maxdepth 1 -type f -size -50M -exec cp -p {} "$SRV/sessions/$name/" \; 2>/dev/null
+  done
+  keep_newest "$SRV/sessions" "${SESSIONS_KEEP:-5}"
+}
+archive_game_log() {
+  local f; f="$(local_dir)/crash_dump/stdout.txt"
+  [ -s "$f" ] || return 0
+  mkdir -p "$SRV/gamelogs"
+  cp -p "$f" "$SRV/gamelogs/stdout-$(date -u +%Y%m%d-%H%M%S).txt" && : > "$f"
+  keep_newest "$SRV/gamelogs" "${GAMELOGS_KEEP:-5}"
 }
 
 cmd_run() {
@@ -208,10 +234,12 @@ cmd_run() {
 
   # the game's and Dock's own logs join the stream (SRV_GAME_LOG: off, error, warn (default), info or debug): components "game" and "dock"
   SHIPPERS=()
-  if [ "${GAME_LOG:-warn}" != off ]; then
-    python3 "$OPT/scripts/logship.py" game "$(local_dir)/crash_dump/stdout.txt" "${GAME_LOG:-warn}" & SHIPPERS+=($!)
-    python3 "$OPT/scripts/logship.py" dock "$SRV/dock.log" "${GAME_LOG:-warn}" & SHIPPERS+=($!)
+  if [ "${GAME_LOG:-info}" != off ]; then
+    python3 "$OPT/scripts/logship.py" game "$(local_dir)/crash_dump/stdout.txt" "${GAME_LOG:-info}" & SHIPPERS+=($!)
+    python3 "$OPT/scripts/logship.py" dock "$SRV/dock.log" "${GAME_LOG:-info}" & SHIPPERS+=($!)
   fi
+
+  ( while sleep 300; do persist_sessions; done ) & SHIPPERS+=($!)
 
   # the administration page, only when asked (SRV_ADMIN_UI=on): see docs/DOCKER-SERVER.md
   if [ "${ADMIN_UI:-off}" = on ]; then
@@ -231,16 +259,19 @@ cmd_run() {
   local quick=0 t0
   while [ "$STOPPING" = 0 ]; do
     t0=$(date +%s)
+    archive_game_log                                      # the previous start's log, before the game rewrites it
     mono MPFever.exe --server --server-start headless >> "$SRV/launcher.out" 2>&1 & LAUNCHER=$!
     # the launcher's own log (one file per start) is the useful log: show it in `docker logs`
     sleep 5; tail -n 0 -F "$(ls -t "$SRV"/logs/launcher-*.log 2>/dev/null | head -1)" 2>/dev/null & TAILER=$!
     wait "$LAUNCHER"; rc=$?
     kill "$TAILER" 2>/dev/null
+    persist_sessions
     [ "$STOPPING" = 1 ] && break
     [ "$(date +%s)" -lt $((t0 + 60)) ] && quick=$((quick + 1)) || quick=0
     [ "$quick" -lt 5 ] || { kill "$FEEDER" "$XVFB" 2>/dev/null; die "the launcher stopped 5 times within a minute (last status $rc): see $SRV/launcher.out and $SRV/dock.log" 50; }
     log "the launcher stopped (status $rc): starting it again in 10 s"; sleep 10
   done
+  persist_sessions; archive_game_log
   kill "$FEEDER" "$XVFB" "${SHIPPERS[@]}" 2>/dev/null; wineserver -k 2>/dev/null
   log "stopped"
 }
