@@ -40,6 +40,8 @@ namespace MPFever.StandaloneRelay
         /// <summary>(0.9.3) A key the host must show to host this relay (--host-key): a dedicated server behind a router that lets nothing in connects out to the relay
         /// and hosts there, while the players need no password. Empty: any player may host (the first in), as before.</summary>
         public string HostKey = "";
+        /// <summary>(0.9.3) --list-url: the public server list this relay announces its host to (only with a host key). Empty: it does not.</summary>
+        public string ListUrl = "";
     }
 
     /// <summary>
@@ -189,12 +191,14 @@ namespace MPFever.StandaloneRelay
         {
             Log.Ok(p.Name + " connected");
             HostJoined(p);
+            NudgeList();
             relay.DropOlder(p);   // (after: a successor that reconnects as the host closes its own guest connection, which must no longer count as the candidate)
         }
 
         void OnLeft(Peer p)
         {
             Log.W(p.Name + " left");
+            NudgeList();
             try { lock (checkpointGate) ReleaseCheckpoint(p); }
             catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { Log.Warn("checkpoint cleanup: " + e.Message); }
             HostLeft(p);
@@ -251,6 +255,7 @@ namespace MPFever.StandaloneRelay
                 if (target != null && target != host) new Thread(() => relay.Deny(target, payload ?? "{[\"reason\"]=\"kicked\"}")) { IsBackground = true }.Start();
                 return;
             }
+            if (m.Kind == "tun_list") { HandleListInfo(m); return; }   // (0.9.3) what the list is told about the host, see ListAnnounce.cs
             if (m.Kind == CheckpointWire.Request || m.Kind == CheckpointWire.Binary) { HandleCheckpoint(m, host); return; }
             if (m.Kind.StartsWith("tun_", StringComparison.Ordinal)) return;   // (the relay's own kinds are not the host's to send)
             if (m.Kind.Length > 1 && m.Kind[0] == '@')

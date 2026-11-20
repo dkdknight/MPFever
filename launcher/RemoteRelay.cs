@@ -43,6 +43,12 @@ namespace MPFever
         /// <summary>(0.9.3) The key a relay with --host-key wants from its host.</summary>
         public string HostKey;
 
+        /// <summary>(0.9.3) What the relay tells the public list about this host (a relay started with --list-url and --host-key; another relay ignores it): the launcher's own announce body.</summary>
+        public void SendListInfo(string json)
+        {
+            try { client.Send(Msg.Make("tun_list", "-", "{[" + (char)34 + "json" + (char)34 + "]=" + LuaLit.Quote(json) + "}")); } catch { }
+        }
+
         /// <summary>The host's name on the relay ("Name#n").</summary>
         public string Me { get; private set; }
         public int Epoch { get; private set; }

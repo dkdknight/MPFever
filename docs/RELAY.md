@@ -35,6 +35,12 @@ the relay's address. Start that relay with `--host-key KEY` (or `MPFEVER_RELAY_H
 like a wrong password: after a few from one address, even the right one waits), and the players need **no password** (or the `--password` one). A relay with a host key has one host for good: `--host-key` and
 `--migration` cannot be used together, and the server's session ends with it. The key must differ from the password. Without `--host-key` nothing changes: the first player in hosts.
 
+**Showing it in the public list.** The list looks at the address an announce comes from, and a server behind a router that lets nothing in is not reachable there. A relay started with `--list-url
+https://mpfever.knight-hd.fr` (or `MPFEVER_RELAY_LIST_URL`) **together with `--host-key`** announces its host itself, from the relay's public address: the server (its launcher sends `tun_list`, the same data as its own
+announce) is then listed with the relay's address, reachable, with no Steam involved. The relay sends the name, world, mode, version, build, motd, password flag and the places the relay allows; the number of players
+is the relay's own count; there is no Steam ID and no address of the host's choosing. It announces at once, then every 30 s and when a player comes or goes, and takes the entry off the list when the host leaves or stops
+sending for 2 minutes. Without `--list-url` the relay announces nothing. `--list-url` needs `--host-key`: the key is what says the host is the server, not a stranger.
+
 What a dedicated server does not use or does differently behind a relay: **host migration** is off (its session ends with it; `--host-key` refuses `--migration`), the **save kept by the relay** (`--checkpoint-dir`) is not
 used (the server keeps its own saves and backups; `--host-key` refuses `--resume-without-host`, which would let a player host from that save), the host rules sent for a takeover (`hoststate`) are not sent, no router port is opened
 (UPnP), and joining "through Steam" exists only while the server's Steam is online. The server's own `password=` still applies (it is checked by the server, not by the relay), as do its `max-players` and its version check;

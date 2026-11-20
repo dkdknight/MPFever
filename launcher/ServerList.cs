@@ -162,6 +162,14 @@ namespace MPFever
                             + ",\"mode\":" + JsonStr(server.CompanyMode) + ",\"world\":" + JsonStr(server.World) + ",\"motd\":" + JsonStr(server.Motd)
                             + ",\"players\":" + (relay?.AdmittedCount ?? 0) + ",\"max\":" + server.MaxPlayers + ",\"password\":" + (server.Password != "" ? "true" : "false")
                             + ",\"steam\":" + JsonStr(hostSteamId ?? "") + ",\"address\":" + JsonStr(server.ListedAddress) + ",\"token\":" + JsonStr(listToken ?? "") + "}";
+                        // (0.9.3) hosting through a relay: the relay announces this server from its own address (a relay with --list-url and --host-key); announcing from here would show an address nothing reaches
+                        if (relay is RemoteRelay viaRelay)
+                        {
+                            viaRelay.SendListInfo(body);
+                            if (!listShown) { listShown = true; Log.Ok("The relay announces this server to the public list (it needs --list-url and --host-key): " + url); }
+                            for (int w = 0; w < 30 && serverStarted && !serverStopping; w++) Thread.Sleep(1000);
+                            continue;
+                        }
                         var d = Json.Parse(ListRequest(url + "/api/announce", body)) as Dictionary<string, object>;
                         if (d != null && d.TryGetValue("ok", out var ok) && ok is bool okb && okb)
                         {
