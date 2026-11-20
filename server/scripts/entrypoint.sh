@@ -164,6 +164,10 @@ archive_game_log() {
 
 cmd_run() {
   ensure_dirs
+  # one server per data volume: a second container on the same volumes would share the Steam session (the first would be signed out), the savegame and the game port.
+  # The lock is held by this script and by the processes it starts, so it lasts as long as the server does and is released when they all end.
+  exec 9>"$RUN/instance.lock"
+  flock -n 9 || die "another MPFever server already runs on this data volume (see docker ps): only one instance is allowed; stop it first" 60
   : "${WORLD:?set SRV_WORLD to the name of a savegame (without .sav)}"
   check_settings
   [ -f "$SESSION_FILE" ] || die "no Steam session: run  login  first (docs/DOCKER-SERVER.md, quick start step 3)" 40

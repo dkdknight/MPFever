@@ -224,7 +224,7 @@ One Steam account plays one game at a time: playing on it elsewhere while the se
   `SRV_BIND=127.0.0.1` leaves nothing reachable from the network (players join through Steam, no router port is needed); `SRV_PUBLIC_ADDRESS` stops the public list from showing your IP address; the administration page stays off;
   secrets (Steam session, mod.io key) are in the data volume only. What remains: the game and MPFever speak to strangers (a flaw in them is the risk the container contains, not removes), and the container can still
   reach your network and the Internet outwards (Docker Desktop has no outbound filter): use a Steam account made for the server, without payment method or friends, and keep Docker Desktop and the image up to date.
-- Exit codes: 20/21 Valve client download or hash, 30 game missing, 40/41 Steam session missing or expired, 42 savegame missing, 50 launcher failing repeatedly. Reports: `docker compose logs`, `srv/launcher.out`,
+- Exit codes: 20/21 Valve client download or hash, 30 game missing, 40/41 Steam session missing or expired, 42 savegame missing, 50 launcher failing repeatedly, 60 another server already runs on the same data volume (only one instance is allowed). Reports: `docker compose logs`, `srv/launcher.out`,
   `srv/logs/`, and Dock's `srv/dock.log` (stage names and numbers only; result codes in `server/dock/README.upstream.md`).
 
 ## Measured
