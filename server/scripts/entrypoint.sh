@@ -73,6 +73,7 @@ check_settings() {
   need_choice GAME_LOG "${GAME_LOG:-info}" off error warn info debug
   need_choice ADMIN_UI "${ADMIN_UI:-off}" on off
   need_choice SPEED_VOTE "${SPEED_VOTE:-false}" true false
+  need_int SHUTDOWN_WARNING "${SHUTDOWN_WARNING:-60}"
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
 
@@ -206,6 +207,7 @@ cmd_run() {
     echo "pause-when-empty=${PAUSE_WHEN_EMPTY:-false}"
     echo "player-speed-control=${PLAYER_SPEED_CONTROL:-true}"
     echo "speed-vote=${SPEED_VOTE:-false}"
+    echo "shutdown-warning=${SHUTDOWN_WARNING:-60}"
     echo "autosave-minutes=${AUTOSAVE_MINUTES:-10}"
     echo "backups=${BACKUPS:-10}"
     echo "restart-on-crash=true"
@@ -256,7 +258,7 @@ cmd_run() {
   on_term() {
     STOPPING=1; log "stop requested: saving the world and closing the game"
     touch "$STOPFILE"
-    local t=0; while kill -0 "$LAUNCHER" 2>/dev/null && [ "$t" -lt "${STOP_TIMEOUT:-90}" ]; do sleep 1; t=$((t + 1)); done
+    local t=0; while kill -0 "$LAUNCHER" 2>/dev/null && [ "$t" -lt "${STOP_TIMEOUT:-$((${SHUTDOWN_WARNING:-60} + 90))}" ]; do sleep 1; t=$((t + 1)); done
     kill "$LAUNCHER" 2>/dev/null; wineserver -k 2>/dev/null
   }
   trap on_term TERM INT

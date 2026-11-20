@@ -1666,7 +1666,7 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
         {
             bool ok = true;
             void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + what); ok &= cond; }
-            var c = new ServerConfig { SpeedVote = true };
+            var c = new ServerConfig { SpeedVote = true, ShutdownWarning = 45 };
             var problems = new List<string>();
             var path = Path.Combine(Path.GetTempPath(), "mpf-vote-" + Guid.NewGuid().ToString("N") + ".properties");
             try
@@ -1674,6 +1674,7 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 c.Save(path);
                 var r = ServerConfig.Load(path, problems, out _);
                 Check(r.SpeedVote && !new ServerConfig().SpeedVote, "speed vote: written and read, off by default");
+                Check(r.ShutdownWarning == 45 && new ServerConfig().ShutdownWarning == 0, "shutdown warning: written and read, none by default");
             }
             finally { try { File.Delete(path); } catch { } }
             var v = new MainForm.SpeedVotes();

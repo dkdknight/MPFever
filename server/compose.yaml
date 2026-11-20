@@ -7,7 +7,7 @@ services:
     container_name: ${SRV_CONTAINER_NAME:-mpfever-server}
     restart: unless-stopped
     init: true
-    stop_grace_period: 120s           # the world is saved and the game closed on `docker compose stop`
+    stop_grace_period: 200s           # `docker compose stop`: the players are warned (SRV_SHUTDOWN_WARNING seconds, 60 by default), the world is saved and the game closed
     ports:
       - "${SRV_BIND:-0.0.0.0}:${SRV_PORT:-28090}:${SRV_PORT:-28090}"     # SRV_BIND=127.0.0.1: reachable from this machine only (players then join through Steam)
     environment:
@@ -21,6 +21,7 @@ services:
       PAUSE_WHEN_EMPTY: ${SRV_PAUSE_WHEN_EMPTY:-false}
       PLAYER_SPEED_CONTROL: ${SRV_PLAYER_SPEED_CONTROL:-true}
       SPEED_VOTE: ${SRV_SPEED_VOTE:-false}
+      SHUTDOWN_WARNING: ${SRV_SHUTDOWN_WARNING:-60}
       AUTOSAVE_MINUTES: ${SRV_AUTOSAVE_MINUTES:-10}
       BACKUPS: ${SRV_BACKUPS:-10}
       PUBLIC: ${SRV_PUBLIC:-false}

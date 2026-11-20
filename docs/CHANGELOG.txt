@@ -25,6 +25,8 @@ MPFever - Changelog
   - NEW (dedicated server): speed-vote=true in mpfever_server.properties: the players' pause and speed requests become votes, carried when more than half of the connected players ask the same within a
     minute (a player alone decides at once; the server announces the progress in the chat; the console and `mpfever-admin` always can). Off by default. Docker: SRV_SPEED_VOTE.
   - NEW (server/): only one server instance per data volume (a lock in the volume, exit code 60): two containers on the same volumes would share the Steam session, the savegame and the port.
+  - NEW (dedicated server): shutdown-warning=N: a stop or a restart while players are connected is announced in their chat and counted down (the last minute, 30 s, 15 s, 10 s, the last 5 s), then happens;
+    at once when nobody is connected. 0 (the default of the file) keeps the immediate stop. Docker: SRV_SHUTDOWN_WARNING (60), `docker compose stop` waits for it.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one

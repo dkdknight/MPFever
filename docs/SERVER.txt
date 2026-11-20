@@ -130,6 +130,9 @@ server starts and on "restart".
   pause-when-empty=true        The world waits while nobody is connected. false: it always runs.
   player-speed-control=true    The players may pause and change the speed. false: only the
                                console may.
+  shutdown-warning=0           0.9.3. Seconds of warning in the chat before "stop" or "restart" while players
+                               are connected (counted down in the chat; at once when everybody left or nobody
+                               is connected). 0: none, as before.
   speed-vote=false             0.9.3. true: a player's pause or speed request is a vote, carried
                                when more than half of the connected players ask the same within
                                a minute (a player alone decides at once; the progress is told in

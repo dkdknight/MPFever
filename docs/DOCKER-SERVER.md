@@ -86,6 +86,7 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_UPDATE_CHECK` | `notify` | `notify` (new MPFever release announced in the log, never installed) or `off` |
 | `SRV_GAME_LOG` | `info` | the game's and Dock's logs in the stream: `off`, `error`, `warn`, `info` or `debug` |
 | `SRV_ADMIN_UI`, `SRV_ADMIN_PORT` | `off`, `8080` | the administration page (see Administering); it listens only when `on`, and `compose.admin.yaml` publishes it on 127.0.0.1 |
+| `SRV_SHUTDOWN_WARNING` | `60` | seconds of warning in the players' chat before a stop or restart (`docker compose stop`, `mpfever-admin restart|stop`) when players are connected; at once when nobody is; `0`: no warning. Check who is connected first with `mpfever-admin status` |
 | `SRV_SPEED_VOTE` | `false` | `true`: the players' pause/play/speed requests are votes (more than half of the connected players within a minute; one player alone decides at once); the administrator can always use `mpfever-admin pause`, `resume` and `speed` |
 | `SRV_MODS_SYNC` | `auto` | `auto` (the world's mod.io mods are installed or updated at every start, when `mods login` was done) or `off` |
 | `SRV_MEM_LIMIT`, `SRV_CPUS` | `16g`, `2` | container limits: about 12 GB and 1 CPU for the small world (minimum), 16 GB and 2 CPUs for a world of 120 MB; the CPU also sets how fast it starts and resynchronises |

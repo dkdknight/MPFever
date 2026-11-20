@@ -36,6 +36,8 @@ namespace MPFever
         public bool PlayerSpeedControl = true;
         // (0.9.3) with player-speed-control: a player's pause or speed request needs the agreement of most of the connected players (false: one player is enough, as before)
         public bool SpeedVote = false;
+        // (0.9.3) seconds of warning in the chat before a stop or a restart while players are connected (0: none, as before)
+        public int ShutdownWarning = 0;
         public int AutosaveMinutes = 10;
         public int Backups = 10;
         public bool RestartOnCrash = true;
@@ -119,6 +121,9 @@ namespace MPFever
             "# false: any player's request is enough. The server console always can.",
             "speed-vote=" + B(SpeedVote),
             "",
+            "# Seconds of warning in the chat before the server stops or restarts while players are connected (0: none; nobody connected: none).",
+            "shutdown-warning=" + I(ShutdownWarning),
+            "",
             "# Minutes between two saves of the world (0: no autosave). The world stops for a few seconds while it is saved.",
             "autosave-minutes=" + I(AutosaveMinutes),
             "",
@@ -199,6 +204,7 @@ namespace MPFever
                 case "pause-when-empty": return Bool(v, ref PauseWhenEmpty);
                 case "player-speed-control": return Bool(v, ref PlayerSpeedControl);
                 case "speed-vote": return Bool(v, ref SpeedVote);
+                case "shutdown-warning": return Int(v, 0, 3600, ref ShutdownWarning);
                 case "autosave-minutes": return Int(v, 0, 1440, ref AutosaveMinutes);
                 case "backups": return Int(v, 0, 1000, ref Backups);
                 case "restart-on-crash": return Bool(v, ref RestartOnCrash);
@@ -604,9 +610,40 @@ namespace MPFever
 
         /// <summary>"restart": the settings are read again, the world is saved, then the game starts again with it (the
         /// players are reconnected by their MPFever).</summary>
-        void RestartWorld()
+        volatile bool shutdownWarning;
+
+        /// <summary>(0.9.3, shutdown-warning=N) A stop or a restart while players are connected: they are told in the chat, at the start and as the time runs down (the last minute,
+        /// 30 s, 15 s, 10 s, then each of the last 5 seconds), and it happens after N seconds, or at once when everybody has left. True when this took the request over (it is
+        /// made again when the time is up, with warned=true); false when it must happen now (nobody connected, no warning set, or already warned).</summary>
+        bool WarnPlayers(string what, bool warned, Action again)
+        {
+            if (warned || server == null || server.ShutdownWarning <= 0 || (relay?.AdmittedCount ?? 0) == 0) return false;
+            if (shutdownWarning) return true;      // a warning is already running: this request is the same one
+            shutdownWarning = true;
+            int total = server.ShutdownWarning;
+            new Thread(() =>
+            {
+                try
+                {
+                    var marks = new HashSet<int> { 600, 300, 120, 60, 30, 15, 10, 5, 4, 3, 2, 1 };
+                    for (int left = total; left > 0; left--)
+                    {
+                        if (left == total || marks.Contains(left))
+                            HostChat("msg", server.Name, "The server " + what + " in " + (left >= 120 ? (left / 60) + " minutes" : left + (left == 1 ? " second" : " seconds")) + ". The world is saved first.");
+                        Thread.Sleep(1000);
+                        if (serverStopping || (relay?.AdmittedCount ?? 0) == 0) break;
+                    }
+                }
+                finally { shutdownWarning = false; }
+                again();
+            }) { IsBackground = true, Name = "Shutdown warning" }.Start();
+            return true;
+        }
+
+        void RestartWorld(bool warned = false)
         {
             if (serverStopping) return;
+            if (WarnPlayers("restarts", warned, () => RestartWorld(true))) return;
             CutResyncShort(T("redémarrage", "restart"));
             new Thread(() =>
             {
@@ -634,9 +671,10 @@ namespace MPFever
         /// <summary>"stop" (or the window closed): the world is saved, the players are told and the game closes. Then the
         /// window closes, or (the stop button, the console's "stop") opens again with the server stopped: MPFever starts
         /// again, which leaves nothing of the stopped session behind.</summary>
-        void StopServer(bool closeWindow)
+        void StopServer(bool closeWindow, bool warned = false)
         {
             if (serverStopping) return;
+            if (WarnPlayers("stops", warned, () => StopServer(closeWindow, true))) return;
             serverStopping = true;
             serverStoppedByHand = true;
             CutResyncShort(T("arrêt", "stop"));
