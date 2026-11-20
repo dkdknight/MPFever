@@ -232,6 +232,10 @@ Start the relay with `--host-key KEY` (or `MPFEVER_RELAY_HOST_KEY`): players the
 comer). The public list shows the relay's address unless `SRV_PUBLIC_ADDRESS` is set. If the relay cannot be reached the server tries again every 30 s; if the connection is lost while the world runs, the world is
 saved and hosted again (the players come back by themselves). The server's session ends with its host: no player takes over (`--host-key` and `--migration` exclude each other).
 
+**The public list.** It only lists a server it can reach or that has a Steam ID. A server behind a router with Steam offline has neither: the list service (`serverlist/`, from this change on) looks at the **address the server
+announces** (the relay's: public addresses only, never a private, shared or local one) instead of the one it announced from, so the relay-hosted server is listed. Until the service that runs the public list is
+updated to this version, such a server is **not shown** in it (measured 2026-11-20 against the running list: 0 entries); players can still join it by the relay's address.
+
 ## Madeira Dock and Valve's client: compatibility and risks
 
 Dock calls internal interfaces of Valve's client library by position in its method tables, so it only drives builds it has verified (by the SHA-256 of `steamclient64.dll`) and refuses any
