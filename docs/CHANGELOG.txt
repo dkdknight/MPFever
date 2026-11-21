@@ -2,6 +2,17 @@ MPFever - Changelog
 ===================
 
 0.9.5 - (in progress)
+  - FIX (#459, Flubi and JohnMenssing): on the second start of Flubi's game, 30 s after the first, MPFever's native module
+    found no memory near the game's code: it searched only the band 256 MB to 1.75 GB below the game's image, and something of
+    that game's process had taken all of it. Every native fix that needs such a place stayed off (order fixes, fresh ids, the
+    player word, the stop point, the module builder guard...), the game said "nat off" and drifted from his friend's, and the
+    session resynchronised again and again ("Suddenly, resyncs are happening more frequently again"). Now, when that band has
+    nothing, the free places above the game's image (within 1.75 GB of its start) and then just below it are searched too; the
+    first search is unchanged (a game that found a place before finds the same one). native.log says it once, with what holds
+    the band (native/near_alloc.h; MPFEVER_NEARSCAN=0: the band alone, as before; MPFEVER_NEARBLOCK=1, for tests: the band
+    taken first). Test: tests/test_nearalloc095.py. In game (Test Rcsig 40444, one company per player, the band taken on the
+    host by MPFEVER_NEARBLOCK=1): with the band alone, the host's native.log as Flubi's and the session not even started after
+    10 minutes; with the fix, its places taken above the game's image, every native fix on, the scenario in sync.
 
 0.9.4 - 2026-11-21: level crossings and signals changed from their windows in a session, no 18 s stand at a start with one company per player (#437 #438), the host no longer cuts a player while it sends the game (#449), a full disk said instead of cutting a player (#455), computer railways in tunnels and on bridges (#450), an Operating column in the Ranking
   - ADDED (Ansgar's idea in Discord #suggestions, "Better tracking of income"): the Ranking tab has a column "Operating", each
