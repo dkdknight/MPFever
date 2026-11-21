@@ -112,6 +112,9 @@ local TX = {
 	colVeh = { "Véhicules", "Vehicles" },
 	colTenders = { "Appels", "Tenders" },
 	colTrend = { "Sur un mois", "Over a month" },
+	colOp = { "Exploitation", "Operating" },
+	opExplained = { "Exploitation = recettes moins frais de fonctionnement et d'entretien depuis le début de l'année, sans les constructions ni les achats de véhicules (le tableau des finances du jeu), mesuré par l'hôte au début de chaque mois de jeu.",
+		"Operating = revenue minus running and upkeep costs since the start of the year, without constructions or vehicle purchases (the game's finance table), measured by the host at the start of every game month." },
 	help1 = { "Le classement compare les entreprises par leur valeur : leur argent, moins leurs prêts, plus ce que rapporterait la revente de leurs véhicules. L'hôte la mesure au début de chaque mois de jeu, la même pour tout le monde.",
 		"The ranking compares the companies by their value: their money, less their loans, plus what their vehicles would fetch if sold. The host measures it at the start of each game month, the same for everybody." },
 	help2 = { "« Sur un mois » montre comment la valeur a changé depuis le mois d'avant. Cliquez sur le titre d'une colonne pour trier le tableau par elle ; un second clic revient au classement.",
@@ -315,10 +318,12 @@ local function num(x) return string.format("%.0f", math.floor(tonumber(x) or 0) 
 M.num = num
 
 -- rows: { { id, b, d, vv }... } sorted by id <-> "id:b,d,vv;..." (whole numbers; b may be below zero)
+-- (0.9.4, Ansgar's idea: "/op" after them, the company's operating result of the year so far, see M.operating)
 function M.rowsText(rows)
 	local t = {}
 	for _, r in ipairs(rows) do
 		t[#t + 1] = num(r.id) .. ":" .. num(r.b) .. "," .. num(r.d) .. "," .. num(r.vv) .. (r.a and ("," .. num(r.a)) or "")
+			.. (r.op and ("/" .. num(r.op)) or "")
 	end
 	return table.concat(t, ";")
 end
@@ -330,14 +335,15 @@ function M.parseRows(s)
 	if s == "" then return rows end
 	for part in (s .. ";"):gmatch("([^;]*);") do
 		-- (0.7.17, #190: ",a" after them, the company's assets as its own game counts them, see M.assetsRead)
-		local id, b, d, vv, a = part:match("^(%d+):(%-?%d+),(%-?%d+),(%-?%d+),?(%-?%d*)$")
-		id, b, d, vv, a = tonumber(id), tonumber(b), tonumber(d), tonumber(vv), tonumber(a)
+		-- (0.9.4: "/op", the operating result of the year so far; a month of an earlier version has none)
+		local id, b, d, vv, a, op = part:match("^(%d+):(%-?%d+),(%-?%d+),(%-?%d+),?(%-?%d*)/?(%-?%d*)$")
+		id, b, d, vv, a, op = tonumber(id), tonumber(b), tonumber(d), tonumber(vv), tonumber(a), tonumber(op)
 		if not (id and b and d and vv) or seen[id] or #rows >= 64 or math.abs(b) > 1e15 or math.abs(d) > 1e15 or math.abs(vv) > 1e15
-			or (a and math.abs(a) > 1e15) then
+			or (a and math.abs(a) > 1e15) or (op and math.abs(op) > 1e15) then
 			return nil
 		end
 		seen[id] = true
-		rows[#rows + 1] = { id = id, b = b, d = math.max(0, d), vv = math.max(0, vv), a = a and math.max(0, a) or nil }
+		rows[#rows + 1] = { id = id, b = b, d = math.max(0, d), vv = math.max(0, vv), a = a and math.max(0, a) or nil, op = op }
 	end
 	table.sort(rows, function(x, y) return x.id < y.id end)
 	return rows
@@ -625,6 +631,30 @@ function M.guiCompanies(st, env)
 end
 
 -- every company's vehicles' resale value: player entity -> sum (one pass over the vehicles, only on the host, once a month)
+-- (0.9.4, Ansgar's idea in #suggestions "Better tracking of income": the value favours the companies that keep their money) A
+-- company's operating result of the year so far: its revenue less its running and upkeep costs, without its constructions and
+-- vehicle purchases (the game's finance window: the "transport" lines of every carrier, this year's column; investments, loans,
+-- interest and "other" left out). nil when the game gives no table. MPFEVER_OPCOLUMN=0: none (the column shows "–")
+M.opOn = function() return os.getenv("MPFEVER_OPCOLUMN") ~= "0" end
+function M.operating(ent, fin)
+	if not M.opOn() or type(ent) ~= "number" then return nil end
+	local ok, total = pcall(function()
+		fin = fin or api.engine.util.finance
+		local cfg = api.type.ChartConfig.new()
+		cfg.count = 1
+		local fd = fin.computeFinanceTable(ent, cfg)
+		local sum, any = 0, false
+		fd:foreach_carrier(function(carrier)
+			fd:foreach_transport(function(key, values)
+				local v = tonumber(values[#values])
+				if v then sum = sum + v; any = true end
+			end, carrier)
+		end)
+		return any and sum or 0
+	end)
+	return ok and tonumber(total) or nil
+end
+
 function M.vehicleValues()
 	local map = {}
 	pcall(function()
@@ -679,13 +709,16 @@ function M.measure(cos, env, now, force, st)
 			vv = vv or M.vehicleValues()
 			local sa = type(st) == "table" and type(st.feat) == "table" and type(st.feat[M.ID]) == "table" and st.feat[M.ID].assets or nil
 			local a = (type(sa) == "table" and os.getenv("MPFEVER_STOCKASSETS") ~= "0") and tonumber(sa[tostring(c.id)]) or nil
-			rows[#rows + 1] = { id = c.id, b = clamp(tonumber(b)), d = clamp(d), vv = clamp(vv[c.ent] or 0), a = a and clamp(a) or nil }
+			local op = M.operating(c.ent)
+			rows[#rows + 1] = { id = c.id, b = clamp(tonumber(b)), d = clamp(d), vv = clamp(vv[c.ent] or 0), a = a and clamp(a) or nil,
+				op = op and clamp(op) or nil }
 			M.g.logged = M.g.logged or {}
 			if not M.g.logged[c.ent] then
 				M.g.logged[c.ent] = true
 				local left = M.registryLoanLeft(st, c.id)
 				log(env, "company " .. c.id .. " (player entity " .. c.ent .. ") read: balance " .. num(b) .. ", ACCOUNT.loan " .. num(d)
-					.. (left and (", loans left in the registry " .. num(left)) or "") .. ", vehicles' resale value " .. num(vv[c.ent] or 0))
+					.. (left and (", loans left in the registry " .. num(left)) or "") .. ", vehicles' resale value " .. num(vv[c.ent] or 0)
+					.. ", operating result of the year " .. (op and num(op) or "none"))
 			end
 		end
 	end
@@ -1083,11 +1116,12 @@ function M.view(md, T, sel)
 		end
 	end
 	table.sort(list, function(a, b) if a.score ~= b.score then return a.score > b.score end return a.id < b.id end)
-	local head = { "#", tr(T, TX.colCo), tr(T, TX.colValue), tr(T, TX.colMoney), tr(T, TX.colVeh) }
+	-- (0.9.4, Ansgar's idea: the operating result of the year so far, see M.operating; "–" for a month measured without it)
+	local head = { "#", tr(T, TX.colCo), tr(T, TX.colValue), tr(T, TX.colMoney), tr(T, TX.colVeh), tr(T, TX.colOp) }
 	if md.opts.tenders then head[#head + 1] = tr(T, TX.colTenders) end
 	local rows = {}
 	for i, x in ipairs(list) do
-		local row = { tostring(i), coLabel(md, x.id, T), M.fmt(M.value(x.r)), M.fmt(M.money(x.r)), M.fmt(x.r.vv) }
+		local row = { tostring(i), coLabel(md, x.id, T), M.fmt(M.value(x.r)), M.fmt(M.money(x.r)), M.fmt(x.r.vv), x.r.op and M.fmt(x.r.op) or "–" }
 		if md.opts.tenders then row[#row + 1] = tostring(md.tw[x.id] or 0) end
 		rows[#rows + 1] = row
 	end
@@ -1096,6 +1130,7 @@ function M.view(md, T, sel)
 	out[#out + 1] = { kind = "table", head = head, rows = rows, ids = ids }
 	add("muted", tr(T, TX.valueExplained))
 	add("muted", tr(T, TX.moneyExplained))
+	add("muted", tr(T, TX.opExplained))
 	-- the graphs (A4: with the stats option)
 	if md.opts.stats then
 		add("title", tr(T, TX.history))
@@ -1228,7 +1263,7 @@ function M.ui(u)
 				local v, pv = M.value(r), prevValue(id)
 				local trend = nil
 				if pv and pv ~= 0 then trend = (v - pv) / math.abs(pv) * 100 end
-				items[#items + 1] = { rank = i, id = id, row = t.rows[i], value = v, money = M.money(r), veh = r.vv, trend = trend, tw = md.tw[id] or 0 }
+				items[#items + 1] = { rank = i, id = id, row = t.rows[i], value = v, money = M.money(r), veh = r.vv, trend = trend, tw = md.tw[id] or 0, op = r.op }
 			end
 		end
 		-- the podium
@@ -1240,7 +1275,7 @@ function M.ui(u)
 		if #pod > 0 and u.stats then add(call("stats", pod, math.floor((W - 20) / 3))); add(call("gap", 8)) end
 		-- the table, sorted as asked
 		local key = M.sel.sort
-		if key == "value" or key == "money" or key == "veh" or key == "trend" or key == "tw" then
+		if key == "value" or key == "money" or key == "veh" or key == "trend" or key == "tw" or key == "op" then
 			table.sort(items, function(a, b)
 				local x, y = a[key] or -math.huge, b[key] or -math.huge
 				if x ~= y then return x > y end
@@ -1251,7 +1286,7 @@ function M.ui(u)
 			return call("button", label, function() M.sel.sort = (M.sel.sort == k) and nil or k end, M.sel.sort == k)
 		end
 		local hl = { "#", tr(T, TX.colCo), head(tr(T, TX.colValue), "value"), head(tr(T, TX.colMoney), "money"), head(tr(T, TX.colVeh), "veh"),
-			head(tr(T, TX.colTrend), "trend") }
+			head(tr(T, TX.colTrend), "trend"), head(tr(T, TX.colOp), "op") }
 		if md.opts.tenders then hl[#hl + 1] = head(tr(T, TX.colTenders), "tw") end
 		local lines = { hl }
 		local ids = {}
@@ -1261,12 +1296,14 @@ function M.ui(u)
 				local s = string.format("%+.1f %%", x.trend)
 				tn = call("text", s, x.trend > 0.05 and "success" or (x.trend < -0.05 and "error" or nil)) or s
 			end
-			local line = { tostring(x.rank), coLabel(md, x.id, T), M.fmt(x.value), M.fmt(x.money), M.fmt(x.veh), tn }
+			local on = "–"
+			if x.op then on = call("text", M.fmt(x.op), x.op < 0 and "error" or nil) or M.fmt(x.op) end
+			local line = { tostring(x.rank), coLabel(md, x.id, T), M.fmt(x.value), M.fmt(x.money), M.fmt(x.veh), tn, on }
 			if md.opts.tenders then line[#line + 1] = tostring(x.tw) end
 			lines[#lines + 1] = line
 			ids[#ids + 1] = x.id
 		end
-		local widths = md.opts.tenders and { 30, 170, 95, 95, 85, 85, 70 } or { 30, 190, 105, 105, 95, 95 }
+		local widths = md.opts.tenders and { 30, 140, 90, 90, 70, 80, 90, 60 } or { 30, 160, 95, 95, 80, 80, 95 }
 		local n = call("table", lines, widths, true, { highlight = function(i) return md.me ~= 0 and ids[i] == md.me end })
 		if n then add(n) end
 		-- (the values as bars in the companies' colours, the first one's the longest)

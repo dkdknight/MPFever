@@ -2,6 +2,12 @@ MPFever - Changelog
 ===================
 
 0.9.4 - (in progress)
+  - ADDED (Ansgar's idea in Discord #suggestions, "Better tracking of income"): the Ranking tab has a column "Operating", each
+    company's revenue minus its running and upkeep costs since the start of the year, without its constructions and vehicle
+    purchases (the game's finance table, measured by the host at the start of every game month with the other figures). The
+    value favours the companies that keep their money; this column shows how well each company's lines earn. The ranking stays
+    by value; on the Hub's page a click on the column's title sorts by it (MPFEVER_OPCOLUMN=0: no figure, "–").
+    Test: tests/test_opcolumn094.py.
   - FIX (#449, yoyo's session of 2026-11-20 with Bence, about 15 minutes lost): a resynchronisation sent Bence 54.6 MB of
     differences over Steam; the Steam relay was full and nothing of Bence reached the host for 15 s, so the host cut him
     ("nothing received for 15 s, connection cut"), 5 s after the sending. A player cut during a resynchronisation is not
@@ -17,6 +23,35 @@ MPFever - Changelog
     concrete bridge), for runs of 100 m and more; if the engine refuses the track with them, the same way is tried again as
     before. The log says how many tunnels and bridges each track has (MPFEVER_AITUNNEL=0: as before).
     Test: tests/test_aitunnel094.py.
+  - FIX (Roadcraft Speed Limits, yoyo's sessions of 2026-11-19 and 2026-11-20): on a client, the mod stopped after its jobs
+    with "Batch journal failed; reload the save to recover before further edits. Batch command callback did not arrive". A
+    command a mod sends by itself goes from one game only (the host's, or the owner company's), so the client's copy was
+    neither shipped nor applied, and its callback was never called. Now it is called on the next frame: a success when another
+    game sends the same command (applied on every game, this one too), a failure when a resynchronisation drops it; in the
+    game scripts' interface and in the game's interface alike (MPFEVER_GSDROPCB=0: never answered, as before).
+    Test: tests/test_gsdropcb094.py.
+  - FIX (#455, flubixx's and John's session of 2026-11-21, "MPFever.exe stop working"): the host's disk C: was full. MPFever
+    never removed its session folders (%TEMP%\mpfever), and kept there a copy of the game of 80 MB and more for every game
+    hosted. Every message of John then failed on the host (written for its game), and the relay ended John's connection for
+    it: John came back, sent his messages again, was cut again, every half second without end, and the host's game said "no
+    answer from MPFever.exe". Now a full disk is said clearly (which disk, which folder can be emptied; in a dialog once) and
+    the player stays connected (the message that could not be written is lost: the checks resynchronise once there is room).
+    At its start the launcher removes the game copies of the session folders no game wrote in for 6 hours and the folders no
+    game wrote in for 7 days, and the host's copy goes at the end of its session (MPFEVER_DISKFULL=0 /
+    MPFEVER_SESSIONCLEAN=0: as before). Tests: tests/test_sessiondisk094.py, the launcher's self-test.
+  - FIX (#437 #438, magnu's and williamcolberg's sessions of 2026-11-19, one company per player): every start stood about 18 s.
+    The first checkpoint waits while a company join is under way, and every paused action after it waited too, also the host's
+    options event of the start, whose turn (2) came before williamcolberg's join (3): the event waited for the checkpoint, the
+    checkpoint for the join, the join for the event, until the turn was skipped ("paused build turn 2 never applied here in
+    30 s: skipped (desync risk)"). Now an action whose turn comes before every join due goes past that checkpoint, with the
+    actions its player made before it; the checkpoint still waits for the join (MPFEVER_JOINTURNFIRST=0: as before).
+    Test: tests/test_jointurnfirst094.py.
+  - IMPROVED (build 40444): a level crossing's type and a signal's one-way state can be changed from their windows in a session
+    (refused since 0.9.2). Those windows make their build with the game's own functions; rebuilt from the shipped form, the
+    crossing's new type was lost and the signal's new object had no model, so the old signal went and none came (#444 #445).
+    Now the build is shipped with what its window made it from (the crossing or the signal, the type or the one-way state), and
+    every game makes the same build itself with the same function (MPFEVER_WINREPLAY=0: refused, as in 0.9.2).
+    Tests: tests/test_winreplay094.py, the autotest rcsig.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one

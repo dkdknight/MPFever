@@ -26533,6 +26533,58 @@
       "ko": "멀티플레이에서는 아직 신호 창에서 일방통행으로 바꿀 수 없습니다. 신호 도구를 사용하세요.",
       "zh-CN": "多人游戏中暂时还不能在信号窗口中将信号设为单向：请使用信号工具。",
       "zh-TW": "多人遊戲中暫時還不能在號誌視窗中將號誌設為單向：請使用號誌工具。"
+    },
+    "The disk {0} is full: MPFever can no longer write the session's files ({1}). The player stays connected, but this message is lost. Free some space on {0} (the folder {2} can be emptied while no game runs): the session will resynchronise afterwards.": {
+      "de": "Der Datenträger {0} ist voll: MPFever kann die Dateien der Sitzung nicht mehr schreiben ({1}). Der Spieler bleibt verbunden, aber diese Nachricht geht verloren. Schaffe Platz auf {0} (der Ordner {2} kann geleert werden, solange kein Spiel läuft): danach wird die Sitzung neu synchronisiert.",
+      "es": "El disco {0} está lleno: MPFever ya no puede escribir los archivos de la sesión ({1}). El jugador sigue conectado, pero este mensaje se pierde. Libera espacio en {0} (la carpeta {2} se puede vaciar mientras no haya ninguna partida en curso): después la sesión se resincronizará.",
+      "it": "Il disco {0} è pieno: MPFever non può più scrivere i file della sessione ({1}). Il giocatore resta connesso, ma questo messaggio va perso. Libera spazio su {0} (la cartella {2} può essere svuotata quando nessuna partita è in corso): poi la sessione si risincronizzerà.",
+      "nl": "De schijf {0} is vol: MPFever kan de bestanden van de sessie niet meer schrijven ({1}). De speler blijft verbonden, maar dit bericht gaat verloren. Maak ruimte vrij op {0} (de map {2} kan worden geleegd zolang er geen spel loopt): daarna wordt de sessie opnieuw gesynchroniseerd.",
+      "pl": "Dysk {0} jest pełny: MPFever nie może już zapisywać plików sesji ({1}). Gracz pozostaje połączony, ale ta wiadomość zostaje utracona. Zwolnij miejsce na {0} (folder {2} można opróżnić, gdy żadna gra nie jest uruchomiona): potem sesja zostanie ponownie zsynchronizowana.",
+      "pt-BR": "O disco {0} está cheio: o MPFever não consegue mais gravar os arquivos da sessão ({1}). O jogador continua conectado, mas esta mensagem é perdida. Libere espaço em {0} (a pasta {2} pode ser esvaziada enquanto nenhum jogo estiver rodando): depois a sessão será ressincronizada.",
+      "ru": "Диск {0} заполнен: MPFever больше не может записывать файлы сеанса ({1}). Игрок остаётся подключённым, но это сообщение потеряно. Освободите место на {0} (папку {2} можно очистить, пока ни одна игра не запущена): после этого сеанс будет повторно синхронизирован.",
+      "ja": "ディスク {0} がいっぱいです。MPFever はセッションのファイルを書き込めません（{1}）。プレイヤーは接続されたままですが、このメッセージは失われます。{0} の空き容量を確保してください（ゲームが動いていないときはフォルダー {2} を空にできます）。その後、セッションは再同期されます。",
+      "ko": "디스크 {0}이(가) 가득 찼습니다. MPFever가 세션 파일을 더 이상 쓸 수 없습니다({1}). 플레이어는 연결된 상태로 유지되지만 이 메시지는 손실됩니다. {0}의 공간을 확보하세요(게임이 실행 중이 아닐 때 폴더 {2}를 비울 수 있습니다). 그 후 세션이 다시 동기화됩니다.",
+      "zh-CN": "磁盘 {0} 已满：MPFever 无法再写入会话文件（{1}）。玩家保持连接，但这条消息已丢失。请释放 {0} 上的空间（没有游戏运行时可以清空文件夹 {2}）：之后会话将重新同步。",
+      "zh-TW": "磁碟 {0} 已滿：MPFever 無法再寫入工作階段檔案（{1}）。玩家保持連線，但這則訊息已遺失。請釋放 {0} 上的空間（沒有遊戲執行時可以清空資料夾 {2}）：之後工作階段將重新同步。"
+    },
+    "Old session folders cleaned: {0} folder(s) and {1} file(s), {2} MB freed.": {
+      "de": "Alte Sitzungsordner bereinigt: {0} Ordner und {1} Datei(en), {2} MB freigegeben.",
+      "es": "Carpetas de sesiones antiguas limpiadas: {0} carpeta(s) y {1} archivo(s), {2} MB liberados.",
+      "it": "Vecchie cartelle di sessione pulite: {0} cartella/e e {1} file, {2} MB liberati.",
+      "nl": "Oude sessiemappen opgeruimd: {0} map(pen) en {1} bestand(en), {2} MB vrijgemaakt.",
+      "pl": "Wyczyszczono stare foldery sesji: {0} folder(ów) i {1} plik(ów), zwolniono {2} MB.",
+      "pt-BR": "Pastas de sessões antigas limpas: {0} pasta(s) e {1} arquivo(s), {2} MB liberados.",
+      "ru": "Старые папки сеансов очищены: папок {0}, файлов {1}, освобождено {2} МБ.",
+      "ja": "古いセッションフォルダーを整理しました：フォルダー {0} 個、ファイル {1} 個、{2} MB を解放。",
+      "ko": "이전 세션 폴더 정리됨: 폴더 {0}개, 파일 {1}개, {2} MB 확보.",
+      "zh-CN": "已清理旧的会话文件夹：{0} 个文件夹和 {1} 个文件，释放 {2} MB。",
+      "zh-TW": "已清理舊的工作階段資料夾：{0} 個資料夾和 {1} 個檔案，釋放 {2} MB。"
+    },
+    "Operating": {
+      "de": "Betrieb",
+      "es": "Explotación",
+      "it": "Esercizio",
+      "nl": "Exploitatie",
+      "pl": "Działalność",
+      "pt-BR": "Operacional",
+      "ru": "Эксплуатация",
+      "ja": "営業",
+      "ko": "운영",
+      "zh-CN": "运营",
+      "zh-TW": "營運"
+    },
+    "Operating = revenue minus running and upkeep costs since the start of the year, without constructions or vehicle purchases (the game's finance table), measured by the host at the start of every game month.": {
+      "de": "Betrieb = Einnahmen minus Betriebs- und Unterhaltskosten seit Jahresbeginn, ohne Bauten und Fahrzeugkäufe (die Finanztabelle des Spiels), vom Host zu Beginn jedes Spielmonats gemessen.",
+      "es": "Explotación = ingresos menos costes de funcionamiento y mantenimiento desde el inicio del año, sin construcciones ni compras de vehículos (la tabla de finanzas del juego), medida por el anfitrión al inicio de cada mes de juego.",
+      "it": "Esercizio = ricavi meno costi di gestione e manutenzione dall'inizio dell'anno, senza costruzioni né acquisti di veicoli (la tabella finanziaria del gioco), misurato dall'host all'inizio di ogni mese di gioco.",
+      "nl": "Exploitatie = inkomsten min bedrijfs- en onderhoudskosten sinds het begin van het jaar, zonder bouwwerken of voertuigaankopen (de financiële tabel van het spel), gemeten door de host aan het begin van elke spelmaand.",
+      "pl": "Działalność = przychody minus koszty eksploatacji i utrzymania od początku roku, bez budów i zakupów pojazdów (tabela finansów gry), mierzone przez hosta na początku każdego miesiąca gry.",
+      "pt-BR": "Operacional = receitas menos custos de operação e manutenção desde o início do ano, sem construções nem compras de veículos (a tabela de finanças do jogo), medido pelo anfitrião no início de cada mês de jogo.",
+      "ru": "Эксплуатация = доходы минус расходы на работу и обслуживание с начала года, без строительства и покупки транспорта (финансовая таблица игры), измеряется хостом в начале каждого игрового месяца.",
+      "ja": "営業 = 年初からの収入から運行費と維持費を引いたもの。建設や車両の購入は含みません（ゲームの財務表）。ホストが各ゲーム月の初めに計測します。",
+      "ko": "운영 = 연초부터의 수입에서 운영비와 유지비를 뺀 값으로, 건설과 차량 구매는 포함하지 않습니다(게임의 재무 표). 호스트가 매 게임 월 초에 측정합니다.",
+      "zh-CN": "运营 = 自年初以来的收入减去运营和维护费用，不含建设和车辆购买（游戏的财务表），由主机在每个游戏月初测量。",
+      "zh-TW": "營運 = 自年初以來的收入減去營運和維護費用，不含建設和車輛購買（遊戲的財務表），由主機在每個遊戲月初測量。"
     }
   }
 }
