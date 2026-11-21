@@ -94,9 +94,11 @@ it is stable enough.
   [x] Transport Fever 3's update of 2026-11-19 (build 40444): every place of the native module found again (bulldozer,
       the game's autosave off in sessions, the lane tool, stops and signals at the click), the pause menu's cards over its
       new frame; no second resync for a player joining during one (#440); passenger contracts per company (0.9.2)
-  [ ] Build 40444's new windows in multiplayer: a level crossing's type, a signal made one-way (refused in a session since
-      0.9.2, until each game makes those changes itself; 0.9.3: an old change from that window, replayed, no longer stops
-      every game: #444 #445)
+  [x] Build 40444's new windows in multiplayer: a level crossing's type, a signal made one-way, each game making the
+      change itself (0.9.4; refused in a session in 0.9.2 and 0.9.3; 0.9.3: an old change from that window, replayed, no
+      longer stops every game: #444 #445)
+  [x] No stand of 18 s at the start of a session with one company per player (#437 #438), no cut of a player while the
+      host sends them the game over Steam (#449), a full disk said clearly and old session folders cleaned (#455) (0.9.4)
   [x] Next to each player's name in the game: one sign for their sync and one for their game's pace (frames per second,
       simulation speed), green, yellow, orange or red: everybody sees which PC slows the session (#418) (0.9.0)
 
@@ -155,6 +157,8 @@ it is stable enough.
   [x] No more money corrected again and again (an action made before the player's company was ready is refused),
       contracts that end at the same step on every PC (#425), and the client's own company never seen as the
       savegame's right after a load (0.9.0)
+  [x] An "Operating" column in the Ranking tab: the year's revenue minus running and maintenance costs, without
+      construction or vehicle purchases (Ansgar's idea, 0.9.4)
 
 0.5 - Mixed modes
   [x] Shared companies and separate companies in the same game (0.5.0)
@@ -181,6 +185,7 @@ it is stable enough.
       own beside them, and sell the stops they no longer use (0.7.5)
   [x] An area by level: Easy 3 towns close to one another, Normal 6, Hard the whole map; companies that start together
       take different home towns; the railway they can pay first (0.8.8)
+  [x] Their railways go through hills in tunnels and over deep valleys on bridges (#450, 0.9.4)
   [ ] Passenger trains between two towns (a game option since 0.8.8, off by default: on many maps their tracks still
       find no way; the track planner is next)
   [ ] Signals, electric trains and warehouses
