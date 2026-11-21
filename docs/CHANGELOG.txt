@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.9.4 - (in progress)
+0.9.4 - 2026-11-21: level crossings and signals changed from their windows in a session, no 18 s stand at a start with one company per player (#437 #438), the host no longer cuts a player while it sends the game (#449), a full disk said instead of cutting a player (#455), computer railways in tunnels and on bridges (#450), an Operating column in the Ranking
   - ADDED (Ansgar's idea in Discord #suggestions, "Better tracking of income"): the Ranking tab has a column "Operating", each
     company's revenue minus its running and upkeep costs since the start of the year, without its constructions and vehicle
     purchases (the game's finance table, measured by the host at the start of every game month with the other figures). The
