@@ -1107,6 +1107,10 @@ namespace MPFever
         public volatile bool IsBulk;
         /// <summary>This player's bulk connections (Steam), live ones.</summary>
         public readonly List<BulkLink> Bulk = new List<BulkLink>();
+        /// <summary>(0.9.4, #449, HOSTSILENT) How many sendings of a game (or of its differences) to this player are under way
+        /// (MainForm.SendParts), and when the last one ended (ticks, 0 before any): see Relay.SilenceLimit.</summary>
+        public int Sending;
+        public long SentEndTicks;
     }
 
     /// <summary>The version of the relay protocol: what a launcher and the Linux relay (relay/) must agree on, whatever their MPFever
@@ -1247,6 +1251,34 @@ namespace MPFever
         /// <summary>Twice a second: every player is told what the host has received from it (at least every 2 s, which also
         /// shows the link is alive); a player silent for 15 s is cut (Windows takes 20 to 45 s to notice a dead link); a
         /// player away for longer than the grace leaves.</summary>
+        // (0.9.4, issue #449, HOSTSILENT) yoyo's session, 2026-11-20 16:26: a resynchronisation sent Bence 54.6 MB of differences over
+        // four Steam connections (16 s); the Steam relay was full ("Connection already has 2 MB pending", Bence's side dropping
+        // fragments) and nothing of Bence reached the host for 15 s: "nothing received for 15 s, connection cut", 5 s after the
+        // sending. A player cut during a resynchronisation is not waited for: Bence came back as a new player, his game was restarted
+        // and loaded the whole 449 MB game, two more resynchronisations, about 15 minutes for everybody. The client already gives a
+        // host 40 s through Steam (Client.SilentLimit, #115); the host gave a player 15 s whatever the route. Now the host waits as
+        // long as the client does (40 s through Steam, 15 s direct), the silence counts from the end of the last sending of a game
+        // to that player, and during one it is cut only after SendingSilence s. MPFEVER_HOSTSILENT=0: 15 s, as before.
+        internal const int SendingSilence = 120;
+        internal static bool HostSilentOn() => Environment.GetEnvironmentVariable("MPFEVER_HOSTSILENT") != "0";
+
+        /// <summary>(HOSTSILENT) The seconds of silence after which the host cuts a player: through Steam or not, a game being sent
+        /// to it or not.</summary>
+        internal static int SilenceLimit(bool steam, bool sending, bool on)
+        {
+            if (!on) return 15;
+            int limit = Client.SilentLimit(steam);
+            return sending ? Math.Max(limit, SendingSilence) : limit;
+        }
+
+        /// <summary>(HOSTSILENT) The whole seconds a player has been silent: since the last thing received from it, or, when later,
+        /// since the end of the last sending of a game to it (the Steam relay still carries it for a while).</summary>
+        internal static long SilenceSeconds(long nowTicks, long lastRecvTicks, long sentEndTicks, bool on)
+        {
+            long from = on && sentEndTicks > lastRecvTicks ? sentEndTicks : lastRecvTicks;
+            return (nowTicks - from) / TimeSpan.TicksPerSecond;
+        }
+
         void LinkLoop()
         {
             var told = new Dictionary<Peer, KeyValuePair<long, DateTime>>();
@@ -1269,10 +1301,12 @@ namespace MPFever
                         if ((now - q.AwaySince).TotalSeconds > Grace) Finalize(q, L.T("pas revenu à temps", "not back in time"));
                         continue;
                     }
-                    if (q.Acks && (now.Ticks - Interlocked.Read(ref q.LastRecvTicks)) / TimeSpan.TicksPerSecond > 15 && q.Tcp != null && q.Tcp != q.CutTcp)
+                    int limit = SilenceLimit(q.SteamId != null, Volatile.Read(ref q.Sending) > 0, HostSilentOn());
+                    if (q.Acks && SilenceSeconds(now.Ticks, Interlocked.Read(ref q.LastRecvTicks), Interlocked.Read(ref q.SentEndTicks), HostSilentOn()) > limit
+                        && q.Tcp != null && q.Tcp != q.CutTcp)
                     {
                         // (also frees a writer blocked on that connection)
-                        Log.Warn(L.F("{0} : plus rien reçu depuis 15 s, connexion coupée", "{0}: nothing received for 15 s, connection cut", q.Name));
+                        Log.Warn(L.F("{0} : plus rien reçu depuis {1} s, connexion coupée", "{0}: nothing received for {1} s, connection cut", q.Name, limit));
                         q.CutTcp = q.Tcp;
                         NetAddr.Cut(q.Tcp);
                         continue;

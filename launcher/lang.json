@@ -9712,18 +9712,18 @@
       "zh-CN": "未及时返回",
       "zh-TW": "未及時返回"
     },
-    "{0}: nothing received for 15 s, connection cut": {
-      "de": "{0}: seit 15 s nichts empfangen, Verbindung getrennt",
-      "es": "{0}: nada recibido en 15 s, conexión cortada",
-      "it": "{0}: nulla ricevuto da 15 s, connessione interrotta",
-      "nl": "{0}: 15 s niets ontvangen, verbinding verbroken",
-      "pl": "{0}: nic nie odebrano od 15 s, połączenie zerwane",
-      "pt-BR": "{0}: nada recebido há 15 s, conexão cortada",
-      "ru": "{0}: ничего не получено за 15 с, соединение разорвано",
-      "ja": "{0}：15 秒間何も受信していないため接続を切断しました",
-      "ko": "{0}: 15초 동안 아무것도 받지 못해 연결을 끊음",
-      "zh-CN": "{0}：15 秒内未收到任何内容，连接已断开",
-      "zh-TW": "{0}：15 秒內未收到任何內容，連線已中斷"
+    "{0}: nothing received for {1} s, connection cut": {
+      "de": "{0}: seit {1} s nichts empfangen, Verbindung getrennt",
+      "es": "{0}: nada recibido en {1} s, conexión cortada",
+      "it": "{0}: nulla ricevuto da {1} s, connessione interrotta",
+      "nl": "{0}: {1} s niets ontvangen, verbinding verbroken",
+      "pl": "{0}: nic nie odebrano od {1} s, połączenie zerwane",
+      "pt-BR": "{0}: nada recebido há {1} s, conexão cortada",
+      "ru": "{0}: ничего не получено за {1} с, соединение разорвано",
+      "ja": "{0}：{1} 秒間何も受信していないため接続を切断しました",
+      "ko": "{0}: {1}초 동안 아무것도 받지 못해 연결을 끊음",
+      "zh-CN": "{0}：{1} 秒内未收到任何内容，连接已断开",
+      "zh-TW": "{0}：{1} 秒內未收到任何內容，連線已中斷"
     },
     "{0}: no longer waited for ({1})": {
       "de": "{0}: wird nicht mehr erwartet ({1})",

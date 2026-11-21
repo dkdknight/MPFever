@@ -944,6 +944,23 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             C(!MainForm.JoinOnce(true, jp, new[] { "Andy#3" }) && jp.SetEquals(new[] { "Bob#4" }), "  another joiner not listed (still reviewing): still a resynchronisation for them after");
             C(!MainForm.JoinOnce(false, new HashSet<string> { "Andy#3" }, new[] { "Andy#3" }) && !MainForm.JoinOnce(true, new HashSet<string>(), new[] { "Andy#3" }),
               "  nothing pending, or pending without a name: as before");
+            // (0.9.4, #449, HOSTSILENT) the host's silence cut on the timeline of yoyo's session: the differences sent to Bence over
+            // Steam from 16:26:50 to 16:27:06, Bence's last word reaching the host at about 16:26:55, the cut at 16:27:11
+            long At449(int s) => new DateTime(2026, 11, 20, 16, 26, 0, DateTimeKind.Utc).AddSeconds(s).Ticks;
+            long recv449 = At449(55), sent449 = At449(66);
+            C(Relay.SilenceSeconds(At449(71), recv449, sent449, false) > Relay.SilenceLimit(true, false, false),
+                "#449, MPFEVER_HOSTSILENT=0 (the bug): Bence cut at 16:27:11, 16 s after his last word, 5 s after the sending");
+            C(Relay.SilenceSeconds(At449(71), recv449, sent449, true) <= Relay.SilenceLimit(true, false, true),
+                "#449 now: not cut at 16:27:11 (5 s after the sending, 40 s allowed through Steam)");
+            C(Relay.SilenceSeconds(At449(64), recv449, 0, true) <= Relay.SilenceLimit(true, true, true),
+                "  nor during the sending, before it ends");
+            C(Relay.SilenceSeconds(At449(66 + 41), recv449, sent449, true) > Relay.SilenceLimit(true, false, true),
+                "  a player who stays silent is still cut, 41 s after the sending");
+            C(Relay.SilenceLimit(false, false, true) == 15 && Relay.SilenceLimit(false, false, false) == 15
+                && Relay.SilenceSeconds(At449(72), At449(56), At449(66), false) == 16,
+                "  a direct connection: 15 s, as before; switched off, the sending's end is not counted");
+            C(Relay.SilenceLimit(true, true, true) == Relay.SendingSilence && Relay.SilenceLimit(false, true, true) == Relay.SendingSilence,
+                "  during a sending: cut only after " + Relay.SendingSilence + " s of silence (a sending that hangs still ends)");
             C(MainForm.StopCutsResync(true, false) && !MainForm.StopCutsResync(false, false) && !MainForm.StopCutsResync(true, true),
                 "a stop or restart cuts a resynchronisation short (MPFEVER_STOPRESYNC=0: not)");
             // (MODIOROOT) the folders mod.io keeps the Mod Hub mods in, as its settings move them

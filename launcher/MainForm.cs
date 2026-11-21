@@ -5998,8 +5998,16 @@ namespace MPFever
         bool SendParts(Peer p, int id, int size, Func<int, Msg> part, out int linksUsed)
         {
             bool shown = Environment.GetEnvironmentVariable("MPFEVER_SENDPCT") != "0";
+            // (0.9.4, #449, HOSTSILENT) a game being sent to this player: the host's silence cut waits longer, then counts from its end
+            // (Relay.SilenceLimit, Relay.SilenceSeconds)
+            Interlocked.Increment(ref p.Sending);
             try { return SendPartsCounted(p, id, size, part, out linksUsed, shown); }
-            finally { if (shown) lock (sendPct) sendPct.Remove(p.Name); }
+            finally
+            {
+                if (shown) lock (sendPct) sendPct.Remove(p.Name);
+                Interlocked.Exchange(ref p.SentEndTicks, DateTime.UtcNow.Ticks);
+                Interlocked.Decrement(ref p.Sending);
+            }
         }
 
         bool SendPartsCounted(Peer p, int id, int size, Func<int, Msg> part, out int linksUsed, bool shown)

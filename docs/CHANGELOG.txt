@@ -2,6 +2,14 @@ MPFever - Changelog
 ===================
 
 0.9.4 - (in progress)
+  - FIX (#449, yoyo's session of 2026-11-20 with Bence, about 15 minutes lost): a resynchronisation sent Bence 54.6 MB of
+    differences over Steam; the Steam relay was full and nothing of Bence reached the host for 15 s, so the host cut him
+    ("nothing received for 15 s, connection cut"), 5 s after the sending. A player cut during a resynchronisation is not
+    waited for: Bence came back as a new player, his game was restarted and loaded the whole 449 MB game, and two more
+    resynchronisations followed. The player's MPFever already gave the host 40 s through Steam, the host gave a player 15 s.
+    Now the host waits as long (40 s through Steam, 15 s direct), counts the silence from the end of the last sending of a game
+    to that player, and during one cuts only after 120 s; a player that stays silent is still cut (MPFEVER_HOSTSILENT=0: 15 s,
+    as before). Tests: tests/test_hostsilent094.py, the launcher's self-test.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one
