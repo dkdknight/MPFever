@@ -40,6 +40,7 @@ src = open(os.path.join(CONTENT, "mpfever_ai.lua"), encoding="utf-8").read()
 check('RL.BUDGET = tonumber(os.getenv("MPFEVER_AIRAILBUDGET") or "") or 2' in src, "2 s by default, MPFEVER_AIRAILBUDGET")
 check("if k % 64 == 0 then RL.inTime() end" in src, "checked while the world's segments are read")
 check("if visits % 1000 == 0 then RL.inTime() end" in src, "checked in the search")
-check("\t\tRL.inTime()\n\t\tlocal sp, _, refused = RL.trackProposal(E, co, -9001" in src.replace("\r\n", "\n"), "checked before each way tried")
+check("\t\t\tRL.inTime()\n\t\t\tlocal sp, _, refused, _, structs = RL.trackProposal(E, co, -9001" in src.replace("\r\n", "\n"),
+      "checked before each way tried (0.9.4: and before its second try without tunnels)")
 
 sys.exit(1 if failures else 0)

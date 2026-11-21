@@ -3994,7 +3994,7 @@ function RL.dryDepot(E, co, back, gap, lat)
 	-- (the depot and its approach together)
 	local q = { x = X.x - yx * 5, y = X.y - yy * 5 }
 	q.z = E.groundZ(q.x, q.y, back.p.z)
-	local tsp, _, refused = RL.trackProposal(E, co, back.node, back.p, back.d, -9001, q, { x = yx, y = yy }, currentYear(E), {}, nil)
+	local tsp, _, refused = RL.trackProposal(E, co, back.node, back.p, back.d, -9001, q, { x = yx, y = yy }, currentYear(E), {}, nil, true)
 	if not tsp then return false, sp, ctx, cost, "its approach: " .. tostring(refused), bits, O end
 	local ssp = tsp.streetProposal
 	local nodes = ssp.nodesToAdd or {}
@@ -4522,6 +4522,54 @@ function RL.plan(E, p0, d0, p1, d1, W)
 	return way
 end
 
+-- (0.9.4, issue #450, MPFEVER_AITUNNEL) TrainCityDaniel, 2026-11-20: a computer company's 3.7 km track went straight through the
+-- hills in deep cuts, and over the valleys on high embankments: its heights follow the ground within RL.GRADE between its ends, and
+-- it only had bridges over what it crosses and over water. Now each piece of it at least RL.TUNNEL m under the ground (at its two
+-- ends and its middle) is a tunnel (the game's rock tunnel for trains), each piece at least RL.VIADUCT m over the ground a bridge
+-- (its concrete bridge); a run of such pieces shorter than RL.STRUCTMIN m, or within RL.STRUCTEND m of an end, stays as it was.
+-- When the engine's dry run refuses the track with them, the same way is tried again as before (RL.buildTrack, RL.corridorIn).
+-- Only the host's game plans a computer company's track; the others build it from the shipped proposal. MPFEVER_AITUNNEL=0: as before.
+RL.TUNNEL, RL.VIADUCT, RL.STRUCTMIN, RL.STRUCTEND = 15, 12, 100, 40
+function RL.tunnelsOn() return os.getenv("MPFEVER_AITUNNEL") ~= "0" end
+
+-- (AITUNNEL) the game's rock tunnel for trains (its index), nil when there is none
+function RL.tunnelType(E)
+	local id
+	pcall(function()
+		for i, name in pairs(E.api.res.tunnelTypeRep.getAll()) do
+			local n = tostring(name)
+			if n:find("tunnel_a", 1, true) and not n:find("_car", 1, true) then id = i end
+		end
+	end)
+	return id
+end
+
+-- (AITUNNEL) which pieces of a track are tunnels ("t") or bridges ("v"). p[i]: one piece, { s0, s1 = its distance from the track's
+-- start at its two ends, under, over = the least depth under the ground and the least height over it of its two ends and its
+-- middle, fixed = a bridge already (over a crossing or water) }; total: the track's length
+function RL.structures(p, total)
+	local kinds = {}
+	for i, q in ipairs(p) do
+		if not q.fixed then
+			if q.under >= RL.TUNNEL then kinds[i] = "t" elseif q.over >= RL.VIADUCT then kinds[i] = "v" end
+		end
+	end
+	local i = 1
+	while i <= #p do
+		if kinds[i] then
+			local j = i
+			while p[j + 1] and kinds[j + 1] == kinds[i] do j = j + 1 end
+			if p[j].s1 - p[i].s0 < RL.STRUCTMIN or p[i].s0 < RL.STRUCTEND or total - p[j].s1 < RL.STRUCTEND then
+				for k = i, j do kinds[k] = nil end
+			end
+			i = j + 1
+		else
+			i = i + 1
+		end
+	end
+	return kinds
+end
+
 -- The track from node n0 (at p0, leaving along d0) to node n1 (at p1, leaving along d1, towards the first) through the points of
 -- way (none: one curve straight from end to end), in pieces of about RL.STEP m. Over every street and track it crosses it runs on
 -- a bridge (the game's concrete bridge, RL.SPAN m long, RL.CLEAR m over the segment), as a player's track crosses a road: nothing
@@ -4529,8 +4577,10 @@ end
 -- tighter than RL.RADIUS, passes within 45 m of a town house,
 -- crosses a segment twice or runs along it, crosses one too slantwise (under 14 degrees), or needs more than RL.GRADE (twice that between two fixed
 -- points closer than 200 m, RL.RAMP on the ramps of a bridge) between its ends and its bridges. Its heights follow the ground, averaged,
--- within the grade. Owned by the company. W: what is in its way (RL.world), none when nil.
-function RL.trackProposal(E, co, n0, p0, d0, n1, p1, d1, year, way, W)
+-- within the grade. Owned by the company. W: what is in its way (RL.world), none when nil. plain: no tunnel nor bridge of
+-- RL.structures (AITUNNEL). Returns the proposal, the length, why it was refused, the crossings bridged, and { tunnels, tunnelM,
+-- viaducts, viaductM } (AITUNNEL: how many runs of tunnels and bridges over the ground, and their metres)
+function RL.trackProposal(E, co, n0, p0, d0, n1, p1, d1, year, way, W, plain)
 	local api, C = E.api, E.C
 	local tpl, style = RL.track(year)
 	local lanes = C.templateLanes(tpl)
@@ -4694,6 +4744,35 @@ function RL.trackProposal(E, co, n0, p0, d0, n1, p1, d1, year, way, W)
 	end
 	local bridgeType = RL.bridgeType(E)
 	if #spans > 0 and not bridgeType then return nil, L0, "no bridge type" end
+	-- (AITUNNEL) the pieces deep under the ground or high over it
+	local kinds, structs, tunnelType = {}, { tunnels = 0, tunnelM = 0, viaducts = 0, viaductM = 0 }, nil
+	if RL.tunnelsOn() and not plain then
+		local p = {}
+		for i = 1, #pts - 1 do
+			local a1, b1 = pts[i], pts[i + 1]
+			local mx, my = S.at((a1.t + b1.t) / 2)
+			local zm = (zs[i] + zs[i + 1]) / 2
+			local ga, gm, gb = E.groundZ(a1.x, a1.y, zs[i]), E.groundZ(mx, my, zm), E.groundZ(b1.x, b1.y, zs[i + 1])
+			p[i] = { s0 = s[i], s1 = s[i + 1], under = math.min(ga - zs[i], gm - zm, gb - zs[i + 1]),
+				over = math.min(zs[i] - ga, zm - gm, zs[i + 1] - gb), fixed = a1.bridge ~= nil }
+		end
+		kinds = RL.structures(p, s[#pts])
+		tunnelType = RL.tunnelType(E)
+		for i = 1, #pts - 1 do
+			if (kinds[i] == "t" and not tunnelType) or (kinds[i] == "v" and not bridgeType) then kinds[i] = nil end
+			if kinds[i] then
+				local m = s[i + 1] - s[i]
+				local first = kinds[i - 1] ~= kinds[i]
+				if kinds[i] == "t" then
+					structs.tunnelM = structs.tunnelM + m
+					if first then structs.tunnels = structs.tunnels + 1 end
+				else
+					structs.viaductM = structs.viaductM + m
+					if first then structs.viaducts = structs.viaducts + 1 end
+				end
+			end
+		end
+	end
 	local sp = api.type.SimpleProposal.new()
 	local ssp = sp.streetProposal
 	local nodes, edges, ids = {}, {}, { n0 }
@@ -4724,7 +4803,10 @@ function RL.trackProposal(E, co, n0, p0, d0, n1, p1, d1, year, way, W)
 		c.tangent0 = api.type.Vec3f.new(ax * dt, ay * dt, dz)
 		c.tangent1 = api.type.Vec3f.new(bx * dt, by * dt, dz)
 		-- (the piece from a bridge's start to its end: the bridge)
-		if a1.bridge then c.type, c.typeIndex = 1, bridgeType else c.type, c.typeIndex = 0, -1 end
+		-- ((AITUNNEL) a piece deep under the ground: a tunnel; high over it: a bridge)
+		if a1.bridge or kinds[i] == "v" then c.type, c.typeIndex = 1, bridgeType
+		elseif kinds[i] == "t" then c.type, c.typeIndex = 2, tunnelType
+		else c.type, c.typeIndex = 0, -1 end
 		c.roadTemplate, c.roadStyle, c.roadType = tpl, style, 0
 		e.comp = c
 		local se = e.streetEdge
@@ -4739,7 +4821,7 @@ function RL.trackProposal(E, co, n0, p0, d0, n1, p1, d1, year, way, W)
 	if #nodes > 0 then ssp.nodesToAdd = nodes end
 	ssp.edgesToAdd = edges
 	sp.streetProposal = ssp
-	return sp, L0, nil, #crossings
+	return sp, L0, nil, #crossings, structs
 end
 
 -- the water level of the map (the sea's; rivers and lakes lie in ground under it), 0 when it cannot be read
@@ -4811,29 +4893,34 @@ function RL.corridorIn(E, co, from, to, a, place)
 	local bits = keepBuildings() and withoutBuildings(CTX_ROAD) or CTX_ROAD
 	local ctx = context(E, co.ent, bits)
 	for _, w in ipairs(RL.ways(E, p0, u, p1, back, W)) do
-		RL.inTime()
-		local sp, _, refused = RL.trackProposal(E, co, -9001, p0, u, -9002, p1, back, currentYear(E), w.way, W)
-		if sp then
-			-- (0.6.4: and the engine's dry run of that track, its two ends new nodes where the stations' ends will be: what the
-			-- checks do not see (a bridge's piers on a track, water, the slopes) refused it after the stations were built)
-			local api = E.api
-			local ssp = sp.streetProposal
-			local nodes = ssp.nodesToAdd or {}
-			for k, q in ipairs({ p0, p1 }) do
-				local ne = api.type.NodeAndEntity.new()
-				ne.entity = -9000 - k
-				local bn = ne.comp
-				bn.position = api.type.Vec3f.new(q.x, q.y, q.z)
-				ne.comp = bn
-				nodes[#nodes + 1] = ne
+		-- ((AITUNNEL) with its tunnels and bridges over the ground first; refused by the dry run, the same way as before)
+		for _, plain in ipairs(RL.tunnelsOn() and { false, true } or { true }) do
+			RL.inTime()
+			local sp, _, refused, _, structs = RL.trackProposal(E, co, -9001, p0, u, -9002, p1, back, currentYear(E), w.way, W, plain)
+			if sp then
+				-- (0.6.4: and the engine's dry run of that track, its two ends new nodes where the stations' ends will be: what the
+				-- checks do not see (a bridge's piers on a track, water, the slopes) refused it after the stations were built)
+				local api = E.api
+				local ssp = sp.streetProposal
+				local nodes = ssp.nodesToAdd or {}
+				for k, q in ipairs({ p0, p1 }) do
+					local ne = api.type.NodeAndEntity.new()
+					ne.entity = -9000 - k
+					local bn = ne.comp
+					bn.position = api.type.Vec3f.new(q.x, q.y, q.z)
+					ne.comp = bn
+					nodes[#nodes + 1] = ne
+				end
+				ssp.nodesToAdd = nodes
+				sp.streetProposal = ssp
+				local okd, pd = pcall(function() return api.engine.util.proposal.makeProposalData(sp, ctx) end)
+				if okd and pd and #pd.errorState.messages == 0 and not pd.errorState.critical then return true end
+				why = w.what .. ": " .. (okd and pd and (E.C.ser(E.C.marshal(pd.errorState.messages)) .. RL.collides(E, pd)) or tostring(pd))
+			else
+				why = tostring(refused)
 			end
-			ssp.nodesToAdd = nodes
-			sp.streetProposal = ssp
-			local okd, pd = pcall(function() return api.engine.util.proposal.makeProposalData(sp, ctx) end)
-			if okd and pd and #pd.errorState.messages == 0 and not pd.errorState.critical then return true end
-			why = w.what .. ": " .. (okd and pd and (E.C.ser(E.C.marshal(pd.errorState.messages)) .. RL.collides(E, pd)) or tostring(pd))
-		else
-			why = tostring(refused)
+			-- (nothing of RL.structures in it, or refused before the dry run: the plain one would be the same)
+			if not (sp and structs and structs.tunnels + structs.viaducts > 0) then break end
 		end
 	end
 	return false, why
@@ -4850,41 +4937,49 @@ function RL.buildTrack(E, co, ea, eb, what)
 	local ctx = context(E, co.ent, bits)
 	local why = ""
 	for _, w in ipairs(RL.ways(E, ea.p, ea.d, eb.p, eb.d, W)) do
-		local okp, sp, len, refused, ncross = pcall(RL.trackProposal, E, co, ea.node, ea.p, ea.d, eb.node, eb.p, eb.d, year, w.way, W)
-		if not okp then
-			why = "no proposal: " .. tostring(sp)
-		elseif not sp then
-			why = tostring(refused)
-		else
-			local okd, pd = pcall(function() return api.engine.util.proposal.makeProposalData(sp, ctx) end)
-			if not (okd and pd) then
-				why = "dry run failed: " .. tostring(pd)
+		-- ((AITUNNEL) with its tunnels and bridges over the ground first; refused by the dry run, the same way as before)
+		for _, plain in ipairs(RL.tunnelsOn() and { false, true } or { true }) do
+			local okp, sp, len, refused, ncross, structs = pcall(RL.trackProposal, E, co, ea.node, ea.p, ea.d, eb.node, eb.p, eb.d, year, w.way, W, plain)
+			local more = okp and sp and type(structs) == "table" and structs.tunnels + structs.viaducts > 0
+			if not okp then
+				why = "no proposal: " .. tostring(sp)
+			elseif not sp then
+				why = tostring(refused)
 			else
-				pcall(function() why = E.C.ser(E.C.marshal(pd.errorState.messages)) end)
-				why = why .. RL.collides(E, pd)
-				-- (a segment it collides with: was it among what is in its way (W), and crossed (on a bridge)? for the logs)
-				pcall(function()
-					local ce = pd.collisionInfo.collisionEntities[1].entity
-					local known = false
-					for _, x in ipairs(W.edges) do if x.e == ce then known = true end end
-					why = why .. (known and " (known)" or " (not known)") .. (refused and "" or "")
-				end)
-				if #pd.errorState.messages == 0 and not pd.errorState.critical then
-					if keepBuildings() and buildingsHit(E, pd) > 0 then
-						why = "town buildings in its way"
-					else
-						local cost = 0
-						pcall(function() cost = tonumber(pd.costs) or 0 end)
-						if not spendOk(E, co, cost, what) then return "dear" end
-						L(E, string.format("%s: %.0f m, %s, %d crossing(s) bridged, cost %d", what, len or 0, w.what, ncross or 0, math.floor(cost)))
-						build(E, co.id, api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true, true), what, bits,
-							{ kind = "railtrack", pos = { x = (ea.p.x + eb.p.x) / 2, y = (ea.p.y + eb.p.y) / 2, z = (ea.p.z + eb.p.z) / 2 } })
-						return true
+				local okd, pd = pcall(function() return api.engine.util.proposal.makeProposalData(sp, ctx) end)
+				if not (okd and pd) then
+					why = "dry run failed: " .. tostring(pd)
+				else
+					pcall(function() why = E.C.ser(E.C.marshal(pd.errorState.messages)) end)
+					why = why .. RL.collides(E, pd)
+					-- (a segment it collides with: was it among what is in its way (W), and crossed (on a bridge)? for the logs)
+					pcall(function()
+						local ce = pd.collisionInfo.collisionEntities[1].entity
+						local known = false
+						for _, x in ipairs(W.edges) do if x.e == ce then known = true end end
+						why = why .. (known and " (known)" or " (not known)") .. (refused and "" or "")
+					end)
+					if #pd.errorState.messages == 0 and not pd.errorState.critical then
+						if keepBuildings() and buildingsHit(E, pd) > 0 then
+							why = "town buildings in its way"
+						else
+							local cost = 0
+							pcall(function() cost = tonumber(pd.costs) or 0 end)
+							if not spendOk(E, co, cost, what) then return "dear" end
+							local extra = more and string.format(", %d tunnel(s) %.0f m, %d bridge(s) over the ground %.0f m", structs.tunnels,
+								structs.tunnelM, structs.viaducts, structs.viaductM) or ""
+							L(E, string.format("%s: %.0f m, %s, %d crossing(s) bridged%s, cost %d", what, len or 0, w.what, ncross or 0, extra, math.floor(cost)))
+							build(E, co.id, api.cmd.makeWorldBuildProposalCmd(sp, ctx, false, true, true), what, bits,
+								{ kind = "railtrack", pos = { x = (ea.p.x + eb.p.x) / 2, y = (ea.p.y + eb.p.y) / 2, z = (ea.p.z + eb.p.z) / 2 } })
+							return true
+						end
 					end
 				end
 			end
+			L(E, string.format("%s: %s%s refused: %s", what, w.what, more and " with its tunnels and bridges" or "", tostring(why):sub(1, 160)))
+			-- (nothing of RL.structures in it, or refused before the dry run: the plain one would be the same)
+			if not more then break end
 		end
-		L(E, string.format("%s: %s refused: %s", what, w.what, tostring(why):sub(1, 160)))
 	end
 	return false, why
 end

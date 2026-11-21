@@ -10,6 +10,13 @@ MPFever - Changelog
     Now the host waits as long (40 s through Steam, 15 s direct), counts the silence from the end of the last sending of a game
     to that player, and during one cuts only after 120 s; a player that stays silent is still cut (MPFEVER_HOSTSILENT=0: 15 s,
     as before). Tests: tests/test_hostsilent094.py, the launcher's self-test.
+  - FIX (#450, TrainCityDaniel, computer companies): a computer company's railway went straight through the hills in deep
+    cuts and over the valleys on high embankments ("3716 m, straight, 1 crossing(s) bridged"): its heights follow the ground
+    within 3 % between its ends, and it only had bridges over what it crosses and over water. Now a stretch of it at least 15 m
+    under the ground is a tunnel (the game's rock tunnel for trains) and a stretch at least 12 m over the ground a bridge (its
+    concrete bridge), for runs of 100 m and more; if the engine refuses the track with them, the same way is tried again as
+    before. The log says how many tunnels and bridges each track has (MPFEVER_AITUNNEL=0: as before).
+    Test: tests/test_aitunnel094.py.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one
