@@ -1,6 +1,8 @@
 MPFever - Changelog
 ===================
 
+0.9.6 - (in progress)
+
 0.9.5 - 2026-11-21: MPFever's native module finds the memory it needs on a game started twice, instead of staying off and drifting (#459)
   - FIX (#459, Flubi and JohnMenssing): on the second start of Flubi's game, 30 s after the first, MPFever's native module
     found no memory near the game's code: it searched only the band 256 MB to 1.75 GB below the game's image, and something of
