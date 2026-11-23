@@ -236,6 +236,41 @@ saved and hosted again (the players come back by themselves). The server's sessi
 (and `--host-key`) and the server appears with the relay's address, reachable, without Steam (see [RELAY.md](RELAY.md)); the server's launcher then does not announce by itself. Without a relay nothing changes: the server announces
 itself, as before, and appears when its port is reachable or Steam is online. (The list service's own change, looking at an announced address, is a second way, for the day the deployed list has it.)
 
+## Experimental: what to expect, and how it compares
+
+**This is experimental.** It runs, it has been played with, and it can break: it relies on a Windows game under Wine and on Valve's private Steam client library (through Madeira Dock), neither of which is a supported setup. Do not host a save you cannot lose without keeping your own copies, and expect settings and behaviour to change between releases.
+
+### Which one to use
+
+| | Classic host | Relay (`mpfever-relay`) | Dedicated server, Windows (`--server`, [SERVER.txt](SERVER.txt)) | **Dedicated server, Docker (this)** |
+|---|---|---|---|---|
+| What runs the world | A player's own game, on that player's PC | A player's own game (the relay runs **no** game) | The full game on a PC of its own, hidden (no display) | The full game in a Linux container (Wine), no display, no GPU |
+| World lives when the players leave | No (the host leaves, the session ends, unless migration, experimental) | No (same; optional migration and save on the relay, experimental) | Yes, paused while nobody is there, saved every 10 minutes | Yes, same server mode: paused while nobody is there, saved every 10 minutes, backups kept |
+| Needs | The host's PC on and a reachable port or Steam | A cheap VPS; nothing to open on the host's side | A Windows PC with the game, Steam and a graphics card able to run the game | Docker (Linux, or Windows with Docker Desktop), 12 GB RAM minimum (16 GB for a 120 MB world), no GPU, **a Steam account that owns the game** |
+| Steam licence | The player's own | The player's own | The PC's own Steam | The server's account must own the game; one *playing* session per account at a time (see the Steam offline mode below) |
+| Status | Released | Works with real games; migration and saved copy experimental | Released | **Experimental** |
+
+- The Docker server and the Windows dedicated server are the **same server mode of MPFever** (`MPFever.exe --server`, the same settings file, console and rules); the Docker one packages it for Linux hosts and removes the need for a Windows PC with a graphics card. It is not a different game server and not a rewrite: the world is still simulated by Transport Fever 3.
+- A **relay is not a dedicated server**: it carries the connections, nobody simulates the world on it. A dedicated server can *optionally* use a relay (`SRV_RELAY`) when its network cannot receive connections (mobile box, CGNAT); otherwise the server needs no relay.
+- Compared with a **classic host**, a dedicated server keeps the world up without anyone's PC, and no player's game is the authority.
+
+### What has been tested
+
+On a real Steam account, with real Windows clients, on Docker Desktop (Windows) and a built image:
+- install, login, import, first start on empty volumes, restart restores the saved world, clean stop (the world is saved), healthcheck;
+- one client at a time joins, resynchronises, `IDENTICAL on 2 games`, 0 desynchronisations; a 40-minute run on a real 122 MB world (16 GB, 2 CPUs) with 0 desynchronisations and no memory growth after warm-up;
+- a public test server on a home PC behind a mobile box through a relay on a VPS, with Steam offline mode, while the owner played the same game on the same PC with the same account (2026-11-20): join, pause and resume, in sync, leave; mods installed from mod.io and the world loaded in sync with them;
+- the 0.9.5 image published, pulled, and started with a world loaded (2026-11-23), without a client.
+
+### What has not been tested (risks)
+
+- **Several real clients at once**, runs of **several hours**, and a **player receiving the mods from the server** (unit and local level only).
+- The **offline logon ticket's lifetime** (Steam offline mode): it is renewed by one online start; how long it lasts is unknown.
+- A **second PC for the owner's game**, the **GPU variant** (`compose.gpu.yaml`), ARM hosts (not supported).
+- **Valve changes its client** (Dock calls a private API): the server can stop working until the table in `server/dock/src/client_layout.c` is rebuilt (`server/dock/MAINTAINING.md`). The same goes for a game update (a new image, a new game import).
+- Memory: 10.6 to 11.8 GB for a small world (see Measured); not for small hosts.
+- The branch is large (the launcher changes are about 55 lines for the base, more for the mods, votes, relay host key and offline mode); a review is still needed, and it could be split.
+
 ## Roadmap of the dedicated server
 
 Planned, in no promised order (none of it is done unless it says so):
