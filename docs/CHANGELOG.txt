@@ -1,11 +1,76 @@
 MPFever - Changelog
 ===================
 
-0.9.4 - (in progress)
+0.9.6 - (in progress)
   - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
     (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
     names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
     under the old name by the project; a package pushed to it earlier can be deleted.
+
+0.9.5 - 2026-11-21: MPFever's native module finds the memory it needs on a game started twice, instead of staying off and drifting (#459)
+  - FIX (#459, Flubi and JohnMenssing): on the second start of Flubi's game, 30 s after the first, MPFever's native module
+    found no memory near the game's code: it searched only the band 256 MB to 1.75 GB below the game's image, and something of
+    that game's process had taken all of it. Every native fix that needs such a place stayed off (order fixes, fresh ids, the
+    player word, the stop point, the module builder guard...), the game said "nat off" and drifted from his friend's, and the
+    session resynchronised again and again ("Suddenly, resyncs are happening more frequently again"). Now, when that band has
+    nothing, the free places above the game's image (within 1.75 GB of its start) and then just below it are searched too; the
+    first search is unchanged (a game that found a place before finds the same one). native.log says it once, with what holds
+    the band (native/near_alloc.h; MPFEVER_NEARSCAN=0: the band alone, as before; MPFEVER_NEARBLOCK=1, for tests: the band
+    taken first). Test: tests/test_nearalloc095.py. In game (Test Rcsig 40444, one company per player, the band taken on the
+    host by MPFEVER_NEARBLOCK=1): with the band alone, the host's native.log as Flubi's and the session not even started after
+    10 minutes; with the fix, its places taken above the game's image, every native fix on, the scenario in sync.
+
+0.9.4 - 2026-11-21: level crossings and signals changed from their windows in a session, no 18 s stand at a start with one company per player (#437 #438), the host no longer cuts a player while it sends the game (#449), a full disk said instead of cutting a player (#455), computer railways in tunnels and on bridges (#450), an Operating column in the Ranking
+  - ADDED (Ansgar's idea in Discord #suggestions, "Better tracking of income"): the Ranking tab has a column "Operating", each
+    company's revenue minus its running and upkeep costs since the start of the year, without its constructions and vehicle
+    purchases (the game's finance table, measured by the host at the start of every game month with the other figures). The
+    value favours the companies that keep their money; this column shows how well each company's lines earn. The ranking stays
+    by value; on the Hub's page a click on the column's title sorts by it (MPFEVER_OPCOLUMN=0: no figure, "–").
+    Test: tests/test_opcolumn094.py.
+  - FIX (#449, yoyo's session of 2026-11-20 with Bence, about 15 minutes lost): a resynchronisation sent Bence 54.6 MB of
+    differences over Steam; the Steam relay was full and nothing of Bence reached the host for 15 s, so the host cut him
+    ("nothing received for 15 s, connection cut"), 5 s after the sending. A player cut during a resynchronisation is not
+    waited for: Bence came back as a new player, his game was restarted and loaded the whole 449 MB game, and two more
+    resynchronisations followed. The player's MPFever already gave the host 40 s through Steam, the host gave a player 15 s.
+    Now the host waits as long (40 s through Steam, 15 s direct), counts the silence from the end of the last sending of a game
+    to that player, and during one cuts only after 120 s; a player that stays silent is still cut (MPFEVER_HOSTSILENT=0: 15 s,
+    as before). Tests: tests/test_hostsilent094.py, the launcher's self-test.
+  - FIX (#450, TrainCityDaniel, computer companies): a computer company's railway went straight through the hills in deep
+    cuts and over the valleys on high embankments ("3716 m, straight, 1 crossing(s) bridged"): its heights follow the ground
+    within 3 % between its ends, and it only had bridges over what it crosses and over water. Now a stretch of it at least 15 m
+    under the ground is a tunnel (the game's rock tunnel for trains) and a stretch at least 12 m over the ground a bridge (its
+    concrete bridge), for runs of 100 m and more; if the engine refuses the track with them, the same way is tried again as
+    before. The log says how many tunnels and bridges each track has (MPFEVER_AITUNNEL=0: as before).
+    Test: tests/test_aitunnel094.py.
+  - FIX (Roadcraft Speed Limits, yoyo's sessions of 2026-11-19 and 2026-11-20): on a client, the mod stopped after its jobs
+    with "Batch journal failed; reload the save to recover before further edits. Batch command callback did not arrive". A
+    command a mod sends by itself goes from one game only (the host's, or the owner company's), so the client's copy was
+    neither shipped nor applied, and its callback was never called. Now it is called on the next frame: a success when another
+    game sends the same command (applied on every game, this one too), a failure when a resynchronisation drops it; in the
+    game scripts' interface and in the game's interface alike (MPFEVER_GSDROPCB=0: never answered, as before).
+    Test: tests/test_gsdropcb094.py.
+  - FIX (#455, flubixx's and John's session of 2026-11-21, "MPFever.exe stop working"): the host's disk C: was full. MPFever
+    never removed its session folders (%TEMP%\mpfever), and kept there a copy of the game of 80 MB and more for every game
+    hosted. Every message of John then failed on the host (written for its game), and the relay ended John's connection for
+    it: John came back, sent his messages again, was cut again, every half second without end, and the host's game said "no
+    answer from MPFever.exe". Now a full disk is said clearly (which disk, which folder can be emptied; in a dialog once) and
+    the player stays connected (the message that could not be written is lost: the checks resynchronise once there is room).
+    At its start the launcher removes the game copies of the session folders no game wrote in for 6 hours and the folders no
+    game wrote in for 7 days, and the host's copy goes at the end of its session (MPFEVER_DISKFULL=0 /
+    MPFEVER_SESSIONCLEAN=0: as before). Tests: tests/test_sessiondisk094.py, the launcher's self-test.
+  - FIX (#437 #438, magnu's and williamcolberg's sessions of 2026-11-19, one company per player): every start stood about 18 s.
+    The first checkpoint waits while a company join is under way, and every paused action after it waited too, also the host's
+    options event of the start, whose turn (2) came before williamcolberg's join (3): the event waited for the checkpoint, the
+    checkpoint for the join, the join for the event, until the turn was skipped ("paused build turn 2 never applied here in
+    30 s: skipped (desync risk)"). Now an action whose turn comes before every join due goes past that checkpoint, with the
+    actions its player made before it; the checkpoint still waits for the join (MPFEVER_JOINTURNFIRST=0: as before).
+    Test: tests/test_jointurnfirst094.py.
+  - IMPROVED (build 40444): a level crossing's type and a signal's one-way state can be changed from their windows in a session
+    (refused since 0.9.2). Those windows make their build with the game's own functions; rebuilt from the shipped form, the
+    crossing's new type was lost and the signal's new object had no model, so the old signal went and none came (#444 #445).
+    Now the build is shipped with what its window made it from (the crossing or the signal, the type or the one-way state), and
+    every game makes the same build itself with the same function (MPFEVER_WINREPLAY=0: refused, as in 0.9.2).
+    Tests: tests/test_winreplay094.py, the autotest rcsig.
 
 0.9.3 - 2026-11-20: paused builds kept in order while the host's game saves (#447), a signal changed from its window no longer stops every game (#444 #445), mods' own commands checked again (#448)
   - FIX (#447, yoyo's session of 2026-11-19 with YkeWoudstra and Bence, a 5-minute resynchronisation): two tracks laid one

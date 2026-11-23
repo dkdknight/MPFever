@@ -993,8 +993,9 @@ check(run("return I_FS['A/feat_stats_main.txt'] ~= nil and I_FS['B/feat_stats_ma
 tab_b = run("return I_flat(I_tab(IB, I_SESSION, false))")
 check("Game goal" in tab_b and "Criterion: Tenders won. Target: 3. Length: 5 years." in tab_b,
       "integrated window: the goal's rules in the client's language")
-check("#|Company|Value|Money|Vehicles|Tenders" in tab_b and "1|Robot (AI)|$3.0 M|$3.0 M|$0|7" in tab_b
-      and "2|Bob Trans (you)|$2.0 M|$2.0 M|$0|1" in tab_b and "3|Host Rail|$6.0 M|$5.0 M|$1.0 M|0" in tab_b,
+# (0.9.4: the "Operating" column, "–" here: these months were measured without the game's finance table, tests/test_opcolumn094.py)
+check("#|Company|Value|Money|Vehicles|Operating|Tenders" in tab_b and "1|Robot (AI)|$3.0 M|$3.0 M|$0|–|7" in tab_b
+      and "2|Bob Trans (you)|$2.0 M|$2.0 M|$0|–|1" in tab_b and "3|Host Rail|$6.0 M|$5.0 M|$1.0 M|–|0" in tab_b,
       "integrated window: the ranking (by the goal's tenders) as a table of the window (u.table), (you) on the client")
 check("Cancel the goal" not in tab_b, "integrated window: no cancel on the client")
 check(run('''local rows = I_tab(IB, I_SESSION, false)

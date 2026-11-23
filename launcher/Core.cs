@@ -599,6 +599,93 @@ namespace MPFever
         }
     }
 
+    /// <summary>(0.9.4, #455) The disk of the session folders. The bug (flubixx's and John's session, 2026-11-21): the host's
+    /// disk C: was full (its %TEMP%\mpfever kept every session folder ever made, with a copy of the game of 80 MB and more for each
+    /// game hosted). Writing a player's message for the host's game failed, the failure in the relay's handler ended that player's
+    /// connection, the player came back and sent its messages again, they failed again: cut and back every half second, without
+    /// end, and the host's game said "no answer from MPFever.exe". Now a full disk is said clearly (which disk, what to free) and
+    /// the player stays connected (the message that could not be written is lost: the checks resynchronise once there is room),
+    /// and the launcher cleans its session folders as it starts: the game copies (*.sav) of a folder no game wrote in for 6 hours,
+    /// a folder no game wrote in for 7 days; the host's copy of the game goes at the end of its session.
+    /// MPFEVER_DISKFULL=0 / MPFEVER_SESSIONCLEAN=0: as before.</summary>
+    static class SessionDisk
+    {
+        public static bool FullOn => Environment.GetEnvironmentVariable("MPFEVER_DISKFULL") != "0";
+        public static bool CleanOn => Environment.GetEnvironmentVariable("MPFEVER_SESSIONCLEAN") != "0";
+        public static readonly TimeSpan SavIdle = TimeSpan.FromHours(6), FolderIdle = TimeSpan.FromDays(7);
+
+        /// <summary>The failure of a write on a full disk (Windows: ERROR_DISK_FULL 112, ERROR_HANDLE_DISK_FULL 39; Linux: no space
+        /// left on device), also inside another exception.</summary>
+        public static bool IsFull(Exception e)
+        {
+            for (var x = e; x != null; x = x.InnerException)
+            {
+                if (!(x is IOException)) continue;
+                int code = x.HResult & 0xFFFF;
+                if (code == 112 || code == 39) return true;
+                if ((x.Message ?? "").IndexOf("No space left on device", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+            return false;
+        }
+
+        static long lastSaid;
+        /// <summary>The text said, for the launcher's window (a dialog).</summary>
+        public static event Action<string> Said;
+
+        /// <summary>A write failed on a full disk: said in the log (at most every 30 s), and to the window.</summary>
+        public static void Full(Exception e, string what)
+        {
+            long now = DateTime.UtcNow.Ticks, last = Interlocked.Read(ref lastSaid);
+            if (last != 0 && now - last < 30 * TimeSpan.TicksPerSecond) return;
+            if (Interlocked.CompareExchange(ref lastSaid, now, last) != last) return;
+            string root = Path.GetTempPath(), drive = "";
+            try { root = GameLink.SessionRoot(); } catch { }
+            try { drive = Path.GetPathRoot(Path.GetFullPath(root)); } catch { }
+            var text = L.F("Le disque {0} est plein : MPFever ne peut plus écrire les fichiers de la session ({1}). Le joueur reste connecté, mais ce message est perdu. Libérez de la place sur {0} (le dossier {2} peut être vidé quand aucune partie ne tourne) : la session se resynchronisera ensuite.",
+                "The disk {0} is full: MPFever can no longer write the session's files ({1}). The player stays connected, but this message is lost. Free some space on {0} (the folder {2} can be emptied while no game runs): the session will resynchronise afterwards.",
+                drive, what + ": " + e.Message, root);
+            Log.Err(text);
+            try { Said?.Invoke(text); } catch { }
+        }
+
+        /// <summary>Cleans the session folders under root: a folder where nothing was written for folderIdle goes whole; one where
+        /// nothing was written for savIdle loses its game copies (*.sav); a folder written in lately (a game of a session that
+        /// runs, another launcher's on this PC) is never touched. Returns the folders and files removed and the bytes freed.</summary>
+        public static (int dirs, int files, long bytes) Clean(string root, DateTime nowUtc, TimeSpan savIdle, TimeSpan folderIdle)
+        {
+            int dirs = 0, files = 0;
+            long bytes = 0;
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return (0, 0, 0);
+            foreach (var d in Directory.GetDirectories(root))
+            {
+                try
+                {
+                    var all = new DirectoryInfo(d).GetFiles("*", SearchOption.AllDirectories);
+                    var last = Directory.GetLastWriteTimeUtc(d);
+                    foreach (var f in all) if (f.LastWriteTimeUtc > last) last = f.LastWriteTimeUtc;
+                    var idle = nowUtc - last;
+                    if (idle >= folderIdle)
+                    {
+                        long b = all.Sum(f => f.Length);
+                        Directory.Delete(d, true);
+                        dirs++; files += all.Length; bytes += b;
+                    }
+                    else if (idle >= savIdle)
+                    {
+                        foreach (var f in all.Where(f => string.Equals(f.Extension, ".sav", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            long b = f.Length;
+                            f.Delete();
+                            files++; bytes += b;
+                        }
+                    }
+                }
+                catch { }
+            }
+            return (dirs, files, bytes);
+        }
+    }
+
     /// <summary>File link with one game instance: in.log (launcher to game) and out.log (game to launcher).</summary>
     sealed class GameLink : IDisposable
     {
@@ -1107,6 +1194,10 @@ namespace MPFever
         public volatile bool IsBulk;
         /// <summary>This player's bulk connections (Steam), live ones.</summary>
         public readonly List<BulkLink> Bulk = new List<BulkLink>();
+        /// <summary>(0.9.4, #449, HOSTSILENT) How many sendings of a game (or of its differences) to this player are under way
+        /// (MainForm.SendParts), and when the last one ended (ticks, 0 before any): see Relay.SilenceLimit.</summary>
+        public int Sending;
+        public long SentEndTicks;
     }
 
     /// <summary>The version of the relay protocol: what a launcher and the Linux relay (relay/) must agree on, whatever their MPFever
@@ -1247,6 +1338,34 @@ namespace MPFever
         /// <summary>Twice a second: every player is told what the host has received from it (at least every 2 s, which also
         /// shows the link is alive); a player silent for 15 s is cut (Windows takes 20 to 45 s to notice a dead link); a
         /// player away for longer than the grace leaves.</summary>
+        // (0.9.4, issue #449, HOSTSILENT) yoyo's session, 2026-11-20 16:26: a resynchronisation sent Bence 54.6 MB of differences over
+        // four Steam connections (16 s); the Steam relay was full ("Connection already has 2 MB pending", Bence's side dropping
+        // fragments) and nothing of Bence reached the host for 15 s: "nothing received for 15 s, connection cut", 5 s after the
+        // sending. A player cut during a resynchronisation is not waited for: Bence came back as a new player, his game was restarted
+        // and loaded the whole 449 MB game, two more resynchronisations, about 15 minutes for everybody. The client already gives a
+        // host 40 s through Steam (Client.SilentLimit, #115); the host gave a player 15 s whatever the route. Now the host waits as
+        // long as the client does (40 s through Steam, 15 s direct), the silence counts from the end of the last sending of a game
+        // to that player, and during one it is cut only after SendingSilence s. MPFEVER_HOSTSILENT=0: 15 s, as before.
+        internal const int SendingSilence = 120;
+        internal static bool HostSilentOn() => Environment.GetEnvironmentVariable("MPFEVER_HOSTSILENT") != "0";
+
+        /// <summary>(HOSTSILENT) The seconds of silence after which the host cuts a player: through Steam or not, a game being sent
+        /// to it or not.</summary>
+        internal static int SilenceLimit(bool steam, bool sending, bool on)
+        {
+            if (!on) return 15;
+            int limit = Client.SilentLimit(steam);
+            return sending ? Math.Max(limit, SendingSilence) : limit;
+        }
+
+        /// <summary>(HOSTSILENT) The whole seconds a player has been silent: since the last thing received from it, or, when later,
+        /// since the end of the last sending of a game to it (the Steam relay still carries it for a while).</summary>
+        internal static long SilenceSeconds(long nowTicks, long lastRecvTicks, long sentEndTicks, bool on)
+        {
+            long from = on && sentEndTicks > lastRecvTicks ? sentEndTicks : lastRecvTicks;
+            return (nowTicks - from) / TimeSpan.TicksPerSecond;
+        }
+
         void LinkLoop()
         {
             var told = new Dictionary<Peer, KeyValuePair<long, DateTime>>();
@@ -1269,10 +1388,12 @@ namespace MPFever
                         if ((now - q.AwaySince).TotalSeconds > Grace) Finalize(q, L.T("pas revenu à temps", "not back in time"));
                         continue;
                     }
-                    if (q.Acks && (now.Ticks - Interlocked.Read(ref q.LastRecvTicks)) / TimeSpan.TicksPerSecond > 15 && q.Tcp != null && q.Tcp != q.CutTcp)
+                    int limit = SilenceLimit(q.SteamId != null, Volatile.Read(ref q.Sending) > 0, HostSilentOn());
+                    if (q.Acks && SilenceSeconds(now.Ticks, Interlocked.Read(ref q.LastRecvTicks), Interlocked.Read(ref q.SentEndTicks), HostSilentOn()) > limit
+                        && q.Tcp != null && q.Tcp != q.CutTcp)
                     {
                         // (also frees a writer blocked on that connection)
-                        Log.Warn(L.F("{0} : plus rien reçu depuis 15 s, connexion coupée", "{0}: nothing received for 15 s, connection cut", q.Name));
+                        Log.Warn(L.F("{0} : plus rien reçu depuis {1} s, connexion coupée", "{0}: nothing received for {1} s, connection cut", q.Name, limit));
                         q.CutTcp = q.Tcp;
                         NetAddr.Cut(q.Tcp);
                         continue;
@@ -1391,7 +1512,9 @@ namespace MPFever
                     m.From = p.Name; // the relay decides who is speaking; the host decides who receives it
                     // (counted under the player's lock, which a claim takes to move the player to its new connection)
                     if (p.Link != null) lock (p.Gate) { if (p.Tcp != tcp) break; p.Link.Received(); }
-                    Received?.Invoke(p, m);
+                    // (0.9.4, #455) a full disk ends nobody's connection: said, the message lost (see SessionDisk)
+                    try { Received?.Invoke(p, m); }
+                    catch (Exception e) when (SessionDisk.FullOn && SessionDisk.IsFull(e)) { SessionDisk.Full(e, p.Name + " " + m.Kind); }
                 }
             }
             catch (Exception e) { if (!stop && In(p)) Log.W($"{p.Name} : {e.Message}"); endWhy = e.Message; }
@@ -2005,6 +2128,8 @@ namespace MPFever
                         continue;
                     }
                     try { Received?.Invoke(m); }
+                    // (0.9.4, #455) a full disk ends nobody's connection: said, the message lost (see SessionDisk)
+                    catch (Exception e) when (SessionDisk.FullOn && SessionDisk.IsFull(e)) { SessionDisk.Full(e, m.Kind); }
                     finally
                     {
                         Interlocked.Exchange(ref handlingSince, 0);

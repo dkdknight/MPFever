@@ -1128,8 +1128,46 @@ end
 
 -- returns the command (or nil), the label of the combination that worked, the failures, and the rebuilt arguments (0.7.13:
 -- the purchase's configuration, for its price, see executeActionOnce)
+-- (0.9.4, build 40444) The railroad crossing's and the signal's windows make their build with
+-- api.engine.util.proposal.makeRailroadCrossingProposal(crossing, type) / makeSignalTypeProposal(signal, oneWay) and send it with
+-- makeWorldBuildProposalCmd. Rebuilt from the shipped form, the crossing's new type was lost (node2rcType) and the signal's new
+-- object had no model: the old signal went and none came (autotest rcsig, 2026-11-19; #444 #445), so 0.9.2 refused them in a
+-- session. Such a build is now shipped with what its window made it from (U.winShip in the interface: "win" = { kind, ent, v }),
+-- and every game makes the same proposal itself with the same function on its own world (its maker's, the games being in sync),
+-- then sends it with the shipped flags and context. MPFEVER_WINREPLAY=0: refused at its maker, as in 0.9.2.
+C.winOf = function(x)
+	local w = type(x) == "table" and x.win or nil
+	if type(w) ~= "table" or os.getenv("MPFEVER_WINREPLAY") == "0" then return nil end
+	if (w.kind ~= "crossing" and w.kind ~= "signal") or type(w.ent) ~= "number" or type(w.v) ~= "number" then return nil end
+	return { kind = w.kind, ent = w.ent, v = w.v }
+end
+C.winCommand = function(a)
+	local w = C.winOf(a)
+	if not w then error("no window build") end
+	local up = api.engine.util.proposal
+	local p = nil
+	if w.kind == "crossing" then p = up.makeRailroadCrossingProposal(w.ent, w.v) else p = up.makeSignalTypeProposal(w.ent, w.v == 1) end
+	if p == nil then error("the window's proposal could not be made here (" .. w.kind .. " " .. w.ent .. ")") end
+	-- (the shipped context and flags, rebuilt as for any build; the proposal is this game's own)
+	local margs = C.copy(a.args or {})
+	margs[1] = false
+	local args, n = C.rebuildArgs(a.fn, margs, { seed = 7919, variant = "full" })
+	args[1] = p
+	return api.cmd.makeWorldBuildProposalCmd(table.unpack(args, 1, n))
+end
+
 local function buildCommand(fn, srcArgs, tries)
 	local errs = {}
+	-- (0.9.4) a crossing's or a signal's window build (tries = { { win = its action } }): made by the window's own function, see
+	-- C.winCommand
+	local winAct = type(tries[1]) == "table" and tries[1].win or nil
+	if winAct then
+		C.rebuiltCfgs = nil
+		local okW, wc = pcall(C.winCommand, winAct)
+		if okW and wc then return wc, "window " .. tostring(winAct.win.kind), errs, nil end
+		errs[#errs + 1] = "window: " .. shortErr(wc)
+		return nil, nil, errs
+	end
 	for _, t in ipairs(tries) do
 		local margs = C.deser(srcArgs)
 		if t.ie ~= nil then margs[3] = t.ie; margs[4] = t.pi end
@@ -1416,14 +1454,18 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		end
 	end
 	local isBuild = a.fn == "makeWorldBuildProposalCmd"
-	local cmd, label, errs, cargs = buildCommand(a.fn, C.ser(a.args or {}), isBuild and BUILD_TRIES or { { v = "full" } })
+	-- (0.9.4) a railroad crossing's or a signal's window build: made again here from what it was made of (C.winCommand)
+	local winBuild = isBuild and C.winOf(a) ~= nil
+	local cmd, label, errs, cargs = buildCommand(a.fn, C.ser(a.args or {}), winBuild and { { win = a } } or (isBuild and BUILD_TRIES or { { v = "full" } }))
 	local rcfgs = C.rebuiltCfgs
 	if not cmd then
 		result.err = table.concat(errs, " | ")
 		log("BUILD NOT REPLAYABLE " .. tostring(a.uid) .. " " .. tostring(a.fn) .. ": " .. result.err)
 		return result
 	end
-	if isBuild then
+	if winBuild then
+		log("action " .. tostring(a.uid) .. " made here as its window made it: " .. label .. " " .. tostring(a.win.ent) .. " -> " .. tostring(a.win.v))
+	elseif isBuild then
 		pcall(function()
 			local src = a.args[1].proposal or {}
 			local seg = (src.addedSegments or {})[1]
@@ -5548,6 +5590,8 @@ end
 -- game, its sender's too, as the edits of constructions from a window are (G.uiEdit). MPFEVER_UIOBJBUILD=0: as before
 G.uiObjBuild = function(p)
 	if p.native or p.fn ~= "makeWorldBuildProposalCmd" or os.getenv("MPFEVER_UIOBJBUILD") == "0" then return false end
+	-- (0.9.4: a crossing's or a signal's window build is made again by every game, see C.winCommand)
+	if type(C) == "table" and C.winOf and C.winOf(p) then return false end
 	local m = type(p.args) == "table" and p.args[1]
 	local st = type(m) == "table" and m.proposal
 	if type(st) ~= "table" or type(st.removedSegments) ~= "table" then return false end
@@ -5577,6 +5621,8 @@ end
 -- settings (see replayNative). MPFEVER_UIEDIT=0: as before.
 G.uiEdit = function(p)
 	if p.native or p.fn ~= "makeWorldBuildProposalCmd" or os.getenv("MPFEVER_UIEDIT") == "0" then return false end
+	-- (0.9.4: a crossing's or a signal's window build is made again by every game, see C.winCommand)
+	if type(C) == "table" and C.winOf and C.winOf(p) then return false end
 	local m = type(p.args) == "table" and p.args[1]
 	if type(m) ~= "table" or type(m.toAdd) ~= "table" or type(m.toRemove) ~= "table" or #m.toAdd ~= 1 or #m.toRemove ~= 1 then return false end
 	local ce = m.toAdd[1]
@@ -9506,6 +9552,21 @@ G.gsHook = function()
 	end)
 	return okH and h or nil
 end
+-- (0.9.4) A mod's command that another game sends (the host's, or the owner company's), or that a resynchronisation drops, was
+-- never answered on this game: the mod waited for its callback in vain (Roadcraft Speed Limits, 2026-11-19/20, on the client
+-- after its jobs: "Batch journal failed; reload the save to recover before further edits. Batch command callback did not
+-- arrive"). Its callback is now called on the next frame: a success when another game sends the same command (applied on every
+-- game, this one too), a failure when a resynchronisation drops it. MPFEVER_GSDROPCB=0: never answered, as before.
+G.gsDropAnswer = function(h, cb, verdict, name, L)
+	if type(cb) ~= "function" or os.getenv("MPFEVER_GSDROPCB") == "0" then return false end
+	local ok = verdict == "drop"
+	local function answer()
+		local okc, errc = pcall(cb, nil, ok, {})
+		if not okc and L then L("mods: the answer to " .. tostring(name) .. " (not sent from this game) failed in the mod: " .. tostring(errc):sub(1, 160)) end
+	end
+	if type(h) == "table" and type(h.later) == "function" then h.later(answer) else answer() end
+	return true
+end
 -- the mods' files on the stack of a command being sent (getinfo: debug.getinfo; isMod(source): a mod's file)
 G.gsSources = function(getinfo, isMod)
 	local mods = {}
@@ -9603,6 +9664,10 @@ G.installGsMods = function()
 		return { role = C.ROLE, separate = type(reg) == "table" and reg.mode == "separate", myCo = G.myCo, reg = reg,
 			resync = G.session and G.session.resync, rev = G.rev }
 	end
+	-- (0.9.4) the next frame of this state (G.gsDropAnswer)
+	h.later = function(fn)
+		if type(G.waits) == "table" and type(G.frames) == "number" then G.waits[#G.waits + 1] = { at = G.frames + 1, fn = fn } else fn() end
+	end
 	if h.installed or os.getenv("MPFEVER_GSMODS") == "0" or not C.ACTIVE then return end
 	local okD, getinfo = pcall(function() return debug.getinfo end)
 	if not okD or type(getinfo) ~= "function" then log("game scripts' interface commands: no debug library here, not watched"); h.installed = true; return end
@@ -9650,6 +9715,7 @@ G.installGsMods = function()
 			local n = h.seen[key]
 			if verdict ~= "send" then
 				if n <= 3 or n % 200 == 0 then L("mods: " .. tag.name .. " of the game script " .. label .. " not sent from this game: " .. tostring(why) .. " x" .. n) end
+				pcall(G.gsDropAnswer, h, cb, verdict, tag.name, L)
 				return
 			end
 			local okm, margs = pcall(function()
@@ -9783,6 +9849,24 @@ G.joinTurn = function(a)
 		return nil
 	end
 	return false
+end
+-- (0.9.4, #437 #438: magnu's and williamcolberg's sessions of 2026-11-19, 18 s lost at every start) A checkpoint due while a company
+-- join is under way here waits for it (MPFEVER_COHASHWAIT), and every paused action after it waited too, also one whose turn comes
+-- before the join's: the host's options event of the session's start (turn 2) waited for the checkpoint, the checkpoint for
+-- williamcolberg's join (turn 3), the join for turn 2. Nothing moved until turn 2 was skipped ("paused build turn 2 never applied
+-- here in 30 s: skipped (desync risk)"), on every game. Such an action now goes: true when `turn` comes before the turn of every
+-- join due here, none of them being applied yet. MPFEVER_JOINTURNFIRST=0: it waits, as before.
+G.turnBeforeJoins = function(turn, now)
+	if type(turn) ~= "number" or os.getenv("MPFEVER_JOINTURNFIRST") == "0" or G.coBusy ~= nil then return false end
+	local any = false
+	for _, q in ipairs(G.nativeQueue) do
+		if q.fn == "mpfCoJoin" and (now == nil or q.at <= now) then
+			local jt = G.joinTurn(q)
+			if type(jt) ~= "number" or jt <= turn then return false end
+			any = true
+		end
+	end
+	return any
 end
 
 -- Every other action made in a pause (a line edited, a vehicle bought, a name) took no turn: each game applied its own at once and
@@ -12222,6 +12306,10 @@ local function stampHeld()
 			local a = { tok = p.tok, id = p.id, fn = p.fn, args = p.args, origin = G.me, oseq = G.oseq, co = tonumber(p.co) or G.myCo,
 				uid = G.me .. ":" .. G.oseq, at = paused and pausedStamp(now) or stampFor(now), paused = paused or nil, ep = G.epoch }
 			if not paused and G.lineLeadStamp then G.lineLeadStamp(a, now) end
+			-- (0.9.4: a railroad crossing's or a signal's window build, made again by every game from what it was made of, see
+			-- C.winCommand: never replayed as a tool's build, G.uiEdit and G.uiObjBuild leave it out)
+			local win = C.winOf and C.winOf(p)
+			if win then a.win = win end
 			-- (the edit of a construction from a window: replayed here too, as the others' builds are, see G.uiEdit)
 			local edit = G.uiEdit(a)
 			if edit then
@@ -13253,9 +13341,12 @@ G.pullHold = function(a, now)
 			toSim("pt_pull_done", { tok = P.tok })
 			if #list == 0 then G.pull = nil; a.pullDone = true; return false end
 			local names = {}
+			-- (0.9.4: they go in a's turn, also past a checkpoint held by a later join, see G.turnBeforeJoins)
+			local okT, turnA = pcall(G.actTurn, a)
 			for i, x in ipairs(list) do
 				local c = C.copy(x)
 				c.pullDk, c.origAt, c.at, c.paused, c.pullOf = doneKey(x), x.at, a.at, true, a.uid
+				c.pullTurn = okT and type(turnA) == "number" and turnA or nil
 				-- (before a, in their order, see before)
 				c.oseq = (tonumber(a.oseq) or 0) - 1 + i / (#list + 1)
 				G.pullAdd[#G.pullAdd + 1] = c
@@ -13356,9 +13447,12 @@ local function runPausedActions()
 	-- (0.7.13, #168) while a paused action's player's earlier actions are applied before it (G.pull, see G.pullHold), the actions
 	-- after it, or after a checkpoint due meanwhile, wait; that action and those it applies first go on
 	local pullWait = false
+	-- (0.9.4, #437 #438: the actions after a checkpoint held by a company join only, see G.turnBeforeJoins)
+	local joinOnly = false
 	for _, a in ipairs(G.pendingPaused) do
 		if a.kind == "hash" and joining and a.at <= now and not creating then
 			creating = true
+			joinOnly = true
 			if G.coHashWaitLogged ~= a.n then G.coHashWaitLogged = a.n; log("checkpoint " .. tostring(a.n) .. " waits for a company join under way here") end
 		end
 		if a.kind == "hash" and answering and a.at <= now and not creating then
@@ -13386,7 +13480,9 @@ local function runPausedActions()
 		if a.pullOf == nil then turn = G.actTurn(a) end
 		-- (0.9.3, #447: nor while a replay's command is still unanswered, see G.replayPendingBusy)
 		local busy = (turn or a.pullOf) and ((G.replayOut or 0) > 0 or G.frames < (G.replayQuiet or 0) or G.stopsAfterBusy ~= nil or (G.replayPendingBusy ~= nil and G.replayPendingBusy()))
-		local go = a.at <= now and not creating and turn ~= false and (turn == nil or (not busy and G.ptMayGo(turn))) and not (a.pullOf and busy)
+		-- (0.9.4, #437 #438) a checkpoint held by a company join only: an action whose turn comes before every join's goes all the same
+		local held = creating and not (joinOnly and G.turnBeforeJoins(turn or a.pullTurn, now))
+		local go = a.at <= now and not held and turn ~= false and (turn == nil or (not busy and G.ptMayGo(turn))) and not (a.pullOf and busy)
 			and not (pullWait and a.pullOf == nil and not (G.pull ~= nil and G.pull.uid == a.uid))
 		-- (0.7.13, #168: its player's earlier actions still in the queue first, see G.pullHold; an error there: as before)
 		if go then
@@ -13454,6 +13550,7 @@ local function runPausedActions()
 				if creates then
 					G.pausedCreating = { uid = a.uid, frame = G.frames }
 					creating = true
+					joinOnly = false
 				end
 				-- (0.6) what the game options' modules keep of it, before its references are translated (see G.featPausedAct)
 				local featDg = nil
@@ -16630,6 +16727,14 @@ H.rcsig = function(from, p)
 	local CT = api.type.ComponentType
 	-- (the engine refuses to loop over RAILROAD_CROSSING and SIGNAL_LIST: "Cannot loop over this component type". The segments
 	-- are looped over instead: a segment's crossing from the crossings' system, its signals among its edge objects)
+	-- (0.9.4) the middle of a segment: a window's build replaces the segment, its crossing or its signal (new entities, the first
+	-- ones by id are then others): they are found again at their place
+	local function mid(e)
+		local be = api.engine.getComponent(e, CT.BASE_EDGE)
+		local a = api.engine.getComponent(be.node0, CT.BASE_NODE).position
+		local b = api.engine.getComponent(be.node1, CT.BASE_NODE).position
+		return (a.x + b.x) / 2, (a.y + b.y) / 2
+	end
 	local function firsts()
 		local rc, sig, n = nil, nil, 0
 		local ok, err = pcall(function()
@@ -16637,12 +16742,12 @@ H.rcsig = function(from, p)
 				n = n + 1
 				pcall(function()
 					local c = api.engine.system.railRoadCrossingSystem.getRailroadCrossingForEdge(e)
-					if type(c) == "number" and c >= 0 and (not rc or c < rc) then rc = c end
+					if type(c) == "number" and c >= 0 and (not rc or c < rc) then rc = c; AUTO.rcsigRcAt = { mid(e) } end
 				end)
 				pcall(function()
 					for _, o in ipairs(api.engine.getComponent(e, CT.BASE_EDGE).objects or {}) do
 						local oe = o[1]
-						if (not sig or oe < sig) and api.engine.getComponent(oe, CT.SIGNAL_LIST) then sig = oe end
+						if (not sig or oe < sig) and api.engine.getComponent(oe, CT.SIGNAL_LIST) then sig = oe; AUTO.rcsigSgAt = { mid(e) } end
 					end
 				end)
 			end
@@ -16650,6 +16755,48 @@ H.rcsig = function(from, p)
 		if not ok then say("segments not read: " .. tostring(err):sub(1, 160)) end
 		AUTO.rcsigN = tostring(n) .. " segment(s)"
 		return rc, sig
+	end
+	-- (0.9.4) the whole map's crossings by type and signals by kind (the same on every game), and the crossing and the signal
+	-- found at the places noted by firsts()
+	local function census()
+		local rcT, sgK, seenRc, seenSg = {}, {}, {}, {}
+		local at = { rc = nil, sg = nil }
+		local function near(e, p)
+			if not p then return false end
+			local okM, x, y = pcall(mid, e)
+			return okM and math.abs(x - p[1]) < 2 and math.abs(y - p[2]) < 2
+		end
+		pcall(function()
+			for _, e in ipairs(R.allEdges()) do
+				pcall(function()
+					local c = api.engine.system.railRoadCrossingSystem.getRailroadCrossingForEdge(e)
+					if type(c) == "number" and c >= 0 then
+						local t = api.engine.getComponent(c, CT.RAILROAD_CROSSING).typeIndex
+						if not seenRc[c] then seenRc[c] = true; rcT[t] = (rcT[t] or 0) + 1 end
+						if near(e, AUTO.rcsigRcAt) then at.rc = c .. " type " .. tostring(t) end
+					end
+				end)
+				pcall(function()
+					for _, o in ipairs(api.engine.getComponent(e, CT.BASE_EDGE).objects or {}) do
+						local sl = api.engine.getComponent(o[1], CT.SIGNAL_LIST)
+						if sl then
+							local k = sl.signals[1].type
+							if not seenSg[o[1]] then seenSg[o[1]] = true; sgK[k] = (sgK[k] or 0) + 1 end
+							if near(e, AUTO.rcsigSgAt) then at.sg = o[1] .. " kind " .. tostring(k) end
+						end
+					end
+				end)
+			end
+		end)
+		local function list(t)
+			local keys, out = {}, {}
+			for k in pairs(t) do keys[#keys + 1] = k end
+			table.sort(keys)
+			for _, k in ipairs(keys) do out[#out + 1] = tostring(k) .. ":" .. t[k] end
+			return table.concat(out, ",")
+		end
+		return "crossings by type {" .. list(rcT) .. "}, signals by kind {" .. list(sgK) .. "}; at the noted places: crossing "
+			.. tostring(at.rc) .. ", signal " .. tostring(at.sg)
 	end
 	local function state()
 		local rc, sig = firsts()
@@ -16662,6 +16809,8 @@ H.rcsig = function(from, p)
 	local oneWay = nil
 	pcall(function() oneWay = (k0 == api.type.Signal.Type.ONE_WAY_SIGNAL) end)
 	say("before: crossing " .. tostring(rc) .. " type " .. tostring(t0) .. ", signal " .. tostring(sig) .. " kind " .. tostring(k0) .. " (one-way " .. tostring(oneWay) .. "; entities seen: " .. tostring(AUTO.rcsigN) .. ")")
+	-- (the client's part runs after the host's: its census is the map after the host's changes, to compare with the host's)
+	say("census: " .. census())
 	if C.ROLE ~= "host" then autoFinish(); return end
 	local nTypes = 0
 	pcall(function() nTypes = #api.res.railroadCrossingTypeRep.getAll() end)
@@ -16678,6 +16827,7 @@ H.rcsig = function(from, p)
 		G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
 			local _, t1, _, k1 = state()
 			say("asked: crossing type " .. tostring(want) .. ", signal one-way " .. tostring(oneWay == false) .. "; after: crossing type " .. tostring(t1) .. ", signal kind " .. tostring(k1))
+			say("census after: " .. census())
 			autoFinish()
 		end }
 	end }
@@ -16806,6 +16956,55 @@ H.farmnew = function(from, p)
 		if not okp then say("place " .. k .. " failed: " .. shortErr(err)); G.waits[#G.waits + 1] = { at = G.frames + 20, fn = try } end
 	end
 	try()
+end
+
+-- (0.9.4, #150 research) autotest flockspawn, on the host only: MPFEVER_FLOCKSPAWN_N salmon schools (5 by default) in the water
+-- 60 m around the map's first fishing ground, sent as a player's command (makeAnimalSpawnAtCmd, applied by every game at the same
+-- step): each game's engine draws the school's shape itself, with the base game's flock function (animal/animal.script.lua) in a
+-- Lua state of its own. Found 2026-11-21 (B4, a research kit drawing 3 numbers more on the client before its first school): the
+-- engine seeds that state's math.random before every school from the simulation (schools 2 to 6 the same on both games, only
+-- the first one, drawn after the extra numbers, apart), and the games stayed in sync 10 minutes at x4 even so: the schools are
+-- no cause of #150's animal drift. (A fishing ground built by a player is no way to make them: its replay's parameters differ,
+-- the #279 kind, B3.)
+H.flockspawn = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST flockspawn " .. t); AUTO.results[#AUTO.results + 1] = t end
+	if C.ROLE ~= "host" then say("host only"); G.waits[#G.waits + 1] = { at = G.frames + 10, fn = autoFinish }; return end
+	local CT = api.type.ComponentType
+	local at = nil
+	for _, e in ipairs(R.entitiesWith("CONSTRUCTION")) do
+		local c = api.engine.getComponent(e, CT.CONSTRUCTION)
+		if c and tostring(c.fileName):find("fishing_grounds", 1, true) and (at == nil or e < at.e) then
+			local m = R.matPos(c.transf)
+			at = { e = e, x = m.x, y = m.y }
+		end
+	end
+	if not at then say("no fishing ground on this map"); G.waits[#G.waits + 1] = { at = G.frames + 10, fn = autoFinish }; return end
+	local n = tonumber(os.getenv("MPFEVER_FLOCKSPAWN_N") or "") or 5
+	local pts = { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 }, { 0.7, 0.7 }, { -0.7, 0.7 }, { -0.7, -0.7 }, { 0.7, -0.7 } }
+	for k = 1, n do
+		local d = pts[(k - 1) % #pts + 1]
+		local r = 60 + 20 * math.floor((k - 1) / #pts)
+		uiRequest("makeAnimalSpawnAtCmd", { n = 3, "animal/fish_salmon/fish_salmon.mdl", { __vec = true, x = at.x + r * d[1], y = at.y + r * d[2] },
+			{ __vec = true, x = 1, y = 0 } })
+	end
+	say(n .. " salmon school(s) asked around the fishing ground " .. at.e .. " (" .. string.format("%.0f,%.0f", at.x, at.y) .. ")")
+	G.waits[#G.waits + 1] = { at = G.frames + 600, fn = function()
+		local okA, info = pcall(function()
+			local schools, members = 0, 0
+			for _, e in ipairs(R.entitiesWith("ANIMAL")) do
+				local a = api.engine.getComponent(e, CT.ANIMAL)
+				local f = a and a.flock
+				if f and #f > 0 then schools = schools + 1; members = members + #f end
+			end
+			return schools .. " school(s) of " .. members .. " animal(s) on the map"
+		end)
+		say(okA and info or ("animals not read: " .. shortErr(info)))
+		autoFinish()
+	end }
 end
 
 -- (0.8.6, #279 research) autotest farmdraw, on the host only: how many fields does the engine's conversion of a farm give (what a

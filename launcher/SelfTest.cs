@@ -98,8 +98,112 @@ namespace MPFever
             ok &= RunPauseStanding0817();
             ok &= RunSpeedAt090();
             ok &= RunHashAdapt0817();
+            ok &= RunSessionDisk094();
             Log.W(ok ? "SELFTEST OK" : "SELFTEST FAILED");
             return ok ? 0 : 1;
+        }
+
+        /// <summary>(0.9.4, #455, SessionDisk) A full disk: the failure recognised; over a real relay, a handler that fails on a full
+        /// disk ends the player's connection (MPFEVER_DISKFULL=0, the bug: cut and back without end) or keeps it (the fix: said
+        /// once, the message lost); the session folders cleaned by age, a folder in use never touched.</summary>
+        static bool RunSessionDisk094()
+        {
+            bool ok = true;
+            void C(bool c, string what) { Log.W((c ? "ok    " : "FAIL  ") + "0.9.4 full disk (#455): " + what); ok &= c; }
+            bool Wait(Func<bool> f) { for (int i = 0; i < 100 && !f(); i++) Thread.Sleep(50); return f(); }
+            IOException DiskFull(int code) => new IOException("There is not enough space on the disk.", unchecked((int)0x80070000) | code);
+            C(SessionDisk.IsFull(DiskFull(112)) && SessionDisk.IsFull(DiskFull(39)) && SessionDisk.IsFull(new Exception("x", DiskFull(112)))
+                && SessionDisk.IsFull(new IOException("No space left on device")), "a full disk recognised (112, 39, inside another, Linux's text)");
+            C(!SessionDisk.IsFull(new IOException("Access denied")) && !SessionDisk.IsFull(new InvalidOperationException("x")) && !SessionDisk.IsFull(null),
+                "  other failures are not");
+            var was = Environment.GetEnvironmentVariable("MPFEVER_DISKFULL");
+            int Run(string mode, int port, out int said, out int cuts)
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_DISKFULL", mode);
+                var relay = new Relay { Grace = 30, MayWait = _ => true };
+                int handled = 0, s = 0, c = 0;
+                Peer peer = null;
+                Action<string> onSaid = t => Interlocked.Increment(ref s);
+                SessionDisk.Said += onSaid;
+                relay.Joined += p => { peer = p; relay.Send(p, Msg.Make("welcome", "Host", "{[\"you\"]=\"" + p.Name + "\",[\"rtok\"]=\"" + p.Link.Token + "\"}")); };
+                // (the host's handler writes the player's message for its game: here the disk is full for the odd ones)
+                relay.Received += (p, m) => { if (m.Kind != "t") return; int n = Interlocked.Increment(ref handled); if (n % 2 == 1) throw DiskFull(112); };
+                relay.Away += p => Interlocked.Increment(ref c);
+                relay.Left += p => Interlocked.Increment(ref c);
+                relay.Start(port);
+                var cl = new Client();
+                try
+                {
+                    cl.Connect("127.0.0.1", port, "Client");
+                    Wait(() => peer != null);
+                    for (int i = 1; i <= 4; i++) cl.Send(Msg.Make("t", "Client", "{[\"i\"]=" + i + "}"));
+                    Wait(() => Volatile.Read(ref handled) >= 4 || Volatile.Read(ref c) > 0);
+                    Thread.Sleep(300);
+                    return Volatile.Read(ref handled);
+                }
+                finally
+                {
+                    said = Volatile.Read(ref s); cuts = Volatile.Read(ref c);
+                    SessionDisk.Said -= onSaid;
+                    try { cl.Dispose(); } catch { }
+                    try { relay.Dispose(); } catch { }
+                }
+            }
+            try
+            {
+                Run("0", 28194, out int said0, out int cuts0);
+                C(cuts0 > 0 && said0 == 0, "bug reproduced (MPFEVER_DISKFULL=0): the first failure ends the player's connection, nothing said (cut " + cuts0 + ")");
+                int h1 = Run(null, 28195, out int said1, out int cuts1);
+                C(cuts1 == 0 && h1 == 4, "fix: the player stays connected, every message reaches the handler (" + h1 + " of 4, cut " + cuts1 + ")");
+                C(said1 <= 1, "  said once at most within 30 s (" + said1 + ")");
+            }
+            catch (Exception e) { C(false, "relay: exception " + e.Message); }
+            finally { Environment.SetEnvironmentVariable("MPFEVER_DISKFULL", was); }
+
+            // the session folders
+            var root = Path.Combine(Path.GetTempPath(), "mpfever-selftest-455-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try
+            {
+                var now = DateTime.UtcNow;
+                string Folder(string name, double hoursAgo, params string[] files)
+                {
+                    var d = Path.Combine(root, name);
+                    Directory.CreateDirectory(Path.Combine(d, "sub"));
+                    foreach (var f in files)
+                    {
+                        var p = Path.Combine(d, f);
+                        File.WriteAllBytes(p, new byte[f.EndsWith(".sav") ? 4096 : 16]);
+                        File.SetLastWriteTimeUtc(p, now.AddHours(-hoursAgo));
+                    }
+                    Directory.SetLastWriteTimeUtc(Path.Combine(d, "sub"), now.AddHours(-hoursAgo));
+                    Directory.SetLastWriteTimeUtc(d, now.AddHours(-hoursAgo));
+                    return d;
+                }
+                var running = Folder("Host-101010-aaaaaa", 0.1, "delta_base.sav", "in.log", "mod.log");
+                var stale = Folder("Host-090909-bbbbbb", 8, "delta_base.sav", "mod.log", "sub/old.sav");
+                var old = Folder("Client-080808-cccccc", 24 * 8, "in.log", "out.log");
+                // (a session that runs for days without a new copy: its copy is old, its logs are not)
+                var longRun = Folder("Host-070707-dddddd", 0.05, "mod.log");
+                File.WriteAllBytes(Path.Combine(longRun, "delta_base.sav"), new byte[4096]);
+                File.SetLastWriteTimeUtc(Path.Combine(longRun, "delta_base.sav"), now.AddDays(-3));
+                File.WriteAllText(Path.Combine(root, "recplay.txt"), "x");
+                var (dirs, files, bytes) = SessionDisk.Clean(root, now, SessionDisk.SavIdle, SessionDisk.FolderIdle);
+                C(!Directory.Exists(old) && dirs == 1, "a folder no game wrote in for 8 days: removed whole");
+                C(Directory.Exists(stale) && !File.Exists(Path.Combine(stale, "delta_base.sav")) && !File.Exists(Path.Combine(stale, "sub", "old.sav"))
+                    && File.Exists(Path.Combine(stale, "mod.log")), "a folder idle for 8 hours: its game copies removed, its logs kept (the reports)");
+                C(File.Exists(Path.Combine(running, "delta_base.sav")) && File.Exists(Path.Combine(running, "in.log")), "a folder in use: untouched");
+                C(File.Exists(Path.Combine(longRun, "delta_base.sav")), "a session that runs (its logs written): its old copy kept");
+                C(File.Exists(Path.Combine(root, "recplay.txt")), "files beside the folders: untouched");
+                C(files == 2 + 2 && bytes == 4096 * 2 + 32, "counted: " + files + " file(s), " + bytes + " bytes");
+                C(SessionDisk.Clean(Path.Combine(root, "none"), now, SessionDisk.SavIdle, SessionDisk.FolderIdle).dirs == 0, "no session folder yet: nothing");
+            }
+            catch (Exception e) { C(false, "folders: exception " + e.Message); }
+            finally { try { Directory.Delete(root, true); } catch { } }
+            var wasClean = Environment.GetEnvironmentVariable("MPFEVER_SESSIONCLEAN");
+            Environment.SetEnvironmentVariable("MPFEVER_SESSIONCLEAN", "0");
+            C(!SessionDisk.CleanOn, "MPFEVER_SESSIONCLEAN=0: no cleaning");
+            Environment.SetEnvironmentVariable("MPFEVER_SESSIONCLEAN", wasClean);
+            return ok;
         }
 
         /// <summary>(0.7.18) An Epic copy of the game is started with the portal's arguments (it stays MPFever's process); any other
@@ -944,6 +1048,23 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             C(!MainForm.JoinOnce(true, jp, new[] { "Andy#3" }) && jp.SetEquals(new[] { "Bob#4" }), "  another joiner not listed (still reviewing): still a resynchronisation for them after");
             C(!MainForm.JoinOnce(false, new HashSet<string> { "Andy#3" }, new[] { "Andy#3" }) && !MainForm.JoinOnce(true, new HashSet<string>(), new[] { "Andy#3" }),
               "  nothing pending, or pending without a name: as before");
+            // (0.9.4, #449, HOSTSILENT) the host's silence cut on the timeline of yoyo's session: the differences sent to Bence over
+            // Steam from 16:26:50 to 16:27:06, Bence's last word reaching the host at about 16:26:55, the cut at 16:27:11
+            long At449(int s) => new DateTime(2026, 11, 20, 16, 26, 0, DateTimeKind.Utc).AddSeconds(s).Ticks;
+            long recv449 = At449(55), sent449 = At449(66);
+            C(Relay.SilenceSeconds(At449(71), recv449, sent449, false) > Relay.SilenceLimit(true, false, false),
+                "#449, MPFEVER_HOSTSILENT=0 (the bug): Bence cut at 16:27:11, 16 s after his last word, 5 s after the sending");
+            C(Relay.SilenceSeconds(At449(71), recv449, sent449, true) <= Relay.SilenceLimit(true, false, true),
+                "#449 now: not cut at 16:27:11 (5 s after the sending, 40 s allowed through Steam)");
+            C(Relay.SilenceSeconds(At449(64), recv449, 0, true) <= Relay.SilenceLimit(true, true, true),
+                "  nor during the sending, before it ends");
+            C(Relay.SilenceSeconds(At449(66 + 41), recv449, sent449, true) > Relay.SilenceLimit(true, false, true),
+                "  a player who stays silent is still cut, 41 s after the sending");
+            C(Relay.SilenceLimit(false, false, true) == 15 && Relay.SilenceLimit(false, false, false) == 15
+                && Relay.SilenceSeconds(At449(72), At449(56), At449(66), false) == 16,
+                "  a direct connection: 15 s, as before; switched off, the sending's end is not counted");
+            C(Relay.SilenceLimit(true, true, true) == Relay.SendingSilence && Relay.SilenceLimit(false, true, true) == Relay.SendingSilence,
+                "  during a sending: cut only after " + Relay.SendingSilence + " s of silence (a sending that hangs still ends)");
             C(MainForm.StopCutsResync(true, false) && !MainForm.StopCutsResync(false, false) && !MainForm.StopCutsResync(true, true),
                 "a stop or restart cuts a resynchronisation short (MPFEVER_STOPRESYNC=0: not)");
             // (MODIOROOT) the folders mod.io keeps the Mod Hub mods in, as its settings move them

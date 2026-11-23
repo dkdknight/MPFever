@@ -152,7 +152,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.9.4";
+        public const string Version = "0.9.5";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -483,6 +483,7 @@ namespace MPFever
             x4Btn.Click += (s, e) => SetSpeed(4, T("hôte", "host"));
             detBtn.Click += (s, e) => new Thread(RunDeterminism) { IsBackground = true }.Start();
 
+            SessionDisk.Said += OnDiskFull;
             Shown += (s, e) => CheckUpdateThenInit();
             var uiTimer = new System.Windows.Forms.Timer { Interval = 500 };
             uiTimer.Tick += (s, e) => RefreshStatus();
@@ -1406,6 +1407,7 @@ namespace MPFever
         // as before
         void InitInstall()
         {
+            StartSessionClean();
             System.Threading.Mutex gate = null;
             bool held = false;
             if (Environment.GetEnvironmentVariable("MPFEVER_INSTALLLOCK") != "0")
@@ -2913,6 +2915,7 @@ namespace MPFever
             hostFromGame = clientFromGame = null;
             hostGame = null;
             hostName = null;
+            DropDeltaBase();
             lock (sessionGate) { started = false; speed = 0; pauseAt = null; speedAt = null; }
             // (0.6.7) the answers about mods belong to this session: a player refused once was never asked again, in any later one
             lock (modAsks) { modAsks.Clear(); modAskDone.Clear(); }
@@ -5998,8 +6001,16 @@ namespace MPFever
         bool SendParts(Peer p, int id, int size, Func<int, Msg> part, out int linksUsed)
         {
             bool shown = Environment.GetEnvironmentVariable("MPFEVER_SENDPCT") != "0";
+            // (0.9.4, #449, HOSTSILENT) a game being sent to this player: the host's silence cut waits longer, then counts from its end
+            // (Relay.SilenceLimit, Relay.SilenceSeconds)
+            Interlocked.Increment(ref p.Sending);
             try { return SendPartsCounted(p, id, size, part, out linksUsed, shown); }
-            finally { if (shown) lock (sendPct) sendPct.Remove(p.Name); }
+            finally
+            {
+                if (shown) lock (sendPct) sendPct.Remove(p.Name);
+                Interlocked.Exchange(ref p.SentEndTicks, DateTime.UtcNow.Ticks);
+                Interlocked.Decrement(ref p.Sending);
+            }
         }
 
         bool SendPartsCounted(Peer p, int id, int size, Func<int, Msg> part, out int linksUsed, bool shown)
@@ -6043,6 +6054,42 @@ namespace MPFever
                 Tick();
             }
             return true;
+        }
+
+        /// <summary>(0.9.4, #455) The session folders of earlier sessions cleaned, beside the window (see SessionDisk.Clean).</summary>
+        void StartSessionClean()
+        {
+            if (!SessionDisk.CleanOn) return;
+            new Thread(() =>
+            {
+                try
+                {
+                    var (dirs, files, bytes) = SessionDisk.Clean(GameLink.SessionRoot(), DateTime.UtcNow, SessionDisk.SavIdle, SessionDisk.FolderIdle);
+                    if (dirs + files > 0)
+                        Log.W(F("Anciens dossiers de session nettoyés : {0} dossier(s) et {1} fichier(s), {2} Mo libérés.",
+                            "Old session folders cleaned: {0} folder(s) and {1} file(s), {2} MB freed.", dirs, files, bytes >> 20));
+                }
+                catch (Exception e) { Log.W("session folders: " + e.Message); }
+            }) { IsBackground = true, Name = "Session folders" }.Start();
+        }
+
+        /// <summary>(0.9.4, #455) The host's copy of the game for the differences, removed when its session ends (80 MB and more).</summary>
+        void DropDeltaBase()
+        {
+            var path = deltaBasePath;
+            deltaBasePath = null; deltaBaseSha = null;
+            if (path == null || !SessionDisk.CleanOn) return;
+            try { if (File.Exists(path)) File.Delete(path); } catch (Exception e) { Log.W("differences' base: " + e.Message); }
+        }
+
+        bool diskFullShown;
+        /// <summary>(0.9.4, #455) A full disk said in a dialog too, once per run (not for the autotests nor a server without a
+        /// player at its screen: the log says it).</summary>
+        void OnDiskFull(string text)
+        {
+            if (autotest || ServerMode || diskFullShown) return;
+            diskFullShown = true;
+            try { BeginInvoke((Action)(() => { try { MessageBox.Show(this, text, "MPFever", MessageBoxButtons.OK, MessageBoxIcon.Warning); } catch { } })); } catch { }
         }
 
         /// <summary>(the host) The game every player loads now: the base of the next resynchronisation's differences.</summary>

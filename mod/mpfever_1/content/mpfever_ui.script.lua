@@ -220,6 +220,9 @@ local function install()
 	-- the old signal was removed and no new one added, on every game (autotest rcsig, 2026-11-19). Their proposals are marked
 	-- here and refused in a session, the player told; on this game alone as before outside a session.
 	-- MPFEVER_WINPROPOSAL=1: shipped as any build
+	-- (0.9.4) Each proposal is marked with what it was made from (the crossing or the signal, and the type or the one-way state
+	-- asked): its build is shipped with that ("win"), and every game makes the window's proposal again itself (C.winCommand in
+	-- the bridge) instead of rebuilding the shipped one. MPFEVER_WINREPLAY=0: refused in a session, as in 0.9.2
 	U.winProps = setmetatable({}, { __mode = "k" })
 	if os.getenv("MPFEVER_WINPROPOSAL") ~= "1" then
 		pcall(function()
@@ -231,13 +234,24 @@ local function install()
 					pcall(function()
 						up[pair[1]] = function(...)
 							local p = fn(...)
-							if p ~= nil then pcall(function() U.winProps[p] = pair[2] end) end
+							local ent, v = ...
+							if p ~= nil then
+								pcall(function()
+									U.winProps[p] = { what = pair[2], ent = tonumber(ent),
+										v = pair[2] == "signal" and (v and 1 or 0) or tonumber(v) }
+								end)
+							end
 							return p
 						end
 					end)
 				end
 			end
 		end)
+	end
+	-- (0.9.4) what a window build is shipped with: { kind, ent, v } (nil: refused, as in 0.9.2)
+	U.winShip = function(w)
+		if os.getenv("MPFEVER_WINREPLAY") == "0" or type(w) ~= "table" or type(w.ent) ~= "number" or type(w.v) ~= "number" then return nil end
+		return { kind = w.what, ent = w.ent, v = w.v }
 	end
 	-- (0.7.0) the debug factories are tagged too (they go to the engine as before, but a mod's are refused in a session, see
 	-- tag.debug below)
@@ -282,9 +296,17 @@ local function install()
 			return O.sendCommand(cmd, cb, progress)
 		end
 		-- (0.9.2) a railroad crossing's or a signal's window build (see U.winProps): refused in a session, the player told
+		-- (0.9.4: shipped with what it was made from, every game makes it again itself, see U.winShip)
+		local winMeta = nil
 		if tag.name == "makeWorldBuildProposalCmd" and tag.args[1] ~= nil then
-			local okW, what = pcall(function() return U.winProps[tag.args[1]] end)
-			if okW and what then
+			local okW, w = pcall(function() return U.winProps[tag.args[1]] end)
+			local what = okW and type(w) == "table" and w.what or (okW and w) or nil
+			if what then
+				local okS, ship = pcall(U.winShip, w)
+				winMeta = okS and ship or nil
+				if winMeta then log("window build of a " .. tostring(what) .. " (" .. tostring(winMeta.ent) .. ", " .. tostring(winMeta.v) .. "): shipped, every game makes it itself") end
+			end
+			if what and not winMeta then
 				log("window build of a " .. tostring(what) .. " refused in the session (not shipped to the other players yet)")
 				if U.onChatNews then
 					pcall(U.onChatNews, { { kind = "msg", name = "MPFever", text = what == "crossing"
@@ -337,6 +359,16 @@ local function install()
 			if okA and facts then autoNow, autoCtx, fromMod = facts.auto and facts.mod, facts.auto, facts.mod end
 			if okA and verdict == "drop" then
 				U.autoLog(tag, facts, why, true)
+				-- (0.9.4) its callback answered all the same, on the next frame: another game sends the same command (applied on
+				-- every game, this one too); never answered, the mod waited for it in vain (see G.gsDropAnswer in the bridge).
+				-- MPFEVER_GSDROPCB=0: as before
+				if type(cb) == "function" and os.getenv("MPFEVER_GSDROPCB") ~= "0" then
+					U.later = U.later or {}
+					U.later[#U.later + 1] = function()
+						local okc, errc = pcall(cb, nil, true, {})
+						if not okc then log("mods: the answer to " .. tostring(tag.name) .. " (not sent from this game) failed in the mod: " .. tostring(errc):sub(1, 160)) end
+					end
+				end
 				return
 			elseif okA and autoNow then
 				U.autoLog(tag, facts, why, false)
@@ -364,7 +396,7 @@ local function install()
 		if not okt then log("reference translation failed for " .. tag.name .. ": " .. tostring(errt)) end
 		U.seq = U.seq + 1
 		U.stats.held = U.stats.held + 1
-		sendLine("act_req", { tok = U.tok, id = U.seq, fn = tag.name, args = margs })
+		sendLine("act_req", { tok = U.tok, id = U.seq, fn = tag.name, args = margs, win = winMeta })
 		if U.logged < 80 then
 			U.logged = U.logged + 1
 			log("held " .. tag.name .. " #" .. U.seq .. " (" .. #C.ser(margs) .. " bytes)")
