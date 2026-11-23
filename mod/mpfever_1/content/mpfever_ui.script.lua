@@ -7035,6 +7035,9 @@ M.doReplace = function(replacementApi)
 	if not C.ACTIVE then return end
 	local ok, err = pcall(install)
 	if not ok then log("UI interception FAILED: " .. tostring(err)) end
+	-- (0.9.6, #475 #476) the windows' camera calls too (the notification popups' are in the game scripts' state, see the bridge)
+	local okF, fg = pcall(C.installFocusGuard, log)
+	log("camera guard (windows): " .. tostring(okF and fg or ("failed: " .. tostring(fg))))
 end
 
 -- MPFever panel, mounted on the game's mod entry point for the whole game. It gives the UI state a periodic hook

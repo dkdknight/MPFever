@@ -10,7 +10,7 @@ C.TAB = string.char(9)
 -- (0.7.9) this mod's version, the same as MPFever.exe's (tests/check_repo.py): the game says it in its "hello", and the launcher
 -- warns when the game runs another copy of the mod than the one it installed (issue #136: an old copy in the game's own
 -- mods folder, mods/release/MPFever/mod/mpfever_1, which the game takes before the player's mods folder)
-C.MODVERSION = "0.9.5"
+C.MODVERSION = "0.9.6"
 -- (0.7.11, #156) a custom entity's commands that name one (its move, its state, its removal), see the bridge's guard
 C.CUSTOM_ENTITY_FNS = { makeCustomEntityUpdateTransformationCmd = true, makeCustomEntityUpdateStateCmd = true, makeCustomEntityDestroyCmd = true }
 -- (0.7.11, #156/#158) Is entity e no mod's custom entity on this game? Such a command names it by its id on the game that made
@@ -327,6 +327,75 @@ function C.origCmds()
 	if ok then return t end
 	C._orig = C._orig or {}
 	return C._orig
+end
+
+-- (0.9.6, #475 #476) Whether the game would stop if its camera were sent to entity e: its model list has no full model (none,
+-- or only thin ones), and GetBoundingSphereFromBVAndMI asserts "!mil.fatInstances.empty()". False when it cannot tell.
+function C.focusUnsafe(e)
+	if type(e) ~= "number" or e < 0 then return false end
+	local mil = nil
+	if not pcall(function() mil = api.engine.getComponent(e, api.type.ComponentType.MODEL_INSTANCE_LIST) end) or mil == nil then return false end
+	local n = nil
+	pcall(function() local v = mil.fatInstances_native; local s = v:size(); if type(s) == "number" then n = s end end)
+	if n == nil then pcall(function() n = #mil.fatInstances end) end
+	return n == 0
+end
+
+-- what an entity is, for the log: its name and its kinds among those a notification points at
+local function focusWhat(e)
+	local t = {}
+	pcall(function()
+		local nm = api.engine.getComponent(e, api.type.ComponentType.NAME)
+		if nm and nm.name and nm.name ~= "" then t[#t + 1] = "'" .. tostring(nm.name) .. "'" end
+	end)
+	for _, k in ipairs({ "TRANSPORT_VEHICLE", "CONSTRUCTION", "TOWN_BUILDING", "STATION", "SIM_BUILDING", "BASE_EDGE", "LINE", "TOWN" }) do
+		pcall(function()
+			if api.engine.getComponent(e, api.type.ComponentType[k]) ~= nil then t[#t + 1] = k end
+		end)
+	end
+	return #t > 0 and table.concat(t, " ") or "?"
+end
+
+-- (0.9.6, #475 #476: ger4l's game stopped twice and User's once within six minutes, each time on a click on one of the game's
+-- notifications: notification_util.tl's onClick calls api.gui.camera.focusEntity, and the game stops in
+-- GetBoundingSphereFromBVAndMI, "Assertion '!mil.fatInstances.empty()'", when the entity's model list has no full model; both
+-- games alike, so no desync, but a crash) The camera is no longer sent to such an entity: the call is skipped (the entity is
+-- still selected), and the log says which entity, once each. Wrapped once per Lua state (the game scripts' interface state of
+-- the notification popups, and the windows' state). Returns what was done. MPFEVER_FOCUSGUARD=0: as before
+function C.installFocusGuard(say)
+	if os.getenv("MPFEVER_FOCUSGUARD") == "0" then return "off (MPFEVER_FOCUSGUARD=0)" end
+	local cam = nil
+	pcall(function() cam = api.gui.camera end)
+	if cam == nil then return "no camera in this state" end
+	local okG, g = pcall(function()
+		local g = package.loaded["mpfever_focus_guard"]
+		if type(g) ~= "table" then g = {}; package.loaded["mpfever_focus_guard"] = g end
+		return g
+	end)
+	if not okG then g = C._focusGuard or {}; C._focusGuard = g end
+	local now = nil
+	pcall(function() now = cam.focusEntity end)
+	if now == nil then return "no focusEntity in this state" end
+	if g.wrapper ~= nil and now == g.wrapper then return "on (already)" end
+	local orig = now
+	local told = {}
+	local function wrapper(e, ...)
+		local okU, unsafe = pcall(C.focusUnsafe, e)
+		if okU and unsafe then
+			if not told[e] then
+				told[e] = true
+				if say then pcall(say, "camera: not sent to entity " .. tostring(e) .. " (" .. focusWhat(e) .. "): its model list has no full model, the game would stop (#475)") end
+			end
+			return
+		end
+		return orig(e, ...)
+	end
+	local okSet = pcall(function() cam.focusEntity = wrapper end)
+	local after = nil
+	pcall(function() after = cam.focusEntity end)
+	if not okSet or after ~= wrapper then return "could not be wrapped" end
+	g.orig, g.wrapper = orig, wrapper
+	return "on"
 end
 
 -- one protocol line: kind TAB from TAB payload
@@ -1111,7 +1180,45 @@ function C.noteGone(m, gone)
 	if type(sp) == "table" then each(sp.edgesToRemove); each(sp.nodesToRemove) end
 	local np = type(m) == "table" and m.proposal
 	if type(np) == "table" then each(np.removedSegments); each(np.removedNodes) end
+	-- ((0.9.6, #467) and the constructions it demolishes, see C.removeOnce; MPFEVER_REMOVEONCE=0: not noted, as before)
+	if type(m) == "table" and os.getenv("MPFEVER_REMOVEONCE") ~= "0" then each(m.constructionsToRemove); each(m.toRemove) end
 	return gone
+end
+
+-- (0.9.6, #467: Julian's game, 2026-11-21 20:54, the host alone with Kappador; the game stopped on "SimEntityUpdateHelper.cpp:2013",
+-- the same entity twice in its removedTnEntities) The mod Dévers (devers_1) demolishes its render constructions from its script;
+-- MPFever ships such a command for a later step, the mod saw them still there meanwhile and asked again: four demolitions of the
+-- same four constructions were applied at t=49844200, in one update, and the engine stopped on the second. A build whose
+-- constructions to remove an earlier build at this game time already takes away (gone, see C.noteGone) leaves them out; when
+-- nothing else is left in it, it is skipped (the caller refuses it on every game: the same builds in the same order everywhere).
+-- m: the action's first argument (a script's SimpleProposal: constructionsToRemove; a tool's: toRemove). Returns how many were
+-- already gone, and whether the build still has anything to do. A build that maps its removals by their rank (old2new) is left
+-- as it is unless nothing else is left.
+function C.removeOnce(m, gone)
+	if type(m) ~= "table" or type(gone) ~= "table" or os.getenv("MPFEVER_REMOVEONCE") == "0" then return 0, true end
+	local key = (type(m.constructionsToRemove) == "table" and "constructionsToRemove") or (type(m.toRemove) == "table" and "toRemove") or nil
+	if not key then return 0, true end
+	local rm, ks = m[key], {}
+	for k in pairs(rm) do if type(k) == "number" then ks[#ks + 1] = k end end
+	table.sort(ks)
+	local keep, n = {}, 0
+	for _, k in ipairs(ks) do
+		local e = rm[k]
+		if type(e) == "number" and gone[e] then n = n + 1 else keep[#keep + 1] = e end
+	end
+	if n == 0 then return 0, true end
+	local function full(t) return type(t) == "table" and next(t) ~= nil end
+	local other = #keep > 0 or full(m.constructionsToAdd) or full(m.toAdd)
+	if type(m.streetProposal) == "table" then for _, v in pairs(m.streetProposal) do if full(v) then other = true break end end end
+	if type(m.proposal) == "table" then
+		for _, f in ipairs({ "addedSegments", "removedSegments", "addedNodes", "removedNodes", "edgeObjectsToAdd", "edgeObjectsToRemove" }) do
+			if full(m.proposal[f]) then other = true break end
+		end
+	end
+	if not other then return n, false end
+	if full(m.old2newByRank) or full(m.old2new) then return 0, true end
+	m[key] = keep
+	return n, true
 end
 
 -- (0.6.9) what a script's copy of a segment keeps of it, as the stop tool and the replays of its stops keep it (replayStop): its

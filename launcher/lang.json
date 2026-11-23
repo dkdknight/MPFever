@@ -26585,6 +26585,19 @@
       "ko": "운영 = 연초부터의 수입에서 운영비와 유지비를 뺀 값으로, 건설과 차량 구매는 포함하지 않습니다(게임의 재무 표). 호스트가 매 게임 월 초에 측정합니다.",
       "zh-CN": "运营 = 自年初以来的收入减去运营和维护费用，不含建设和车辆购买（游戏的财务表），由主机在每个游戏月初测量。",
       "zh-TW": "營運 = 自年初以來的收入減去營運和維護費用，不含建設和車輛購買（遊戲的財務表），由主機在每個遊戲月初測量。"
+    },
+    "{0} adds vehicles, buildings or objects the host's game uses: MPFever cannot leave it out, your game would crash as soon as one of them is used. Install it.": {
+      "de": "{0} fügt Fahrzeuge, Gebäude oder Objekte hinzu, die das Spiel des Hosts nutzt: MPFever kann ihn nicht weglassen, dein Spiel würde abstürzen, sobald eines davon benutzt wird. Installiere ihn.",
+      "es": "{0} añade vehículos, edificios u objetos que usa la partida del anfitrión: MPFever no puede dejarlo fuera, tu juego se cerraría en cuanto se use uno de ellos. Instálalo.",
+      "it": "{0} aggiunge veicoli, edifici o oggetti che la partita dell'host usa: MPFever non può escluderlo, il tuo gioco andrebbe in crash appena uno di essi viene usato. Installalo.",
+      "nl": "{0} voegt voertuigen, gebouwen of objecten toe die het spel van de host gebruikt: MPFever kan hem niet weglaten, je spel zou crashen zodra er een van wordt gebruikt. Installeer hem.",
+      "pl": "{0} dodaje pojazdy, budynki lub obiekty, których używa gra hosta: MPFever nie może go pominąć, twoja gra by się zawiesiła, gdy tylko któryś z nich zostanie użyty. Zainstaluj go.",
+      "pt-BR": "{0} adiciona veículos, prédios ou objetos que o jogo do anfitrião usa: o MPFever não pode deixá-lo de fora, seu jogo travaria assim que um deles fosse usado. Instale-o.",
+      "ru": "{0} добавляет транспорт, здания или объекты, которые использует игра хоста: MPFever не может обойтись без него, ваша игра вылетит, как только один из них будет использован. Установите его.",
+      "ja": "{0} はホストのゲームが使う車両・建物・オブジェクトを追加します。MPFever はこれを外せません。外すと、そのどれかが使われた時点でゲームがクラッシュします。インストールしてください。",
+      "ko": "{0}은(는) 호스트의 게임이 사용하는 차량, 건물 또는 오브젝트를 추가합니다. MPFever는 이를 빼고 진행할 수 없습니다. 그중 하나가 사용되는 순간 게임이 충돌합니다. 설치하세요.",
+      "zh-CN": "{0} 添加了主机的游戏所使用的车辆、建筑或物体：MPFever 无法将其排除，一旦用到其中之一，你的游戏就会崩溃。请安装它。",
+      "zh-TW": "{0} 新增了主機的遊戲所使用的車輛、建築或物件：MPFever 無法將其排除，一旦用到其中之一，你的遊戲就會當機。請安裝它。"
     }
   }
 }

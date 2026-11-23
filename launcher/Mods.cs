@@ -16,7 +16,8 @@ namespace MPFever
     /// how it goes with MPFever. The host sends its list to the players, whose launcher compares it with their own mods:
     /// a player with another version of a mod cannot load the host's game (it would never match it).
     ///
-    /// Lists travel as "id|name|source|fingerprint|kind|personal|hub|size" entries joined by ";;" (the menu's own list is
+    /// Lists travel as "id|name|source|fingerprint|kind|personal|hub|size|res" entries joined by ";;" (res, 0.9.6: "1" when the
+    /// mod holds things the host's world can use, see WorldResources; the menu's own list is
     /// "id|name|source|hub"; hub: the mod's number on its Mod Hub, mod.io or Steam Workshop, from which a player who lacks it
     /// installs it; size: its folder's size in MB on the host's PC, for a mod the host may send itself).
     ///
@@ -882,6 +883,67 @@ namespace MPFever
             catch { return false; }
         }
 
+        static readonly Dictionary<string, string> resCache = new Dictionary<string, string>();
+        // (0.9.6, #471) the folders of the world's resources a Lua file of plain name may sit in (a train's multiple_unit.lua, a
+        // street type of TF2's layout): with WorldLua, see WorldResources
+        static readonly Regex WorldResDir = new Regex(@"(^|/)(model|models|construction|constructions|multiple_unit|vehicle|vehicles|street|streets|track|tracks|bridge|bridges|tunnel|tunnels|cargo|cargos|industry|industries|building|buildings|depot|depots|station|stations|landmark|landmarks|warehouse|warehouses|signals|signal|edge_addons|infrastructure|vegetation|trees|animals|animal|terrain|ground_texture|autogroundtex)/", RegexOptions.IgnoreCase);
+
+        /// <summary>(0.9.6, #471) The first file of a mod that the host's world can use: a model, a mesh, a construction, a street or
+        /// track type, a vehicle (its path; "" when it has none). A mod without such files may be left out of a player's game (at
+        /// worst the games desync); a mod with them may not: the player's game crashes as soon as one of them is used (#151: at the
+        /// load; #471: fritz took the host's 13 mods for personal, vehicle packs among them, and his game stopped when the host bought
+        /// one of their vehicles, "ResTypeRep&lt;ModelAsset&gt;::Get 4539 &gt;= 4537"). Images, fonts and texts never count; a Lua file
+        /// counts when it is named as a resource of the world (WorldLua) or sits in one of its folders. Fails closed: archives of
+        /// content, more than 20000 files or an unreadable folder count.</summary>
+        public static string WorldResources(string dir)
+        {
+            try
+            {
+                var key = Stamp(dir);
+                lock (resCache) if (resCache.TryGetValue(key, out var known)) return known;
+                string found = "";
+                foreach (var j in new[] { "mod.json", "_content.json" })
+                {
+                    var p = Path.Combine(dir, j);
+                    if (found == "" && File.Exists(p) && Regex.IsMatch(File.ReadAllText(p), "\"archives\"\\s*:\\s*\\[")) found = "archives of content (" + j + ")";
+                }
+                if (found == "")
+                {
+                    int n = 0;
+                    foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                    {
+                        if (++n > 20000) { found = "more than 20000 files"; break; }
+                        var rel = f.Substring(dir.Length).TrimStart('\\', '/').Replace('\\', '/');
+                        if (Skip.IsMatch(rel)) continue;
+                        var name = Path.GetFileName(rel).ToLowerInvariant();
+                        var ext = Path.GetExtension(name);
+                        if (name == "mod.json" || name == "_content.json" || InertExt.Contains(ext)) continue;
+                        if (ext == ".lua")
+                        {
+                            if (name != "mod.lua" && (WorldLua(name) || WorldResDir.IsMatch("/" + rel))) { found = rel; break; }
+                            continue;
+                        }
+                        // (a model, a mesh, an animation, a material, a sound...)
+                        found = rel;
+                        break;
+                    }
+                }
+                lock (resCache) resCache[key] = found;
+                return found;
+            }
+            catch (Exception e) { return "unreadable (" + e.Message + ")"; }
+        }
+
+        /// <summary>(0.9.6, #471) Whether a host's mod holds things its world can use, so that no player may play without it: its
+        /// host found such files in it (Res "1", see WorldResources), or, from a host before 0.9.6 that does not say (Res ""), a mod
+        /// of objects or of data changed at the load (kind assets or load). The game's own mods and the DLCs: never.</summary>
+        public static bool WithWorld(Entry e) => e != null && !BuiltIn(e) && (e.Res == "1" || (e.Res == "" && (e.Kind == Assets || e.Kind == Load)));
+
+        /// <summary>(0.9.6, #471) Whether a host's mod taken for personal (by the host by hand, or by this player) may be left out of
+        /// this player's game: found personal by its files on the host's PC ("auto"), or holding nothing its world can use.
+        /// MPFEVER_PERSONALMODELS=0: always, as before.</summary>
+        public static bool MayLeaveOut(Entry e) => e.P == "auto" || Environment.GetEnvironmentVariable("MPFEVER_PERSONALMODELS") == "0" || !WithWorld(e);
+
         /// <summary>A mod is personal here: found so (and not turned off), or taken for personal by hand.</summary>
         public static bool IsMine(string id)
         {
@@ -919,7 +981,8 @@ namespace MPFever
             foreach (var e in host)
             {
                 if (BuiltIn(e)) continue;
-                bool personal = e.P != "" || Forced.Contains(e.Id);
+                // ((0.9.6, #471) never a mod whose things the host's world uses: see MayLeaveOut)
+                bool personal = (e.P != "" || Forced.Contains(e.Id)) && MayLeaveOut(e);
                 if (personal && !IsMine(e.Id)) lines.Add("drop\t" + e.Id);
             }
             Dictionary<string, string> all;
@@ -942,7 +1005,7 @@ namespace MPFever
             foreach (var e in host)
             {
                 if (BuiltIn(e)) continue;
-                bool personal = e.P != "" || Forced.Contains(e.Id);
+                bool personal = (e.P != "" || Forced.Contains(e.Id)) && MayLeaveOut(e);
                 if (!personal || IsMine(e.Id)) continue;
                 // (the host's "auto" ones change its interface only: left out without risk)
                 if (e.P == "forced" || (e.P == "" && Forced.Contains(e.Id))) r.Add("-" + e.Name);
@@ -954,7 +1017,7 @@ namespace MPFever
             return r;
         }
 
-        public sealed class Entry { public string Id, Name, Source, Fp, Kind, P = "", Hub = "", Size = ""; }
+        public sealed class Entry { public string Id, Name, Source, Fp, Kind, P = "", Hub = "", Size = "", Res = ""; }
 
         public static List<Entry> Parse(string list)
         {
@@ -965,7 +1028,7 @@ namespace MPFever
                 if (f[0].Trim() == "") continue;
                 r.Add(new Entry { Id = f[0].Trim(), Name = f.Length > 1 && f[1].Trim() != "" ? f[1].Trim() : f[0].Trim(), Source = f.Length > 2 ? f[2].Trim() : "",
                     Fp = f.Length > 3 ? f[3].Trim() : "", Kind = f.Length > 4 ? f[4].Trim() : "", P = f.Length > 5 ? f[5].Trim() : "",
-                    Hub = f.Length > 6 ? f[6].Trim() : "", Size = f.Length > 7 ? f[7].Trim() : "" });
+                    Hub = f.Length > 6 ? f[6].Trim() : "", Size = f.Length > 7 ? f[7].Trim() : "", Res = f.Length > 8 ? f[8].Trim() : "" });
             }
             return r;
         }
@@ -987,7 +1050,10 @@ namespace MPFever
                 // (the menu's list: its 4th field is the mod's Mod Hub number)
                 string hub = Regex.Replace(e.Fp ?? "", "[^0-9A-Za-z_-]", "");
                 string size = BuiltIn(e) ? "" : SizeMb(e.Id);
-                return string.Join("|", Clean(e.Id), Clean(e.Name), Clean(e.Source), i.Item1, i.Item2, p, hub, size);
+                // (0.9.6, #471) whether its folder holds things the world can use ("1"), none ("0"), "" when not found here or built in
+                var dir = BuiltIn(e) ? null : Dir(e.Id);
+                string res = dir == null ? "" : WorldResources(dir) != "" ? "1" : "0";
+                return string.Join("|", Clean(e.Id), Clean(e.Name), Clean(e.Source), i.Item1, i.Item2, p, hub, size, res);
             }));
         }
 
@@ -1006,7 +1072,9 @@ namespace MPFever
             {
                 string here = "";
                 string kind = e.Kind;
-                string personal = isHost ? (e.P != "" ? "host" : "") : (e.P != "" ? "host" : Forced.Contains(e.Id) ? "mine" : "");
+                // ((0.9.6, #471) a mod whose things the host's world uses is needed here even when taken for personal: see MayLeaveOut)
+                bool leaveOut = MayLeaveOut(e);
+                string personal = isHost ? (e.P != "" ? "host" : "") : (e.P != "" && leaveOut ? "host" : Forced.Contains(e.Id) && leaveOut ? "mine" : "");
                 if (!isHost && !BuiltIn(e))
                 {
                     var mine = Info(e.Id);
@@ -1022,7 +1090,8 @@ namespace MPFever
                 if (v.Level == "bad") c.Bad.Add(e.Name);
                 // (0.8.1, MODOLDCOPY) another version because of a copy in this player's own mods: "hub" or "local" (see OldCopyFix)
                 string fix = here == "differs" && personal == "" ? OldCopyFix(e.Id, e.Fp) : "";
-                rows.Add(string.Join("|", Clean(e.Id), Clean(e.Name), Clean(e.Source), kind, v.Level, here, Clean(v.Note), personal, e.Hub, e.Size, fix));
+                // (0.9.6, #471) "1": no "play without it" for this one (the menu hides its button)
+                rows.Add(string.Join("|", Clean(e.Id), Clean(e.Name), Clean(e.Source), kind, v.Level, here, Clean(v.Note), personal, e.Hub, e.Size, fix, leaveOut ? "0" : "1"));
             }
             c.View = string.Join(";;", rows);
             return c;

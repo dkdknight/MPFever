@@ -51,7 +51,7 @@ check('MPFEVER_MODOLDCOPY") == "0"' in of and "LocalCopy(id) == null" in of and 
 cmp = body(mods, "public static Check Compare(")
 check('here = "restart"' in cmp and cmp.index('here = "restart"') < cmp.index('here = "notfound"'), "a copy moved out: restart, before notfound")
 check("c.Differs.Add(F(" in cmp[cmp.index('here = "restart"') - 200:cmp.index('here = "restart"') + 300], "  and it blocks the load (Differs)")
-check('OldCopyFix(e.Id, e.Fp) : ""' in cmp and "e.Hub, e.Size, fix));" in cmp, "the fix sent to the menu as the 11th field")
+check('OldCopyFix(e.Id, e.Fp) : ""' in cmp and "e.Hub, e.Size, fix, " in cmp, "the fix sent to the menu as the 11th field")
 mo = body(mods, "internal static string MoveOut(string d)")
 check('"mpfever-old-mods"' in mo and "Directory.Move(full, to);" in mo and "where-it-was.txt" in mo and "CopyDir" not in mo,
       "moved by a rename only (never half moved), next to the mods folder")
