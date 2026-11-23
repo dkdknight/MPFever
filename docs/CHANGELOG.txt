@@ -30,6 +30,15 @@ MPFever - Changelog
     the same order on every game: the same decision everywhere; mod.log says "already demolished by an earlier build at this
     time"). A build that maps its removals by their rank is left as it is (MPFEVER_REMOVEONCE=0: as before). Test:
     tests/test_removeonce096.py.
+  - FIX (#470, Hansen and ChristianHansen): loans taken in a pause (Obtain, Repay, Obtain at one game time) left the loans'
+    state different on the two games, and the session reloaded, twice in one evening. The game's loan script draws a loan's
+    delay (4 to 8 months before that kind is offered again) when its journal command comes back; the simulation runs in two
+    Lua states, taken in turn from one batch to the next, each counting its own draws, and in a pause the game time stays the
+    same while each machine takes its states in its own rhythm: the second loan's delay was its place's first draw on one game
+    and its second on the other. Now the draws of the loan script's events, and of the callbacks of the commands they send,
+    are counted from the event itself (its kind of loan included), whatever state runs it. Reproduced in game by a new
+    autotest, loanseq (MPFEVER_SCENARIO=loanseq,soak with MPFEVER_PAUSED=1, on Test Rcsig 40444): without the fix script:loan
+    differed at 22 checks after the pause; with it, in sync (MPFEVER_DETEVENT=0: as before). Test: tests/test_detevent096.py.
 
 0.9.5 - 2026-11-21: MPFever's native module finds the memory it needs on a game started twice, instead of staying off and drifting (#459)
   - FIX (#459, Flubi and JohnMenssing): on the second start of Flubi's game, 30 s after the first, MPFever's native module

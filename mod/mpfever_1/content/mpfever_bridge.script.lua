@@ -2330,6 +2330,12 @@ local function installRandom()
 			-- seeded: the place's file draws in turn from its seed
 			sd.n = sd.n + 1
 			h = mix((sd.seed + sd.n * 2654435769) % 4294967296)
+		elseif DET.ctxCounts then
+			-- (0.9.6, #470) inside a game script's event, or a callback of a command it sent (see DET.wrapEventDraws): counted from
+			-- that event only, the same in every Lua state of the simulation
+			n = (DET.ctxCounts[key] or 0) + 1
+			DET.ctxCounts[key] = n
+			h = mix((t % 4294967296 + n * 2654435769 + placeHash(key) + (DET.ctxHash or 0)) % 4294967296)
 		else
 			n = (counts[key] or 0) + 1
 			counts[key] = n
@@ -2354,7 +2360,72 @@ local function installRandom()
 	end
 	math.random = DET.random
 	math.randomseed = DET.seed
+	DET.hashKey = placeHash
 	log("deterministic math.random installed")
+end
+
+-- (0.9.6, #470: Hansen's session, 2026-11-21: ChristianHansen's loans of a pause, Obtain, Repay and Obtain at one game time; the
+-- loans' state differed and the games reloaded, twice. Reproduced by the autotest loanseq: script:loan apart after the pause.) The
+-- game's loan script draws a loan's delay (cooldownUntil, 4 to 8 months) in the callback of the journal command its Obtain event
+-- sends. The simulation runs in two Lua states, one per state of the world, taken in turn from one batch to the next; each has its
+-- own counts of the draws (see installRandom), and in a pause the game time stays the same while each machine takes its states in
+-- its own rhythm. The second loan's delay was the place's first draw on one game, its second on the other (the host drew
+-- 96789070 twice, the client 96789070 then 96538587). Now the draws of that script's event, and of the callbacks of the commands
+-- it sends there, are counted from the event alone (its script, id and name in the draw), whatever state runs it. Only the game's
+-- loan script (DET.EVENT_SCRIPTS); once per Lua state. MPFEVER_DETEVENT=0: as before
+DET.EVENT_SCRIPTS = { ["::/game_mechanics/finance/loan.script"] = true }
+function DET.ctxEnter(key)
+	local prev = { DET.ctxCounts, DET.ctxHash }
+	DET.ctxCounts = {}
+	DET.ctxHash = DET.hashKey and DET.hashKey(key) or 0
+	return prev
+end
+function DET.ctxLeave(prev)
+	DET.ctxCounts, DET.ctxHash = prev[1], prev[2]
+end
+-- fn(...) run inside the context key; errors go on after the context is left
+function DET.inCtx(key, fn, ...)
+	local prev = DET.ctxEnter(key)
+	local r = table.pack(pcall(fn, ...))
+	DET.ctxLeave(prev)
+	if not r[1] then error(r[2], 0) end
+	return table.unpack(r, 2, r.n)
+end
+function DET.wrapEventDraws()
+	if os.getenv("MPFEVER_DETEVENT") == "0" or type(game) ~= "table" or not C.ACTIVE then return end
+	for k in pairs(DET.EVENT_SCRIPTS) do
+		local v = game[k]
+		if type(v) == "table" and type(v.handleEvent) == "function" and not v.__mpfDetEv then
+			v.__mpfDetEv = true
+			local orig = v.handleEvent
+			v.handleEvent = function(u, st, src, id, name, param, ...)
+				if not (DET.random and math.random == DET.random) then return orig(u, st, src, id, name, param, ...) end
+				local key = k .. "|" .. tostring(id) .. "|" .. tostring(name)
+				-- (and the kind of loan it is about: loans of several kinds taken at one game time get delays of their own)
+				pcall(function() if type(param) == "table" and type(param[1]) == "table" and param[1].type ~= nil then key = key .. "|" .. tostring(param[1].type) end end)
+				-- (the callbacks of the commands sent from this event: run in the same context, when the engine answers)
+				local sc = nil
+				pcall(function() sc = api.cmd.sendCommand end)
+				local wrapped = false
+				if sc ~= nil then
+					wrapped = pcall(function()
+						api.cmd.sendCommand = function(command, cb, ...)
+							if type(cb) == "function" then
+								local cb0 = cb
+								cb = function(...) return DET.inCtx(key .. "|cb", cb0, ...) end
+							end
+							return sc(command, cb, ...)
+						end
+					end)
+				end
+				local r = table.pack(pcall(DET.inCtx, key, orig, u, st, src, id, name, param, ...))
+				if wrapped then pcall(function() api.cmd.sendCommand = sc end) end
+				if not r[1] then error(r[2], 0) end
+				return table.unpack(r, 2, r.n)
+			end
+			log("the draws of " .. k .. "'s events counted from each event")
+		end
+	end
 end
 
 -- (0.7.13, #172, the review of the night's fix) game_time.gs's answer to the calendar's sliders also delays its automatic sky by
@@ -3215,7 +3286,7 @@ local function update(userParams, state, dt)
 	pcall(DET.installTownRatings)
 	pcall(DET.installSkySpeed)
 	SIM.evTick = (SIM.evTick or 0) + 1
-	if SIM.evTick % 50 == 1 then pcall(DET.wrapModEvents) end
+	if SIM.evTick % 50 == 1 then pcall(DET.wrapModEvents); pcall(DET.wrapEventDraws) end
 	-- (0.8.7 diagnostic build) the fine drift diagnostic: every aircraft's moving state and the animals' digest at every step,
 	-- written with each drift kept (mpfever_finediag.lua). Only with MPFEVER_FINEDIAG=1: nothing of it is loaded otherwise
 	if SIM.fine ~= false then
@@ -18540,6 +18611,59 @@ H.loan = function(from, p)
 		AUTO.results[#AUTO.results + 1] = "loan error " .. tostring(err)
 		autoFinish()
 	end
+end
+
+-- (0.9.6, #470: ChristianHansen's loans of a pause, Obtain, Repay and Obtain at one game time, and the loans' state differed)
+-- MPFEVER_SCENARIO=loanseq (with MPFEVER_PAUSED=1, then soak): this player obtains a loan on offer, repays it, then obtains one of
+-- another kind, 2 s apart, through the loan window's own events ({new offer, card} / {nil, obtained loan}). One company for
+-- everybody (the game's loan script); the checks after the pause compare script:loan.
+H.loanseq = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST loanseq " .. t); AUTO.results[#AUTO.results + 1] = t end
+	local ok, err = pcall(function()
+		local function lstate()
+			local e = api.engine.system.gameScriptSystem.getEntityForGameScript("::/game_mechanics/finance/loan.gs")
+			return C.marshal(api.engine.getComponent(e, api.type.ComponentType.GAME_SCRIPT).state) or {}
+		end
+		local function offers(s, notType)
+			local out = {}
+			for _, l in ipairs(s.availableLoans or {}) do
+				if type(l) == "table" and tonumber(l.amount) and not l.cooldownUntil and l.type ~= notType then out[#out + 1] = l end
+			end
+			return out
+		end
+		local s0 = lstate()
+		local first = offers(s0)[1]
+		if not first then say("no loan on offer (" .. #(s0.availableLoans or {}) .. " cards, " .. #(s0.obtainedLoans or {}) .. " obtained)"); return autoFinish() end
+		uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "", [2] = "Loan", [3] = "Obtain", [4] = { first, first } })
+		say("obtain " .. tostring(first.type) .. " " .. tostring(first.amount) .. " at t=" .. tostring(gameTime()))
+		G.waits[#G.waits + 1] = { at = G.frames + 120, fn = function()
+			local s1 = lstate()
+			local got = nil
+			for _, l in ipairs(s1.obtainedLoans or {}) do if type(l) == "table" and l.type == first.type and (not got or (tonumber(l.id) or 0) > (tonumber(got.id) or 0)) then got = l end end
+			if not got then say("the loan was not obtained (" .. #(s1.obtainedLoans or {}) .. " obtained)"); return autoFinish() end
+			uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "", [2] = "Loan", [3] = "Repay", [4] = { [2] = got } })
+			say("repay loan " .. tostring(got.id))
+			G.waits[#G.waits + 1] = { at = G.frames + 120, fn = function()
+				local s2 = lstate()
+				local second = offers(s2, first.type)[1]
+				if not second then say("no second loan on offer"); return autoFinish() end
+				uiRequest("makeScriptingSendEventCmd", { n = 4, [1] = "", [2] = "Loan", [3] = "Obtain", [4] = { second, second } })
+				say("obtain " .. tostring(second.type) .. " " .. tostring(second.amount))
+				G.waits[#G.waits + 1] = { at = G.frames + 240, fn = function()
+					local s3 = lstate()
+					local cds = {}
+					for _, l in ipairs(s3.availableLoans or {}) do cds[#cds + 1] = tostring(l.type) .. "=" .. tostring(l.cooldownUntil or "-") end
+					say("after: " .. #(s3.obtainedLoans or {}) .. " obtained, freeId " .. tostring(s3.freeId) .. ", cooldowns {" .. table.concat(cds, " ") .. "}")
+					autoFinish()
+				end }
+			end }
+		end }
+	end)
+	if not ok then say("error " .. tostring(err)); autoFinish() end
 end
 
 local function runLine(p)
