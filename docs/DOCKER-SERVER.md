@@ -263,6 +263,8 @@ On a real Steam account, with real Windows clients, on Docker Desktop (Windows) 
 
 ### What has not been tested (risks)
 
+What is not validated here is left for the next pull request: this one is the experimental base, with its limits stated.
+
 - **Several real clients at once**, runs of **several hours**, and a **player receiving the mods from the server** (unit and local level only).
 - The **offline logon ticket's lifetime** (Steam offline mode): it is renewed by one online start; how long it lasts is unknown.
 - A **second PC for the owner's game**, the **GPU variant** (`compose.gpu.yaml`), ARM hosts (not supported).
