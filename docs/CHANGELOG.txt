@@ -2,6 +2,18 @@ MPFever - Changelog
 ===================
 
 0.9.6 - (in progress)
+  - FIX (#471, fritz and privat5990): fritz took all 13 of the host's mods for personal (« Play without it » on the
+    Multiplayer page), vehicle packs among them, so his game loaded the host's game without them. When the host bought a
+    vehicle of one of them, fritz's game stopped: it did not have its model ("ResTypeRep<ModelAsset>::Get 4539 >= 4537"; the
+    host's game knew 4968 models). MPFever only warned that such a mod "may desynchronise the game" (0.7.11). Now the host's
+    list says for each mod whether it holds things its world can use (models, a train's configuration, constructions, street
+    or track types: images, fonts and texts do not count; archives of content do); such a mod is never left out of a player's
+    game: taking it for personal is refused and said ("MPFever cannot leave it out, your game would crash as soon as one of
+    them is used. Install it."), an older choice is ignored (the mod counts as missing, the join stops before the load and
+    offers its Mod Hub install), and the menu no longer shows « Play without it » for it. With a host before 0.9.6, mods of
+    kind assets and load count. Interface mods and scripts may still be played without, as before
+    (MPFEVER_PERSONALMODELS=0: as before). Tests: tests/test_personalmodels096.py, the launcher's self-test
+    (RunPersonalModels096: the real code on mods made on the spot).
 
 0.9.5 - 2026-11-21: MPFever's native module finds the memory it needs on a game started twice, instead of staying off and drifting (#459)
   - FIX (#459, Flubi and JohnMenssing): on the second start of Flubi's game, 30 s after the first, MPFever's native module

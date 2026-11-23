@@ -208,7 +208,9 @@ local function decodeMods(s)
 			out[#out + 1] = { id = id, name = (f[2] or "") ~= "" and f[2] or id, source = f[3] or "", kind = f[4] or "",
 				level = f[5] or "", here = f[6] or "", note = f[7] or "", personal = f[8] or "", hub = f[9] or "", size = f[10] or "",
 				-- (0.8.1) "hub" / "local": the copy the game takes is in this player's local mods folder (see Mods.OldCopyFix)
-				fix = f[11] or "" }
+				fix = f[11] or "",
+				-- (0.9.6, #471) "1": the host's world uses its things, no "play without it" (see Mods.MayLeaveOut)
+				needed = f[12] or "" }
 		end
 	end
 	return out
@@ -2026,7 +2028,7 @@ local function setup()
 									function() request("modoldcopy", id, playerName()) end,
 									{ font = "font-scale-body", tooltip = T("Déplacée dans local/mpfever-old-mods, où le jeu ne la voit plus : rien n'est supprimé.", "Moved to local/mpfever-old-mods, where the game no longer sees it: nothing is deleted.") }) })
 							end
-							if (m.state == "missing" or m.state == "differs") and not isHost then
+							if (m.state == "missing" or m.state == "differs") and not isHost and m.needed ~= "1" then
 								rows[#rows + 1] = box(H, { gap(12, 1), button(T("Jouer sans (le prendre pour personnel)", "Play without it (take it for personal)"),
 									function() request("modpersonal", id .. " 1", playerName()) end,
 									{ font = "font-scale-body", tooltip = T("Seulement pour un mod qui ne change que votre interface : un autre fera se désynchroniser la partie.", "Only for a mod that only changes your interface: any other will make the game desynchronise.") }) })
