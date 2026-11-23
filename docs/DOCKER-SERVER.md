@@ -177,8 +177,7 @@ a world whether this server has it. The game has no Steam Workshop for Transport
 (`srv/logs/launcher-*.log`, `srv/launcher.out`, Dock's `srv/dock.log`); the Docker log rotates (20 MB, 5 files). Any JSON log collector (Loki, Elasticsearch, `jq`) reads the stream as it is.
 
 The **game's and Dock's own logs** join the same stream (`component` `game` and `dock`; the game's lines keep their own time, its VERBOSE/MESSAGE/WARNING/ERROR levels become `debug`/`info`/`warn`/`error`). By default
-`info` and above are shown (`SRV_GAME_LOG=off|error|warn|info|debug`; `debug` is very verbose, mainly at the start). What a server always says (no sound card to read the music, no mod.io or Paradox account) is shown as
-`info`, not as a warning or an error. The files themselves stay in the data volume.
+`info` and above are shown (`SRV_GAME_LOG=off|error|warn|info|debug`; `debug` is very verbose, mainly at the start). What a server always says (no sound card to read the music, no mod.io or Paradox account) and the routine chatter of the game and of the MPFever mod (the world's "still" counter while paused, the "gui alive" frames, gamepad key assignments, mod content caches, graphics extensions...) is shipped at `debug` only, so the default `info` shows what the server does. The game's whole log is still kept in `srv/gamelogs` and in the support bundle. The files themselves stay in the data volume.
 
 **What is kept for a bug report.** The launcher's session folder (`in.log`, `mod.log`, `native.log`, `mp_status.txt`, `companies.txt` ... the files that explain a desynchronisation) lives in the container's memory;
 it is copied to the data volume (`srv/sessions/`) every 5 minutes, when the launcher exits and when the container stops (the last 5 are kept). The game rewrites its log at each start: the previous one is kept in

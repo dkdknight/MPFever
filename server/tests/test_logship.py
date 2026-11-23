@@ -30,7 +30,7 @@ class Shape(unittest.TestCase):
         head = s.shape("[2026-11-19 21:59:46Z - WARNING  -                  - Main           ]+ Could not read ogg file")
         cont = s.shape("    + Location: train_fever/src/Lib/audio/util/OggPlayer.cpp(184): operator ()")
         alut = s.shape("[2026-11-19 22:02:30Z - WARNING  -                  - Main           ]  alutCreateBufferFromFile failed for ::/Wind.wav: There is no current AL context (error code: 204).")
-        self.assertEqual([head[1], cont[1], alut[1]], ["info", "info", "info"])
+        self.assertEqual([head[1], cont[1], alut[1]], ["debug", "debug", "debug"])   # what a server always says: debug
         self.assertEqual(s.shape(WARN)[1], "warn")                    # the next real warning is one again
 
     def test_accounts_a_server_does_not_have_are_not_errors(self):
@@ -39,10 +39,19 @@ class Shape(unittest.TestCase):
         b = s.shape("[2026-11-20 08:20:06Z - ERROR    -                  - Main           ]+ Error opening file")
         c = s.shape("    | DetailMessage: fileName='::/music/splash.ogg': error code: -132")
         e = s.shape("[2026-11-20 08:31:16Z - ERROR    -                  - Main           ]+ Modio: cannot re-authenticate without user interaction")
-        self.assertEqual(e[1], "info")
+        self.assertEqual(e[1], "debug")
         d = s.shape("[2026-11-20 08:20:11Z - ERROR    -                  - Main           ]+ Could not initialize Modio")
-        self.assertEqual([a[1], b[1], c[1]], ["info", "info", "info"])
+        self.assertEqual([a[1], b[1], c[1]], ["debug", "debug", "debug"])
         self.assertEqual(d[1], "error")                               # a real mod.io failure stays one
+
+    def test_routine_chatter_is_debug_only(self):
+        s = logship.Shaper("game")
+        for line in ("[MPFEVER] STILL: tickCount changed in 0 of 60 frames (stopped): it follows the handshakes",
+                     "[MPFEVER] gui alive frame 60 t=1.0 | slowed by other clocks 0/60 frames",
+                     "[2026-11-23 18:14:19Z - MESSAGE  -                  - Main           ]  Not dropped conflicting gamepad-only default key assignment for IA_INSPECTOR (x): collides",
+                     "[2026-11-23 18:14:20Z - MESSAGE  -                  - Main           ]  Reading content cache from json for dir 'mods/release/x/content/'"):
+            self.assertEqual(s.shape(line)[1], "debug", line)
+        self.assertEqual(logship.Shaper("game").shape("[MPFEVER-AUTO] loading savegame 'bigworld'")[1], "info")   # what the server does stays visible
 
     def test_mpfever_mod_lines_are_info(self):
         rec = logship.Shaper("game").shape("[MPFEVER-AUTO] loading savegame 'bigworld'")
