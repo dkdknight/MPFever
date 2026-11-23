@@ -32,7 +32,9 @@ w = ui[ui.index("U.winProps = setmetatable({}, { __mode = \"k\" })"):]
 w = w[:w.index("-- (0.7.0) the debug factories are tagged too")]
 check('if os.getenv("MPFEVER_WINPROPOSAL") ~= "1" then' in w, "MPFEVER_WINPROPOSAL=1: nothing marked (shipped as any build)")
 check('{ "makeRailroadCrossingProposal", "crossing" }, { "makeSignalTypeProposal", "signal" }' in w, "the two functions of 40444's windows")
-check("local p = fn(...)" in w and "U.winProps[p] = pair[2]" in w and "return p" in w, "  their proposals marked, returned unchanged")
+# (0.9.4: marked with what they were made from, { what, ent, v }: shipped and made again by every game, tests/test_winreplay094.py;
+# refused as here with MPFEVER_WINREPLAY=0)
+check("local p = fn(...)" in w and "U.winProps[p] = { what = pair[2]" in w and "return p" in w, "  their proposals marked, returned unchanged")
 check(w.count("pcall(") >= 3, "  every step guarded (40425 has no such functions)")
 g = ui[ui.index("-- (0.9.2) a railroad crossing's or a signal's window build (see U.winProps)"):]
 g = g[:g.index("-- notification events (popup sound, dismiss)")]

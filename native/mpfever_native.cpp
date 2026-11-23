@@ -3518,16 +3518,46 @@ struct Asm {
     static void at(u8* end, u8* target) { *(i32*)(end - 4) = (i32)(target - end); }
 };
 
+#include "near_alloc.h"
+static bool g_nearSaid = false;
+
 static u8* AllocNear(u64 size)
 {
-    // within +-2 GB of the game's code (the sites jump there with a rel32)
-    for (u64 d = 0x10000000; d < 0x70000000; d += 0x100000) {
-        u8* want = (u8*)((g_base > d ? g_base - d : 0) & ~0xFFFFull);
-        if (!want) break;
-        u8* m = (u8*)VirtualAlloc(want, size, 0x3000, 0x40);
-        if (m) return m;
+    // within +-2 GB of the game's code (the sites jump there with a rel32): the band below the image as before, then (0.9.5,
+    // #459, near_alloc.h) the free places above the image and just below it when that band has none
+    static int scan = -1;
+    static uptr imageEnd = 0;
+    if (scan < 0) {
+        char v[8] = {};
+        DWORD n = GetEnvironmentVariableA("MPFEVER_NEARSCAN", v, sizeof(v) - 1);
+        scan = (n == 1 && v[0] == '0') ? 0 : 1;
+        if (g_base) {
+            u8* ntp = (u8*)(g_base + ((IMAGE_DOS_HEADER_*)g_base)->e_lfanew);
+            imageEnd = g_base + *(u32*)(ntp + 4 + sizeof(IMAGE_FILE_HEADER_) + 56);     // OptionalHeader.SizeOfImage
+        }
+        // (test) MPFEVER_NEARBLOCK=1: every place of the first pass taken before the first search, as in Flubi's game (#459)
+        n = GetEnvironmentVariableA("MPFEVER_NEARBLOCK", v, sizeof(v) - 1);
+        if (n == 1 && v[0] == '1' && g_base) {
+            int taken = 0;
+            for (u64 d = NA_NEAR; d < NA_FAR; d += 0x100000)
+                if (g_base > d && VirtualAlloc((void*)((g_base - d) & ~0xFFFFull), 0x100000, 0x2000 /* MEM_RESERVE */, 0x01 /* PAGE_NOACCESS */)) taken++;
+            Buf t; t.str("memory near the game's code: MPFEVER_NEARBLOCK=1, ").dec(taken).str(" MB of the band below taken first (test)"); LogLine(t);
+        }
     }
-    return 0;
+    int how = 0;
+    u8* m = NearAlloc(g_base, imageEnd, size, scan == 1, &how);
+    if (how != 1 && !g_nearSaid) {
+        g_nearSaid = true;
+        NaBand nb = NearBandInfo(g_base);
+        Buf b; b.str("memory near the game's code: none in the band 256 MB to 1.75 GB below it (free there ").dec((i64)(nb.freeBytes >> 20))
+            .str(" MB; ").dec(nb.allocations).str(" allocation(s), the largest ").dec((i64)(nb.bigSize >> 20)).str(" MB at -")
+            .hex(g_base - nb.bigAt).str(", type ").hex(nb.bigType).str(", state ").hex(nb.bigState).str("): ");
+        if (how == 2) b.str("taken ABOVE the game's image instead (+").hex((uptr)m - g_base).str(")");
+        else if (how == 3) b.str("taken just below the game's image instead (-").hex(g_base - (uptr)m).str(")");
+        else b.str(scan == 1 ? "none above the image or just below it either: the hooks that need it stay OFF" : "not searched elsewhere (MPFEVER_NEARSCAN=0): the hooks that need it stay OFF");
+        LogLine(b);
+    }
+    return m;
 }
 
 static int RuleOf(u32 rva)
