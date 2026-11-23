@@ -152,7 +152,7 @@ namespace MPFever
 
     sealed partial class MainForm : Form
     {
-        public const string Version = "0.9.5";
+        public const string Version = "0.9.6";
         /// <summary>Developer mode (MPFever.exe --dev): local two-game test and determinism test buttons.</summary>
         public static bool Dev;
         public static bool MenuModeDefault;
@@ -2695,6 +2695,20 @@ namespace MPFever
                 if (parts.Length < 2 || parts[0].Trim() == "") return;
                 string id = parts[0].Trim();
                 bool on = parts[1].Trim() == "1";
+                // (0.9.6, #471: fritz took the host's 13 mods for personal, vehicle packs among them; his game stopped when the host
+                // bought one of their vehicles, a model it did not have) a host's mod whose things its world uses is never left out:
+                // refused, said why. MPFEVER_PERSONALMODELS=0: taken, with the warning below, as before
+                if (cmd == "modpersonal" && on)
+                {
+                    var hm = Mods.Parse(lobbyMods).FirstOrDefault(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase));
+                    if (hm != null && !Mods.MayLeaveOut(hm))
+                    {
+                        Log.Warn(F("{0} ajoute des véhicules, bâtiments ou objets que la partie de l'hôte utilise : MPFever ne peut pas le laisser de côté, votre jeu planterait dès que l'un d'eux sert. Installez-le.",
+                            "{0} adds vehicles, buildings or objects the host's game uses: MPFever cannot leave it out, your game would crash as soon as one of them is used. Install it.", hm.Name));
+                        MenuStatus();
+                        return;
+                    }
+                }
                 if (cmd == "modpersonal") { if (on) Mods.Forced.Add(id); else Mods.Forced.Remove(id); }
                 else if (on) { Mods.Off.Remove(id); }
                 else { Mods.Off.Add(id); Mods.Forced.Remove(id); }

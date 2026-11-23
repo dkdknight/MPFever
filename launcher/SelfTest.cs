@@ -92,6 +92,7 @@ namespace MPFever
             ok &= RunLuaGate081();
             ok &= RunModStop088();
             ok &= RunPersonalWorld0817();
+            ok &= RunPersonalModels096();
             ok &= RunFailClock0817();
             ok &= RunSafeInstall0817();
             ok &= RunBuildStamp0817();
@@ -1238,6 +1239,87 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
             ct.Remove("YkeWoudstra");
             C(!MainForm.FailWaitDecided(32718200, who, players, ct, MainForm.FailClockSlack), "no clock of a silent game yet: waited for");
             C(1.5 + MainForm.FailWaitClockTicks * 0.25 >= 20.0 - 1e-9 && 1.5 + MainForm.FailWaitClockTicks * 0.25 <= 20.5, "20 s at most in all");
+            return ok;
+        }
+
+        /// <summary>(0.9.6, #471) A host's mod whose things its world uses (models, a train's configuration) is never left out of a
+        /// player's game, even taken for personal by hand; an interface mod still may be; a host before 0.9.6 (no "res" field): kinds
+        /// assets and load count; MPFEVER_PERSONALMODELS=0 as before.</summary>
+        static bool RunPersonalModels096()
+        {
+            bool ok = true;
+            void Check(bool cond, string what) { Log.W((cond ? "  ok    " : "  FAIL  ") + "0.9.6 personal mods with models: " + what); ok &= cond; }
+            var root = Path.Combine(Path.GetTempPath(), "mpfever-selftest-personalmodels-" + Guid.NewGuid().ToString("N"));
+            var kept = Environment.GetEnvironmentVariable("MPFEVER_PERSONALMODELS");
+            var forcedBefore = new HashSet<string>(Mods.Forced, StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_PERSONALMODELS", null);
+                // a vehicle pack (#471: Lufthansa A220-300 Pack): a model
+                var veh = Path.Combine(root, "veh");
+                Directory.CreateDirectory(Path.Combine(veh, "content", "res", "models", "model", "vehicle", "plane"));
+                File.WriteAllText(Path.Combine(veh, "mod.json"), "{\"modId\":\"selftest_veh\"}");
+                File.WriteAllText(Path.Combine(veh, "content", "res", "models", "model", "vehicle", "plane", "a220.mdl"), "function data() return {} end");
+                File.WriteAllText(Path.Combine(veh, "content", "preview.tga"), "x");
+                var w = Mods.WorldResources(veh);
+                Check(w.EndsWith("a220.mdl"), "a vehicle pack's model is found (" + w + ")");
+                // a train's configuration alone (plain Lua in multiple_unit/)
+                var mu = Path.Combine(root, "mu");
+                Directory.CreateDirectory(Path.Combine(mu, "content", "res", "config", "multiple_unit"));
+                File.WriteAllText(Path.Combine(mu, "mod.json"), "{\"modId\":\"selftest_mu\"}");
+                File.WriteAllText(Path.Combine(mu, "content", "res", "config", "multiple_unit", "talent2.lua"), "function data() return {} end");
+                Check(Mods.WorldResources(mu) != "", "a train's configuration counts (" + Mods.WorldResources(mu) + ")");
+                // an interface mod: react plugin, style, images, strings
+                var ui = Path.Combine(root, "ui");
+                Directory.CreateDirectory(Path.Combine(ui, "content", "res", "ui"));
+                File.WriteAllText(Path.Combine(ui, "mod.json"), "{\"modId\":\"selftest_ui\"}");
+                File.WriteAllText(Path.Combine(ui, "content", "res", "ui", "x.res.lua"), "return \"react-plugin\"");
+                File.WriteAllText(Path.Combine(ui, "content", "res", "ui", "x.css.lua"), "return {}");
+                File.WriteAllText(Path.Combine(ui, "content", "res", "ui", "icon.tga"), "x");
+                File.WriteAllText(Path.Combine(ui, "content", "strings.lua"), "return {}");
+                Check(Mods.WorldResources(ui) == "", "an interface mod holds nothing the world uses");
+                // archives of content: fail closed
+                var arc = Path.Combine(root, "arc");
+                Directory.CreateDirectory(arc);
+                File.WriteAllText(Path.Combine(arc, "mod.json"), "{\"modId\":\"selftest_arc\",\"archives\":[\"a.zip\"]}");
+                Check(Mods.WorldResources(arc).StartsWith("archives of content"), "archives of content count");
+
+                Mods.Entry E(string line) => Mods.Parse(line)[0];
+                var vehE = E("selftest_veh_x|A220 Pack|mod.io|abc|assets||6416075|72.7|1");
+                var uiE = E("selftest_ui_x|Line Colours|mod.io|abc|sim||6400000|0.1|0");
+                Check(vehE.Res == "1" && uiE.Res == "0", "the host's 9th field read");
+                Check(!Mods.MayLeaveOut(vehE), "a host's vehicle pack may not be left out");
+                Check(Mods.MayLeaveOut(uiE), "a mod without models may (a desync at worst, as before)");
+                Check(Mods.MayLeaveOut(E("selftest_ui_y|Overlay|mod.io|abc|ui|auto|1|0.1|1")), "the host's own interface mods (auto): left out as before");
+                Check(!Mods.MayLeaveOut(E("selftest_old_a|Pack|mod.io|abc|assets||1|5")) && !Mods.MayLeaveOut(E("selftest_old_l|Trailers|mod.io|abc|load||1|5")),
+                    "a host before 0.9.6 (no 9th field): kinds assets and load count");
+                Check(Mods.MayLeaveOut(E("selftest_old_s|Script|mod.io|abc|sim||1|5")), "  its scripts (sim) may still be left out");
+                Check(!Mods.WithWorld(E("dlc_x|Deluxe|DLC||assets||||1")), "a DLC is never counted (built in: never left out anyway)");
+
+                // #471: fritz took the host's mods for personal (not installed on his PC): the vehicle pack is no longer dropped
+                var host = "selftest_veh_x|A220 Pack|mod.io|abc|assets||6416075|72.7|1;;selftest_ui_x|Line Colours|mod.io|abc|sim||6400000|0.1|0";
+                Mods.Forced.Add("selftest_veh_x");
+                Mods.Forced.Add("selftest_ui_x");
+                var plan = Mods.LoadPlan(host);
+                Check(!plan.Contains("drop\tselftest_veh_x"), "#471: the vehicle pack taken for personal is not left out of the load");
+                Check(plan.Contains("drop\tselftest_ui_x"), "  the other one is, as before");
+                var view = Mods.Compare(host, false).View.Split(new[] { ";;" }, StringSplitOptions.None).Select(r => r.Split('|')).ToList();
+                var vr = view.First(r => r[0] == "selftest_veh_x");
+                var ur = view.First(r => r[0] == "selftest_ui_x");
+                Check(vr[7] == "" && vr.Length > 11 && vr[11] == "1", "  the menu: needed (not \"mine\"), no \"play without it\"");
+                Check(ur[7] == "mine" && ur[11] == "0", "  the menu: the other one stays \"mine\"");
+                Check(Mods.Compare(host, false).Missing.Contains("A220 Pack"), "  missing here: the host's game is not loaded without it");
+                Environment.SetEnvironmentVariable("MPFEVER_PERSONALMODELS", "0");
+                Check(Mods.LoadPlan(host).Contains("drop\tselftest_veh_x") && Mods.MayLeaveOut(vehE), "MPFEVER_PERSONALMODELS=0: left out as before (the bug)");
+            }
+            catch (Exception e) { Check(false, "exception " + e.Message); }
+            finally
+            {
+                Environment.SetEnvironmentVariable("MPFEVER_PERSONALMODELS", kept);
+                Mods.Forced.Clear();
+                foreach (var f in forcedBefore) Mods.Forced.Add(f);
+                try { Directory.Delete(root, true); } catch { }
+            }
             return ok;
         }
 

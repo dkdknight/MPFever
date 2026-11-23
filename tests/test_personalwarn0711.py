@@ -20,7 +20,7 @@ def check(cond, name):
         fails.append(name)
 
 
-mp = mf[mf.index('else if (cmd == "modpersonal" || cmd == "modmine")'):][:3500]
+mp = mf[mf.index('else if (cmd == "modpersonal" || cmd == "modmine")'):][:5000]  # (0.9.6: the #471 refusal comes first, see test_personalmodels096.py)
 check('if (cmd == "modpersonal" && on && Environment.GetEnvironmentVariable("MPFEVER_PERSONALWARN") != "0")' in mp,
       "only when a mod is taken for personal (MPFEVER_PERSONALWARN=0: not said)")
 check("Mods.Parse(lobbyMods).FirstOrDefault(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase))" in mp

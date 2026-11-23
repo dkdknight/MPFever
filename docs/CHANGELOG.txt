@@ -1,7 +1,44 @@
 MPFever - Changelog
 ===================
 
-0.9.6 - (in progress)
+0.9.6 - 2026-11-23: loans taken in a pause no longer desync the games (#470), and three crashes fixed: a vehicle bought from a pack another player plays without (#471), a click on a game notification (#475), a mod's demolition applied several times at once (#467)
+  - FIX (#471, fritz and privat5990): fritz took all 13 of the host's mods for personal (« Play without it » on the
+    Multiplayer page), vehicle packs among them, so his game loaded the host's game without them. When the host bought a
+    vehicle of one of them, fritz's game stopped: it did not have its model ("ResTypeRep<ModelAsset>::Get 4539 >= 4537"; the
+    host's game knew 4968 models). MPFever only warned that such a mod "may desynchronise the game" (0.7.11). Now the host's
+    list says for each mod whether it holds things its world can use (models, a train's configuration, constructions, street
+    or track types: images, fonts and texts do not count; archives of content do); such a mod is never left out of a player's
+    game: taking it for personal is refused and said ("MPFever cannot leave it out, your game would crash as soon as one of
+    them is used. Install it."), an older choice is ignored (the mod counts as missing, the join stops before the load and
+    offers its Mod Hub install), and the menu no longer shows « Play without it » for it. With a host before 0.9.6, mods of
+    kind assets and load count. Interface mods and scripts may still be played without, as before
+    (MPFEVER_PERSONALMODELS=0: as before). Tests: tests/test_personalmodels096.py, the launcher's self-test
+    (RunPersonalModels096: the real code on mods made on the spot).
+  - FIX (#475 #476, ger4l and User): ger4l's game stopped twice and User's once within six minutes, each time on a click on
+    one of the game's notification popups: the game sent its camera to an entity whose model list has no full model and
+    stopped ("Assertion '!mil.fatInstances.empty()'", GetBoundingSphereFromBVAndMI). Both games alike, so no desync, but a
+    crash. Which notification pointed there is not known yet. In a session, the camera is no longer sent to such an entity
+    (the click still selects it), and mod.log / ui_mod.log say which entity once, with its name and kind, so that the next
+    report tells which notification it was. Installed in the game scripts' interface state, where the notification popups
+    live, and in the windows' state; "camera guard (...): on" in the logs (MPFEVER_FOCUSGUARD=0: as before). Test:
+    tests/test_focusguard096.py.
+  - FIX (#467, Julian): the mod Dévers demolishes its render constructions from its script. MPFever ships such a command for
+    a later step; meanwhile the mod saw the constructions still there and asked again, and four demolitions of the same four
+    constructions were applied in one update of the simulation: the game stopped on the second ("SimEntityUpdateHelper.cpp:
+    2013", the same entity removed twice). A build whose constructions to demolish an earlier build at the same game time
+    already takes away now leaves them out, and is refused on every game when nothing else is left in it (the same builds in
+    the same order on every game: the same decision everywhere; mod.log says "already demolished by an earlier build at this
+    time"). A build that maps its removals by their rank is left as it is (MPFEVER_REMOVEONCE=0: as before). Test:
+    tests/test_removeonce096.py.
+  - FIX (#470, Hansen and ChristianHansen): loans taken in a pause (Obtain, Repay, Obtain at one game time) left the loans'
+    state different on the two games, and the session reloaded, twice in one evening. The game's loan script draws a loan's
+    delay (4 to 8 months before that kind is offered again) when its journal command comes back; the simulation runs in two
+    Lua states, taken in turn from one batch to the next, each counting its own draws, and in a pause the game time stays the
+    same while each machine takes its states in its own rhythm: the second loan's delay was its place's first draw on one game
+    and its second on the other. Now the draws of the loan script's events, and of the callbacks of the commands they send,
+    are counted from the event itself (its kind of loan included), whatever state runs it. Reproduced in game by a new
+    autotest, loanseq (MPFEVER_SCENARIO=loanseq,soak with MPFEVER_PAUSED=1, on Test Rcsig 40444): without the fix script:loan
+    differed at 22 checks after the pause; with it, in sync (MPFEVER_DETEVENT=0: as before). Test: tests/test_detevent096.py.
   - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
     (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
     names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published

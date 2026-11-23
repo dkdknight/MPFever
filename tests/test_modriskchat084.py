@@ -25,7 +25,11 @@ def check(cond, name):
 rp = mods[mods.index("public static List<string> RiskyPlan(string hostList)"):]
 rp = rp[:rp.index("\n        }\n")]
 check('Environment.GetEnvironmentVariable("MPFEVER_MODRISKCHAT") == "0") return r;' in rp, "MPFEVER_MODRISKCHAT=0: nothing told, as before")
-check("bool personal = e.P != \"\" || Forced.Contains(e.Id);\n                if (!personal || IsMine(e.Id)) continue;" in rp,
+lp = mods[mods.index("public static string LoadPlan(string hostList)"):]
+lp = lp[:lp.index("\n        }\n")]
+# (0.9.6, #471: both rules also keep a mod whose things the host's world uses, see test_personalmodels096.py)
+rule = "bool personal = (e.P != \"\" || Forced.Contains(e.Id)) && MayLeaveOut(e);"
+check(rule + "\n                if (!personal || IsMine(e.Id)) continue;" in rp and rule in lp,
       "  the host's mods this game leaves out: the same rule as LoadPlan's drops")
 check('if (e.P == "forced" || (e.P == "" && Forced.Contains(e.Id))) r.Add("-" + e.Name);' in rp,
       "  told when taken for personal by hand (by the host: forced, or by this player); the host's auto ones (interface only) not")
