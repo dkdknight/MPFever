@@ -249,7 +249,8 @@ Planned, in no promised order (none of it is done unless it says so):
   and the logs, with the changes that need a restart said as such and applied on request. Still off by default. Scope decided: the server's settings, the game options and the computer companies, the players
   (kick, ban), the savegames, backups and mods.
 - **On hold for now (the owner's decision, 2026-11-20):** the items below and the split of this work into separate pull requests.
-- **Remaining checks:** a player receiving the mods from the server, several clients at once, runs of several hours, the offline logon ticket's lifetime, a second PC for the owner's game, the GPU variant (Linux hosts only).
+- **Remaining checks (not verified yet):** a player receiving the mods from the server, several clients at once, runs of several hours, the offline logon ticket's lifetime, a second PC for the owner's game, the GPU variant (Linux hosts only), and the server on a real run with the releases after 0.9.3 (0.9.5 and the 0.9.6 in progress: only started, not played with clients). `tests/test_ptpull0713.py` (random model) failed on the author's PC with "its process died twice" while its files are identical to `main`: cause not found.
+- **Before a merge:** a review of the launcher changes, a first start by someone else, a decision on what to do when Valve changes its client, and a split into separate pull requests for the maintainer (the relay's image name is already #436; the rest of the dedicated server is one block).
 - **Not planned:** a way around Steam's licence or sessions; Steam Workshop mods (Transport Fever 3 has none).
 
 ## Madeira Dock and Valve's client: compatibility and risks
