@@ -22,6 +22,14 @@ MPFever - Changelog
     report tells which notification it was. Installed in the game scripts' interface state, where the notification popups
     live, and in the windows' state; "camera guard (...): on" in the logs (MPFEVER_FOCUSGUARD=0: as before). Test:
     tests/test_focusguard096.py.
+  - FIX (#467, Julian): the mod Dévers demolishes its render constructions from its script. MPFever ships such a command for
+    a later step; meanwhile the mod saw the constructions still there and asked again, and four demolitions of the same four
+    constructions were applied in one update of the simulation: the game stopped on the second ("SimEntityUpdateHelper.cpp:
+    2013", the same entity removed twice). A build whose constructions to demolish an earlier build at the same game time
+    already takes away now leaves them out, and is refused on every game when nothing else is left in it (the same builds in
+    the same order on every game: the same decision everywhere; mod.log says "already demolished by an earlier build at this
+    time"). A build that maps its removals by their rank is left as it is (MPFEVER_REMOVEONCE=0: as before). Test:
+    tests/test_removeonce096.py.
 
 0.9.5 - 2026-11-21: MPFever's native module finds the memory it needs on a game started twice, instead of staying off and drifting (#459)
   - FIX (#459, Flubi and JohnMenssing): on the second start of Flubi's game, 30 s after the first, MPFever's native module

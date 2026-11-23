@@ -1325,6 +1325,19 @@ local function executeActionOnce(a, sendCommand, useCallback, bind, done)
 		elseif not okS then
 			log("action " .. tostring(a.uid) .. ": node configurations not checked (" .. tostring(stale):sub(1, 120) .. ")")
 		end
+		-- (0.9.6, #467) constructions an earlier build at this game time already demolishes: left out, or the build skipped when
+		-- nothing else is left in it (the engine stopped on the same construction removed twice in one update, see C.removeOnce)
+		local okR, nGone, left = pcall(C.removeOnce, a.args[1], stepGone)
+		if okR and nGone > 0 then
+			if not left then
+				result.err = nGone .. " construction(s) to demolish already demolished by an earlier build at this time: nothing left to do"
+				log("action " .. tostring(a.uid) .. " " .. tostring(a.fn) .. " refused on every game: " .. result.err)
+				return result
+			end
+			log("action " .. tostring(a.uid) .. ": " .. nGone .. " construction(s) to demolish already demolished by an earlier build at this time, left out")
+		elseif not okR then
+			log("action " .. tostring(a.uid) .. ": demolitions not checked (" .. tostring(nGone):sub(1, 120) .. ")")
+		end
 		if type(a.args[1].proposal) == "table" and next(stepGone) ~= nil then
 			pcall(function()
 				local probe = { streetProposal = { nodeConfigsToAdd = a.args[1].proposal.nodeConfigsToAdd, edgesToRemove = a.args[1].proposal.removedSegments } }

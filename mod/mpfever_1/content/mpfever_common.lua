@@ -1180,7 +1180,45 @@ function C.noteGone(m, gone)
 	if type(sp) == "table" then each(sp.edgesToRemove); each(sp.nodesToRemove) end
 	local np = type(m) == "table" and m.proposal
 	if type(np) == "table" then each(np.removedSegments); each(np.removedNodes) end
+	-- ((0.9.6, #467) and the constructions it demolishes, see C.removeOnce; MPFEVER_REMOVEONCE=0: not noted, as before)
+	if type(m) == "table" and os.getenv("MPFEVER_REMOVEONCE") ~= "0" then each(m.constructionsToRemove); each(m.toRemove) end
 	return gone
+end
+
+-- (0.9.6, #467: Julian's game, 2026-11-21 20:54, the host alone with Kappador; the game stopped on "SimEntityUpdateHelper.cpp:2013",
+-- the same entity twice in its removedTnEntities) The mod Dévers (devers_1) demolishes its render constructions from its script;
+-- MPFever ships such a command for a later step, the mod saw them still there meanwhile and asked again: four demolitions of the
+-- same four constructions were applied at t=49844200, in one update, and the engine stopped on the second. A build whose
+-- constructions to remove an earlier build at this game time already takes away (gone, see C.noteGone) leaves them out; when
+-- nothing else is left in it, it is skipped (the caller refuses it on every game: the same builds in the same order everywhere).
+-- m: the action's first argument (a script's SimpleProposal: constructionsToRemove; a tool's: toRemove). Returns how many were
+-- already gone, and whether the build still has anything to do. A build that maps its removals by their rank (old2new) is left
+-- as it is unless nothing else is left.
+function C.removeOnce(m, gone)
+	if type(m) ~= "table" or type(gone) ~= "table" or os.getenv("MPFEVER_REMOVEONCE") == "0" then return 0, true end
+	local key = (type(m.constructionsToRemove) == "table" and "constructionsToRemove") or (type(m.toRemove) == "table" and "toRemove") or nil
+	if not key then return 0, true end
+	local rm, ks = m[key], {}
+	for k in pairs(rm) do if type(k) == "number" then ks[#ks + 1] = k end end
+	table.sort(ks)
+	local keep, n = {}, 0
+	for _, k in ipairs(ks) do
+		local e = rm[k]
+		if type(e) == "number" and gone[e] then n = n + 1 else keep[#keep + 1] = e end
+	end
+	if n == 0 then return 0, true end
+	local function full(t) return type(t) == "table" and next(t) ~= nil end
+	local other = #keep > 0 or full(m.constructionsToAdd) or full(m.toAdd)
+	if type(m.streetProposal) == "table" then for _, v in pairs(m.streetProposal) do if full(v) then other = true break end end end
+	if type(m.proposal) == "table" then
+		for _, f in ipairs({ "addedSegments", "removedSegments", "addedNodes", "removedNodes", "edgeObjectsToAdd", "edgeObjectsToRemove" }) do
+			if full(m.proposal[f]) then other = true break end
+		end
+	end
+	if not other then return n, false end
+	if full(m.old2newByRank) or full(m.old2new) then return 0, true end
+	m[key] = keep
+	return n, true
 end
 
 -- (0.6.9) what a script's copy of a segment keeps of it, as the stop tool and the replays of its stops keep it (replayStop): its
