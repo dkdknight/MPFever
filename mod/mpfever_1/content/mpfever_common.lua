@@ -329,6 +329,75 @@ function C.origCmds()
 	return C._orig
 end
 
+-- (0.9.6, #475 #476) Whether the game would stop if its camera were sent to entity e: its model list has no full model (none,
+-- or only thin ones), and GetBoundingSphereFromBVAndMI asserts "!mil.fatInstances.empty()". False when it cannot tell.
+function C.focusUnsafe(e)
+	if type(e) ~= "number" or e < 0 then return false end
+	local mil = nil
+	if not pcall(function() mil = api.engine.getComponent(e, api.type.ComponentType.MODEL_INSTANCE_LIST) end) or mil == nil then return false end
+	local n = nil
+	pcall(function() local v = mil.fatInstances_native; local s = v:size(); if type(s) == "number" then n = s end end)
+	if n == nil then pcall(function() n = #mil.fatInstances end) end
+	return n == 0
+end
+
+-- what an entity is, for the log: its name and its kinds among those a notification points at
+local function focusWhat(e)
+	local t = {}
+	pcall(function()
+		local nm = api.engine.getComponent(e, api.type.ComponentType.NAME)
+		if nm and nm.name and nm.name ~= "" then t[#t + 1] = "'" .. tostring(nm.name) .. "'" end
+	end)
+	for _, k in ipairs({ "TRANSPORT_VEHICLE", "CONSTRUCTION", "TOWN_BUILDING", "STATION", "SIM_BUILDING", "BASE_EDGE", "LINE", "TOWN" }) do
+		pcall(function()
+			if api.engine.getComponent(e, api.type.ComponentType[k]) ~= nil then t[#t + 1] = k end
+		end)
+	end
+	return #t > 0 and table.concat(t, " ") or "?"
+end
+
+-- (0.9.6, #475 #476: ger4l's game stopped twice and User's once within six minutes, each time on a click on one of the game's
+-- notifications: notification_util.tl's onClick calls api.gui.camera.focusEntity, and the game stops in
+-- GetBoundingSphereFromBVAndMI, "Assertion '!mil.fatInstances.empty()'", when the entity's model list has no full model; both
+-- games alike, so no desync, but a crash) The camera is no longer sent to such an entity: the call is skipped (the entity is
+-- still selected), and the log says which entity, once each. Wrapped once per Lua state (the game scripts' interface state of
+-- the notification popups, and the windows' state). Returns what was done. MPFEVER_FOCUSGUARD=0: as before
+function C.installFocusGuard(say)
+	if os.getenv("MPFEVER_FOCUSGUARD") == "0" then return "off (MPFEVER_FOCUSGUARD=0)" end
+	local cam = nil
+	pcall(function() cam = api.gui.camera end)
+	if cam == nil then return "no camera in this state" end
+	local okG, g = pcall(function()
+		local g = package.loaded["mpfever_focus_guard"]
+		if type(g) ~= "table" then g = {}; package.loaded["mpfever_focus_guard"] = g end
+		return g
+	end)
+	if not okG then g = C._focusGuard or {}; C._focusGuard = g end
+	local now = nil
+	pcall(function() now = cam.focusEntity end)
+	if now == nil then return "no focusEntity in this state" end
+	if g.wrapper ~= nil and now == g.wrapper then return "on (already)" end
+	local orig = now
+	local told = {}
+	local function wrapper(e, ...)
+		local okU, unsafe = pcall(C.focusUnsafe, e)
+		if okU and unsafe then
+			if not told[e] then
+				told[e] = true
+				if say then pcall(say, "camera: not sent to entity " .. tostring(e) .. " (" .. focusWhat(e) .. "): its model list has no full model, the game would stop (#475)") end
+			end
+			return
+		end
+		return orig(e, ...)
+	end
+	local okSet = pcall(function() cam.focusEntity = wrapper end)
+	local after = nil
+	pcall(function() after = cam.focusEntity end)
+	if not okSet or after ~= wrapper then return "could not be wrapped" end
+	g.orig, g.wrapper = orig, wrapper
+	return "on"
+end
+
 -- one protocol line: kind TAB from TAB payload
 function C.line(kind, payload)
 	return kind .. TAB .. C.NAME .. TAB .. C.ser(payload or {}) .. NL

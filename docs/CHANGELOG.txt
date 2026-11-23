@@ -14,6 +14,14 @@ MPFever - Changelog
     kind assets and load count. Interface mods and scripts may still be played without, as before
     (MPFEVER_PERSONALMODELS=0: as before). Tests: tests/test_personalmodels096.py, the launcher's self-test
     (RunPersonalModels096: the real code on mods made on the spot).
+  - FIX (#475 #476, ger4l and User): ger4l's game stopped twice and User's once within six minutes, each time on a click on
+    one of the game's notification popups: the game sent its camera to an entity whose model list has no full model and
+    stopped ("Assertion '!mil.fatInstances.empty()'", GetBoundingSphereFromBVAndMI). Both games alike, so no desync, but a
+    crash. Which notification pointed there is not known yet. In a session, the camera is no longer sent to such an entity
+    (the click still selects it), and mod.log / ui_mod.log say which entity once, with its name and kind, so that the next
+    report tells which notification it was. Installed in the game scripts' interface state, where the notification popups
+    live, and in the windows' state; "camera guard (...): on" in the logs (MPFEVER_FOCUSGUARD=0: as before). Test:
+    tests/test_focusguard096.py.
 
 0.9.5 - 2026-11-21: MPFever's native module finds the memory it needs on a game started twice, instead of staying off and drifting (#459)
   - FIX (#459, Flubi and JohnMenssing): on the second start of Flubi's game, 30 s after the first, MPFever's native module
