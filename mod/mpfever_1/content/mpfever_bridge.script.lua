@@ -16948,6 +16948,53 @@ H.rcsig = function(from, p)
 	end }
 end
 
+-- (0.9.7, #487) A build a mod sends from the interface (MPFEVER_SCENARIO=modwait, on a map with a signal: Test Rcsig 40444): the
+-- host's interface sends a signal's one-way toggle from a mod's file and notes, in its callback, whether the build already stands
+-- on its game. Since 0.9.7 the answer comes once every game has applied it ("applied"); MPFEVER_MODBUILDWAIT=0: at once, before
+-- ("not applied yet", the Town Transit Planner's refused pieces)
+H.modwait = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST modwait: " .. t); AUTO.results[#AUTO.results + 1] = "modwait " .. tostring(C.ROLE) .. ": " .. t end
+	if C.ROLE ~= "host" then say("the host's interface sends the build"); autoFinish(); return end
+	local CT = api.type.ComponentType
+	local sig, kind = nil, nil
+	pcall(function()
+		for _, e in ipairs(R.allEdges()) do
+			pcall(function()
+				for _, o in ipairs(api.engine.getComponent(e, CT.BASE_EDGE).objects or {}) do
+					local sl = api.engine.getComponent(o[1], CT.SIGNAL_LIST)
+					if sl and (not sig or o[1] < sig) then sig = o[1]; kind = sl.signals[1].type end
+				end
+			end)
+		end
+	end)
+	if not sig then say("no signal on this map"); autoFinish(); return end
+	local oneWay = false
+	pcall(function() oneWay = (kind == api.type.Signal.Type.ONE_WAY_SIGNAL) end)
+	pcall(os.remove, C.DIR .. BS .. "ui_mod_ans.txt")
+	local f = C.IO.open(C.DIR .. BS .. "ui_win_req.txt", "wb")
+	if f then f:write("modsig" .. C.TAB .. sig .. C.TAB .. (oneWay and 0 or 1) .. C.TAB .. "7"); f:close() end
+	say("signal " .. sig .. " kind " .. tostring(kind) .. ": its one-way toggle asked from a mod's file (MPFEVER_MODBUILDWAIT=" .. tostring(os.getenv("MPFEVER_MODBUILDWAIT") or "on") .. ")")
+	local t0 = G.frames
+	local function poll()
+		local g = C.IO.open(C.DIR .. BS .. "ui_mod_ans.txt", "rb")
+		local s = g and g:read("*a") or nil
+		if g then g:close() end
+		local seq, applied, success = (s or ""):match("^(%d+)" .. C.TAB .. "(%a+)" .. C.TAB .. "(%a+)")
+		if seq == "7" then
+			say("answered (success " .. tostring(success) .. ") " .. (applied == "applied" and "once the build stood on this game" or "BEFORE the build stood on this game"))
+			autoFinish()
+			return
+		end
+		if G.frames - t0 > 1500 then say("no answer within 1500 frames"); autoFinish(); return end
+		G.waits[#G.waits + 1] = { at = G.frames + 15, fn = poll }
+	end
+	G.waits[#G.waits + 1] = { at = G.frames + 15, fn = poll }
+end
+
 -- Builds from windows that no game can replay (MPFEVER_SCENARIO=badui, with MPFEVER_PAUSED=1 and a build after it, e.g.
 -- "badui,newroad"): in a pause they left their replay counted, and the player's next build at the same time was taken as a
 -- replay and never shipped (a station on one game only, a session of the friends)

@@ -77,6 +77,9 @@ end
     # the results reader delivers it
     r = src.find("if r and r.tok == U.tok and U.pending[r.id] then")
     check(r > 0 and "pcall(p.cb, data, r.success == true, entities)" in src[r:r + 1200], "the results reader gives the pending callback its real answer")
+    br = open(os.path.join(HERE, "..", "mod", "mpfever_1", "content", "mpfever_bridge.script.lua"), encoding="utf-8").read()
+    check("H.modwait = function(from, p)" in br and 'if kind == "modsig" then' in src and '"=mpftestmod::/res/scripts/modsig.lua"' in src,
+          "autotest modwait: the host's interface sends a build from a mod's file and notes whether it stood when answered")
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0
 

@@ -3465,6 +3465,36 @@ U.pollWinReq = function()
 	if not kind or seq == U.winReqSeq then return end
 	U.winReqSeq = seq
 	ent, arg = tonumber(ent), tonumber(arg)
+	-- ((0.9.7, #487, MPFEVER_SCENARIO=modwait) "modsig": the signal's one-way toggle sent from a mod's file, as Town Transit Planner
+	-- sends its builds (a chunk named "mpftestmod::/...": MPFever takes it for a mod's), and its callback notes whether the build
+	-- already stands on this game when it is answered (the signal replaced or of another kind): ui_mod_ans.txt "<seq> TAB applied|not")
+	if kind == "modsig" then
+		local okM, errM = pcall(function()
+			local CT = api.type.ComponentType
+			local function kindOf(e)
+				local k = nil
+				pcall(function() k = api.engine.getComponent(e, CT.SIGNAL_LIST).signals[1].type end)
+				return k
+			end
+			local k0 = kindOf(ent)
+			local code = "local api, ent, oneWay, answered = ...\n"
+				.. "local proposal = api.engine.util.proposal.makeSignalTypeProposal(ent, oneWay)\n"
+				.. "if not proposal then error('no proposal') end\n"
+				.. "api.cmd.sendCommand(api.cmd.makeWorldBuildProposalCmd(proposal, api.type.Context.new(), false, false, true), answered)\n"
+			local chunk, errC = load(code, "=mpftestmod::/res/scripts/modsig.lua", "t", _ENV)
+			if not chunk then error(errC) end
+			chunk(api, ent, arg == 1, function(_, success)
+				local k1 = kindOf(ent)
+				local applied = (k1 == nil) or (k1 ~= k0)
+				log("autotest: a mod's signal build answered " .. tostring(success) .. ", the build " .. (applied and "already applied" or "NOT applied yet")
+					.. " on this game (kind before " .. tostring(k0) .. ", now " .. tostring(k1) .. ")")
+				local f2 = C.IO.open(C.DIR .. C.BS .. "ui_mod_ans.txt", "wb")
+				if f2 then f2:write(tostring(seq) .. C.TAB .. (applied and "applied" or "not") .. C.TAB .. tostring(success)); f2:close() end
+			end)
+		end)
+		log("autotest: a mod's signal build " .. tostring(ent) .. " " .. tostring(arg) .. ": " .. (okM and "sent" or ("NOT sent: " .. tostring(errM))))
+		return
+	end
 	local ok, err = pcall(function()
 		local proposal, cmd
 		local context = api.type.Context.new()
