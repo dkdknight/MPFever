@@ -65,6 +65,12 @@ MPFever - Changelog
   - NEW (Docker server, experimental): SRV_STEAM_MODE=offline starts the game through Valve's own offline logon (Dock's MADEIRA_DOCK_OFFLINE): the account's game can run on the owner's PC at the same time, with the same licence.
   - NEW (relay): --list-url URL (MPFEVER_RELAY_LIST_URL), with --host-key: the relay announces its host to the public server list from its own address, so a dedicated server behind a router that lets nothing in (and
     with Steam offline) is listed, reachable; the server's launcher sends the data (tun_list) and does not announce by itself when it hosts through a relay.
+  - FIX (review of PR #435, dedicated server): the public list only connects to an announced host:port when it resolves to the address the announce came from (it was a port prober for any public
+    address), with a time limit on the name lookup, and refuses 64:ff9b::/96, 198.18.0.0/15 and 192.0.0.0/24. A relay that dies at the first connection no longer blocks its own retry (hostGame was kept set),
+    a stop during a restart's countdown now wins, and the Docker stop grace period (SRV_STOP_GRACE, 200 s) must cover SRV_SHUTDOWN_WARNING + 90 s (checked at start).
+  - FIX (review of PR #435, server/): the default image is the project's (ghcr.io/dkdknight/mpfever-server); Wine's Z: drive no longer shows /data/secrets and the Steam transfer file is removed once the game runs
+    (a mod's Lua can no longer read them through Z:); the administration page accepts a reverse proxy's X-Forwarded-Host or SRV_ADMIN_ORIGINS; the Ubuntu base and WineHQ's key and source file are pinned by hash;
+    a line break in .env is refused; the Steam login name is no longer in the log; a mod id of "." or ".." is refused.
 
 0.9.6 - 2026-11-23: loans taken in a pause no longer desync the games (#470), and three crashes fixed: a vehicle bought from a pack another player plays without (#471), a click on a game notification (#475), a mod's demolition applied several times at once (#467)
   - FIX (#471, fritz and privat5990): fritz took all 13 of the host's mods for personal (« Play without it » on the
