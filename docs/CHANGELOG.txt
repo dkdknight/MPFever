@@ -2,6 +2,10 @@ MPFever - Changelog
 ===================
 
 0.9.7 - (in progress)
+  - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
+    (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
+    names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
+    under the old name by the project; a package pushed to it earlier can be deleted.
 
 0.9.6 - 2026-11-23: loans taken in a pause no longer desync the games (#470), and three crashes fixed: a vehicle bought from a pack another player plays without (#471), a click on a game notification (#475), a mod's demolition applied several times at once (#467)
   - FIX (#471, fritz and privat5990): fritz took all 13 of the host's mods for personal (« Play without it » on the
