@@ -108,11 +108,11 @@ def main():
         check("server listed with the old fields only", len(servers) == 1 and set(servers[0]) == OLD_KEYS, servers)
         check("server address from its announce", servers and servers[0]["address"] == "203.0.113.10:28090", servers and servers[0]["address"])
 
-        # (0.9.3) a server behind a router that lets nothing in hosts through a relay and announces the relay's address: that address is the one looked at, so it is listed (no Steam id here)
+        # (0.9.3, narrowed in 0.9.7) a relay announces its host from its own address (--list-url): the announced host:port resolves to the address the announce came from, so it is the one looked at and the server is listed (no Steam id here)
         relay = socket.socket(); relay.bind(("127.0.0.1", 0)); relay.listen(5)
         rport = relay.getsockname()[1]
         via = lst.post("/api/announce", {"name": "Behind a relay", "port": 28090, "version": "0.9.3", "build": "40444", "mode": "shared", "world": "W",
-                                         "motd": "", "players": 0, "max": 8, "password": False, "steam": "", "address": f"127.0.0.1:{rport}", "token": ""}, "203.0.113.40")
+                                         "motd": "", "players": 0, "max": 8, "password": False, "steam": "", "address": f"127.0.0.1:{rport}", "token": ""}, "127.0.0.1")
         check("a server announcing a relay's address is accepted", via.get("ok") is True, via)
         listed = []
         for _ in range(50):
@@ -121,6 +121,12 @@ def main():
                 break
             time.sleep(0.1)
         check("and it is listed, reachable through that address", len(listed) == 1 and listed[0]["reachable"] is True and listed[0]["address"] == f"127.0.0.1:{rport}", listed)
+        # (0.9.7) an announced address that is not the announcer's own is never connected to: someone else's port is not shown as an MPFever server
+        other = lst.post("/api/announce", {"name": "Someone else's port", "port": 28090, "version": "0.9.3", "build": "40444", "mode": "shared", "world": "W",
+                                           "motd": "", "players": 0, "max": 8, "password": False, "steam": "", "address": f"127.0.0.1:{rport}", "token": ""}, "203.0.113.43")
+        time.sleep(1.5)
+        check("an address that is not the announcer's own is never looked at: not listed", other.get("ok") is True
+              and not [x for x in lst.get("/api/servers")[1]["servers"] if x["name"] == "Someone else's port"])
         bad = lst.post("/api/announce", {"name": "Private target", "port": 28090, "version": "0.9.3", "build": "40444", "mode": "shared", "world": "W",
                                          "motd": "", "players": 0, "max": 8, "password": False, "steam": "", "address": "10.1.2.3:28090", "token": ""}, "203.0.113.41")
         time.sleep(1.5)
@@ -128,7 +134,7 @@ def main():
               and not [x for x in lst.get("/api/servers")[1]["servers"] if x["name"] == "Private target"])
         relay.close()
         # (taken out again: the counts below are those of the earlier servers)
-        for ent, ip in ((via, "203.0.113.40"), (bad, "203.0.113.41")):
+        for ent, ip in ((via, "127.0.0.1"), (other, "203.0.113.43"), (bad, "203.0.113.41")):
             lst.post("/api/remove", {"id": ent["id"], "token": ent["token"]}, ip)
 
         # a player's game: in /api/games only, without its address

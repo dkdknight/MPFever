@@ -3,11 +3,11 @@ name: mpfever-server
 
 services:
   mpfever-server:
-    image: ${MPFEVER_IMAGE:-ghcr.io/ampynjord/mpfever-server:experimental}
+    image: ${MPFEVER_IMAGE:-ghcr.io/dkdknight/mpfever-server:experimental}
     container_name: ${SRV_CONTAINER_NAME:-mpfever-server}
     restart: unless-stopped
     init: true
-    stop_grace_period: 200s           # `docker compose stop`: the players are warned (SRV_SHUTDOWN_WARNING seconds, 60 by default), the world is saved and the game closed
+    stop_grace_period: ${SRV_STOP_GRACE:-200}s   # `docker compose stop`: the players are warned (SRV_SHUTDOWN_WARNING seconds, 60 by default), then the world is saved and the game closed: the warning + 90 s must fit (checked at start)
     ports:
       - "${SRV_BIND:-0.0.0.0}:${SRV_PORT:-28090}:${SRV_PORT:-28090}"     # SRV_BIND=127.0.0.1: reachable from this machine only (players then join through Steam)
     environment:
@@ -22,6 +22,9 @@ services:
       PLAYER_SPEED_CONTROL: ${SRV_PLAYER_SPEED_CONTROL:-true}
       SPEED_VOTE: ${SRV_SPEED_VOTE:-false}
       SHUTDOWN_WARNING: ${SRV_SHUTDOWN_WARNING:-60}
+      STOP_GRACE: ${SRV_STOP_GRACE:-200}
+      ADMIN_ORIGINS: ${SRV_ADMIN_ORIGINS:-}
+      WINE_RESTRICT_Z: ${SRV_WINE_RESTRICT_Z:-1}
       RELAY: ${SRV_RELAY:-}
       RELAY_HOST_KEY: ${SRV_RELAY_HOST_KEY:-}
       RELAY_PASSWORD: ${SRV_RELAY_PASSWORD:-}

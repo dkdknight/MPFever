@@ -96,11 +96,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def origin_allowed(self, origin):
+        """The page's origin is this server's: the Host of the request, or the Host a reverse proxy forwarded (X-Forwarded-Host), or an origin listed in
+        SRV_ADMIN_ORIGINS (comma-separated, e.g. https://admin.example.org) for a proxy that sends neither. A page of another site is none of them."""
+        o = origin.split("://", 1)[-1]
+        hosts = {self.headers.get("Host", "")}
+        fwd = self.headers.get("X-Forwarded-Host", "")
+        if fwd:
+            hosts.add(fwd.split(",")[0].strip())
+        extra = [x.strip().rstrip("/") for x in os.environ.get("ADMIN_ORIGINS", "").split(",") if x.strip()]
+        return o in hosts or origin.rstrip("/") in extra
+
     def authorised(self):
         given = self.headers.get("Authorization", "")
         ok = given.startswith("Bearer ") and hmac.compare_digest(given[7:].strip().encode(), self.token.encode())
         origin = self.headers.get("Origin")
-        if ok and origin and origin.split("://", 1)[-1] != self.headers.get("Host", ""):
+        if ok and origin and not self.origin_allowed(origin):
             ok = False                                         # a page of another site
         if not ok:
             note("warn", "refused %s %s from %s (no valid token)" % (self.command, self.path.split("?")[0], self.client_address[0]))

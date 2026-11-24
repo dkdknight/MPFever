@@ -62,5 +62,41 @@ class Storage(unittest.TestCase):
             self.assertEqual(S.main(["status", "--file", p]), 0)
 
 
+class Feed(unittest.TestCase):
+    """The transfer file is written only while the game is not running (a mod of the running game finds no token on disk)."""
+    def _run(self, running, ticks=2, existing=False, grace=0):
+        calls = {"n": 0}
+        def fake_sleep(_):
+            calls["n"] += 1
+            if calls["n"] >= ticks:
+                raise KeyboardInterrupt
+        with tempfile.TemporaryDirectory() as d:
+            sess, out = os.path.join(d, "steam.json"), os.path.join(d, "auth.mdock")
+            json.dump({"account": "a", "steamid": STEAMID, "refresh_token": TOKEN, "expires": 4000000000}, open(sess, "w"))
+            if existing:
+                open(out, "wb").write(b"x")
+            old = (S.game_running, S.time.sleep)
+            S.game_running, S.time.sleep = (lambda pattern: running), fake_sleep
+            try:
+                S.main(["feed", "--file", sess, "--out", out, "--grace", str(grace)])
+            except KeyboardInterrupt:
+                pass
+            finally:
+                S.game_running, S.time.sleep = old
+            return os.path.exists(out)
+
+    def test_no_file_while_the_game_runs(self):
+        self.assertFalse(self._run(True))
+
+    def test_the_file_is_removed_once_the_game_runs(self):
+        self.assertFalse(self._run(True, existing=True))
+
+    def test_the_file_stays_during_the_grace_time(self):
+        self.assertTrue(self._run(True, existing=True, grace=3600))
+
+    def test_file_when_the_game_is_not_running(self):
+        self.assertTrue(self._run(False))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,7 @@ curl -fsSL  https://raw.githubusercontent.com/ampynjord/MPFever/feature/dedicate
 Edit `.env` (at least `SRV_WORLD`, the savegame's name without `.sav`). Then, once:
 
 1. **Pull the image**: `docker compose pull`
+   (the project's image, `ghcr.io/dkdknight/mpfever-server`: this container holds your Steam token, so it should come from the project or from your own build. To build it yourself: `docker compose -f compose.yaml -f compose.build.yaml build`; another source is chosen with `MPFEVER_IMAGE` in `.env`, knowingly.)
 2. **Import the game** from your own Steam library (read-only mount; the 3D data is left out, 66 GB become about 1 GB on disk):
    `docker compose run --rm -v "/path/to/Steam/steamapps:/src:ro" mpfever-server install-game /src`
    (`/path/to/Steam/steamapps` holds `common/Transport Fever 3` and `appmanifest_3493540.acf`.)
@@ -87,6 +88,7 @@ the command runs on: a shell variable wins over `.env` (Windows defines `PUBLIC`
 | `SRV_GAME_LOG` | `info` | the game's and Dock's logs in the stream: `off`, `error`, `warn`, `info` or `debug` |
 | `SRV_ADMIN_UI`, `SRV_ADMIN_PORT` | `off`, `8080` | the administration page (see Administering); it listens only when `on`, and `compose.admin.yaml` publishes it on 127.0.0.1 |
 | `SRV_SHUTDOWN_WARNING` | `60` | seconds of warning in the players' chat before a stop or restart (`docker compose stop`, `mpfever-admin restart|stop`) when players are connected; at once when nobody is; `0`: no warning. Check who is connected first with `mpfever-admin status` |
+| `SRV_STOP_GRACE` | `200` | seconds Docker waits at `docker compose stop` before killing the container. It must cover `SRV_SHUTDOWN_WARNING` plus 90 s for the final save: the server refuses to start with a longer warning, instead of cutting the save off. |
 | `SRV_STEAM_MODE` | `online` | `offline` (experimental): the game starts through Valve's offline logon, so the account's game can run elsewhere at the same time (see "Steam: one licence...") |
 | `SRV_RELAY`, `SRV_RELAY_HOST_KEY`, `SRV_RELAY_PASSWORD` | empty | host through an MPFever relay (optional): its address, the relay's `--host-key`, its password if it has one |
 | `SRV_SPEED_VOTE` | `false` | `true`: the players' pause/play/speed requests are votes (more than half of the connected players within a minute; one player alone decides at once); the administrator can always use `mpfever-admin pause`, `resume` and `speed` |
@@ -228,7 +230,7 @@ SRV_RELAY_PASSWORD=<its password>          # only if the relay has one
 ```
 
 Start the relay with `--host-key KEY` (or `MPFEVER_RELAY_HOST_KEY`): players then need **no password** and nobody else can take the host's place (a relay without a host key gives the host to the first
-comer). The public list shows the relay's address unless `SRV_PUBLIC_ADDRESS` is set. If the relay cannot be reached the server tries again every 30 s; if the connection is lost while the world runs, the world is
+comer). With the relay's `--list-url`, the relay announces the host to the public list from its own address and the list shows that address (the announce sends an empty `address`, so `SRV_PUBLIC_ADDRESS` is not used by it; the list only connects to an announced `host:port` when it resolves to the address the announce came from). If the relay cannot be reached the server tries again every 30 s; if the connection is lost while the world runs, the world is
 saved and hosted again (the players come back by themselves). The server's session ends with its host: no player takes over (`--host-key` and `--migration` exclude each other).
 
 **The public list.** The list shows a server it can reach or that has a Steam ID. Behind a relay with Steam offline, the **relay announces the server**: start the relay with `--list-url https://mpfever.knight-hd.fr`
@@ -307,13 +309,19 @@ One Steam account plays one game at a time: playing on it elsewhere while the se
 
 ## Update, roll back, security
 
-- Update: `docker compose pull && docker compose up -d`. Roll back: `MPFEVER_IMAGE=ghcr.io/ampynjord/mpfever-server:<version>` in `.env`. The launcher package is replaced at each start; `.env` and the volumes stay.
+- Update: `docker compose pull && docker compose up -d`. Roll back: `MPFEVER_IMAGE=ghcr.io/dkdknight/mpfever-server:<version>` in `.env`. The launcher package is replaced at each start; `.env` and the volumes stay.
   Players must run the MPFever client of the server's version.
 - The container runs as uid 1001 with a read-only root file system, all capabilities dropped, `no-new-privileges`, only the game port published. `.env` holds the server password: keep it out of version control.
 - **A public server on a home PC.** What protects the PC: the game runs only inside the container (no host folder, no Docker socket, read-only root, no capability, `no-new-privileges`, at most 1024 processes, memory and CPU limits);
   `SRV_BIND=127.0.0.1` leaves nothing reachable from the network (players join through Steam, no router port is needed); `SRV_PUBLIC_ADDRESS` stops the public list from showing your IP address; the administration page stays off;
   secrets (Steam session, mod.io key) are in the data volume only. What remains: the game and MPFever speak to strangers (a flaw in them is the risk the container contains, not removes), and the container can still
   reach your network and the Internet outwards (Docker Desktop has no outbound filter): use a Steam account made for the server, without payment method or friends, and keep Docker Desktop and the image up to date.
+- **Secrets and mods.** The game runs as the user that owns `/data/secrets` (Steam refresh token, mod.io key, admin token), and a Transport Fever 3 mod has Lua `io`: a mod is code that runs with the game's rights, so only
+  install mods you trust (`SRV_MODS_SYNC=auto` installs mod updates by itself; set `off` to review them first). Two measures narrow what such a mod can reach: Wine's `Z:` drive points to a folder of links that leaves
+  `/data/secrets` out (`SRV_WINE_RESTRICT_Z=0` restores the whole root, for debugging), and Dock's one-use transfer file (it holds the token) is written only while the game is not running, so it is not on disk during play.
+  This is a narrowing, not a boundary: the game and the secrets are the same Unix user, so a mod using a path that does not go through `Z:` is not stopped by it. Running the secrets under another user is not done.
+- The administration page refuses a request whose `Origin` is not its own `Host`; behind a reverse proxy that rewrites `Host` it accepts the forwarded `X-Forwarded-Host`, or an origin listed in `SRV_ADMIN_ORIGINS`
+  (comma-separated, e.g. `https://admin.example.org`).
 - Exit codes: 20/21 Valve client download or hash, 30 game missing, 40/41 Steam session missing or expired, 42 savegame missing, 50 launcher failing repeatedly, 60 another server already runs on the same data volume (only one instance is allowed). Reports: `docker compose logs`, `srv/launcher.out`,
   `srv/logs/`, and Dock's `srv/dock.log` (stage names and numbers only; result codes in `server/dock/README.upstream.md`).
 

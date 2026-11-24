@@ -91,6 +91,14 @@ class Api(unittest.TestCase):
         code, _, _ = self.call("POST", "/api/command", {"command": "status"}, headers={"Origin": "http://evil.example"})
         self.assertEqual(code, 401)
 
+    def test_behind_a_proxy_the_forwarded_host_is_accepted(self):
+        code, _, _ = self.call("POST", "/api/command", {"command": "list"},
+                               headers={"Origin": "https://admin.example.org", "Host": "127.0.0.1:8080", "X-Forwarded-Host": "admin.example.org"})
+        self.assertEqual(code, 200)
+        code, _, _ = self.call("POST", "/api/command", {"command": "list"},
+                               headers={"Origin": "http://evil.example", "X-Forwarded-Host": "admin.example.org"})
+        self.assertEqual(code, 401)
+
     def test_a_bad_body(self):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         c.request("POST", "/api/command", "not json", {"Authorization": "Bearer " + self.TOKEN})

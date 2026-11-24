@@ -8,7 +8,8 @@
 # client library is fetched from Valve at the first start.
 # --build-arg APT_MIRROR=http://<mirror>/ubuntu uses another Ubuntu mirror (when archive.ubuntu.com is unreachable).
 
-ARG UBUNTU=ubuntu:24.04
+# (pinned by digest, as of 2026-11-24: update it knowingly)
+ARG UBUNTU=ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
 
 # ---------------------------------------------------------------- Madeira Dock, from this repository's copy (dock/, GPL-3.0-or-later): unit tests, then the build
 FROM ${UBUNTU} AS dock
@@ -42,7 +43,9 @@ RUN dpkg --add-architecture i386 \
       libmono-security4.0-cil ca-certificates-mono libgdiplus \
  && mkdir -pm755 /etc/apt/keyrings \
  && wget -qO /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
+ && echo "d965d646defe94b3dfba6d5b4406900ac6c81065428bf9d9303ad7a72ee8d1b8  /etc/apt/keyrings/winehq-archive.key" | sha256sum -c - \
  && wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources \
+ && echo "b5962429ece1f831c9f713c13f9f0d26bb367117ef56706648ff385f004779fb  /etc/apt/sources.list.d/winehq-noble.sources" | sha256sum -c - \
  && apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends wine-stable=${WINE_VERSION} wine-stable-amd64=${WINE_VERSION} wine-stable-i386=${WINE_VERSION} \
  && for b in wine wineserver wineboot; do ln -s /opt/wine-stable/bin/$b /usr/local/bin/$b; done \

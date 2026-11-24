@@ -524,6 +524,7 @@ namespace MPFever
             {
                 Log.Err(T("Impossible d'héberger : ", "Cannot host: ") + e.Message);
                 menuPhase = "error"; menuText = T("Impossible d'héberger : ", "Cannot host: ") + e.Message; MenuStatus();
+                hostGame = null;      // (StartHost sets it before the relay is reached: a failed attempt leaves no host game, or the retry below would never run)
                 if (server.Relay != "" && !serverStopping) ServerRelayRetry(launch);
                 return false;
             }
@@ -626,6 +627,8 @@ namespace MPFever
         /// <summary>"restart": the settings are read again, the world is saved, then the game starts again with it (the
         /// players are reconnected by their MPFever).</summary>
         volatile bool shutdownWarning;
+        volatile string warningWhat = "";
+        volatile Action warningAgain;
         volatile bool relayRetryPending;
 
         /// <summary>(0.9.3, relay=) The relay could not be reached when the world started (the box lost its link, the relay is restarting): tried again every 30 s, as long as the server runs.</summary>
@@ -656,8 +659,18 @@ namespace MPFever
         bool WarnPlayers(string what, bool warned, Action again)
         {
             if (warned || server == null || server.ShutdownWarning <= 0 || (relay?.AdmittedCount ?? 0) == 0) return false;
-            if (shutdownWarning) return true;      // a warning is already running: this request is the same one
+            if (shutdownWarning)
+            {
+                // a warning is already running: a request of the same kind is the same one; a stop during a restart's countdown wins (the countdown goes on, then the server stops instead)
+                if (what == "stops" && warningWhat != "stops")
+                {
+                    warningWhat = "stops"; warningAgain = again;
+                    HostChat("msg", server.Name, "The server will stop instead of restarting, when the countdown ends. The world is saved first.");
+                }
+                return true;
+            }
             shutdownWarning = true;
+            warningWhat = what; warningAgain = again;
             int total = server.ShutdownWarning;
             new Thread(() =>
             {
@@ -667,13 +680,13 @@ namespace MPFever
                     for (int left = total; left > 0; left--)
                     {
                         if (left == total || marks.Contains(left))
-                            HostChat("msg", server.Name, "The server " + what + " in " + (left >= 120 ? (left / 60) + " minutes" : left + (left == 1 ? " second" : " seconds")) + ". The world is saved first.");
+                            HostChat("msg", server.Name, "The server " + warningWhat + " in " + (left >= 120 ? (left / 60) + " minutes" : left + (left == 1 ? " second" : " seconds")) + ". The world is saved first.");
                         Thread.Sleep(1000);
                         if (serverStopping || (relay?.AdmittedCount ?? 0) == 0) break;
                     }
                 }
                 finally { shutdownWarning = false; }
-                again();
+                warningAgain();
             }) { IsBackground = true, Name = "Shutdown warning" }.Start();
             return true;
         }

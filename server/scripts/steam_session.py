@@ -108,12 +108,33 @@ def cmd_status(a):
     return 0 if left is None or left > 0 else 1
 
 
+def game_running(pattern):
+    """Whether a process whose command line matches pattern runs (the game: Dock has read and deleted its transfer file)."""
+    import subprocess
+    try:
+        return subprocess.run(["pgrep", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        return False
+
+
 def cmd_feed(a):
+    """The transfer file exists only while the game is not running (Dock reads it at the start and does not delete it): it is written when
+    no game runs, and removed a few seconds after the game started, so a mod of the running game finds no token on disk."""
     s = load(a.file)
     data = build_transfer(s["steamid"], a.app, s["account"], s["refresh_token"])
+    seen = None                                   # when the game was first seen running
     while True:
-        if not os.path.exists(a.out):
-            write_private(a.out, data)
+        if game_running(a.game_pattern):
+            seen = seen if seen is not None else time.time()
+            if time.time() - seen >= a.grace:
+                try:
+                    os.remove(a.out)
+                except OSError:
+                    pass
+        else:
+            seen = None
+            if not os.path.exists(a.out):
+                write_private(a.out, data)
         time.sleep(1)
 
 
@@ -126,6 +147,9 @@ def main(argv=None):
         if name == "feed":
             p.add_argument("--out", required=True)
             p.add_argument("--app", type=int, default=3493540)
+            # ([T]: the pattern does not match this process's own command line)
+            p.add_argument("--game-pattern", default=r"[T]ransportFever3\.exe")
+            p.add_argument("--grace", type=float, default=15.0, help="seconds the file stays after the game started (Dock has read it by then)")
     a = ap.parse_args(argv)
     return {"login": cmd_login, "status": cmd_status, "feed": cmd_feed}[a.cmd](a)
 

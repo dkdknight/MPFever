@@ -53,6 +53,15 @@ link_game() {
   fi
 }
 
+restrict_wine_root() {   # Wine's Z: shows a folder of links instead of /: the secrets (Steam token, mod.io key, admin token) are not under it
+  [ "${WINE_RESTRICT_Z:-1}" = 1 ] || return 0
+  local wr="$RUN/winroot" e
+  rm -rf "$wr"; mkdir -p "$wr/data"
+  for e in "$DATA"/*; do [ -e "$e" ] && [ "$(basename "$e")" != secrets ] && ln -s "$e" "$wr/data/$(basename "$e")"; done
+  for e in /opt /game /tmp; do [ -e "$e" ] && ln -s "$e" "$wr$e"; done
+  ln -sfn "$wr" "$WINEPREFIX/dosdevices/z:"
+}
+
 account_id() { python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["steamid"]) - 76561197960265728)' "$SESSION_FILE"; }
 
 save_dir() { echo "$STEAM_DIR/userdata/$(account_id)/$APPID/local/save"; }
@@ -75,6 +84,14 @@ check_settings() {
   need_choice STEAM_MODE "${STEAM_MODE:-online}" online offline
   need_choice SPEED_VOTE "${SPEED_VOTE:-false}" true false
   need_int SHUTDOWN_WARNING "${SHUTDOWN_WARNING:-60}"
+  # a value with a line break would add lines to mpfever_server.properties
+  local v n
+  for n in SERVER_NAME PASSWORD COMPANY_MODE RELAY RELAY_HOST_KEY RELAY_PASSWORD PUBLIC_ADDRESS MOTD WORLD; do
+    v="${!n:-}"; case "$v" in *$'\n'*|*$'\r'*) die "SRV_$n must be on one line (a line break in .env)" 2;; esac
+  done
+  need_int STOP_GRACE "${STOP_GRACE:-200}"
+  # the final save comes after the warning: Docker's stop grace period (SRV_STOP_GRACE, 200 s) must cover the warning plus the save (90 s)
+  [ "${SHUTDOWN_WARNING:-60}" -le $(( ${STOP_GRACE:-200} - 90 )) ]     || die "SRV_SHUTDOWN_WARNING (${SHUTDOWN_WARNING}) is too long for SRV_STOP_GRACE (${STOP_GRACE:-200}): the final save would be cut off. Use at most $(( ${STOP_GRACE:-200} - 90 )) seconds of warning, or raise SRV_STOP_GRACE (the warning + 90 s)." 2
   need_int PORT "${PORT:-28090}"; need_int MAX_PLAYERS "${MAX_PLAYERS:-8}"; need_int AUTOSAVE_MINUTES "${AUTOSAVE_MINUTES:-10}"; need_int BACKUPS "${BACKUPS:-10}"
 }
 
@@ -220,6 +237,7 @@ cmd_run() {
     echo "motd=${MOTD:-}"
   } > mpfever_server.properties
 
+  restrict_wine_root
   # Madeira Dock: Valve's own client library signs in with the remembered session, checks the licence and starts the game
   AUTH="$RUN/dock-auth.mdock"; STOPFILE="$RUN/stop"
   rm -f "$AUTH" "$STOPFILE"
@@ -270,7 +288,7 @@ cmd_run() {
   }
   trap on_term TERM INT
 
-  log "starting the server '${SERVER_NAME:-MPFever Server}': world '$WORLD', port ${PORT:-28090}, Steam account $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["account"])' "$SESSION_FILE")"
+  log "starting the server '${SERVER_NAME:-MPFever Server}': world '$WORLD', port ${PORT:-28090}"
   local quick=0 t0
   while [ "$STOPPING" = 0 ]; do
     t0=$(date +%s)

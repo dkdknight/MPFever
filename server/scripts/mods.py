@@ -15,7 +15,7 @@ import argparse, getpass, hashlib, html, json, os, re, shutil, struct, sys, temp
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mklite
 
-MOD_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+MOD_ID = re.compile(r"^(?!\.+$)[A-Za-z0-9_.-]+$")   # (not "." or "..": the id names a folder)
 GAME_ID = 10640                                          # Transport Fever 3 on mod.io
 WINE_ROOT = "C:\\modio"                                   # LITE as the game (Wine) sees it
 DATA = os.environ.get("DATA", "/data")
