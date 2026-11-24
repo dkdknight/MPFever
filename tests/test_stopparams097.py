@@ -8,8 +8,10 @@ not its parameters ("auswahl", which stop of the mod), which the capture of will
 (params = {year, seed, noLandmarkResources, auswahl = 5}: built fine). In every report, the only two copies at the click with a mod's
 stop are these two; the base game's stops (31) and signals (86) have no parameters ("params = {}") and were built.
   - before (MPFEVER_PRESHIPPARAMS=0, as 0.9.6): such a stop is shipped at the click without its parameters (the crash);
-  - now: shipped the usual way (its capture), said in the logs; a base-game stop still at the click; a construction whose parameters
-    cannot be read: a mod's the usual way, the base game's at the click; a copy that already has params goes at the click;
+  - now: a MOD's construction with parameters of its own is shipped the usual way (its capture), said in the logs; the base game's
+    stops (none) and path signals (5 parameters, read in game by the autotest conparams; its 86 copies at the click in the reports
+    were built) still go at the click; a mod's construction whose parameters cannot be read: the usual way; a copy that already has
+    params goes at the click;
   - the replaying game: an exception from the engine's check of a stop (not a refusal, not an error of MPFever's own script) means
     the build would stop the simulation: not sent, reported as not reproduced (MPFEVER_STOPDRYFAIL=0: sent, as before).
 Run: python tests/test_stopparams097.py
@@ -60,11 +62,13 @@ api = { res = { constructionRep = {
   find = function(n)
     if n == "::/stations/street/small_stops/small_old.con" then return 7 end
     if n == "ingo_stops::/stations/street/ingo_stops/ingo_stops.con" then return 9 end
+    if n == "::/infrastructure/signal/signal_path_c.con" then return 11 end
     return -1
   end,
   get = function(id)
     if GETFAIL then error("Unknown exception") end
     if id == 9 then return { params = { { key = "auswahl" } } } end
+    if id == 11 then return { params = { {}, {}, {}, {}, {} } } end
     return { params = {} }
   end } } }
 """
@@ -121,6 +125,8 @@ end
     check(run(MOD, MPATH) == "true|false|0|0", "now: a stop whose construction has parameters of its own goes the usual way (nothing sent at the click)")
     check(logged("has 1 parameter(s) the click does not show"), "  (said in the logs, with the construction)")
     check(run("", BASE).startswith("true|true|1|1"), "a base-game stop (params = {}): still at the click")
+    check(run("", "infrastructure/signal/signal_path_c.con").startswith("true|true|1|1"),
+          "a base-game path signal (5 parameters in game, its 86 copies at the click built): still at the click")
     check(run(MOD, MPATH, None, True).startswith("true|true|1|1"), "a copy that carries its params: at the click")
     check(run(MOD, MPATH, None, False, True) == "true|false|0|0" and logged("its parameters not read"),
           "parameters not readable: a mod's construction the usual way")
@@ -142,6 +148,8 @@ end
     # the dry run is the engine's proposal data: the only call that can throw there
     dv = re.search(r"^G\.stopDryVerdict = function\(sp, ctx\)\n.*?^end\n", src, re.S | re.M)
     check(dv is not None and "api.engine.util.proposal.makeProposalData(sp, ctx)" in dv.group(0), "G.stopDryVerdict asks the engine's proposal data")
+    cp = src.find("H.conparams = function(from, p)")
+    check(cp > 0 and "signal_path_c.con" in src[cp:cp + 1500], "autotest conparams: the base game's stops' and signals' parameters read in game")
     print(f"\n{len(fails)} failure(s)" if fails else "\nall passed")
     return 1 if fails else 0
 

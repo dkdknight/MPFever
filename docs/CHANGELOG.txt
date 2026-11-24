@@ -6,8 +6,9 @@ MPFever - Changelog
     the Traditional Bus Stops mod ("Assertion '!mil.fatInstances.empty() || !mil.thinInstances.empty()'", CalcBoundingBox). Both
     stops were shipped at the click: the copy had the stop's construction and place but not its parameters ("auswahl", which of
     the mod's stops), so the host built it without a model. Earlier stops of the same mod, shipped the usual way, carried them and
-    were built. A stop whose construction has parameters of its own is now shipped the usual way; the base game's stops and
-    signals have none and still go at the click (MPFEVER_PRESHIPPARAMS=0: as before). And a replayed stop whose engine check
+    were built. A mod's stop or signal whose construction has parameters of its own is now shipped the usual way; the base
+    game's stops (none) and path signals (5, which the game fills in: 86 copies at the click built in the reports, read in game
+    by the new autotest conparams) still go at the click (MPFEVER_PRESHIPPARAMS=0: as before). And a replayed stop whose engine check
     throws (it did both times, MPFever sent it anyway) is no longer sent: it is reported as not reproduced, the host's game is
     reloaded instead of stopping (MPFEVER_STOPDRYFAIL=0: as before). Test: tests/test_stopparams097.py.
   - FIX (#487, hluki and AndisPC): AndisPC's Town Transit Planner replaced street pieces one after the other, each from the
