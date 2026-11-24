@@ -6885,6 +6885,18 @@ local function replayStop(a, plan, variant)
 				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine's conversion failed: " .. shortErr(errN) .. " (the last form sent)")
 			end
 		elseif not okV then
+			-- ((0.9.7, #482 #483) The engine's check itself failed (an exception, not a refusal): the build would fail the same way in
+			-- the simulation, where nothing catches it. Both times it happened in the reports (williamcolberg's stops of the Traditional
+			-- Bus Stops mod, without their parameters), the host's game stopped right after ("!mil.fatInstances.empty()",
+			-- CalcBoundingBox). Not sent: the stop is not reproduced here, said so, and the host's game is reloaded everywhere, as for a
+			-- refused one. An error of MPFever's own script ("<file>.lua:<line>") is not the engine's: sent, as before.
+			-- MPFEVER_STOPDRYFAIL=0: sent, as before)
+			if os.getenv("MPFEVER_STOPDRYFAIL") ~= "0" and not tostring(crit):find("%.lua:%d+") then
+				local why = "stop: the engine's check failed (" .. shortErr(crit) .. "), not sent: it would stop the game"
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " " .. why)
+				if G.replayFailedFn then pcall(G.replayFailedFn, a, why) else pcall(send, "replay_failed", { uid = tostring(a.uid), why = why }) end
+				return
+			end
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine's verdict not read (" .. shortErr(crit) .. "): sent")
 		end
 	end
@@ -12834,6 +12846,25 @@ G.preshipObjects = function(r)
 		if not model or type(param) ~= "number" or param < 0 or param > 1 then return false, "object " .. i .. " unreadable (" .. tostring(d.bits) .. " " .. tostring(d.path) .. ")" end
 		local okF, rid = pcall(api.res.constructionRep.find, model)
 		if not okF or type(rid) ~= "number" or rid < 0 then return false, "object " .. i .. ": construction " .. model .. " not known here" end
+		-- ((0.9.7, #482 #483) A construction with parameters of its own needs the values the player chose in the tool (Traditional
+		-- Bus Stops: "auswahl", which of its stops), and the click shows only its name and place: the copy had no params, the host's
+		-- game built williamcolberg's stop without a model and stopped ("!mil.fatInstances.empty() || !mil.thinInstances.empty()",
+		-- collision_util::CalcBoundingBox), twice in one evening. Such a stop goes the usual way (its capture, which carries them).
+		-- The base game's stops and signals have none ("params = {}"). A construction whose parameters cannot be read: a mod's the
+		-- usual way, the base game's at the click. MPFEVER_PRESHIPPARAMS=0: at the click, as before)
+		if type(entry.params) ~= "table" and os.getenv("MPFEVER_PRESHIPPARAMS") ~= "0" then
+			local okP, np = pcall(function()
+				local ps = api.res.constructionRep.get(rid).params
+				local okN, n = pcall(function() return #ps end)
+				if okN and type(n) == "number" then return n end
+				return ps:size()
+			end)
+			if not okP or type(np) ~= "number" then
+				if model:sub(1, 3) ~= "::/" then return false, "object " .. i .. ": construction " .. model .. ", its parameters not read" end
+			elseif np > 0 then
+				return false, "object " .. i .. ": construction " .. model .. " has " .. np .. " parameter(s) the click does not show"
+			end
+		end
 		entry.model = model
 		entry.param = param
 	end
