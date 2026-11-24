@@ -147,6 +147,7 @@ namespace MPFever.StandaloneRelay
         void EndSession(string why)
         {
             Log.Warn(why + ": session ended");
+            StopListing();
             SessionEnded = true;
             lock (hostGate) { phase = Phase.Idle; candidate = null; token = null; failed.Clear(); presentedTokens.Clear(); attempt?.Cancel(); attempt = null; }
             foreach (var q in relay.Admitted()) { q.NoWait = true; NetAddr.Cut(q.Tcp); }

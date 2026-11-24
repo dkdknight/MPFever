@@ -40,6 +40,15 @@ namespace MPFever
         /// <summary>The host wants the session to end with it: no player takes over ("handover=0", told to the relay in the join).</summary>
         public bool NoHandover;
 
+        /// <summary>(0.9.3) The key a relay with --host-key wants from its host.</summary>
+        public string HostKey;
+
+        /// <summary>(0.9.3) What the relay tells the public list about this host (a relay started with --list-url and --host-key; another relay ignores it): the launcher's own announce body.</summary>
+        public void SendListInfo(string json)
+        {
+            try { client.Send(Msg.Make("tun_list", "-", "{[" + (char)34 + "json" + (char)34 + "]=" + LuaLit.Quote(json) + "}")); } catch { }
+        }
+
         /// <summary>The host's name on the relay ("Name#n").</summary>
         public string Me { get; private set; }
         public int Epoch { get; private set; }
@@ -64,6 +73,7 @@ namespace MPFever
             client.Denied += d => { denied = d.TryGetValue("reason", out var r) ? r as string : "?"; hosted.Set(); };
             client.Closed += () => { if (!stop) { Lose("connection to the relay closed"); } hosted.Set(); };
             client.NoHandover = NoHandover;
+            client.HostKey = HostKey;
             client.Connect(host, port, name, password, false, true, false, migrationToken);
             hosted.Wait(TimeSpan.FromSeconds(15));
             if (denied != null) throw new InvalidOperationException(denied);

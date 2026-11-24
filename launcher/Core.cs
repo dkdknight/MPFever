@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -258,10 +258,36 @@ namespace MPFever
         public static void Err(string s) => Write(s, LogLevel.Error);
         public static void Dim(string s) => Write(s, LogLevel.Muted);
 
+        /// <summary>MPFEVER_LOG_JSON=1 (the Docker server): each line of the log file is one JSON object {"ts","level","component","msg"} (UTC time; level debug, info, warn
+        /// or error) instead of "HH:mm:ss.fff text"; the lines shown in a window are unchanged.</summary>
+        static readonly bool Json = Environment.GetEnvironmentVariable("MPFEVER_LOG_JSON") == "1";
+
+        static string JsonEscape(string s)
+        {
+            var b = new System.Text.StringBuilder();
+            foreach (var c in s ?? "")
+            {
+                if (c == '"') b.Append("\\\"");
+                else if (c == '\\') b.Append("\\\\");
+                else if (c == '\n') b.Append("\\n");
+                else if (c == '\r') b.Append("\\r");
+                else if (c == '\t') b.Append("\\t");
+                else if (c < ' ') b.Append("\\u" + ((int)c).ToString("x4"));
+                else b.Append(c);
+            }
+            return b.ToString();
+        }
+
         public static void Write(string s, LogLevel level)
         {
             var l = DateTime.Now.ToString("HH:mm:ss.fff") + " " + s;
-            lock (Gate) { try { if (file != null) File.AppendAllText(file, l + Environment.NewLine); } catch { } }
+            var fileLine = l;
+            if (Json)
+            {
+                var lv = level == LogLevel.Warning ? "warn" : level == LogLevel.Error ? "error" : level == LogLevel.Muted ? "debug" : "info";
+                fileLine = "{\"ts\":\"" + DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'") + "\",\"level\":\"" + lv + "\",\"component\":\"launcher\",\"msg\":\"" + JsonEscape(s) + "\"}";
+            }
+            lock (Gate) { try { if (file != null) File.AppendAllText(file, fileLine + Environment.NewLine); } catch { } }
             Line?.Invoke(l);
             Entry?.Invoke(l, level);
         }
@@ -963,6 +989,27 @@ namespace MPFever
                     int eq = kv.IndexOf('=');
                     if (eq > 0) psi.EnvironmentVariables[kv.Substring(0, eq).Trim()] = kv.Substring(eq + 1);
                 }
+            if (GameInstall.WineMode)
+            {
+                // Linux dedicated server (server/): the Windows game runs under Wine. With MPFEVER_DOCK (the Windows path of Madeira Dock's
+                // dockhost.exe) Valve's own client library signs in, checks the licence and starts the game with these arguments, as Steam would;
+                // otherwise the game's executable is started directly (a Steam client must then already run in the Wine prefix).
+                var dock = Environment.GetEnvironmentVariable("MPFEVER_DOCK");
+                psi.FileName = "wine";
+                if (!string.IsNullOrEmpty(dock))
+                {
+                    psi.EnvironmentVariables["MADEIRA_STEAM_HOST_ARGUMENTS"] = psi.Arguments;
+                    psi.EnvironmentVariables["MADEIRA_STEAM_HOST_LAUNCH"] = "1";
+                    psi.Arguments = "\"" + dock + "\"";
+                }
+                else
+                    psi.Arguments = "\"" + exe + "\" " + psi.Arguments;
+                psi.EnvironmentVariables["WINEDLLOVERRIDES"] = "winhttp=n,b;mscoree,mshtml=";
+                psi.EnvironmentVariables["WINEDEBUG"] = "-all";
+                psi.EnvironmentVariables["MPFEVER_DIR"] = GameInstall.WinPath(Dir);
+                if (psi.EnvironmentVariables["MPFEVER_SIGS"] != null) psi.EnvironmentVariables["MPFEVER_SIGS"] = GameInstall.WinPath(psi.EnvironmentVariables["MPFEVER_SIGS"]);
+                Log.W("Wine: " + psi.FileName + " " + psi.Arguments);
+            }
             if (Reporter.OtherGamesRunning(-1) > 0) OtherGameSeen = true;
             proc = Process.Start(psi);
             proc.EnableRaisingEvents = true;
@@ -1818,6 +1865,9 @@ namespace MPFever
         /// <summary>(a host through a relay) the host does not want a player to take over when it leaves: the relay ends the session then (host migration, docs/RELAY.md).</summary>
         public bool NoHandover;
 
+        /// <summary>(0.9.3) The key a host shows to a relay that has --host-key (the "hk" of its join); empty: none.</summary>
+        public string HostKey;
+
         public void Connect(string host, int port, string name, string password = null, bool resume = false, bool tunnelHost = false, bool canTakeOver = false, string migrationToken = null)
         {
             // "steam:<id>" entries: through the host's Steam (the game's module, SteamNet), tried at the same time as the
@@ -1888,7 +1938,7 @@ namespace MPFever
             else Link.Reset(null);   // (a new player: the host counts from this join; what waited is dropped)
             myName = name;
             Send(Msg.Make("join", name, "{[\"v\"]=" + LuaLit.Quote(MainForm.Version)
-                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (tunnelHost && NoHandover ? ",[\"nomig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
+                + (string.IsNullOrEmpty(password) ? "" : ",[\"pw\"]=" + LuaLit.Quote(password)) + claim + (tunnelHost ? ",[\"host\"]=true" + (string.IsNullOrEmpty(HostKey) ? "" : ",[\"hk\"]=" + LuaLit.Quote(HostKey)) : "") + (canTakeOver ? ",[\"mig\"]=true" : "") + (tunnelHost && NoHandover ? ",[\"nomig\"]=true" : "") + ",[\"rp\"]=" + RelayProtocol.Number + (string.IsNullOrEmpty(migrationToken) ? "" : ",[\"mtok\"]=" + LuaLit.Quote(migrationToken)) + "}"));
             viaSteam = used != null && used.StartsWith("steam:", StringComparison.Ordinal);
             usedDirect = viaSteam ? null : used;
             gotAny = false;
@@ -2520,6 +2570,12 @@ namespace MPFever
     static class GameInstall
     {
         public const string AppId = "3493540";
+        /// <summary>This launcher runs on Linux (under Mono): the dedicated server of server/.</summary>
+        public static readonly bool IsLinux = Environment.OSVersion.Platform == PlatformID.Unix;
+        /// <summary>MPFEVER_WINE=1: this Linux launcher starts the Windows game under Wine (same executable and same winhttp.dll module as the players').</summary>
+        public static readonly bool WineMode = IsLinux && Environment.GetEnvironmentVariable("MPFEVER_WINE") == "1";
+        /// <summary>A Linux path as Wine sees it (Z: is the Linux root).</summary>
+        public static string WinPath(string p) => string.IsNullOrEmpty(p) ? p : "Z:" + p.Replace('/', '\\');
 
         /// <summary>(0.6.3) The game folder the player chose by hand (setting "gamedir"), for a game MPFever does not find itself (a
         /// GOG copy, a folder of its own): looked at after the usual places only. MPFEVER_GOG=0: not.</summary>
@@ -2760,6 +2816,7 @@ namespace MPFever
             // library was left, so the mod went nowhere and no savegame was found): the first of these that holds steam.exe,
             // then the running Steam's folder
             var cands = new List<string>();
+            if (WineMode) { var ws = Environment.GetEnvironmentVariable("MPFEVER_STEAMPATH"); if (!string.IsNullOrEmpty(ws)) cands.Add(ws); }
             try { cands.Add(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Valve\Steam", "SteamPath", null) as string); } catch { }
             try { cands.Add(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath", null) as string); } catch { }
             try { cands.Add(Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Valve\Steam", "InstallPath", null) as string); } catch { }

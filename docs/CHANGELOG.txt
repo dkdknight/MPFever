@@ -34,6 +34,43 @@ MPFever - Changelog
     (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
     names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
     under the old name by the project; a package pushed to it earlier can be deleted.
+  - NEW (experimental, server/, docs/DOCKER-SERVER.md): a dedicated server in one Linux Docker container (any x86-64 Docker host): the Windows game under Wine, started through
+    Madeira Dock (Valve's own client library: real sign-in and licence check, no Steam desktop, about 280 MB; its sources are in server/dock/,
+    unmodified at the import and maintained by this project: server/dock/MAINTAINING.md), software Vulkan with a layer that makes drawing a
+    no-op, a "lite" game install (66 GB become about 1 GB), no GPU. Players join it like any dedicated server. The launcher gets a Linux/Wine start mode
+    (MPFEVER_WINE=1, MPFEVER_DOCK) and a stop file (MPFEVER_STOPFILE: the world is saved, then the server stops, as the console's "stop"); nothing changes on
+    Windows. The image (ghcr.io/ampynjord/mpfever-server, tagged with the MPFever version and "experimental") holds no game or Valve file; install-game,
+    login (QR code, no password), import-save and status are its administration commands. Validated end to end for short sessions with a real Windows
+    client; long runs, several clients and large worlds are not yet (see the guide). For the Docker server the launcher also has MPFEVER_LOG_JSON=1 (one JSON object
+    per line in its log file: ts, level, component, msg), MPFEVER_CMDDIR (one file per console command: `mpfever-admin` runs the commands of the server window from
+    outside) and autoupdate=notify (a new release is announced in the log, never installed). CI: ci.yml (jobs docker-server-checks and docker-server) and, to publish the image, release.yml (option docker_server).
+  - NEW (server/, mods): the Docker server installs the mod.io mods of its world (`mods login/list/sync/status`; the key is typed once and kept in the data volume only): a reduced copy for the game (files a server
+    never reads left empty, same paths and sizes) and the full copy kept apart; checked and updated at every start (SRV_MODS_SYNC). The launcher, with MPFEVER_MODSTORE (a Docker server only), offers a
+    joining player the mods it lacks in their full version, from that store; the player's MPFever shows the offer and installs them once accepted. The game's mod.io library is given what it needs to list the mods
+    (its state file and a local subscription record).
+  - NEW (server/): the game's and Dock's own logs join the server's JSON stream (components game and dock; SRV_GAME_LOG); `mods import <folder>` brings the administrator's local mods (full copy for the players,
+    reduced one for the game; `mods list` shows what is missing); an administration page (SRV_ADMIN_UI=on, off by default; token, loopback port through compose.admin.yaml, the console's commands except stop,
+    audited in the log). No launcher change.
+  - NEW (server/): what a bug report needs is kept: the launcher's session folder (in.log, mod.log, native.log ...) is copied from the container's memory to the data volume (every 5 minutes, at the launcher's exit and
+    at the stop) and the game's log of each start is kept; `mpfever-admin bundle` makes one zip of it with the other logs and the crash reports, without any secret; the game's log is shipped at `info` by default
+    (what a server always says, like the missing sound card and mod.io account, is info and no longer an error). The Release build workflow takes docker_server_revision (tag <version>-2 for a new server image of the same version).
+  - NEW (dedicated server): speed-vote=true in mpfever_server.properties: the players' pause and speed requests become votes, carried when more than half of the connected players ask the same within a
+    minute (a player alone decides at once; the server announces the progress in the chat; the console and `mpfever-admin` always can). Off by default. Docker: SRV_SPEED_VOTE.
+  - NEW (server/): only one server instance per data volume (a lock in the volume, exit code 60): two containers on the same volumes would share the Steam session, the savegame and the port.
+  - NEW (dedicated server): shutdown-warning=N: a stop or a restart while players are connected is announced in their chat and counted down (the last minute, 30 s, 15 s, 10 s, the last 5 s), then happens;
+    at once when nobody is connected. 0 (the default of the file) keeps the immediate stop. Docker: SRV_SHUTDOWN_WARNING (60), `docker compose stop` waits for it.
+  - NEW (relay and dedicated server): the relay's --host-key (MPFEVER_RELAY_HOST_KEY): only the launcher that shows the key may host, the players need no password; and a dedicated server can host through a relay (relay=, relay-host-key=,
+    relay-password= in mpfever_server.properties; Docker: SRV_RELAY, SRV_RELAY_HOST_KEY, SRV_RELAY_PASSWORD): for a server behind a mobile box or CGNAT. Optional: without relay= the server listens itself, as before. Tried again every
+    30 s while the relay is unreachable; the world is hosted again after a lost connection.
+  - NEW (Docker server, experimental): SRV_STEAM_MODE=offline starts the game through Valve's own offline logon (Dock's MADEIRA_DOCK_OFFLINE): the account's game can run on the owner's PC at the same time, with the same licence.
+  - NEW (relay): --list-url URL (MPFEVER_RELAY_LIST_URL), with --host-key: the relay announces its host to the public server list from its own address, so a dedicated server behind a router that lets nothing in (and
+    with Steam offline) is listed, reachable; the server's launcher sends the data (tun_list) and does not announce by itself when it hosts through a relay.
+  - FIX (review of PR #435, dedicated server): the public list only connects to an announced host:port when it resolves to the address the announce came from (it was a port prober for any public
+    address), with a time limit on the name lookup, and refuses 64:ff9b::/96, 198.18.0.0/15 and 192.0.0.0/24. A relay that dies at the first connection no longer blocks its own retry (hostGame was kept set),
+    a stop during a restart's countdown now wins, and the Docker stop grace period (SRV_STOP_GRACE, 200 s) must cover SRV_SHUTDOWN_WARNING + 90 s (checked at start).
+  - FIX (review of PR #435, server/): the default image is the project's (ghcr.io/dkdknight/mpfever-server); Wine's Z: drive no longer shows /data/secrets and the Steam transfer file is removed once the game runs
+    (a mod's Lua can no longer read them through Z:); the administration page accepts a reverse proxy's X-Forwarded-Host or SRV_ADMIN_ORIGINS; the Ubuntu base and WineHQ's key and source file are pinned by hash;
+    a line break in .env is refused; the Steam login name is no longer in the log; a mod id of "." or ".." is refused.
 
 0.9.6 - 2026-11-23: loans taken in a pause no longer desync the games (#470), and three crashes fixed: a vehicle bought from a pack another player plays without (#471), a click on a game notification (#475), a mod's demolition applied several times at once (#467)
   - FIX (#471, fritz and privat5990): fritz took all 13 of the host's mods for personal (« Play without it » on the

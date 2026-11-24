@@ -431,20 +431,77 @@ namespace MPFever.ServerList
         }
 
         /// <summary>Whether the server's port answers (a TCP connection within 4 s; nothing is sent).</summary>
+        /// <summary>(0.9.3) A public address: not this machine, not a private, link-local, shared (CGNAT) or multicast one. The list only looks at addresses a server announced when they are public:
+        /// it must not be made to knock on a network of its own. (--loopback, the tests: this machine is allowed.)</summary>
+        static bool PublicTarget(IPAddress a)
+        {
+            if (IPAddress.IsLoopback(a)) return Program.Loopback;
+            if (a.AddressFamily == AddressFamily.InterNetworkV6)
+            {
+                if (a.IsIPv4MappedToIPv6) return PublicTarget(a.MapToIPv4());
+                var b6 = a.GetAddressBytes();
+                if (b6[0] == 0x00 && b6[1] == 0x64 && b6[2] == 0xff && b6[3] == 0x9b && b6.Skip(4).Take(8).All(x => x == 0)) return false;   // 64:ff9b::/96 (NAT64: an IPv4 address in disguise)
+                return !(a.IsIPv6LinkLocal || a.IsIPv6SiteLocal || a.IsIPv6Multicast || (b6[0] & 0xfe) == 0xfc || a.Equals(IPAddress.IPv6Any));
+            }
+            var b = a.GetAddressBytes();
+            if (b[0] == 198 && (b[1] == 18 || b[1] == 19)) return false;      // 198.18.0.0/15 (network tests)
+            if (b[0] == 192 && b[1] == 0 && b[2] == 0) return false;          // 192.0.0.0/24 (protocol assignments)
+            if (b[0] == 0 || b[0] == 10 || b[0] == 127 || b[0] >= 224) return false;
+            if (b[0] == 100 && b[1] >= 64 && b[1] <= 127) return false;       // shared address space (CGNAT)
+            if (b[0] == 169 && b[1] == 254) return false;
+            if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return false;
+            if (b[0] == 192 && b[1] == 168) return false;
+            return true;
+        }
+
+        /// <summary>(0.9.3, narrowed in 0.9.7) Where to look for a server. By default the address it announced from and its port. A host:port it announced is used for the port only, and only when
+        /// it resolves to the address the announce came from (a relay announcing itself with --list-url: its own name, its own port); an address that is anyone else's is never connected to.</summary>
+        static void ProbeTarget(Entry e, out string host, out int port)
+        {
+            host = e.Ip; port = e.Port;
+            var a = (e.Address ?? "").Trim();
+            int c = a.LastIndexOf(':');
+            if (a == "" || a.Length > 80 || c <= 0 || a.IndexOf(':') != c) return;     // (host:port only; an IPv6 literal is not looked at)
+            if (!int.TryParse(a.Substring(c + 1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int p) || p < 1 || p > 65535) return;
+            string h = a.Substring(0, c);
+            try
+            {
+                IPAddress[] ips;
+                if (IPAddress.TryParse(h, out var lit)) ips = new[] { lit };
+                else
+                {
+                    // (a name is resolved with a time limit: the lookup must not hold the thread that answers the list)
+                    var look = Dns.GetHostAddressesAsync(h);
+                    if (!look.Wait(2000)) return;
+                    ips = look.Result;
+                }
+                if (ips.Length == 0 || ips.Any(x => !PublicTarget(x))) return;
+                // (the announced address is only looked at when it is the announcer's own: the list is not a port scanner for anyone
+                // else's address, and a server cannot make it show someone else's port as an MPFever server)
+                if (!IPAddress.TryParse(e.Ip, out var from)) return;
+                if (from.IsIPv4MappedToIPv6) from = from.MapToIPv4();
+                var own = ips.FirstOrDefault(x => (x.IsIPv4MappedToIPv6 ? x.MapToIPv4() : x).Equals(from));
+                if (own == null) return;
+                host = from.ToString(); port = p;
+            }
+            catch { }
+        }
+
         static void Check(Entry e)
         {
             bool ok = false;
+            ProbeTarget(e, out string host, out int tport);
             try
             {
-                using (var c = new TcpClient(IPAddress.Parse(e.Ip).AddressFamily))
+                using (var c = new TcpClient(IPAddress.Parse(host).AddressFamily))
                 {
-                    var ar = c.BeginConnect(e.Ip, e.Port, null, null);
+                    var ar = c.BeginConnect(host, tport, null, null);
                     ok = ar.AsyncWaitHandle.WaitOne(4000) && c.Connected;
                     if (ok) c.EndConnect(ar);
                 }
             }
             catch { ok = false; }
-            if (ok != e.Reachable || !e.CheckedOnce) Program.Log((ok ? "reachable: " : "not reachable: ") + e.Name + " (" + e.Ip + ":" + e.Port + ")" + (ok || e.Steam != "" ? "" : ", not listed"));
+            if (ok != e.Reachable || !e.CheckedOnce) Program.Log((ok ? "reachable: " : "not reachable: ") + e.Name + " (" + host + ":" + tport + ")" + (ok || e.Steam != "" ? "" : ", not listed"));
             e.Reachable = ok;
             e.CheckedOnce = true;
         }

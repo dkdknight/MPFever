@@ -51,8 +51,10 @@ namespace MPFever
         /// <summary>autoupdate in mpfever_settings.txt: 1 (default) installs a new release by itself, "ask" offers it in a
         /// window first, 0 turns the check off.</summary>
         static string Setting => MainForm.LoadSettings().TryGetValue("autoupdate", out var v) ? v.Trim().ToLowerInvariant() : "1";
-        public static bool Enabled => Setting != "0";
+        public static bool Enabled => Setting != "0" && Setting != "notify";
         public static bool Ask => Setting == "ask";
+        /// <summary>autoupdate=notify (the Docker server): the release is looked for and announced in the log, never installed (the image is updated instead).</summary>
+        public static bool Notify => Setting == "notify";
 
         /// <summary>MPFever.exe runs from an unpacked release (mod\mpfever_1 next to it), not from a build folder.</summary>
         public static bool InReleaseFolder => File.Exists(Path.Combine(AppDir, "mod", "mpfever_1", "mod.json"));

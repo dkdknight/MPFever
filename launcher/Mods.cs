@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -322,6 +323,53 @@ namespace MPFever
                 if (dirs == null || (DateTime.UtcNow - dirsAt).TotalSeconds > 30) { dirs = Scan(); dirsAt = DateTime.UtcNow; }
                 return id != null && dirs.TryGetValue(id, out var d) ? d : null;
             }
+        }
+
+        /// <summary>(a Docker server, MPFEVER_MODSTORE) The folder that keeps each mod.io mod of the server in its full version (the game runs from a copy without what a server never uses).
+        /// "" when this PC keeps none: then nothing of the Mod Hub is ever sent.</summary>
+        public static string Store => (Environment.GetEnvironmentVariable("MPFEVER_MODSTORE") ?? "").Trim();
+
+        static Dictionary<string, string> storeDirs; static DateTime storeAt;
+        static readonly Regex NoteName = new Regex("\"name\"\\s*:\\s*\"([^\"]+)\"");
+
+        /// <summary>The full copy of a mod in the store (its folder holds a .modio.json that names the mod), or null.</summary>
+        public static string StoreDir(string id)
+        {
+            if (Store == "" || !Directory.Exists(Store)) return null;
+            lock (Known)
+            {
+                if (storeDirs == null || (DateTime.UtcNow - storeAt).TotalSeconds > 30)
+                {
+                    var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    try
+                    {
+                        foreach (var d in Directory.GetDirectories(Store))
+                        {
+                            try
+                            {
+                                var m = NoteName.Match(File.ReadAllText(Path.Combine(d, ".modio.json")));
+                                if (m.Success) map[m.Groups[1].Value] = d;
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                    storeDirs = map; storeAt = DateTime.UtcNow;
+                }
+                return id != null && storeDirs.TryGetValue(id, out var v) ? v : null;
+            }
+        }
+
+        /// <summary>A mod's folder zipped for a player: the files as they are, without the store's own note (.modio.json), so the player's copy is the published one.</summary>
+        public static void ZipFolder(string dir, string zipPath)
+        {
+            using (var z = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+                foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    var rel = f.Substring(dir.Length).TrimStart('\\', '/').Replace('\\', '/');
+                    if (rel == ".modio.json") continue;
+                    z.CreateEntryFromFile(f, rel, CompressionLevel.Optimal);
+                }
         }
 
         /// <summary>The installed mods are looked for again at the next question (a mod was just installed).</summary>
@@ -693,7 +741,7 @@ namespace MPFever
         /// <summary>The size of an installed mod's folder in MB (one decimal), "" when it is not installed here.</summary>
         public static string SizeMb(string id)
         {
-            var d = Dir(id);
+            var d = StoreDir(id) ?? Dir(id);
             if (d == null) return "";
             lock (sizeCache)
             {

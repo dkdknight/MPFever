@@ -9,13 +9,17 @@ namespace MPFever.StandaloneRelay
     {
         static readonly string Usage = @"mpfever-relay, relay protocol " + RelayProtocol.Number + @" - MPFever relay, without a game (Linux or Windows)
 
-  mpfever-relay [--port 28090] [--password SECRET] [--max-players 8] [--name TEXT] [--migration]
+  mpfever-relay [--port 28090] [--password SECRET] [--max-players 8] [--name TEXT] [--migration] [--host-key SECRET]
                 [--max-connections 64] [--grace 60] [--migration-timeout 120]
   mpfever-relay --selftest
 
 Players join it as they join a host (Multiplayer, Join a game, this relay's address). The first player in is the host: its MPFever
 hosts through this relay, so it needs no open port, and everybody reaches the same address. The relay runs no game.
   --migration          EXPERIMENTAL (off by default): let a player take over when the host leaves
+  --list-url URL       with --host-key: announce the host to that public server list (https://mpfever.knight-hd.fr) from this relay's address, so a dedicated
+                       server behind a router that lets nothing in is listed: the list looks at the address the announce comes from, which is the relay's
+  --host-key SECRET    only the launcher that shows this key may host the relay (a dedicated server behind a router that lets nothing in:
+                       it connects out and hosts here); players need no password then, or the --password one. Not with --migration
   --max-connections N  connections accepted at once, let in or not (default 64; 0: no limit)
   --grace SECONDS      how long a guest that drops is waited for (default 60; 0: not waited for)
   --checkpoint-dir DIR         keep the latest complete save of the session in DIR (the host sends it; it survives an empty relay)
@@ -24,11 +28,11 @@ hosts through this relay, so it needs no open port, and everybody reaches the sa
   --migration-timeout SECONDS  how long a successor has to connect as the host before the next one is asked (default 120)
   --listen ADDRESS             listen on that address only (the address of a VPN such as Tailscale or WireGuard, or a LAN), not on every one:
                                nothing else can reach the relay
-  --password-file FILE, --checkpoint-owner-key-file FILE, --resume-without-host-file FILE
-                               the same three secrets, read from a file (a container secret, a systemd credential), not from the command line
+  --password-file FILE, --checkpoint-owner-key-file FILE, --resume-without-host-file FILE, --host-key-file FILE
+                               the same secrets, read from a file (a container secret, a systemd credential), not from the command line
 Set a password (--password) on a relay that is reachable from the Internet: without one anybody may join or host.
-The three secrets can also come from the environment, so that they are not in the command line (a container's settings, `ps`):
-MPFEVER_RELAY_PASSWORD, MPFEVER_RELAY_CHECKPOINT_OWNER_KEY and MPFEVER_RELAY_RESUME_WITHOUT_HOST (or the same with _FILE added: a path); an option on
+The secrets can also come from the environment, so that they are not in the command line (a container's settings, `ps`):
+MPFEVER_RELAY_PASSWORD, MPFEVER_RELAY_HOST_KEY, MPFEVER_RELAY_CHECKPOINT_OWNER_KEY and MPFEVER_RELAY_RESUME_WITHOUT_HOST (and MPFEVER_RELAY_LIST_URL, which is no secret) (or the same with _FILE added: a path); an option on
 the command line wins.
 See docs/RELAY.md.";
 
@@ -42,6 +46,12 @@ See docs/RELAY.md.";
             if (o.MigrationTimeoutSeconds < 5 || o.MigrationTimeoutSeconds > 3600) return "--migration-timeout must be between 5 and 3600 seconds";
             if (!string.IsNullOrEmpty(o.CheckpointDirectory) && string.IsNullOrEmpty(o.CheckpointOwnerKey)) return "--checkpoint-dir needs --checkpoint-owner-key";
             if (o.ResumeWithoutHost && string.IsNullOrEmpty(o.CheckpointDirectory)) return "--resume-without-host needs --checkpoint-dir";
+            // (the host key is the one thing that keeps a stranger from hosting: it is not the password every player knows, and a relay with a host key has one host for good)
+            if (o.ListUrl != "" && o.HostKey == "") return "--list-url needs --host-key: only the host of a relay with a host key is the server it announces";
+            if (o.ListUrl != "" && !(Uri.TryCreate(o.ListUrl, UriKind.Absolute, out var lu) && (lu.Scheme == "http" || lu.Scheme == "https"))) return "--list-url must be an http or https address";
+            if (o.HostKey != "" && o.HostKey == o.Password) return "the host key must differ from the password: every player knows the password";
+            if (o.HostKey != "" && o.ResumeWithoutHost) return "--host-key and --resume-without-host cannot be used together: with a host key only the server hosts, never a player from the kept save";
+            if (o.HostKey != "" && o.Migration) return "--host-key and --migration cannot be used together: with a host key the relay's host is always the one that shows it";
             // (a key that is another key, or the password every player knows, would give the save to whoever has the other)
             if (o.CheckpointOwnerKey != "" && o.CheckpointOwnerKey == o.Password) return "the owner key must differ from the password: every player knows the password";
             if (o.ResumeWithoutHost && o.CheckpointRecoveryKey == o.Password) return "the recovery key must differ from the password: every player knows the password";
@@ -63,6 +73,10 @@ See docs/RELAY.md.";
             }
             string s = Secret("MPFEVER_RELAY_PASSWORD");
             if (!string.IsNullOrEmpty(s)) o.Password = s;
+            string listUrl = get("MPFEVER_RELAY_LIST_URL");
+            if (!string.IsNullOrWhiteSpace(listUrl)) o.ListUrl = listUrl.Trim();
+            s = Secret("MPFEVER_RELAY_HOST_KEY");
+            if (!string.IsNullOrEmpty(s)) o.HostKey = s;
             s = Secret("MPFEVER_RELAY_CHECKPOINT_OWNER_KEY");
             if (!string.IsNullOrEmpty(s)) o.CheckpointOwnerKey = s;
             s = Secret("MPFEVER_RELAY_RESUME_WITHOUT_HOST");
@@ -85,6 +99,7 @@ See docs/RELAY.md.";
         {
             var list = new System.Collections.Generic.List<string>();
             if (o.Password != "" && o.Password.Length < 8) list.Add("the password is shorter than 8 characters");
+            if (o.HostKey != "" && o.HostKey.Length < 16) list.Add("the host key is shorter than 16 characters (use openssl rand -hex 16)");
             if (o.CheckpointOwnerKey != "" && o.CheckpointOwnerKey.Length < 16) list.Add("the owner key is shorter than 16 characters (use openssl rand -hex 16)");
             if (o.ResumeWithoutHost && o.CheckpointRecoveryKey.Length < 16) list.Add("the recovery key is shorter than 16 characters (use openssl rand -hex 16)");
             return list.ToArray();
@@ -108,6 +123,9 @@ See docs/RELAY.md.";
                         case "--password": opt.Password = Next(); break;
                         case "--listen": opt.Listen = System.Net.IPAddress.Parse(Next()); break;
                         case "--password-file": opt.Password = ReadSecret(Next()); break;
+                        case "--host-key": opt.HostKey = Next(); break;
+                        case "--list-url": opt.ListUrl = Next().Trim(); break;
+                        case "--host-key-file": opt.HostKey = ReadSecret(Next()); break;
                         case "--max-players": opt.MaxPlayers = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                         case "--name": opt.Name = Next(); break;
                         case "--migration": opt.Migration = true; break;
@@ -142,11 +160,13 @@ See docs/RELAY.md.";
                 var core = new SessionCore(relay, opt);
                 relay.BindTo = opt.Listen;
                 relay.Start(opt.Port);
-                Log.Ok("Relay '" + opt.Name + "' listening on " + (opt.Listen != null ? opt.Listen + ", " : "") + "TCP port " + opt.Port + (opt.Password != "" ? " (password set)" : "") + ", " + opt.MaxPlayers
+                Log.Ok("Relay '" + opt.Name + "' listening on " + (opt.Listen != null ? opt.Listen + ", " : "") + "TCP port " + opt.Port + (opt.Password != "" ? " (password set)" : "") + (opt.HostKey != "" ? " (host key set)" : "") + (opt.ListUrl != "" ? " (announces to " + opt.ListUrl + ")" : "") + ", " + opt.MaxPlayers
                     + " players at most");
                 if (opt.Migration) Log.Warn("EXPERIMENTAL: host migration is enabled.");
                 if (opt.MaxConnections == 0) Log.Warn("--max-connections 0: no limit on connections. Do not use it on a relay reachable from the Internet.");
-                if (opt.Password == "") Log.Warn("No password is set: anybody who can reach this port may join, or host. Use --password on a public relay.");
+                if (opt.Password == "" && opt.HostKey == "") Log.Warn("No password is set: anybody who can reach this port may join, or host. Use --password on a public relay.");
+                else if (opt.Password == "") Log.Ok("No password: anybody may join as a player; only the launcher that shows the host key may host.");
+                if (opt.HostKey != "" && !string.IsNullOrEmpty(opt.CheckpointDirectory)) Log.Warn("--checkpoint-dir with --host-key: a dedicated server keeps its own saves and does not store one on the relay.");
                 foreach (var weak in WeakSecrets(opt)) Log.Warn("Weak secret: " + weak + ".");
                 var quit = new ManualResetEvent(false);
                 Console.CancelKeyPress += (s, e) => { e.Cancel = true; quit.Set(); };

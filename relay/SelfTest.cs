@@ -19,9 +19,10 @@ namespace MPFever.StandaloneRelay
             public readonly List<Msg> Got = new List<Msg>();
             public string DeniedReason;
             public volatile bool Closed;
-            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null, bool noHandover = false)
+            public Player(int port, string name, string pw = null, bool asHost = false, bool canTakeOver = false, string token = null, bool noHandover = false, string hostKey = null)
             {
                 C.NoHandover = noHandover;
+                C.HostKey = hostKey;
                 C.Received += m => { lock (Got) Got.Add(m); };
                 C.Denied += d => { DeniedReason = d.TryGetValue("reason", out var r) ? r as string : "?"; };
                 C.Closed += () => Closed = true;
@@ -54,6 +55,8 @@ namespace MPFever.StandaloneRelay
 
         public static int Run()
         {
+            HostKey();
+            ListAnnounce();
             Tunnel();
             Remote();
             Migration();
@@ -384,6 +387,104 @@ namespace MPFever.StandaloneRelay
                 }
             }
             finally { try { Directory.Delete(dir, true); } catch { } }
+        }
+
+        /// <summary>(0.9.3) --list-url: the relay announces its host to the public list (a stand-in list here): its own port and count, no address, the token given back, and the entry removed when the host leaves.</summary>
+        static void ListAnnounce()
+        {
+            Console.WriteLine("list announce");
+            var posts = new List<string>();
+            var http = new System.Net.HttpListener();
+            int lport;
+            using (var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0)) { probe.Start(); lport = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port; }
+            http.Prefixes.Add("http://127.0.0.1:" + lport + "/");
+            http.Start();
+            new Thread(() =>
+            {
+                try
+                {
+                    while (http.IsListening)
+                    {
+                        var c = http.GetContext();
+                        string body; using (var r = new System.IO.StreamReader(c.Request.InputStream)) body = r.ReadToEnd();
+                        lock (posts) posts.Add(c.Request.Url.AbsolutePath + " " + body);
+                        var reply = System.Text.Encoding.UTF8.GetBytes("{" + (char)34 + "ok" + (char)34 + ":true," + (char)34 + "id" + (char)34 + ":" + (char)34 + "abc123" + (char)34 + "," + (char)34 + "token" + (char)34 + ":" + (char)34 + "tok456" + (char)34 + "}");
+                        c.Response.OutputStream.Write(reply, 0, reply.Length);
+                        c.Response.Close();
+                    }
+                }
+                catch { }
+            }) { IsBackground = true }.Start();
+            bool Seen(Func<string, bool> pred, int ms = 8000)
+            {
+                var end = Environment.TickCount64 + ms;
+                while (Environment.TickCount64 < end) { lock (posts) if (posts.Any(pred)) return true; Thread.Sleep(50); }
+                lock (posts) return posts.Any(pred);
+            }
+            string Q(string key) => (char)34 + key + (char)34;
+            var opt = new RelayOptions { HostKey = "host-key-0123456789", ListUrl = "http://127.0.0.1:" + lport, MaxPlayers = 4 };
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, opt);
+                relay.Start(0);
+                int port = relay.Port;
+                var h = new Player(port, "Srv", null, true, false, null, true, "host-key-0123456789");
+                h.Wait(() => h.Of("tun_host").Length == 1);
+                string info = "{" + Q("name") + ":" + Q("Test server") + "," + Q("port") + ":1," + Q("version") + ":" + Q("0.9.3") + "," + Q("build") + ":" + Q("40444") + "," + Q("mode") + ":" + Q("shared")
+                    + "," + Q("world") + ":" + Q("W") + "," + Q("motd") + ":" + Q("hi") + "," + Q("players") + ":9," + Q("max") + ":8," + Q("password") + ":false," + Q("steam") + ":" + Q("123")
+                    + "," + Q("address") + ":" + Q("evil.example:1") + "," + Q("token") + ":" + Q("x") + "}";
+                h.C.Send(Msg.Make("tun_list", "-", "{[" + Q("json") + "]=" + LuaLit.Quote(info) + "}"));
+                Check("the host's announce reaches the list, from the relay", Seen(x => x.StartsWith("/api/announce")));
+                string first; lock (posts) first = posts.First(x => x.StartsWith("/api/announce"));
+                Check("with the relay's own port and the places the relay allows", first.Contains(Q("port") + ":" + port) && first.Contains(Q("max") + ":4") && first.Contains(Q("name") + ":" + Q("Test server")));
+                Check("the players counted by the relay, not the host's number; no Steam id and no address of the host's choosing", first.Contains(Q("players") + ":0") && first.Contains(Q("steam") + ":" + Q("")) && first.Contains(Q("address") + ":" + Q("")));
+                using (var p = new Player(port, "Ann", null))
+                {
+                    Check("a player joining is counted at once", Seen(x => x.StartsWith("/api/announce") && x.Contains(Q("players") + ":1")));
+                    Check("the token the list gave is sent back", Seen(x => x.Contains(Q("token") + ":" + Q("tok456"))));
+                }
+                h.Dispose();
+                Check("the host leaving takes the entry off the list", Seen(x => x.StartsWith("/api/remove") && x.Contains("abc123") && x.Contains("tok456")));
+            }
+            var noKey = new RelayOptions { ListUrl = "http://127.0.0.1:1" };
+            Check("--list-url without --host-key is refused", Program.Validate(noKey) != null);
+            http.Stop();
+        }
+
+        /// <summary>(0.9.3) --host-key: only the holder of the key hosts; the players need no password; wrong keys count like wrong passwords.</summary>
+        static void HostKey()
+        {
+            Console.WriteLine("host key");
+            var opt = new RelayOptions { HostKey = "host-key-0123456789", MaxPlayers = 3, MaxBadPasswords = 3 };
+            using (var relay = new Relay())
+            {
+                var core = new SessionCore(relay, opt);
+                relay.Start(0);
+                int port = relay.Port;
+                using (var none = new Player(port, "Eve", null, true))
+                    Check("a host without the key is refused, with its reason", none.Wait(() => none.DeniedReason != null) && none.DeniedReason == "hostkey");
+                using (var bad = new Player(port, "Mal", null, true, false, null, false, "wrong-key"))
+                    Check("a host with a wrong key is refused", bad.Wait(() => bad.DeniedReason != null) && bad.DeniedReason == "hostkey");
+                using (var early = new Player(port, "Early", null))
+                    Check("a player is still refused while nobody hosts", early.Wait(() => early.DeniedReason != null) && early.DeniedReason == "nohost");
+                var h = new Player(port, "Srv", null, true, false, null, true, "host-key-0123456789");
+                Check("the host with the key is let in as the host", h.Wait(() => h.Of("tun_host").Length == 1) && core.HostPlayer == h.Me);
+                using (var p = new Player(port, "Ann", null))
+                    Check("players join without any password", p.Wait(() => p.Of("welcome").Length == 1 || p.Of("tun_join").Length == 0 && p.DeniedReason == null));
+                Thread.Sleep(200);
+                Check("and the host was told of the player", h.Wait(() => h.Of("tun_join").Length == 1));
+                using (var thief = new Player(port, "Thief", null, true, false, null, false, "host-key-0123456789"))
+                    Check("even with the right key a second host is refused while one hosts", thief.Wait(() => thief.DeniedReason != null) && thief.DeniedReason == "hosted");
+                h.Dispose();
+            }
+            Check("a host key equal to the password, or with --migration, is refused",
+                Program.Validate(new RelayOptions { HostKey = "same-secret-value", Password = "same-secret-value" }) != null
+                && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", Migration = true }) != null
+                && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", ResumeWithoutHost = true, CheckpointDirectory = "/data", CheckpointOwnerKey = "owner-key-0123456789", CheckpointRecoveryKey = "recovery-key-0123456" }) != null
+                && Program.Validate(new RelayOptions { HostKey = "host-key-0123456789", Password = "player-password" }) == null);
+            var env = new RelayOptions();
+            Program.ApplyEnvironment(env, n => n == "MPFEVER_RELAY_HOST_KEY" ? "from-the-environment-key" : null);
+            Check("the host key can come from the environment", env.HostKey == "from-the-environment-key");
         }
 
         static void Tunnel()

@@ -46,8 +46,9 @@ rl = main[main.index("void ResyncLocked(string reason)"):main.index("void SendSa
 check(rl.index("resyncAbort = false;") < rl.index("Pause(T(\"resynchronisation\""), "3. each resynchronisation starts uncut")
 check("bool back = WaitUntil(() => { if (resyncAbort) return true; lock (resyncWaiting) return resyncWaiting.Count == 0; }, 600);" in rl,
       "3. its wait for the players ends when the server stops or restarts")
-rw = server[server.index("void RestartWorld()"):server.index("void StopServer(bool closeWindow)")]
-ss = server[server.index("void StopServer(bool closeWindow)"):server.index("double updateEmptySince")]
+# (0.9.3: both take "warned" for the players' countdown: the signatures start the same, the logic is unchanged after it)
+rw = server[server.index("void RestartWorld("):server.index("void StopServer(")]
+ss = server[server.index("void StopServer("):server.index("double updateEmptySince")]
 check(rw.index('CutResyncShort(T("redémarrage", "restart"));') < rw.index("SaveWorld("), "3. restart: the resynchronisation cut short, then the save")
 check(ss.index('CutResyncShort(T("arrêt", "stop"));') < ss.index("SaveWorld("), "3. stop: the resynchronisation cut short, then the save")
 cr = server[server.index("void CutResyncShort(string why)"):]
