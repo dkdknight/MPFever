@@ -101,6 +101,8 @@ it is stable enough.
       host sends them the game over Steam (#449), a full disk said clearly and old session folders cleaned (#455) (0.9.4)
   [x] MPFever's native module no longer stays off on a game started twice (no memory near the game's code: drifts and
       resyncs, #459) (0.9.5)
+  [x] Loans taken in a pause stay in sync (#470), and three crashes fixed: a host's vehicle mod left out by a player (#471),
+      a click on a game notification (#475), a mod's demolition applied several times at once (#467) (0.9.6)
   [x] Next to each player's name in the game: one sign for their sync and one for their game's pace (frames per second,
       simulation speed), green, yellow, orange or red: everybody sees which PC slows the session (#418) (0.9.0)
 
