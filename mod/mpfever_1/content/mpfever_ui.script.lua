@@ -403,7 +403,25 @@ local function install()
 			if U.logged <= 12 then C.appendFile(C.DIR .. C.BS .. "captured.txt", tag.name .. " #" .. U.seq .. C.NL .. C.ser(margs) .. C.NL) end
 		end
 		if cb then
-			if IMMEDIATE[tag.name] or not U.stepping then
+			-- ((0.9.7, #487) A build a mod sends from this interface waits for its real answer, once every game has applied it, as
+			-- the engine answers it in a single-player game. Answered at once, as the construction tools are, a mod that builds one
+			-- street piece after the other from its callbacks (Town Transit Planner) made the next piece on the world without the one
+			-- before it: its node configurations named a segment the earlier build had just replaced, and half its pieces were
+			-- refused on every game (29 in AndisPC's session of 2026-11-23). The game's own tools still get their answer at once.
+			-- MPFEVER_MODBUILDWAIT=0: at once, as before)
+			local modBuild = false
+			if IMMEDIATE[tag.name] and U.stepping and os.getenv("MPFEVER_MODBUILDWAIT") ~= "0" then
+				if fromMod then modBuild = true
+				else
+					local okF, fm = pcall(U.fromMod)
+					modBuild = okF and fm ~= nil
+				end
+				if modBuild and (U.modBuildLogged or 0) < 5 then
+					U.modBuildLogged = (U.modBuildLogged or 0) + 1
+					log("a mod's build #" .. U.seq .. ": its answer waits until every game has applied it")
+				end
+			end
+			if (IMMEDIATE[tag.name] and not modBuild) or not U.stepping then
 				-- without the per-step component the result could never be delivered: answer now
 				local okc, errc = pcall(cb, nil, true, {})
 				if not okc then log("tool callback error (ignored): " .. tostring(errc):sub(1, 160)) end

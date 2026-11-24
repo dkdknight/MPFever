@@ -10,6 +10,15 @@ MPFever - Changelog
     signals have none and still go at the click (MPFEVER_PRESHIPPARAMS=0: as before). And a replayed stop whose engine check
     throws (it did both times, MPFever sent it anyway) is no longer sent: it is reported as not reproduced, the host's game is
     reloaded instead of stopping (MPFEVER_STOPDRYFAIL=0: as before). Test: tests/test_stopparams097.py.
+  - FIX (#487, hluki and AndisPC): AndisPC's Town Transit Planner replaced street pieces one after the other, each from the
+    answer to the one before: 29 of its pieces were refused on every game ("its node configuration of node ... names segment
+    ..., taken away by an earlier build at this time"). MPFever answered every build sent from the interface at once, before any
+    game had applied it (right for the construction tools, which only wait to be released): the mod made its next piece on the
+    world without the previous one. On hluki's game the same mod's lanes, made before its new street stood, made the game's
+    street code complain three times ("pr.second", CreateShapes). A build a mod sends from the interface now gets its answer
+    once every game has applied it, as in a single-player game; the game's own tools are still answered at once
+    (MPFEVER_MODBUILDWAIT=0: as before). In 0.8.17 such builds already waited for each other in a pause (#394). Test:
+    tests/test_modbuildwait097.py.
   - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
     (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
     names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
