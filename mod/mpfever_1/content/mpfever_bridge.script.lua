@@ -485,6 +485,15 @@ local function extendedParts(parts, checkN)
 			pcall(SDUMP.keepDrift, SDUMP.driftN, dump)
 			SDUMP.driftN = nil
 		end
+		-- (0.9.7, #150 research; tests: MPFEVER_RINGDUMPAT=<check>[,<check>...]) the native module's rings asked for at these checks
+		-- without any drift, on every game at the same check: two games in sync compared over the same steps (which commands each
+		-- one applied, kinds 17/27/52 of #454), with tools/drift_diff.py. Nothing without the variable
+		local ringAt = os.getenv("MPFEVER_RINGDUMPAT")
+		if ringAt and type(checkN) == "number" and ("," .. ringAt .. ","):find("," .. tostring(checkN) .. ",", 1, true) then
+			local w = C.IO.open(C.DIR .. BS .. "native_drift.txt", "wb")
+			if w then w:write(tostring(checkN), NL); w:close() end
+			log("drift diagnostic: the native module's rings asked for at check " .. tostring(checkN) .. " (MPFEVER_RINGDUMPAT, no drift)")
+		end
 		K.dumpCost = tDump + os.clock() - tWorld
 	end
 	-- cargo waiting in buildings (industries, warehouses, stations)

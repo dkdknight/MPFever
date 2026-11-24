@@ -19,6 +19,11 @@ MPFever - Changelog
     once every game has applied it, as in a single-player game; the game's own tools are still answered at once
     (MPFEVER_MODBUILDWAIT=0: as before). In 0.8.17 such builds already waited for each other in a pause (#394). Test:
     tests/test_modbuildwait097.py.
+  - DIAG (#150 research, tests only): MPFEVER_RINGDUMPAT=<check>[,<check>...] asks the native module for its rings at those checks
+    without a drift, so that two games in sync can be compared over the same steps. It answered the question of #454: in a synced
+    session (Test Leawood, 2 games, 10 min at x4) the loop commands differ between games (script events a few steps apart) while
+    the entities stay identical, so commands applied on one game only are not the drift's cause by themselves. Test:
+    tests/test_ringdumpat097.py.
   - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
     (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
     names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
