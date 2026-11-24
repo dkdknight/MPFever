@@ -38,9 +38,11 @@ on a PC where it is installed, and a savegame (`.sav`) of the world to host. Use
 
 ```
 mkdir mpfever-server && cd mpfever-server
-curl -fsSLO https://raw.githubusercontent.com/ampynjord/MPFever/feature/dedicated-server/server/compose.yaml
-curl -fsSL  https://raw.githubusercontent.com/ampynjord/MPFever/feature/dedicated-server/server/.env.example -o .env
+curl -fsSLO https://raw.githubusercontent.com/dkdknight/MPFever/main/server/compose.yaml
+curl -fsSL  https://raw.githubusercontent.com/dkdknight/MPFever/main/server/.env.example -o .env
 ```
+
+(These files come from the project's `main`. Until this work is merged there, take `server/compose.yaml` and `server/.env.example` from the pull request's branch of a clone you have read, since the compose file decides which image runs with your Steam token.)
 
 Edit `.env` (at least `SRV_WORLD`, the savegame's name without `.sav`). Then, once:
 

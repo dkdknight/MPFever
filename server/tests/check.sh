@@ -11,7 +11,7 @@ if command -v shellcheck >/dev/null; then step "shellcheck"; shellcheck -S warni
 
 step "python"
 python3 -m py_compile scripts/*.py || fail=1
-python3 -m unittest -q tests.test_steam_session tests.test_admin tests.test_mods tests.test_logship tests.test_webadmin tests.test_bundle 2>&1 | tail -3 || fail=1
+python3 -m unittest -q tests.test_steam_session tests.test_admin tests.test_mods tests.test_logship tests.test_webadmin tests.test_bundle tests.test_settings 2>&1 | tail -3 || fail=1
 python3 tests/selftest_lite.py | tail -2 || fail=1
 
 step "madeira dock (unit tests, tools)"

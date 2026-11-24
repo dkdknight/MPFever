@@ -21,6 +21,15 @@ def save_bytes(items, padding=40):
     return b"\x07\x00\x00\x00junk" + b"\xff" * padding + body + b"\x00" * 200
 
 
+class ModIdName(unittest.TestCase):
+    """A mod's id names a folder: letters, digits, _ . - only, and never "." or ".." (they would leave the mods folder)."""
+    def test_ids(self):
+        for ok in ("apasz_zigzag", "mod.v1", "a-b", "7"):
+            self.assertTrue(mods.MOD_ID.match(ok), ok)
+        for bad in (".", "..", "...", "", "a/b", "a\b", "../x", "a b"):
+            self.assertFalse(mods.MOD_ID.match(bad), bad)
+
+
 class SaveList(unittest.TestCase):
     ITEMS = [("mpfever_1", "BuiltInMods", "BuiltInMods,mpfever_1", "MPFever Multiplayer"), ("apasz_zigzag", "mod.io", "6440137", "Zigzag Station"), ("own_mod_1", "UserMods", "UserMods,own_mod_1", "My mod")]
 
