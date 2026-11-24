@@ -1,7 +1,7 @@
 MPFever - Changelog
 ===================
 
-0.9.7 - (in progress)
+0.9.7 - 2026-11-24: a mod's bus stop no longer crashes the host (#482), Town Transit Planner's street pieces are no longer refused (#487), and a big report keeps every action of the session (#473)
   - FIX (#482 #483, magnu and williamcolberg): the host's game stopped twice in one evening when williamcolberg placed a stop of
     the Traditional Bus Stops mod ("Assertion '!mil.fatInstances.empty() || !mil.thinInstances.empty()'", CalcBoundingBox). Both
     stops were shipped at the click: the copy had the stop's construction and place but not its parameters ("auswahl", which of
