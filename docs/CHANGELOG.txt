@@ -24,6 +24,11 @@ MPFever - Changelog
     session (Test Leawood, 2 games, 10 min at x4) the loop commands differ between games (script events a few steps apart) while
     the entities stay identical, so commands applied on one game only are not the drift's cause by themselves. Test:
     tests/test_ringdumpat097.py.
+  - REPORTS (#473): a report over the report service's limit now first leaves out the clock, peerclock, perf and preview lines
+    of the sessions' in.log and out.log (more than half of them: #487's out.log 3.9 MB of 7.1 MB), then keeps the last half as
+    before. JS's report of #473 had lost the start of its logs, and with it the mod builds refused in a pause 40 minutes earlier:
+    which mod sent them could not be told. Every action, build and check of the session is now kept from its start
+    (MPFEVER_REPORTCONDENSE=0: the last half at once, as before). Tests: tests/test_reportcondense097.py, the launcher's self-test.
   - BUILD (the relay's Docker image, conventional name): the Release build workflow publishes it as ghcr.io/<owner>/mpfever-relay
     (was mpfever-relay-docker: a registry holds only container images, the suffix said nothing, and the Compose file already
     names the image mpfever-relay), tagged with the version and latest as before. docs/RELAY.md follows. Nothing was published
