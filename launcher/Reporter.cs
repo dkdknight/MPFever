@@ -389,8 +389,8 @@ namespace MPFever
                     var data = ReadEntry(e);
                     if (bestInner == null)
                     {
-                        data = HalfTail(data);
-                        note = best + ": its last " + (data.Length >> 10) + " KB kept";
+                        data = ShrinkText(best, data, out string how);
+                        note = best + ": " + how;
                     }
                     else
                     {
@@ -398,16 +398,17 @@ namespace MPFever
                         {
                             im.Write(data, 0, data.Length);
                             int keptLen;
+                            string innerHow;
                             using (var iz = new ZipArchive(im, ZipArchiveMode.Update, true))
                             {
                                 var ie = iz.GetEntry(bestInner);
-                                var kept = HalfTail(ReadEntry(ie));
+                                var kept = ShrinkText(bestInner, ReadEntry(ie), out innerHow);
                                 keptLen = kept.Length;
                                 ie.Delete();
                                 using (var to = iz.CreateEntry(bestInner, CompressionLevel.Optimal).Open()) to.Write(kept, 0, kept.Length);
                             }
                             data = im.ToArray();
-                            note = best + " > " + bestInner + ": its last " + (keptLen >> 10) + " KB kept";
+                            note = best + " > " + bestInner + ": " + innerHow + " (" + (keptLen >> 10) + " KB)";
                         }
                     }
                     e.Delete();
@@ -416,6 +417,65 @@ namespace MPFever
                 zipBytes = ms.ToArray();
             }
             return note;
+        }
+
+        /// <summary>(0.9.7, #473) The lines of a session's in.log / out.log that a report over the limit leaves out first: the clocks,
+        /// the speeds and the tools' previews, more than half of those logs (#487: 3.9 MB of 7.1 MB), and never what was played.</summary>
+        internal static readonly string[] Chatter = { "clock", "peerclock", "perf", "preview" };
+        internal const string CondensedHead = "[MPFever: the clock, peerclock, perf and preview lines were left out, the report was over the report service's limit]\r\n";
+
+        /// <summary>(0.9.7, #473) A text entry made smaller for a report over the limit. An in.log or out.log not condensed yet loses
+        /// its chatter lines first (Chatter: every action, build and check kept, from the start of the session); any other text, or
+        /// a log condensed already or with little chatter, keeps its last half (HalfTail). JS's report of #473 held only the end of
+        /// its logs: the mod's builds refused in the pause, 40 minutes earlier, were cut away with the clocks around them.
+        /// MPFEVER_REPORTCONDENSE=0: the last half at once, as before.</summary>
+        internal static byte[] ShrinkText(string name, byte[] data, out string how)
+        {
+            var file = (name ?? "").Replace((char)92, '/');
+            file = file.Substring(file.LastIndexOf('/') + 1).ToLowerInvariant();
+            if ((file == "in.log" || file == "out.log") && Environment.GetEnvironmentVariable("MPFEVER_REPORTCONDENSE") != "0")
+            {
+                var c = Condense(data);
+                if (c != null)
+                {
+                    how = "its clock, peerclock, perf and preview lines left out (" + (data.Length >> 10) + " KB -> " + (c.Length >> 10) + " KB)";
+                    return c;
+                }
+            }
+            var t = HalfTail(data);
+            how = "its last " + (t.Length >> 10) + " KB kept";
+            return t;
+        }
+
+        /// <summary>The text without its chatter lines (Chatter, "kind TAB ..."), after a line saying so; null when it was condensed or
+        /// cut already, or when that would save less than a tenth of it.</summary>
+        internal static byte[] Condense(byte[] data)
+        {
+            var head = Encoding.ASCII.GetBytes(CondensedHead);
+            if (data.Length >= 9 && data[0] == (byte)'[' && Encoding.ASCII.GetString(data, 0, 9) == "[MPFever:") return null;
+            var kinds = Chatter.Select(k => Encoding.ASCII.GetBytes(k + "\t")).ToArray();
+            using (var o = new MemoryStream())
+            {
+                o.Write(head, 0, head.Length);
+                int start = 0;
+                while (start < data.Length)
+                {
+                    int end = Array.IndexOf(data, (byte)'\n', start);
+                    end = end < 0 ? data.Length : end + 1;
+                    bool chatter = false;
+                    foreach (var k in kinds)
+                    {
+                        if (end - start < k.Length) continue;
+                        int i = 0;
+                        while (i < k.Length && data[start + i] == k[i]) i++;
+                        if (i == k.Length) { chatter = true; break; }
+                    }
+                    if (!chatter) o.Write(data, start, end - start);
+                    start = end;
+                }
+                if (o.Length - head.Length > data.Length * 0.9) return null;
+                return o.ToArray();
+            }
         }
 
         /// <summary>The last half of a text, from the start of a line, after a line saying it was cut.</summary>

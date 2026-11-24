@@ -395,6 +395,29 @@ owhere-" + Guid.NewGuid().ToString("N")) == null, "  no folder: none");
                 File.Copy(zip, small);
                 C(Reporter.Shrink(small, 1L << 40).Count == 0, "a report that fits: nothing cut");
                 C(Reporter.HalfTail(Encoding.ASCII.GetBytes("a\nb\nc\nd\n")).Length > 0 && Encoding.ASCII.GetString(Reporter.HalfTail(Encoding.ASCII.GetBytes("aa\nbb\ncc\ndd\n"))).EndsWith("cc\ndd\n"), "the half kept from a line's start");
+                // (0.9.7, #473) a session's in.log / out.log loses its clocks first, every action from the start kept
+                {
+                    var sb = new StringBuilder();
+                    sb.Append("act\tJS\t{[\"uid\"]=\"JS:10\"}\r\n");
+                    for (int i = 0; i < 2000; i++) sb.Append("clock\tJS\t{[\"t\"]=").Append(i * 200).Append("}\r\npeerclock\tH\t{[\"t\"]=").Append(i).Append("}\r\npreview\tH\t{[\"r\"]=6}\r\nperf\tJS\t{}\r\n");
+                    sb.Append("act\tJS\t{[\"uid\"]=\"JS:11\"}\r\nsync_hash\tJS\t{[\"n\"]=7}\r\n");
+                    var raw = Encoding.ASCII.GetBytes(sb.ToString());
+                    var c1 = Reporter.ShrinkText("players/JS/session/JS-1/out.log", raw, out string how1);
+                    var t1 = Encoding.ASCII.GetString(c1);
+                    C(t1.StartsWith("[MPFever: the clock, peerclock, perf and preview lines were left out") && t1.Contains("\"JS:10\"") && t1.Contains("\"JS:11\"")
+                        && t1.Contains("sync_hash\t") && !t1.Contains("clock\t") && !t1.Contains("preview\t") && !t1.Contains("perf\t") && how1.Contains("left out"),
+                        "an out.log over the limit: its clocks, previews and speeds left out, its first and last actions kept (" + how1 + ")");
+                    var c2 = Reporter.ShrinkText("session/JS-1/out.log", c1, out string how2);
+                    C(Encoding.ASCII.GetString(c2).StartsWith("[MPFever: the start of this log was cut") && how2.Contains("last"), "  condensed already: then its last half, as before");
+                    var c3 = Reporter.ShrinkText("session/JS-1/mod.log", raw, out string how3);
+                    C(Encoding.ASCII.GetString(c3).StartsWith("[MPFever: the start of this log was cut"), "  another log (mod.log): its last half, as before");
+                    var few = Encoding.ASCII.GetBytes("act\tA\t{}\r\nact\tA\t{}\r\nclock\tA\t{}\r\n" + new string('x', 400) + "\r\n");
+                    C(Reporter.Condense(few) == null, "  a log with little chatter (less than a tenth): its last half instead");
+                    Environment.SetEnvironmentVariable("MPFEVER_REPORTCONDENSE", "0");
+                    var c4 = Reporter.ShrinkText("session/JS-1/in.log", raw, out string how4);
+                    Environment.SetEnvironmentVariable("MPFEVER_REPORTCONDENSE", null);
+                    C(Encoding.ASCII.GetString(c4).StartsWith("[MPFever: the start of this log was cut"), "  MPFEVER_REPORTCONDENSE=0: its last half, as before");
+                }
                 // (0.8.16, #359) a drift dump, larger than the logs, is cut last: the logs first
                 var dz = Path.Combine(dir, "d.zip");
                 using (var z = System.IO.Compression.ZipFile.Open(dz, System.IO.Compression.ZipArchiveMode.Create))

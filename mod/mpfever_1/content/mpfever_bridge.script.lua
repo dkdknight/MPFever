@@ -485,6 +485,15 @@ local function extendedParts(parts, checkN)
 			pcall(SDUMP.keepDrift, SDUMP.driftN, dump)
 			SDUMP.driftN = nil
 		end
+		-- (0.9.7, #150 research; tests: MPFEVER_RINGDUMPAT=<check>[,<check>...]) the native module's rings asked for at these checks
+		-- without any drift, on every game at the same check: two games in sync compared over the same steps (which commands each
+		-- one applied, kinds 17/27/52 of #454), with tools/drift_diff.py. Nothing without the variable
+		local ringAt = os.getenv("MPFEVER_RINGDUMPAT")
+		if ringAt and type(checkN) == "number" and ("," .. ringAt .. ","):find("," .. tostring(checkN) .. ",", 1, true) then
+			local w = C.IO.open(C.DIR .. BS .. "native_drift.txt", "wb")
+			if w then w:write(tostring(checkN), NL); w:close() end
+			log("drift diagnostic: the native module's rings asked for at check " .. tostring(checkN) .. " (MPFEVER_RINGDUMPAT, no drift)")
+		end
 		K.dumpCost = tDump + os.clock() - tWorld
 	end
 	-- cargo waiting in buildings (industries, warehouses, stations)
@@ -6885,6 +6894,18 @@ local function replayStop(a, plan, variant)
 				log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine's conversion failed: " .. shortErr(errN) .. " (the last form sent)")
 			end
 		elseif not okV then
+			-- ((0.9.7, #482 #483) The engine's check itself failed (an exception, not a refusal): the build would fail the same way in
+			-- the simulation, where nothing catches it. Both times it happened in the reports (williamcolberg's stops of the Traditional
+			-- Bus Stops mod, without their parameters), the host's game stopped right after ("!mil.fatInstances.empty()",
+			-- CalcBoundingBox). Not sent: the stop is not reproduced here, said so, and the host's game is reloaded everywhere, as for a
+			-- refused one. An error of MPFever's own script ("<file>.lua:<line>") is not the engine's: sent, as before.
+			-- MPFEVER_STOPDRYFAIL=0: sent, as before)
+			if os.getenv("MPFEVER_STOPDRYFAIL") ~= "0" and not tostring(crit):find("%.lua:%d+") then
+				local why = "stop: the engine's check failed (" .. shortErr(crit) .. "), not sent: it would stop the game"
+				log("NATIVE REPLAY " .. tostring(a.uid) .. " " .. why)
+				if G.replayFailedFn then pcall(G.replayFailedFn, a, why) else pcall(send, "replay_failed", { uid = tostring(a.uid), why = why }) end
+				return
+			end
 			log("NATIVE REPLAY " .. tostring(a.uid) .. " stop: the engine's verdict not read (" .. shortErr(crit) .. "): sent")
 		end
 	end
@@ -12834,6 +12855,26 @@ G.preshipObjects = function(r)
 		if not model or type(param) ~= "number" or param < 0 or param > 1 then return false, "object " .. i .. " unreadable (" .. tostring(d.bits) .. " " .. tostring(d.path) .. ")" end
 		local okF, rid = pcall(api.res.constructionRep.find, model)
 		if not okF or type(rid) ~= "number" or rid < 0 then return false, "object " .. i .. ": construction " .. model .. " not known here" end
+		-- ((0.9.7, #482 #483) A construction with parameters of its own needs the values the player chose in the tool (Traditional
+		-- Bus Stops: "auswahl", which of its stops), and the click shows only its name and place: the copy had no params, the host's
+		-- game built williamcolberg's stop without a model and stopped ("!mil.fatInstances.empty() || !mil.thinInstances.empty()",
+		-- collision_util::CalcBoundingBox), twice in one evening. Such a stop goes the usual way (its capture, which carries them).
+		-- A mod's construction only: the base game's own fill in what they are not given (its path signals have 5 parameters and the
+		-- 86 copies of them at the click in the reports were built; its street stops have none), so they still go at the click. A mod's
+		-- construction whose parameters cannot be read goes the usual way too. MPFEVER_PRESHIPPARAMS=0: at the click, as before)
+		if type(entry.params) ~= "table" and model:sub(1, 3) ~= "::/" and os.getenv("MPFEVER_PRESHIPPARAMS") ~= "0" then
+			local okP, np = pcall(function()
+				local ps = api.res.constructionRep.get(rid).params
+				local okN, n = pcall(function() return #ps end)
+				if okN and type(n) == "number" then return n end
+				return ps:size()
+			end)
+			if not okP or type(np) ~= "number" then
+				return false, "object " .. i .. ": construction " .. model .. ", its parameters not read"
+			elseif np > 0 then
+				return false, "object " .. i .. ": construction " .. model .. " has " .. np .. " parameter(s) the click does not show"
+			end
+		end
 		entry.model = model
 		entry.param = param
 	end
@@ -16915,6 +16956,80 @@ H.rcsig = function(from, p)
 			autoFinish()
 		end }
 	end }
+end
+
+-- (0.9.7, #482, MPFEVER_SCENARIO=conparams) The parameters of their own that G.preshipObjects reads (constructionRep.get(id).params):
+-- the base game's street stops and signals must have none (else every stop would go the usual way), a station several
+H.conparams = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST conparams: " .. t); AUTO.results[#AUTO.results + 1] = "conparams " .. tostring(C.ROLE) .. ": " .. t end
+	for _, name in ipairs({ "::/stations/street/small_stops/small_old.con", "::/stations/street/small_stops/small_new_twosided.con",
+		"::/infrastructure/signal/signal_path_c.con", "::/stations/street/modular_street_station/modular_terminal.con" }) do
+		local out
+		local okF, rid = pcall(api.res.constructionRep.find, name)
+		if not okF or type(rid) ~= "number" or rid < 0 then out = "not found"
+		else
+			local okP, np, how = pcall(function()
+				local ps = api.res.constructionRep.get(rid).params
+				local okN, n = pcall(function() return #ps end)
+				if okN and type(n) == "number" then return n, "#" end
+				return ps:size(), "size()"
+			end)
+			out = okP and (tostring(np) .. " parameter(s) (" .. tostring(how) .. ")") or ("not read: " .. tostring(np):sub(1, 80))
+		end
+		say(name:match("[^/]+$") .. ": " .. out)
+	end
+	autoFinish()
+end
+
+-- (0.9.7, #487) A build a mod sends from the interface (MPFEVER_SCENARIO=modwait, on a map with a signal: Test Rcsig 40444): the
+-- host's interface sends a signal's one-way toggle from a mod's file and notes, in its callback, whether the build already stands
+-- on its game. Since 0.9.7 the answer comes once every game has applied it ("applied"); MPFEVER_MODBUILDWAIT=0: at once, before
+-- ("not applied yet", the Town Transit Planner's refused pieces)
+H.modwait = function(from, p)
+	if p.role ~= C.ROLE or AUTO.running then return end
+	AUTO.running = true
+	AUTO.results = {}
+	AUTO.points = {}
+	local function say(t) log("AUTOTEST modwait: " .. t); AUTO.results[#AUTO.results + 1] = "modwait " .. tostring(C.ROLE) .. ": " .. t end
+	if C.ROLE ~= "host" then say("the host's interface sends the build"); autoFinish(); return end
+	local CT = api.type.ComponentType
+	local sig, kind = nil, nil
+	pcall(function()
+		for _, e in ipairs(R.allEdges()) do
+			pcall(function()
+				for _, o in ipairs(api.engine.getComponent(e, CT.BASE_EDGE).objects or {}) do
+					local sl = api.engine.getComponent(o[1], CT.SIGNAL_LIST)
+					if sl and (not sig or o[1] < sig) then sig = o[1]; kind = sl.signals[1].type end
+				end
+			end)
+		end
+	end)
+	if not sig then say("no signal on this map"); autoFinish(); return end
+	local oneWay = false
+	pcall(function() oneWay = (kind == api.type.Signal.Type.ONE_WAY_SIGNAL) end)
+	pcall(os.remove, C.DIR .. BS .. "ui_mod_ans.txt")
+	local f = C.IO.open(C.DIR .. BS .. "ui_win_req.txt", "wb")
+	if f then f:write("modsig" .. C.TAB .. sig .. C.TAB .. (oneWay and 0 or 1) .. C.TAB .. "7"); f:close() end
+	say("signal " .. sig .. " kind " .. tostring(kind) .. ": its one-way toggle asked from a mod's file (MPFEVER_MODBUILDWAIT=" .. tostring(os.getenv("MPFEVER_MODBUILDWAIT") or "on") .. ")")
+	local t0 = G.frames
+	local function poll()
+		local g = C.IO.open(C.DIR .. BS .. "ui_mod_ans.txt", "rb")
+		local s = g and g:read("*a") or nil
+		if g then g:close() end
+		local seq, applied, success = (s or ""):match("^(%d+)" .. C.TAB .. "(%a+)" .. C.TAB .. "(%a+)")
+		if seq == "7" then
+			say("answered (success " .. tostring(success) .. ") " .. (applied == "applied" and "once the build stood on this game" or "BEFORE the build stood on this game"))
+			autoFinish()
+			return
+		end
+		if G.frames - t0 > 1500 then say("no answer within 1500 frames"); autoFinish(); return end
+		G.waits[#G.waits + 1] = { at = G.frames + 15, fn = poll }
+	end
+	G.waits[#G.waits + 1] = { at = G.frames + 15, fn = poll }
 end
 
 -- Builds from windows that no game can replay (MPFEVER_SCENARIO=badui, with MPFEVER_PAUSED=1 and a build after it, e.g.
